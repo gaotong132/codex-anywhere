@@ -82,7 +82,6 @@ async function handleRequest(message) {
             threadId,
             text: payload.text,
             requestId,
-            callerThreadId: codex.getControllerThreadId(threadId),
           });
         } catch (error) {
           if (String(error?.message || error) !== 'desktop_app_unavailable') throw error;

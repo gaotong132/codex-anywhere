@@ -169,14 +169,6 @@ export class CodexAppServer extends EventEmitter {
     try { return (await stat(filePath)).size >= LARGE_ROLLOUT_BYTES; } catch { return false; }
   }
 
-  getControllerThreadId(targetThreadId) {
-    const target = String(targetThreadId || '').trim();
-    // Codex Desktop owns existing-session delivery. A different known thread acts as
-    // the tool caller so the target remains the destination; Desktop intentionally
-    // exposes that provenance as a navigable “sent from another task” marker.
-    return [...this.sessionMetadata.keys()].find((threadId) => threadId !== target) || target;
-  }
-
   async readSessionTail(threadId, filePath) {
     if (!filePath) throw new Error('session_history_unavailable');
     return readRolloutTail({ filePath, threadId });

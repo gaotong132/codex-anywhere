@@ -13,7 +13,7 @@ export class CodexDesktopClient {
     this.client = null;
   }
 
-  async sendMessage({ threadId, text, requestId, callerThreadId }) {
+  async sendMessage({ threadId, text, requestId }) {
     const targetThreadId = String(threadId || '').trim();
     const prompt = String(text || '').trim();
     if (!targetThreadId) throw new Error('thread_id_required');
@@ -23,7 +23,6 @@ export class CodexDesktopClient {
       result = await this.callTool({
         tool: 'send_message_to_thread',
         arguments: { threadId: targetThreadId, prompt },
-        callerThreadId: String(callerThreadId || targetThreadId),
         callId: `bridge-${requestId}`,
       });
     } catch (error) {
@@ -68,7 +67,7 @@ export class CodexDesktopClient {
         arguments: toolArguments,
         callId,
         namespace: 'codex_app',
-        threadId: callerThreadId,
+        ...(callerThreadId ? { threadId: callerThreadId } : {}),
         tool,
         turnId: callId,
       }, this.timeoutMs);

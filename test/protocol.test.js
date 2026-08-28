@@ -7,6 +7,7 @@ import { parseFrame, tokenMatches } from '../src/shared/protocol.js';
 import { displayAssistantMessage, displayUserMessage } from '../src/shared/message-content.js';
 import { CodexAppServer, internals } from '../src/connector/codex-app-server.js';
 import {
+  CodexDesktopClient,
   internals as desktopInternals,
   mergeDesktopSessionStatuses,
 } from '../src/connector/codex-desktop.js';
@@ -28,6 +29,25 @@ test('desktop native pipe frames use a little-endian length prefix', () => {
   const frame = desktopInternals.encodeNativeFrame(message);
   assert.equal(frame.readUInt32LE(0), frame.length - 4);
   assert.deepEqual(JSON.parse(frame.subarray(4).toString('utf8')), message);
+});
+
+test('desktop follow-up omits cross-task provenance while keeping the target thread', async () => {
+  const desktop = new CodexDesktopClient();
+  let call;
+  desktop.getClient = async () => ({
+    request: async (method, params) => {
+      call = { method, params };
+      return { success: true };
+    },
+    close: () => {},
+  });
+  assert.deepEqual(await desktop.sendMessage({
+    threadId: 'target-thread', text: '普通用户消息', requestId: 'request-1',
+  }), { threadId: 'target-thread', delivery: 'desktop' });
+  assert.equal(call.method, 'tools/call');
+  assert.equal(call.params.arguments.threadId, 'target-thread');
+  assert.equal(call.params.arguments.prompt, '普通用户消息');
+  assert.equal(Object.hasOwn(call.params, 'threadId'), false);
 });
 
 test('desktop task list status overrides stale app-server session status', () => {
