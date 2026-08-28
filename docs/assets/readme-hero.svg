@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720" role="img" aria-labelledby="title desc">
   <title id="title">Codex Anywhere product overview</title>
-  <desc id="desc">A mobile browser follows and continues Codex sessions running on a personal computer through a self-hosted relay.</desc>
+  <desc id="desc">Two mobile screens show recent Codex sessions and a live conversation with progress tracking, image upload, and file download.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#07101e"/>
@@ -11,16 +11,20 @@
       <stop offset="0" stop-color="#4f8cff"/>
       <stop offset="1" stop-color="#6d5dfc"/>
     </linearGradient>
-    <linearGradient id="phone" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#131e32"/>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#141f34"/>
       <stop offset="1" stop-color="#090f1c"/>
     </linearGradient>
+    <linearGradient id="photo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#385d9d"/>
+      <stop offset="1" stop-color="#182b4e"/>
+    </linearGradient>
     <radialGradient id="glow">
-      <stop offset="0" stop-color="#4f7cff" stop-opacity=".34"/>
+      <stop offset="0" stop-color="#4f7cff" stop-opacity=".32"/>
       <stop offset="1" stop-color="#4f7cff" stop-opacity="0"/>
     </radialGradient>
-    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="20" stdDeviation="24" flood-color="#020712" flood-opacity=".65"/>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#020712" flood-opacity=".68"/>
     </filter>
     <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
       <feGaussianBlur stdDeviation="38"/>
@@ -28,19 +32,20 @@
   </defs>
 
   <rect width="1400" height="720" rx="30" fill="url(#bg)"/>
-  <circle cx="1110" cy="210" r="370" fill="url(#glow)"/>
+  <circle cx="1090" cy="245" r="390" fill="url(#glow)"/>
   <circle cx="230" cy="680" r="210" fill="#2a66d9" opacity=".1" filter="url(#soft)"/>
   <path d="M0 590C260 500 455 694 732 613s417-83 668-15v122H0Z" fill="#ffffff" opacity=".018"/>
 
   <g transform="translate(82 72)">
     <rect width="210" height="38" rx="19" fill="#142542" stroke="#31568f"/>
-    <circle cx="22" cy="19" r="7" fill="#55e6a5"/>
+    <rect x="15" y="12" width="14" height="14" rx="4" fill="url(#brand)"/>
+    <path d="M19 19h6M22 16v6" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
     <text x="40" y="25" fill="#bcd0f3" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="14" font-weight="700" letter-spacing="2">CODEX ANYWHERE</text>
   </g>
 
   <text x="82" y="190" fill="#f5f8ff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="60" font-weight="750" letter-spacing="-2">Your Codex sessions,</text>
   <text x="82" y="258" fill="url(#brand)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="60" font-weight="750" letter-spacing="-2">in your pocket.</text>
-  <text x="84" y="314" fill="#95a6bf" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20">Follow progress and continue the sessions running on your own computer.</text>
+  <text x="84" y="314" fill="#95a6bf" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20">Follow and continue Codex work from any browser.</text>
   <text x="84" y="344" fill="#71839e" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">Single-user · self-hosted · project files stay local</text>
 
   <g transform="translate(82 395)" font-family="Inter,Segoe UI,Arial,sans-serif">
@@ -48,89 +53,141 @@
       <rect width="244" height="82" rx="16" fill="#101c30" stroke="#223a5f"/>
       <circle cx="32" cy="28" r="12" fill="#18345e"/>
       <path d="M27 28l4 4 7-9" fill="none" stroke="#6da0ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="55" y="32" fill="#e6edf8" font-size="15" font-weight="700">Follow live progress</text>
-      <text x="20" y="60" fill="#7f91ab" font-size="12">Adaptive updates for desktop sessions</text>
+      <text x="55" y="32" fill="#e6edf8" font-size="15" font-weight="700">Live progress</text>
+      <text x="20" y="60" fill="#7f91ab" font-size="12">Adaptive updates while Codex works</text>
     </g>
     <g transform="translate(260)">
       <rect width="244" height="82" rx="16" fill="#101c30" stroke="#223a5f"/>
       <circle cx="32" cy="28" r="12" fill="#18345e"/>
-      <path d="M27 24h10v8H27zM29 22v-2h6v2" fill="none" stroke="#6da0ff" stroke-width="2" stroke-linejoin="round"/>
-      <text x="55" y="32" fill="#e6edf8" font-size="15" font-weight="700">Continue anywhere</text>
-      <text x="20" y="60" fill="#7f91ab" font-size="12">Text, images, Markdown and files</text>
+      <rect x="26" y="22" width="12" height="12" rx="2" fill="none" stroke="#6da0ff" stroke-width="1.8"/>
+      <path d="M27.5 31l3-3 2.5 2 2.5-3 2.5 4" fill="none" stroke="#6da0ff" stroke-width="1.6" stroke-linejoin="round"/>
+      <text x="55" y="32" fill="#e6edf8" font-size="15" font-weight="700">Images &amp; files</text>
+      <text x="20" y="60" fill="#7f91ab" font-size="12">Send images and download results</text>
     </g>
     <g transform="translate(0 98)">
       <rect width="244" height="82" rx="16" fill="#101c30" stroke="#223a5f"/>
-      <circle cx="32" cy="28" r="12" fill="#163a35"/>
-      <path d="M26 28a6 6 0 1 0 2-4M26 20v5h5" fill="none" stroke="#55e6a5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="55" y="32" fill="#e6edf8" font-size="15" font-weight="700">Reconnects itself</text>
-      <text x="20" y="60" fill="#7f91ab" font-size="12">Browser, relay and connector recovery</text>
+      <circle cx="32" cy="28" r="12" fill="#172f51"/>
+      <path d="M26 23h12M26 28h9M26 33h7" fill="none" stroke="#7ca7f7" stroke-width="2" stroke-linecap="round"/>
+      <text x="55" y="32" fill="#e6edf8" font-size="15" font-weight="700">Fast history</text>
+      <text x="20" y="60" fill="#7f91ab" font-size="12">Incremental loading for long sessions</text>
     </g>
     <g transform="translate(260 98)">
       <rect width="244" height="82" rx="16" fill="#101c30" stroke="#223a5f"/>
       <circle cx="32" cy="28" r="12" fill="#163a35"/>
-      <path d="M27 28l3 3 7-8M25 20h14v16H25z" fill="none" stroke="#55e6a5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="55" y="32" fill="#e6edf8" font-size="15" font-weight="700">Secure by default</text>
-      <text x="20" y="60" fill="#7f91ab" font-size="12">Encrypted transit, bounded local access</text>
+      <path d="M26 28a6 6 0 1 0 2-4M26 20v5h5" fill="none" stroke="#55e6a5" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="55" y="32" fill="#e6edf8" font-size="15" font-weight="700">Auto reconnect</text>
+      <text x="20" y="60" fill="#7f91ab" font-size="12">Recovers after network changes</text>
     </g>
   </g>
 
-  <g transform="translate(790 48)" filter="url(#shadow)">
-    <rect x="0" y="0" width="390" height="624" rx="48" fill="#050914" stroke="#304264" stroke-width="3"/>
-    <rect x="14" y="14" width="362" height="596" rx="38" fill="url(#phone)"/>
-    <rect x="139" y="12" width="112" height="24" rx="12" fill="#050914"/>
+  <!-- Session list phone -->
+  <g transform="translate(714 96)" filter="url(#shadow)" font-family="Inter,Segoe UI,Arial,sans-serif">
+    <rect width="296" height="538" rx="42" fill="#050914" stroke="#2a3b59" stroke-width="3"/>
+    <rect x="11" y="11" width="274" height="516" rx="33" fill="url(#screen)"/>
+    <rect x="105" y="10" width="86" height="20" rx="10" fill="#050914"/>
 
-    <g transform="translate(38 62)" font-family="Inter,Segoe UI,Arial,sans-serif">
-      <text x="0" y="20" fill="#8fb2ff" font-size="10" font-weight="800" letter-spacing="1.4">CODEX ANYWHERE</text>
-      <g transform="translate(156)">
-        <rect width="32" height="32" rx="9" fill="#151f32" stroke="#33435e"/>
-        <path d="M10 16h12M16 10v12" stroke="#b0bfd4" stroke-width="1.8" stroke-linecap="round"/>
-      </g>
-      <g transform="translate(193)">
-        <rect width="32" height="32" rx="9" fill="#151f32" stroke="#33435e"/>
-        <circle cx="14" cy="14" r="6" fill="none" stroke="#b0bfd4" stroke-width="1.8"/>
-        <path d="M18.5 18.5l5 5" stroke="#b0bfd4" stroke-width="1.8" stroke-linecap="round"/>
-      </g>
-      <g transform="translate(230)">
-        <rect width="32" height="32" rx="9" fill="#151f32" stroke="#33435e"/>
-        <rect x="8" y="8" width="16" height="16" rx="3" fill="none" stroke="#b0bfd4" stroke-width="1.5"/>
-        <path d="M14 8v16m7-11-3 3 3 3" fill="none" stroke="#b0bfd4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(27 50)">
+      <path d="M0 5h15M0 10h15M0 15h15" stroke="#9aabc2" stroke-width="1.7" stroke-linecap="round"/>
+      <text x="27" y="15" fill="#dbe7fb" font-size="11" font-weight="800" letter-spacing="1">SESSIONS</text>
+      <g transform="translate(194 -3)">
+        <rect width="28" height="28" rx="8" fill="#152139" stroke="#344967"/>
+        <circle cx="12" cy="12" r="5" fill="none" stroke="#a9bbd5" stroke-width="1.5"/>
+        <path d="M16 16l5 5" stroke="#a9bbd5" stroke-width="1.5" stroke-linecap="round"/>
       </g>
     </g>
+    <path d="M27 91h242" stroke="#263650"/>
 
-    <path d="M38 112h300" stroke="#263650" stroke-width="1"/>
-
-    <g transform="translate(34 128)" font-family="Inter,Segoe UI,Arial,sans-serif">
+    <g transform="translate(25 110)">
       <g>
-        <rect width="322" height="72" rx="15" fill="#17243a" stroke="#3563ad"/>
-        <text x="16" y="27" fill="#eef4ff" font-size="14" font-weight="700">Deploy the latest release</text>
-        <circle cx="16" cy="47" r="5" fill="#4be19c"/>
-        <text x="30" y="50" fill="#788ca8" font-size="11">EchoAgent</text>
-        <text x="304" y="52" text-anchor="end" fill="#62738b" font-size="10">now</text>
+        <rect width="246" height="82" rx="14" fill="#17243a" stroke="#3563ad"/>
+        <rect x="14" y="15" width="48" height="18" rx="9" fill="#243e70"/>
+        <text x="38" y="28" text-anchor="middle" fill="#9fc0ff" font-size="9" font-weight="800">ACTIVE</text>
+        <text x="14" y="52" fill="#edf3ff" font-size="13" font-weight="700">Prepare the next release</text>
+        <text x="14" y="70" fill="#7d90ac" font-size="10">Web workspace</text>
       </g>
-      <g transform="translate(0 81)">
-        <rect width="322" height="72" rx="15" fill="#0e1727" stroke="#1e2c43"/>
-        <text x="16" y="27" fill="#dce5f3" font-size="14" font-weight="650">Review account deletion PR</text>
-        <text x="16" y="50" fill="#788ca8" font-size="11">EchoAgent</text>
-        <text x="304" y="52" text-anchor="end" fill="#62738b" font-size="10">8 min</text>
+      <g transform="translate(0 94)">
+        <rect width="246" height="76" rx="14" fill="#0e1727" stroke="#1e2c43"/>
+        <text x="14" y="31" fill="#dce5f3" font-size="13" font-weight="650">Review the API migration</text>
+        <text x="14" y="54" fill="#788ca8" font-size="10">Backend workspace</text>
+        <text x="228" y="55" text-anchor="end" fill="#62738b" font-size="9">8 min</text>
       </g>
-      <g transform="translate(0 162)">
-        <rect width="322" height="72" rx="15" fill="#0e1727" stroke="#1e2c43"/>
-        <text x="16" y="27" fill="#dce5f3" font-size="14" font-weight="650">Improve the mobile session list</text>
-        <text x="16" y="50" fill="#788ca8" font-size="11">codex-anywhere</text>
-        <text x="304" y="52" text-anchor="end" fill="#62738b" font-size="10">12 min</text>
+      <g transform="translate(0 182)">
+        <rect width="246" height="76" rx="14" fill="#0e1727" stroke="#1e2c43"/>
+        <text x="14" y="31" fill="#dce5f3" font-size="13" font-weight="650">Polish mobile navigation</text>
+        <text x="14" y="54" fill="#788ca8" font-size="10">Mobile workspace</text>
+        <text x="228" y="55" text-anchor="end" fill="#62738b" font-size="9">21 min</text>
       </g>
     </g>
 
-    <g transform="translate(34 500)" font-family="Inter,Segoe UI,Arial,sans-serif">
-      <rect width="322" height="66" rx="18" fill="#10192a" stroke="#2b3b56"/>
-      <text x="20" y="39" fill="#74859e" font-size="13">Send to local Codex…</text>
-      <circle cx="286" cy="33" r="19" fill="url(#brand)"/>
-      <path d="M278 35l8-8 8 8M286 27v15" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    <g transform="translate(25 450)">
+      <rect width="246" height="48" rx="14" fill="#10192a" stroke="#2b3b56"/>
+      <path d="M20 18v12M14 24h12" stroke="#8fa4c0" stroke-width="1.8" stroke-linecap="round"/>
+      <text x="38" y="29" fill="#9eafc5" font-size="11">New session</text>
     </g>
   </g>
 
-  <g transform="translate(710 310)" opacity=".85">
-    <path d="M0 0c38-28 59-28 92 0" fill="none" stroke="#527fe0" stroke-width="2" stroke-dasharray="5 7"/>
-    <circle cx="0" cy="0" r="5" fill="#55e6a5"/>
+  <!-- Conversation phone -->
+  <g transform="translate(994 48)" filter="url(#shadow)" font-family="Inter,Segoe UI,Arial,sans-serif">
+    <rect width="326" height="624" rx="48" fill="#050914" stroke="#354a70" stroke-width="3"/>
+    <rect x="12" y="12" width="302" height="600" rx="38" fill="url(#screen)"/>
+    <rect x="105" y="11" width="116" height="23" rx="12" fill="#050914"/>
+
+    <g transform="translate(27 52)">
+      <path d="M9 2L2 9l7 7" fill="none" stroke="#9eb1cb" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="25" y="11" fill="#eef4ff" font-size="13" font-weight="750">Release checklist</text>
+      <rect x="218" y="-3" width="54" height="24" rx="12" fill="#203865" stroke="#3f6ab1"/>
+      <text x="245" y="13" text-anchor="middle" fill="#a9c7ff" font-size="9" font-weight="800">LIVE</text>
+    </g>
+    <path d="M27 87h272" stroke="#263650"/>
+
+    <g transform="translate(27 105)">
+      <g transform="translate(54)">
+        <rect width="218" height="54" rx="15" fill="url(#brand)"/>
+        <text x="16" y="23" fill="#fff" font-size="11.5" font-weight="650">Publish the latest build and</text>
+        <text x="16" y="40" fill="#fff" font-size="11.5" font-weight="650">keep me posted.</text>
+      </g>
+
+      <g transform="translate(0 70)">
+        <rect width="252" height="93" rx="16" fill="#111c2f" stroke="#2a4168"/>
+        <rect x="14" y="13" width="26" height="26" rx="8" fill="#1d3764"/>
+        <path d="M21 26l4 4 8-10" fill="none" stroke="#77a5ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="49" y="25" fill="#e4ecf9" font-size="11.5" font-weight="750">Progress update</text>
+        <text x="49" y="42" fill="#7d91af" font-size="9.5">Tracking the active Codex turn</text>
+        <path d="M17 59h8M17 72h8" stroke="#6e90c8" stroke-width="1.7" stroke-linecap="round"/>
+        <text x="33" y="63" fill="#aab9ce" font-size="9.5">Checks completed</text>
+        <text x="33" y="76" fill="#aab9ce" font-size="9.5">Building release artifacts…</text>
+        <rect x="189" y="67" width="45" height="4" rx="2" fill="#263c61"/>
+        <rect x="189" y="67" width="28" height="4" rx="2" fill="#608eff"/>
+      </g>
+
+      <g transform="translate(54 178)">
+        <rect width="218" height="76" rx="15" fill="#17243a" stroke="#31598e"/>
+        <rect x="10" y="10" width="67" height="56" rx="10" fill="url(#photo)"/>
+        <circle cx="61" cy="23" r="6" fill="#aac6ff" opacity=".8"/>
+        <path d="M16 59l17-18 12 11 10-9 16 16Z" fill="#82a7e8" opacity=".75"/>
+        <text x="89" y="31" fill="#edf3ff" font-size="10.5" font-weight="700">design-reference.png</text>
+        <text x="89" y="49" fill="#8195b2" font-size="9">Image sent</text>
+      </g>
+
+      <g transform="translate(0 269)">
+        <rect width="252" height="70" rx="16" fill="#111c2f" stroke="#293c5c"/>
+        <rect x="14" y="13" width="40" height="44" rx="9" fill="#1c2c48"/>
+        <path d="M26 22h10l6 6v20H26zM36 22v7h6M30 36h8M30 42h8" fill="none" stroke="#89a6d2" stroke-width="1.4" stroke-linejoin="round"/>
+        <text x="65" y="30" fill="#e0e9f7" font-size="10.5" font-weight="700">release-notes.pdf</text>
+        <text x="65" y="47" fill="#7d91ae" font-size="9">Ready to download</text>
+        <rect x="181" y="22" width="57" height="27" rx="13.5" fill="#233c6b"/>
+        <path d="M194 31v7m-4-3 4 4 4-4" fill="none" stroke="#a9c6ff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="217" y="39" fill="#b6ceff" font-size="8.5" font-weight="700">GET</text>
+      </g>
+    </g>
+
+    <g transform="translate(27 535)">
+      <rect width="272" height="54" rx="17" fill="#10192a" stroke="#2b3b56"/>
+      <rect x="13" y="13" width="28" height="28" rx="8" fill="#17243a" stroke="#344867"/>
+      <path d="M21 20h12v12H21zM23 29l3-3 2 2 3-4" fill="none" stroke="#9eb2cf" stroke-width="1.4" stroke-linejoin="round"/>
+      <text x="52" y="33" fill="#74859e" font-size="11">Message Codex…</text>
+      <circle cx="245" cy="27" r="18" fill="url(#brand)"/>
+      <path d="M238 29l7-7 7 7M245 22v13" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
   </g>
 </svg>
