@@ -947,6 +947,27 @@ export default function App() {
     isSessionRunning(session.status)
     || (session.id === threadId && (executionState === 'running' || executionState === 'waiting'))
   )).length;
+  const sessionGroups = useMemo(() => {
+    const groups: Array<{ key: string; projectName: string; projectPath: string; sessions: Session[] }> = [];
+    const projects = new Map<string, (typeof groups)[number]>();
+    for (const session of filteredSessions) {
+      const projectName = sessionProjectName(session.cwd);
+      if (!projectName) {
+        groups.push({ key: `session:${session.id}`, projectName: '', projectPath: '', sessions: [session] });
+        continue;
+      }
+      const projectPath = String(session.cwd || '').trim().replace(/[\\/]+$/, '');
+      const key = projectPath.toLocaleLowerCase();
+      let group = projects.get(key);
+      if (!group) {
+        group = { key: `project:${key}`, projectName, projectPath, sessions: [] };
+        projects.set(key, group);
+        groups.push(group);
+      }
+      group.sessions.push(session);
+    }
+    return groups;
+  }, [filteredSessions]);
 
   const existingProjects = useMemo(() => {
     const seen = new Set<string>();
@@ -1014,24 +1035,37 @@ export default function App() {
           {runningSessionCount > 0 && <strong> · {runningSessionCount} 个运行中</strong>}
         </div>
         <nav className="session-list">
-          {filteredSessions.map((session) => {
-            const sessionRunning = isSessionRunning(session.status)
-              || (session.id === threadId && (executionState === 'running' || executionState === 'waiting'));
-            return (
-              <button
-                key={session.id}
-                className={`session-card ${threadId === session.id ? 'active' : ''} ${sessionRunning ? 'running' : ''}`}
-                onClick={() => selectSession(session)}
-              >
-                <span className="session-title-line">
-                  <span className="session-title">{session.title || session.id}</span>
-                  {sessionRunning && <span className="session-running-badge"><i />运行中</span>}
-                </span>
-                <span className="session-preview">{session.cwd || session.preview || session.id}</span>
-                <span className="session-meta">{formatDate(session.updatedAt)}</span>
-              </button>
-            );
-          })}
+          {sessionGroups.map((group) => (
+            <section key={group.key} className={`session-group ${group.projectName ? 'grouped' : 'ungrouped'}`}>
+              {group.projectName && (
+                <div className="session-project-heading" title={group.projectPath}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3.75 6.75h5l2 2h9.5v8.5a2 2 0 0 1-2 2H5.75a2 2 0 0 1-2-2V6.75Z" />
+                  </svg>
+                  <span>{group.projectName}</span>
+                </div>
+              )}
+              <div className="session-group-list">
+                {group.sessions.map((session) => {
+                  const sessionRunning = isSessionRunning(session.status)
+                    || (session.id === threadId && (executionState === 'running' || executionState === 'waiting'));
+                  return (
+                    <button
+                      key={session.id}
+                      className={`session-card ${threadId === session.id ? 'active' : ''} ${sessionRunning ? 'running' : ''}`}
+                      onClick={() => selectSession(session)}
+                    >
+                      <span className="session-title" title={session.title || session.id}>{session.title || session.id}</span>
+                      <span className="session-meta">
+                        {sessionRunning && <span className="session-running-badge"><i />运行中</span>}
+                        <time>{formatDate(session.updatedAt)}</time>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
           {!filteredSessions.length && <p className="empty-list">没有匹配的会话</p>}
         </nav>
       </aside>
@@ -1326,6 +1360,13 @@ function projectLabel(path: string) {
   const normalized = path.replace(/[\\/]+$/, '');
   const name = normalized.split(/[\\/]/).at(-1) || normalized;
   return name && name !== path ? `${name} — ${path}` : path;
+}
+
+function sessionProjectName(path?: string) {
+  const value = String(path || '').trim();
+  if (!value || isTemporaryProjectPath(value)) return '';
+  const normalized = value.replace(/[\\/]+$/, '');
+  return normalized.split(/[\\/]/).at(-1) || normalized;
 }
 
 function isTemporaryProjectPath(path: string) {
