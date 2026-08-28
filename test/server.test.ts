@@ -71,21 +71,24 @@ test('static middleware serves assets and preserves SPA fallback caching', async
     await rm(fixtureDir, { recursive: true, force: true });
   });
   const origin = `http://127.0.0.1:${address.port}`;
+  const fetchOnce = (path: string) => fetch(`${origin}${path}`, { headers: { connection: 'close' } });
 
-  const page = await fetch(`${origin}/sessions/example`);
+  const page = await fetchOnce('/sessions/example');
   assert.equal(page.status, 200);
   assert.match(page.headers.get('content-type'), /^text\/html/);
   assert.equal(page.headers.get('cache-control'), 'no-store');
   assert.match(await page.text(), /Codex Anywhere/);
 
-  const asset = await fetch(`${origin}/app.css`);
+  const asset = await fetchOnce('/app.css');
   assert.equal(asset.status, 200);
   assert.match(asset.headers.get('content-type'), /^text\/css/);
   assert.equal(asset.headers.get('cache-control'), 'public, max-age=3600');
   assert.match(await asset.text(), /color: white/);
 
-  assert.equal((await fetch(`${origin}/missing.js`)).status, 404);
-  const traversalAttempt = await fetch(`${origin}/..%2fprivate.txt`);
+  const missingAsset = await fetchOnce('/missing.js');
+  assert.equal(missingAsset.status, 404);
+  await missingAsset.arrayBuffer();
+  const traversalAttempt = await fetchOnce('/..%2fprivate.txt');
   assert.equal(traversalAttempt.status, 200);
   const traversalBody = await traversalAttempt.text();
   assert.match(traversalBody, /Codex Anywhere/);
@@ -98,7 +101,7 @@ test('content security policy limits WebSocket connections to the current host',
   t.after(() => server.close());
 
   const response = await fetch(`http://127.0.0.1:${address.port}/`, {
-    headers: { host: 'codex.example.com', 'x-forwarded-proto': 'https' },
+    headers: { connection: 'close', host: 'codex.example.com', 'x-forwarded-proto': 'https' },
   });
   const policy = response.headers.get('content-security-policy');
   assert.match(policy, new RegExp(`connect-src 'self' wss:\\/\\/127\\.0\\.0\\.1:${address.port};`));
@@ -106,6 +109,7 @@ test('content security policy limits WebSocket connections to the current host',
     .trim().split(/\s+/).slice(1);
   assert.equal(connectSources.includes('ws:'), false);
   assert.equal(connectSources.includes('wss:'), false);
+  await response.arrayBuffer();
 });
 
 test('server authenticates and relays client requests to connector', async (t) => {
@@ -143,17 +147,6 @@ test('server authenticates and relays client requests to connector', async (t) =
   assert.deepEqual(response.data, { online: true });
   connector.close();
   client.close();
-});
-
-test('server rejects a wrong token', async (t) => {
-  const server = createBridgeServer({ token: TOKEN });
-  const address = await server.listen(0, '127.0.0.1');
-  t.after(() => server.close());
-  const socket = new WebSocket(`ws://127.0.0.1:${address.port}/ws`);
-  await once(socket, 'open');
-  socket.send(JSON.stringify({ type: 'auth', role: 'client', token: 'wrong' }));
-  const [code] = await once(socket, 'close');
-  assert.equal(code, 4003);
 });
 
 test('server temporarily locks repeated authentication failures per real client address', async (t) => {
