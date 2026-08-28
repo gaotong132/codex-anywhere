@@ -391,27 +391,30 @@ test('both history readers hide the desktop delegation envelope', () => {
 });
 
 test('approval results stay inside workspace and keep network disabled', () => {
+  const approvalRoot = resolve('approval-root');
+  const approvalOutput = join(approvalRoot, 'output');
+  const outsideRoot = resolve('approval-private');
   const result = internals.approvalResult(
     'item/permissions/requestApproval',
     true,
     {
       permissions: {
         fileSystem: {
-          read: ['D:\\project\\demo', 'D:\\private'],
-          write: ['D:\\project\\demo\\output'],
+          read: [approvalRoot, outsideRoot],
+          write: [approvalOutput],
           entries: [
-            { path: { type: 'path', path: 'D:\\project\\demo' }, access: 'read' },
-            { path: { type: 'path', path: 'D:\\private' }, access: 'write' },
+            { path: { type: 'path', path: approvalRoot }, access: 'read' },
+            { path: { type: 'path', path: outsideRoot }, access: 'write' },
           ],
         },
         network: { enabled: true },
       },
     },
-    ['D:\\project\\demo'],
+    [approvalRoot],
     false,
   );
-  assert.deepEqual(result.permissions.fileSystem.read, ['D:\\project\\demo']);
-  assert.deepEqual(result.permissions.fileSystem.write, ['D:\\project\\demo\\output']);
+  assert.deepEqual(result.permissions.fileSystem.read, [approvalRoot]);
+  assert.deepEqual(result.permissions.fileSystem.write, [approvalOutput]);
   assert.equal(result.permissions.fileSystem.entries.length, 1);
   assert.equal(result.permissions.network, undefined);
   assert.equal(result.scope, 'turn');
