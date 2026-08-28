@@ -43,11 +43,14 @@ import {
   isSessionRunning,
   isTemporaryProjectPath,
   makeId,
+  markSessionAttentionRead,
   presenceLabel,
   projectLabel,
+  reconcileSessionAttention,
   sessionProjectName,
   sessionUpdatedAt,
   shortId,
+  type SessionAttentionState,
 } from './app-utils';
 import { DownloadIndicator, MessageBubble, SidebarIcon } from './ui-components';
 import type {
@@ -75,6 +78,22 @@ const RECONNECT_MAX_DELAY_MS = 30_000;
 const CLIENT_HEARTBEAT_MS = 20_000;
 const CLIENT_STALE_AFTER_MS = 55_000;
 const SESSION_STATUS_REFRESH_MS = 6_000;
+const SESSION_ATTENTION_KEY = 'bridge.sessionAttention.v1';
+
+function loadSessionAttention(): SessionAttentionState {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SESSION_ATTENTION_KEY) || '{}') as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(stored)
+      .filter(([id, state]) => id && (state === 'running' || state === 'unread'))
+      .slice(-200)) as SessionAttentionState;
+  } catch {
+    return {};
+  }
+}
+
+function storeSessionAttention(value: SessionAttentionState) {
+  try { localStorage.setItem(SESSION_ATTENTION_KEY, JSON.stringify(value)); } catch { /* keep in memory */ }
+}
 
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem('bridge.token') || '');
@@ -87,6 +106,7 @@ export default function App() {
   const [online, setOnline] = useState(false);
   const [statusText, setStatusText] = useState(t('未连接', 'Disconnected'));
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessionAttention, setSessionAttention] = useState<SessionAttentionState>(loadSessionAttention);
   const [sessionSearch, setSessionSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
@@ -143,9 +163,38 @@ export default function App() {
   const fileDownloadCancelRef = useRef(false);
   const sessionRefreshInFlightRef = useRef(false);
   const optimisticRestoreRef = useRef<string | null>(null);
+  const runningRef = useRef(running);
+  const executionStateRef = useRef(executionState);
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
   useEffect(() => { tokenRef.current = token; }, [token]);
+  useEffect(() => { runningRef.current = running; }, [running]);
+  useEffect(() => { executionStateRef.current = executionState; }, [executionState]);
+
+  const updateSessionAttention = useCallback((
+    update: (current: SessionAttentionState) => SessionAttentionState,
+  ) => {
+    setSessionAttention((current) => {
+      const next = update(current);
+      if (next !== current) storeSessionAttention(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!threadId) return;
+    if (executionState === 'running' || executionState === 'waiting') {
+      updateSessionAttention((current) => current[threadId] === 'running'
+        ? current : { ...current, [threadId]: 'running' });
+    } else if (executionState === 'completed' || executionState === 'failed') {
+      updateSessionAttention((current) => {
+        if (!current[threadId]) return current;
+        const next = { ...current };
+        delete next[threadId];
+        return next;
+      });
+    }
+  }, [executionState, threadId, updateSessionAttention]);
   useEffect(() => () => {
     if (pendingImage) URL.revokeObjectURL(pendingImage.previewUrl);
   }, [pendingImage]);
@@ -307,6 +356,13 @@ export default function App() {
       const nextSessions = data.sessions || [];
       setSessions(nextSessions);
       const currentThreadId = threadIdRef.current;
+      updateSessionAttention((current) => reconcileSessionAttention(
+        current,
+        nextSessions,
+        currentThreadId,
+        runningRef.current || executionStateRef.current === 'running' || executionStateRef.current === 'waiting'
+          ? currentThreadId : null,
+      ));
       if (currentThreadId) {
         const currentSession = nextSessions.find((session) => session.id === currentThreadId);
         if (currentSession) setActiveSession(currentSession);
@@ -318,7 +374,7 @@ export default function App() {
     } finally {
       sessionRefreshInFlightRef.current = false;
     }
-  }, [addTimeline, request]);
+  }, [addTimeline, request, updateSessionAttention]);
 
   const handleBridgeMessage = useCallback((message: BridgeMessage) => {
     if (message.type === 'auth.ok') {
@@ -702,6 +758,9 @@ export default function App() {
 
   const selectSession = useCallback((session: Session | null) => {
     const nextThreadId = session?.id || null;
+    if (nextThreadId) {
+      updateSessionAttention((current) => markSessionAttentionRead(current, nextThreadId));
+    }
     if (nextThreadId && nextThreadId === threadIdRef.current) {
       setActiveSession(session);
       setDrawerOpen(false);
@@ -731,7 +790,7 @@ export default function App() {
     streamItemRef.current = null;
     setDrawerOpen(false);
     if (nextThreadId) void loadHistory(nextThreadId, null, requestVersion);
-  }, [loadHistory]);
+  }, [loadHistory, updateSessionAttention]);
 
   const beginNewSession = useCallback(() => {
     setNewSessionPrompt('');
@@ -1134,16 +1193,18 @@ export default function App() {
           {filteredSessions.map((session) => {
             const sessionRunning = isSessionRunning(session.status)
               || (session.id === threadId && (executionState === 'running' || executionState === 'waiting'));
+            const completedUnread = !sessionRunning && sessionAttention[session.id] === 'unread';
             const projectName = sessionProjectName(session.cwd);
             return (
               <button
                 key={session.id}
-                className={`session-card ${threadId === session.id ? 'active' : ''} ${sessionRunning ? 'running' : ''}`}
+                className={`session-card ${threadId === session.id ? 'active' : ''} ${sessionRunning ? 'running' : ''} ${completedUnread ? 'completed-unread' : ''}`}
                 onClick={() => selectSession(session)}
               >
                 <span className="session-title" title={session.title || session.id}>{session.title || session.id}</span>
                 <span className="session-meta">
                   {sessionRunning && <span className="session-running-dot" aria-label={t('运行中', 'Running')} title={t('运行中', 'Running')} />}
+                  {completedUnread && <span className="session-unread-dot" aria-label={t('已完成，未读', 'Completed, unread')} title={t('已完成，未读', 'Completed, unread')} />}
                   <span
                     className={projectName ? 'session-project' : 'session-project placeholder'}
                     title={projectName ? session.cwd : undefined}

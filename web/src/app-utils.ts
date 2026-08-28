@@ -65,6 +65,35 @@ export function isSessionRunning(status?: string) {
   return /^(?:active|running|inProgress|waiting)$/i.test(String(status || ''));
 }
 
+export type SessionAttentionState = Record<string, 'running' | 'unread'>;
+
+export function reconcileSessionAttention(
+  current: SessionAttentionState,
+  sessions: Session[],
+  activeThreadId: string | null,
+  locallyRunningThreadId: string | null = null,
+) {
+  const next: SessionAttentionState = {};
+  for (const session of sessions) {
+    const previous = current[session.id];
+    const running = isSessionRunning(session.status) || session.id === locallyRunningThreadId;
+    if (running) next[session.id] = 'running';
+    else if (previous === 'running' && session.id !== activeThreadId) next[session.id] = 'unread';
+    else if (previous === 'unread') next[session.id] = 'unread';
+  }
+  const currentEntries = Object.entries(current);
+  const nextEntries = Object.entries(next);
+  return currentEntries.length === nextEntries.length
+    && nextEntries.every(([id, state]) => current[id] === state) ? current : next;
+}
+
+export function markSessionAttentionRead(current: SessionAttentionState, threadId: string) {
+  if (current[threadId] !== 'unread') return current;
+  const next = { ...current };
+  delete next[threadId];
+  return next;
+}
+
 export function sessionUpdatedAt(value: Session['updatedAt']) {
   if (!value) return 0;
   const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1000 : value;

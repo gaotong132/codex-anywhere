@@ -17,6 +17,7 @@ import {
   mergeDesktopSessionStatuses,
 } from '../src/connector/codex-desktop.js';
 import { internals as rolloutInternals, readRolloutTail } from '../src/connector/rollout-tail.js';
+import { markSessionAttentionRead, reconcileSessionAttention } from '../web/src/app-utils.js';
 
 test('token comparison requires an exact non-empty match', () => {
   assert.equal(tokenMatches('a'.repeat(32), 'a'.repeat(32)), true);
@@ -83,6 +84,27 @@ test('desktop task list status overrides stale app-server session status', () =>
     { id: 'thread-running', status: 'active' },
     { id: 'thread-idle', status: 'notLoaded' },
   ]);
+});
+
+test('session completion stays unread until the session is opened', () => {
+  const running = reconcileSessionAttention({}, [
+    { id: 'thread-1', title: 'Deploy', status: 'active' },
+  ], null);
+  assert.deepEqual(running, { 'thread-1': 'running' });
+
+  const completed = reconcileSessionAttention(running, [
+    { id: 'thread-1', title: 'Deploy', status: 'completed' },
+  ], null);
+  assert.deepEqual(completed, { 'thread-1': 'unread' });
+  assert.equal(reconcileSessionAttention(completed, [
+    { id: 'thread-1', title: 'Deploy', status: 'completed' },
+  ], null), completed);
+  assert.deepEqual(markSessionAttentionRead(completed, 'thread-1'), {});
+
+  const completedWhileOpen = reconcileSessionAttention(running, [
+    { id: 'thread-1', title: 'Deploy', status: 'completed' },
+  ], 'thread-1');
+  assert.deepEqual(completedWhileOpen, {});
 });
 
 test('delegated desktop messages display only their user input', () => {
