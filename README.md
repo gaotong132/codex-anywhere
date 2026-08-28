@@ -23,10 +23,12 @@ computer; a lightweight relay on your own ECS/VPS provides the remote entry poin
   text or image messages from a phone.
 - **Follow work in progress** — see running state and automatically refresh useful assistant progress
   without exposing internal reasoning or tool-call noise.
+- **Download local files** — after confirmation, download local files linked in assistant replies to a
+  phone or browser without an extension allowlist or persistent storage on the relay.
 - **Fast on long histories** — session lists and conversation history are loaded incrementally instead
   of downloading every session in full.
 - **Mobile-oriented controls** — create a session in an existing project, search recent sessions, open
-  attachments, and download assistant-linked local files after confirmation.
+  attachments, and keep common actions within easy reach.
 - **Resilient connection** — the browser and connector recover automatically from transient disconnects
   and network switches.
 - **Self-hosted and private by design** — the local computer accepts no public inbound connection; the
