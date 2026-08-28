@@ -1139,7 +1139,12 @@ export default function App() {
                 <span className="session-title" title={session.title || session.id}>{session.title || session.id}</span>
                 <span className="session-meta">
                   {sessionRunning && <span className="session-running-dot" aria-label={t('运行中', 'Running')} title={t('运行中', 'Running')} />}
-                  {projectName && <span className="session-project" title={session.cwd}>{projectName}</span>}
+                  <span
+                    className={projectName ? 'session-project' : 'session-project placeholder'}
+                    title={projectName ? session.cwd : undefined}
+                  >
+                    {projectName || 'General session'}
+                  </span>
                   <time>{formatDate(session.updatedAt)}</time>
                 </span>
               </button>
