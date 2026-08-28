@@ -79,8 +79,7 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
    .\scripts\install-connector.ps1 `
      -Token $token `
      -BridgeUrl 'wss://codex.example.com/ws' `
-     -Workspace 'C:\workspace' `
-     -AllowedRoots @('C:\workspace')
+     -Workspace 'C:\workspace'
    ```
 
 4. 在手机浏览器中打开转发服务地址，并输入相同的 Token。
@@ -94,9 +93,11 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
 | --- | --- | --- |
 | `BRIDGE_TOKEN` | 转发服务和连接器 | 至少 32 位的共享密钥 |
 | `BRIDGE_URL` | 连接器 | 转发服务 WebSocket 地址，支持 `ws://` 和 `wss://` |
-| `CODEX_WORKSPACE` | 连接器 | 默认本机项目目录 |
-| `CODEX_ALLOWED_ROOTS` | 连接器 | 会话和下载可以访问的本机根目录 |
 | `CODEX_UI_LANGUAGE` | 转发服务 | Web 界面语言：`zh-CN` 或 `en` |
+
+连接器默认使用当前目录。`-Workspace` 仅用于修改新会话的默认目录，并会自动成为允许访问的根目录；
+只有需要开放多个互不相邻的本机目录时才需要 `-AllowedRoots`。安装器会把这些可选设置保存在仓库
+之外，因此无需写进转发服务使用的 `.env` 文件。
 
 完整配置见 [.env.example](.env.example) 和 [正式部署指南](docs/deployment.md)，其中包括代理信任、
 网络访问和不受目录限制的文件下载选项。
@@ -121,8 +122,6 @@ npm run server
 ```powershell
 $env:BRIDGE_TOKEN = 'replace-with-the-same-token'
 $env:BRIDGE_URL = 'ws://127.0.0.1:3300/ws'
-$env:CODEX_WORKSPACE = 'C:\workspace'
-$env:CODEX_ALLOWED_ROOTS = 'C:\workspace'
 npm run connector
 ```
 

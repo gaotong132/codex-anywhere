@@ -90,8 +90,7 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
    .\scripts\install-connector.ps1 `
      -Token $token `
      -BridgeUrl 'wss://codex.example.com/ws' `
-     -Workspace 'C:\workspace' `
-     -AllowedRoots @('C:\workspace')
+     -Workspace 'C:\workspace'
    ```
 
 4. Open the relay URL in the phone browser and enter the same token.
@@ -105,9 +104,12 @@ project files onto the ECS/VPS.
 | --- | --- | --- |
 | `BRIDGE_TOKEN` | Relay and connector | Shared secret of at least 32 characters |
 | `BRIDGE_URL` | Connector | Relay WebSocket URL; supports `ws://` and `wss://` |
-| `CODEX_WORKSPACE` | Connector | Default local project directory |
-| `CODEX_ALLOWED_ROOTS` | Connector | Local roots that sessions and downloads may access |
 | `CODEX_UI_LANGUAGE` | Relay | Web UI language: `zh-CN` or `en` |
+
+The connector defaults to its current directory. `-Workspace` changes the default directory for new
+sessions; its value also becomes the allowed root automatically. Use `-AllowedRoots` only when several
+separate local roots must be available. The installer stores these optional settings outside the
+repository, so they do not belong in the relay `.env` file.
 
 See [.env.example](.env.example) and [docs/deployment.md](docs/deployment.md) for all options, including
 proxy trust, network access, and unrestricted file-download settings.
@@ -132,8 +134,6 @@ In another terminal:
 ```powershell
 $env:BRIDGE_TOKEN = 'replace-with-the-same-token'
 $env:BRIDGE_URL = 'ws://127.0.0.1:3300/ws'
-$env:CODEX_WORKSPACE = 'C:\workspace'
-$env:CODEX_ALLOWED_ROOTS = 'C:\workspace'
 npm run connector
 ```
 
