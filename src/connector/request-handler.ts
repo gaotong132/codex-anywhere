@@ -116,5 +116,3 @@ async function startTurn({
     return { ...await codex.startTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
   }
 }
-
-export const internals = { dispatchAction, startTurn };

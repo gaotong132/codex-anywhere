@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
 import { once } from 'node:events';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
 import { WebSocket } from 'ws';
 import { createBridgeServer, internals as serverInternals } from '../src/server/server.js';
 
@@ -52,6 +55,41 @@ test('malformed encoded paths return 400 without stopping the relay', async (t) 
 
   assert.equal((await fetch(`${origin}/%E0%A4%A`)).status, 400);
   assert.equal((await fetch(`${origin}/health`)).status, 200);
+});
+
+test('static middleware serves assets and preserves SPA fallback caching', async (t) => {
+  const fixtureDir = await mkdtemp(join(tmpdir(), 'bridge-static-test-'));
+  const publicDir = join(fixtureDir, 'public');
+  await mkdir(publicDir);
+  await writeFile(join(publicDir, 'index.html'), '<main>Codex Anywhere</main>');
+  await writeFile(join(publicDir, 'app.css'), 'body { color: white; }');
+  await writeFile(join(fixtureDir, 'private.txt'), 'must not be served');
+  const server = createBridgeServer({ token: TOKEN, publicDir });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(async () => {
+    await server.close();
+    await rm(fixtureDir, { recursive: true, force: true });
+  });
+  const origin = `http://127.0.0.1:${address.port}`;
+
+  const page = await fetch(`${origin}/sessions/example`);
+  assert.equal(page.status, 200);
+  assert.match(page.headers.get('content-type'), /^text\/html/);
+  assert.equal(page.headers.get('cache-control'), 'no-store');
+  assert.match(await page.text(), /Codex Anywhere/);
+
+  const asset = await fetch(`${origin}/app.css`);
+  assert.equal(asset.status, 200);
+  assert.match(asset.headers.get('content-type'), /^text\/css/);
+  assert.equal(asset.headers.get('cache-control'), 'public, max-age=3600');
+  assert.match(await asset.text(), /color: white/);
+
+  assert.equal((await fetch(`${origin}/missing.js`)).status, 404);
+  const traversalAttempt = await fetch(`${origin}/..%2fprivate.txt`);
+  assert.equal(traversalAttempt.status, 200);
+  const traversalBody = await traversalAttempt.text();
+  assert.match(traversalBody, /Codex Anywhere/);
+  assert.doesNotMatch(traversalBody, /must not be served/);
 });
 
 test('content security policy limits WebSocket connections to the current host', async (t) => {
@@ -158,9 +196,11 @@ test('authentication failure tracking is bounded and evicts the stalest address'
   limiter.recordFailure('203.0.113.3');
   limiter.recordFailure('203.0.113.1');
   limiter.recordFailure('203.0.113.4');
-  assert.deepEqual([...limiter.entries.keys()], [
-    '203.0.113.3', '203.0.113.1', '203.0.113.4',
-  ]);
+  assert.equal(limiter.entries.size, 3);
+  assert.equal(limiter.entries.has('203.0.113.1'), true);
+  assert.equal(limiter.entries.has('203.0.113.2'), false);
+  assert.equal(limiter.entries.has('203.0.113.3'), true);
+  assert.equal(limiter.entries.has('203.0.113.4'), true);
 });
 
 test('server rejects browser WebSocket connections from another origin', async (t) => {

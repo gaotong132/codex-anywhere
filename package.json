@@ -25,10 +25,13 @@
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
+    "file-type": "22.0.2",
+    "lru-cache": "11.5.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
+    "sirv": "3.0.2",
     "ws": "8.21.3"
   },
   "devDependencies": {

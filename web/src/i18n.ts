@@ -1,4 +1,4 @@
-export type UiLocale = 'zh-CN' | 'en';
+type UiLocale = 'zh-CN' | 'en';
 
 declare global {
   interface Window {
@@ -12,7 +12,7 @@ function normalizeLocale(value?: string): UiLocale {
 
 const runtimeLocale = typeof window === 'undefined' ? undefined : window.__CODEX_ANYWHERE_CONFIG__?.locale;
 
-export const uiLocale = normalizeLocale(runtimeLocale);
+const uiLocale = normalizeLocale(runtimeLocale);
 export const dateLocale = uiLocale === 'en' ? 'en-US' : 'zh-CN';
 
 if (typeof document !== 'undefined') document.documentElement.lang = uiLocale;

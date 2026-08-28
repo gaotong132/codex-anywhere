@@ -14,7 +14,7 @@ export function displayUserMessage(value: unknown) {
   const request = USER_REQUEST_SECTION.exec(text);
   if (request) text = request[1];
   else if (INTERNAL_CONTEXT.test(text)) return '';
-  return normalizeBareLinks(text.replace(IMAGE_ATTACHMENT, '').replace(ESCAPED_IMAGE_ATTACHMENT, '').trim());
+  return normalizeBareLinks(stripImageAttachments(text).trim());
 }
 
 export function displayAssistantMessage(value: unknown) {
@@ -22,6 +22,10 @@ export function displayAssistantMessage(value: unknown) {
   const heartbeat = HEARTBEAT_ENVELOPE.exec(text);
   const visibleText = heartbeat ? HEARTBEAT_MESSAGE.exec(heartbeat[1])?.[1]?.trim() || '' : text;
   return normalizeBareLinks(visibleText);
+}
+
+export function stripImageAttachments(value: unknown) {
+  return String(value || '').replace(IMAGE_ATTACHMENT, '').replace(ESCAPED_IMAGE_ATTACHMENT, '');
 }
 
 function normalizeBareLinks(text: string) {

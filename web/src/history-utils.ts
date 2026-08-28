@@ -1,8 +1,15 @@
 import { t } from './i18n';
+import {
+  displayAssistantMessage,
+  displayUserMessage,
+  stripImageAttachments,
+} from '../../src/shared/message-content';
+
+export { displayAssistantMessage } from '../../src/shared/message-content';
 
 const ATTACHMENT_STORAGE_KEY = 'bridge.knownAttachments.v2';
 
-export type TurnItem = {
+type TurnItem = {
   type?: string;
   phase?: string;
   status?: string;
@@ -65,18 +72,6 @@ export function historyItems(turns: Turn[]) {
   return items;
 }
 
-export function displayUserMessage(text: string) {
-  const delegation = /^\s*<codex_delegation>\s*<source_thread_id>\s*[0-9a-f-]{16,64}\s*<\/source_thread_id>\s*<input>([\s\S]*)<\/input>\s*<\/codex_delegation>\s*$/i.exec(text);
-  let visibleText = delegation ? delegation[1] : text;
-  const request = /(?:^|\r?\n)##\s+My request:\s*(?:\r?\n|$)([\s\S]*)/i.exec(visibleText);
-  if (request) visibleText = request[1];
-  else if (/<environment_context\b[^>]*>[\s\S]*?<\/environment_context>/i.test(visibleText)) return '';
-  return normalizeBareLinks(visibleText
-    .replace(/<image\b[^>]*?(?:\/\s*>|>\s*<\/image\s*>)/gi, '')
-    .replace(/&lt;image\b[\s\S]*?(?:\/\s*&gt;|&gt;\s*&lt;\/image\s*&gt;)/gi, '')
-    .trim());
-}
-
 function extractImageAttachment(text: string): ImageAttachment | undefined {
   const decoded = String(text || '')
     .replace(/&lt;/gi, '<')
@@ -90,19 +85,6 @@ function extractImageAttachment(text: string): ImageAttachment | undefined {
   const metadataName = /(?:^|\r?\n)##\s+([^:\r\n]+):\s+[A-Za-z]:[\\/]/m.exec(decoded)?.[1]?.trim();
   const fallbackName = path.split(/[\\/]/).at(-1) || t('图片', 'Image');
   return { path, name: metadataName || fallbackName };
-}
-
-export function displayAssistantMessage(text: string) {
-  const visibleText = String(text || '').trim();
-  const heartbeat = /^\s*<heartbeat\b[^>]*>([\s\S]*?)<\/heartbeat>\s*$/i.exec(visibleText);
-  const message = heartbeat
-    ? /<message\b[^>]*>([\s\S]*?)<\/message>/i.exec(heartbeat[1])?.[1]?.trim() || ''
-    : visibleText;
-  return normalizeBareLinks(message);
-}
-
-function normalizeBareLinks(text: string) {
-  return text.replace(/(?<![<(])(https?:\/\/[^\s<>()]+?)(?=[，。；：！？、）》】])/gu, '<$1>');
 }
 
 export function historyFingerprint(turns: Turn[]) {
@@ -155,9 +137,7 @@ function messageIdentity(item: TimelineItem) {
 }
 
 function canonicalMessageText(text: string) {
-  return String(text || '')
-    .replace(/<image\b[^>]*?(?:\/\s*>|>\s*<\/image\s*>)/gi, '')
-    .replace(/&lt;image\b[\s\S]*?(?:\/\s*&gt;|&gt;\s*&lt;\/image\s*&gt;)/gi, '')
+  return stripImageAttachments(text)
     .replace(/(?:\r?\n)+📎[^\r\n]*$/u, '')
     .trim();
 }

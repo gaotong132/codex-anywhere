@@ -2,17 +2,19 @@ import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { fileTypeFromBuffer } from 'file-type';
 
-export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
-export const MAX_PREVIEW_BYTES = 512 * 1024;
-export const ATTACHMENT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-export const DEFAULT_ATTACHMENT_DIRECTORY = join(tmpdir(), 'personal-codex-bridge', 'attachments');
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_PREVIEW_BYTES = 512 * 1024;
+const ATTACHMENT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_ATTACHMENT_DIRECTORY = join(tmpdir(), 'personal-codex-bridge', 'attachments');
 
-const IMAGE_TYPES = new Map([
-  ['image/jpeg', { extension: '.jpg', matches: isJpeg }],
-  ['image/png', { extension: '.png', matches: isPng }],
-  ['image/webp', { extension: '.webp', matches: isWebp }],
+const IMAGE_EXTENSIONS = new Map([
+  ['image/jpeg', '.jpg'],
+  ['image/png', '.png'],
+  ['image/webp', '.webp'],
 ]);
+const FILE_TYPE_SAMPLE_BYTES = 4_100;
 
 type ImagePayload = {
   name?: unknown;
@@ -24,17 +26,16 @@ type ImagePayload = {
 };
 
 type AttachmentOptions = { directory?: string; now?: number; maxAgeMs?: number };
-type ImageType = { extension: string; matches: (bytes: Buffer) => boolean };
 
 export async function saveImageAttachment(payload: ImagePayload, options: AttachmentOptions = {}) {
-  const original = decodeImagePayload(payload, MAX_IMAGE_BYTES);
-  const preview = payload?.preview ? decodeImagePayload(payload.preview, MAX_PREVIEW_BYTES) : null;
+  const original = await decodeImagePayload(payload, MAX_IMAGE_BYTES);
+  const preview = payload?.preview ? await decodeImagePayload(payload.preview, MAX_PREVIEW_BYTES) : null;
 
   const directory = resolve(options.directory || DEFAULT_ATTACHMENT_DIRECTORY);
   await ensureSafeDirectory(directory);
   await cleanupAttachments(directory, options.now || Date.now(), options.maxAgeMs || ATTACHMENT_MAX_AGE_MS);
 
-  const path = join(directory, `${randomUUID()}${original.imageType.extension}`);
+  const path = join(directory, `${randomUUID()}${original.extension}`);
   if (dirname(resolve(path)) !== directory) throw new Error('attachment_path_invalid');
   await writeFile(path, original.bytes, { flag: 'wx', mode: 0o600 });
   if (preview) {
@@ -47,7 +48,7 @@ export async function saveImageAttachment(payload: ImagePayload, options: Attach
   }
   return {
     path,
-    name: safeDisplayName(payload?.name, original.imageType.extension),
+    name: safeDisplayName(payload?.name, original.extension),
     mimeType: original.mimeType,
     size: original.bytes.length,
     hasPreview: Boolean(preview),
@@ -70,7 +71,7 @@ export async function readImageAttachment(payload: ImagePayload, options: Attach
     throw new Error('attachment_not_found');
   }
   const bytes = await readFile(candidate);
-  const detected = detectImageType(bytes);
+  const detected = await detectImageType(bytes);
   if (!detected) throw new Error('attachment_content_mismatch');
   return {
     path,
@@ -80,10 +81,10 @@ export async function readImageAttachment(payload: ImagePayload, options: Attach
   };
 }
 
-function decodeImagePayload(payload: ImagePayload, maxBytes: number) {
+async function decodeImagePayload(payload: ImagePayload, maxBytes: number) {
   const mimeType = String(payload?.mimeType || '').trim().toLocaleLowerCase();
-  const imageType = IMAGE_TYPES.get(mimeType) as ImageType | undefined;
-  if (!imageType) throw new Error('attachment_type_not_allowed');
+  const extension = IMAGE_EXTENSIONS.get(mimeType);
+  if (!extension) throw new Error('attachment_type_not_allowed');
 
   const encoded = String(payload?.data || '').trim();
   if (!encoded || encoded.length > Math.ceil(maxBytes / 3) * 4 + 4) {
@@ -96,8 +97,9 @@ function decodeImagePayload(payload: ImagePayload, maxBytes: number) {
   const bytes = Buffer.from(encoded, 'base64');
   if (!bytes.length || bytes.length > maxBytes) throw new Error('attachment_too_large');
   if (Number(payload?.size) !== bytes.length) throw new Error('attachment_size_mismatch');
-  if (!imageType.matches(bytes)) throw new Error('attachment_content_mismatch');
-  return { bytes, imageType, mimeType };
+  const detected = await detectImageType(bytes);
+  if (detected?.mimeType !== mimeType) throw new Error('attachment_content_mismatch');
+  return { bytes, extension, mimeType };
 }
 
 function previewPath(path: string) {
@@ -144,23 +146,8 @@ function safeDisplayName(value: unknown, extension: string) {
   return cleaned || `image${extension}`;
 }
 
-function detectImageType(bytes: Buffer) {
-  for (const [mimeType, imageType] of IMAGE_TYPES) {
-    if (imageType.matches(bytes)) return { mimeType, ...imageType };
-  }
-  return null;
-}
-
-function isJpeg(bytes: Buffer) {
-  return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-}
-
-function isPng(bytes: Buffer) {
-  return bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-}
-
-function isWebp(bytes: Buffer) {
-  return bytes.length >= 12
-    && bytes.subarray(0, 4).toString('ascii') === 'RIFF'
-    && bytes.subarray(8, 12).toString('ascii') === 'WEBP';
+async function detectImageType(bytes: Buffer) {
+  const detected = await fileTypeFromBuffer(bytes.subarray(0, FILE_TYPE_SAMPLE_BYTES));
+  const extension = detected && IMAGE_EXTENSIONS.get(detected.mime);
+  return extension ? { mimeType: detected.mime, extension } : null;
 }

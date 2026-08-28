@@ -1,10 +1,12 @@
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isIP } from 'node:net';
 import type { TLSSocket } from 'node:tls';
-import { extname, join, normalize, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { LRUCache } from 'lru-cache';
+import sirv from 'sirv';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
   CLIENT_ACTIONS,
@@ -16,15 +18,6 @@ import {
   tokenMatches,
 } from '../shared/protocol.js';
 
-const MIME_TYPES: Record<string, string> = {
-  '.css': 'text/css; charset=utf-8',
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.webmanifest': 'application/manifest+json',
-};
 const moduleDir = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const defaultPublicDir = resolve(moduleDir, '../../dist');
 const AUTH_FAILURE_LIMIT = 8;
@@ -34,6 +27,7 @@ const AUTH_MAX_TRACKED_ADDRESSES = 4_096;
 
 type JsonObject = Record<string, any>;
 type AliveWebSocket = WebSocket & { isAlive?: boolean };
+type StaticHandler = ReturnType<typeof sirv>;
 type SocketMeta = { role: 'client'; id: string } | { role: 'connector'; deviceId: string };
 type BridgeServerOptions = {
   token?: unknown;
@@ -47,11 +41,11 @@ type BridgeServerOptions = {
   clock?: () => number;
 };
 type HttpContext = {
-  publicDir: string;
   request: IncomingMessage;
   response: ServerResponse;
   trustProxy: boolean;
   uiLanguage: string;
+  staticHandler: StaticHandler;
 };
 type AuthLimiterOptions = {
   limit?: number;
@@ -66,6 +60,15 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   const token = String(options.token || process.env.BRIDGE_TOKEN || '');
   if (token.length < 32) throw new Error('BRIDGE_TOKEN must contain at least 32 characters');
   const publicDir = resolve(options.publicDir || defaultPublicDir);
+  const staticHandler = sirv(publicDir, {
+    dev: !existsSync(publicDir),
+    etag: true,
+    single: true,
+    setHeaders(response, pathname) {
+      const cacheableAsset = /\.[^/]+$/.test(pathname) && !pathname.endsWith('.html');
+      response.setHeader('cache-control', cacheableAsset ? 'public, max-age=3600' : 'no-store');
+    },
+  });
   const uiLanguage = normalizeUiLanguage(options.uiLanguage ?? process.env.CODEX_UI_LANGUAGE);
   const connectors = new Map<string, AliveWebSocket>();
   const clients = new Map<string, AliveWebSocket>();
@@ -80,7 +83,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   });
 
   const httpServer = createServer((request, response) => {
-    handleHttpRequest({ publicDir, request, response, trustProxy, uiLanguage });
+    handleHttpRequest({ request, response, trustProxy, uiLanguage, staticHandler });
   });
   const webSocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
 
@@ -186,7 +189,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   };
 }
 
-function handleHttpRequest({ publicDir, request, response, trustProxy, uiLanguage }: HttpContext) {
+function handleHttpRequest({ request, response, trustProxy, uiLanguage, staticHandler }: HttpContext) {
   setSecurityHeaders(response, request, trustProxy);
   const method = String(request.method || 'GET').toUpperCase();
   if (method !== 'GET' && method !== 'HEAD') {
@@ -198,6 +201,7 @@ function handleHttpRequest({ publicDir, request, response, trustProxy, uiLanguag
   let pathname;
   try {
     pathname = new URL(request.url || '/', 'http://localhost').pathname;
+    decodeURIComponent(pathname);
   } catch {
     response.writeHead(400, { 'cache-control': 'no-store' });
     response.end(headOnly ? '' : 'Bad request');
@@ -217,7 +221,10 @@ function handleHttpRequest({ publicDir, request, response, trustProxy, uiLanguag
     serveRuntimeConfig(response, uiLanguage, headOnly);
     return;
   }
-  serveStatic(publicDir, pathname, response, headOnly);
+  staticHandler(request, response, () => {
+    response.writeHead(404, { 'cache-control': 'no-store' });
+    response.end(headOnly ? '' : 'Not found');
+  });
 }
 
 function authenticateSocket({
@@ -317,38 +324,6 @@ function serveRuntimeConfig(response: ServerResponse, locale: string, headOnly =
   response.end(headOnly ? '' : body);
 }
 
-function serveStatic(publicDir: string, pathname: string, response: ServerResponse, headOnly = false) {
-  let requestPath;
-  try {
-    requestPath = decodeURIComponent(pathname);
-  } catch {
-    response.writeHead(400, { 'cache-control': 'no-store' });
-    response.end(headOnly ? '' : 'Bad request');
-    return;
-  }
-  const relative = requestPath === '/' ? 'index.html' : normalize(requestPath).replace(/^([/\\])+/, '');
-  let filePath = resolve(join(publicDir, relative));
-  const boundary = `${publicDir}${process.platform === 'win32' ? '\\' : '/'}`;
-  if (!filePath.startsWith(boundary) && filePath !== publicDir) {
-    response.writeHead(403);
-    response.end('Forbidden');
-    return;
-  }
-  if (!existsSync(filePath) || !statSync(filePath).isFile()) filePath = join(publicDir, 'index.html');
-  if (!existsSync(filePath)) {
-    response.writeHead(404);
-    response.end('Not found');
-    return;
-  }
-  response.writeHead(200, {
-    'content-type': MIME_TYPES[extname(filePath)] || 'application/octet-stream',
-    'cache-control': extname(filePath) === '.html' ? 'no-store' : 'public, max-age=3600',
-    'content-length': statSync(filePath).size,
-  });
-  if (headOnly) response.end();
-  else createReadStream(filePath).pipe(response);
-}
-
 function setSecurityHeaders(response: ServerResponse, request: IncomingMessage, trustProxy: boolean) {
   response.setHeader('x-content-type-options', 'nosniff');
   response.setHeader('x-frame-options', 'DENY');
@@ -382,17 +357,17 @@ class AuthFailureLimiter {
   limit: number;
   windowMs: number;
   lockMs: number;
-  maxEntries: number;
   clock: () => number;
-  entries: Map<string, AuthEntry>;
+  entries: LRUCache<string, AuthEntry>;
 
   constructor(options: AuthLimiterOptions = {}) {
     this.limit = positiveInteger(options.limit, AUTH_FAILURE_LIMIT);
     this.windowMs = positiveInteger(options.windowMs, AUTH_FAILURE_WINDOW_MS);
     this.lockMs = positiveInteger(options.lockMs, AUTH_LOCK_MS);
-    this.maxEntries = positiveInteger(options.maxEntries, AUTH_MAX_TRACKED_ADDRESSES);
     this.clock = options.clock || (() => Date.now());
-    this.entries = new Map();
+    this.entries = new LRUCache({
+      max: positiveInteger(options.maxEntries, AUTH_MAX_TRACKED_ADDRESSES),
+    });
   }
 
   isBlocked(address: string) {
@@ -413,31 +388,12 @@ class AuthFailureLimiter {
     }
     entry.failures += 1;
     if (entry.failures >= this.limit) entry.lockedUntil = now + this.lockMs;
-    // Keep insertion order aligned with recent activity so bounded eviction
-    // removes the stalest address first.
-    this.entries.delete(address);
     this.entries.set(address, entry);
-    this.#prune(now);
     return entry.lockedUntil > now;
   }
 
   recordSuccess(address: string) {
     this.entries.delete(address);
-  }
-
-  #prune(now: number) {
-    if (this.entries.size <= this.maxEntries) return;
-    for (const [address, entry] of this.entries) {
-      if ((entry.lockedUntil && entry.lockedUntil <= now)
-        || (!entry.lockedUntil && now - entry.windowStartedAt >= this.windowMs)) {
-        this.entries.delete(address);
-      }
-    }
-    while (this.entries.size > this.maxEntries) {
-      const oldestAddress = this.entries.keys().next().value;
-      if (oldestAddress === undefined) break;
-      this.entries.delete(oldestAddress);
-    }
   }
 }
 

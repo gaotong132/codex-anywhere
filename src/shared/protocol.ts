@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 
-export const PROTOCOL_VERSION = 1;
+const PROTOCOL_VERSION = 1;
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 export const CLIENT_ACTIONS = new Set([
   'connector.status', 'sessions.list', 'session.read', 'session.turns.list',
@@ -35,10 +35,14 @@ export function safeSend(socket: SendableSocket | null | undefined, payload: Bri
   return true;
 }
 
-export function tokenMatches(actual: unknown, expected: unknown) {
+export function secretMatches(actual: unknown, expected: unknown) {
   const left = Buffer.from(String(actual || ''), 'utf8');
   const right = Buffer.from(String(expected || ''), 'utf8');
   return left.length === right.length && left.length > 0 && timingSafeEqual(left, right);
+}
+
+export function tokenMatches(actual: unknown, expected: unknown) {
+  return secretMatches(actual, expected);
 }
 
 export function publicError(error: unknown) {

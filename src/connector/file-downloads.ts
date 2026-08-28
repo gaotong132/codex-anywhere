@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { appendFile, mkdir, open, realpath, stat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
@@ -6,9 +6,10 @@ import { tmpdir } from 'node:os';
 import {
   basename, dirname, isAbsolute, join, posix, resolve, win32,
 } from 'node:path';
+import { secretMatches } from '../shared/protocol.js';
 
 export const DOWNLOAD_CHUNK_BYTES = 384 * 1024;
-export const DOWNLOAD_SESSION_TTL_MS = 2 * 60_000;
+const DOWNLOAD_SESSION_TTL_MS = 2 * 60_000;
 const DEFAULT_RATE_WINDOW_MS = 10_000;
 const DEFAULT_MAX_CHUNKS_PER_WINDOW = 200;
 const MAX_AUDIT_BYTES = 1024 * 1024;
@@ -308,12 +309,6 @@ function requireClientId(value: unknown) {
   return clientId;
 }
 
-function secretMatches(actual: unknown, expected: unknown) {
-  const left = Buffer.from(String(actual || ''), 'utf8');
-  const right = Buffer.from(String(expected || ''), 'utf8');
-  return left.length === right.length && left.length > 0 && timingSafeEqual(left, right);
-}
-
 function positiveInteger(value: unknown, fallback: number) {
   return Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : fallback;
 }
@@ -326,7 +321,3 @@ function defaultAuditPath() {
   const base = process.env.LOCALAPPDATA || join(tmpdir(), 'personal-codex-bridge');
   return join(base, 'PersonalCodexBridge', 'download-audit.jsonl');
 }
-
-export const internals = {
-  pathWithinRoot, resolveDownloadPath, sameSnapshot, secretMatches,
-};
