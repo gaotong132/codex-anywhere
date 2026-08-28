@@ -32,7 +32,7 @@
     "react-dom": "19.2.8",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
-    "sharp": "^0.34.4",
+    "sharp": "^0.35.0",
     "sirv": "3.0.2",
     "ws": "8.21.3"
   },
