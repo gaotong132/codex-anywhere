@@ -186,7 +186,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
   &:hover { background: #141a26; }
   &.active { border-color: #2f5daa; background: #18243a; }
   &.running:not(.active) { border-color: rgba(57, 201, 121, .24); background: rgba(28, 76, 53, .12); }
-  &.completed-unread:not(.active) { background: rgba(44, 86, 75, .1); }
+  &.completed-unread:not(.active) { background: rgba(54, 93, 158, .12); }
 
   & + &::before {
     content: '';
@@ -206,7 +206,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
   &.placeholder { color: #566176; }
 }
 .session-running-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: $success; box-shadow: 0 0 0 0 rgba(57, 201, 121, .4); animation: session-running-pulse 1.6s ease-out infinite; }
-.session-unread-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #67dda0; box-shadow: 0 0 0 2px rgba(103, 221, 160, .18); }
+.session-unread-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #6ea8ff; box-shadow: 0 0 0 2px rgba(110, 168, 255, .2); }
 .session-meta time { flex: 0 0 auto; margin-left: auto; }
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
 .presence i { width: 7px; height: 7px; border-radius: 50%; background: #5b6575; }
