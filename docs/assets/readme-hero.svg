@@ -82,8 +82,8 @@
     <g transform="translate(38 62)" font-family="Inter,Segoe UI,Arial,sans-serif">
       <text x="0" y="20" fill="#8fb2ff" font-size="10" font-weight="800" letter-spacing="1.4">CODEX ANYWHERE</text>
       <g transform="translate(156)">
-        <rect width="32" height="32" rx="9" fill="url(#brand)"/>
-        <path d="M10 16h12M16 10v12" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+        <rect width="32" height="32" rx="9" fill="#151f32" stroke="#33435e"/>
+        <path d="M10 16h12M16 10v12" stroke="#b0bfd4" stroke-width="1.8" stroke-linecap="round"/>
       </g>
       <g transform="translate(193)">
         <rect width="32" height="32" rx="9" fill="#151f32" stroke="#33435e"/>
@@ -92,7 +92,8 @@
       </g>
       <g transform="translate(230)">
         <rect width="32" height="32" rx="9" fill="#151f32" stroke="#33435e"/>
-        <path d="M11 11l10 10m0-10L11 21" stroke="#b0bfd4" stroke-width="1.8" stroke-linecap="round"/>
+        <rect x="8" y="8" width="16" height="16" rx="3" fill="none" stroke="#b0bfd4" stroke-width="1.5"/>
+        <path d="M14 8v16m7-11-3 3 3 3" fill="none" stroke="#b0bfd4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
       </g>
     </g>
 

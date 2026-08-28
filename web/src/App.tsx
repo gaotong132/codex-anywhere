@@ -135,6 +135,10 @@ export default function App() {
   const [executionState, setExecutionState] = useState<ExecutionState>('idle');
   const [fileDownload, setFileDownload] = useState<FileDownloadState | null>(null);
   const [creatingNewSession, setCreatingNewSession] = useState(false);
+  const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
+  const [newSessionPrompt, setNewSessionPrompt] = useState('');
+  const [newSessionImage, setNewSessionImage] = useState<PendingImage | null>(null);
+  const [newSessionError, setNewSessionError] = useState('');
   const [connectionEpoch, setConnectionEpoch] = useState(0);
 
   const socketRef = useRef<WebSocket | null>(null);
@@ -158,6 +162,8 @@ export default function App() {
   const latestActivityIdRef = useRef('');
   const awaitingDesktopTurnRef = useRef<AwaitingDesktopTurn | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const newSessionImageInputRef = useRef<HTMLInputElement | null>(null);
+  const newSessionAutoSendRef = useRef(false);
   const sendingRef = useRef(false);
   const attachmentLoadsRef = useRef(new Set<string>());
   const fileDownloadRef = useRef(false);
@@ -170,6 +176,17 @@ export default function App() {
   useEffect(() => () => {
     if (pendingImage) URL.revokeObjectURL(pendingImage.previewUrl);
   }, [pendingImage]);
+  useEffect(() => () => {
+    if (newSessionImage) URL.revokeObjectURL(newSessionImage.previewUrl);
+  }, [newSessionImage]);
+  useEffect(() => {
+    if (!newSessionDialogOpen) return undefined;
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') setNewSessionDialogOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [newSessionDialogOpen]);
 
   useLayoutEffect(() => {
     const element = messageListRef.current;
@@ -733,9 +750,14 @@ export default function App() {
   }, [loadHistory]);
 
   const beginNewSession = useCallback(() => {
-    selectSession(null);
-    setCreatingNewSession(true);
-  }, [selectSession]);
+    setNewSessionPrompt('');
+    setNewSessionImage(null);
+    setNewSessionError('');
+    setSearchOpen(false);
+    setSessionSearch('');
+    setDrawerOpen(false);
+    setNewSessionDialogOpen(true);
+  }, []);
 
   useEffect(() => {
     if (!authenticated || !online || !connectionEpoch || creatingNewSession || threadId) return;
@@ -778,6 +800,48 @@ export default function App() {
       addTimeline('error', friendlyError(error));
     }
   }, [addTimeline]);
+
+  const chooseNewSessionImage = useCallback(async (file?: File) => {
+    if (!file) return;
+    try {
+      const prepared = await prepareImageFile(file);
+      setNewSessionImage({
+        file: prepared.file,
+        transferPreview: prepared.preview,
+        previewUrl: URL.createObjectURL(prepared.file),
+      });
+      setNewSessionError('');
+    } catch (error) {
+      setNewSessionError(friendlyError(error));
+    }
+  }, []);
+
+  const submitNewSession = useCallback(() => {
+    const workspace = newSessionCwd.trim();
+    const text = newSessionPrompt.trim();
+    if (!workspace) {
+      setNewSessionError(t('请选择或填写项目目录。', 'Choose or enter a project directory.'));
+      return;
+    }
+    if (!text && !newSessionImage) {
+      setNewSessionError(t('请输入第一条消息或添加图片。', 'Enter the first message or add an image.'));
+      return;
+    }
+    const transferredImage = newSessionImage ? {
+      file: newSessionImage.file,
+      transferPreview: newSessionImage.transferPreview,
+      previewUrl: URL.createObjectURL(newSessionImage.file),
+    } : null;
+    selectSession(null);
+    setCreatingNewSession(true);
+    setPrompt(text);
+    setPendingImage(transferredImage);
+    setNewSessionPrompt('');
+    setNewSessionImage(null);
+    setNewSessionError('');
+    setNewSessionDialogOpen(false);
+    newSessionAutoSendRef.current = true;
+  }, [newSessionCwd, newSessionImage, newSessionPrompt, selectSession]);
 
   const sendTurn = useCallback(async () => {
     const text = prompt.trim();
@@ -842,6 +906,15 @@ export default function App() {
         threadIdRef.current = data.threadId;
         localStorage.setItem('bridge.lastThreadId', data.threadId);
         setCreatingNewSession(false);
+        if (!isExistingSession) {
+          setActiveSession({
+            id: data.threadId,
+            title: visibleText.split(/\r?\n/, 1)[0]?.slice(0, 80) || t('新会话', 'New session'),
+            cwd: workspace,
+            updatedAt: Date.now(),
+            status: 'inProgress',
+          });
+        }
         if (timelineAttachment) rememberAttachment(data.threadId, visibleText, timelineAttachment);
       }
       if (data.delivery === 'desktop') {
@@ -879,6 +952,12 @@ export default function App() {
       sendingRef.current = false;
     }
   }, [addTimeline, newSessionCwd, pendingImage, prompt, rememberAttachment, request, running, uploading]);
+
+  useEffect(() => {
+    if (!creatingNewSession || !newSessionAutoSendRef.current || running || uploading) return;
+    newSessionAutoSendRef.current = false;
+    void sendTurn();
+  }, [creatingNewSession, pendingImage, prompt, running, sendTurn, uploading]);
 
   const stopTurn = useCallback(async () => {
     try { await request('turn.stop', {}); } catch (error) { addTimeline('error', friendlyError(error)); }
@@ -1031,7 +1110,7 @@ export default function App() {
             <p className="eyebrow">CODEX ANYWHERE</p>
           </div>
           <div className="sidebar-actions">
-            <button className="sidebar-tool primary-tool" onClick={beginNewSession} aria-label={t('新会话', 'New session')} title={t('新会话', 'New session')}>
+            <button className="sidebar-tool" onClick={beginNewSession} aria-label={t('新会话', 'New session')} title={t('新会话', 'New session')}>
               <SidebarIcon name="plus" />
             </button>
             <button
@@ -1040,13 +1119,13 @@ export default function App() {
                 if (searchOpen) setSessionSearch('');
                 setSearchOpen((open) => !open);
               }}
-              aria-label={searchOpen ? t('关闭搜索', 'Close search') : t('搜索会话', 'Search sessions')}
-              title={searchOpen ? t('关闭搜索', 'Close search') : t('搜索会话', 'Search sessions')}
+              aria-label={searchOpen ? t('收起搜索', 'Collapse search') : t('搜索会话', 'Search sessions')}
+              title={searchOpen ? t('收起搜索', 'Collapse search') : t('搜索会话', 'Search sessions')}
             >
-              <SidebarIcon name={searchOpen ? 'search-close' : 'search'} />
+              <SidebarIcon name="search" />
             </button>
-            <button className="sidebar-tool mobile-only" onClick={() => setDrawerOpen(false)} aria-label={t('关闭', 'Close')} title={t('关闭', 'Close')}>
-              <SidebarIcon name="close" />
+            <button className="sidebar-tool mobile-only" onClick={() => setDrawerOpen(false)} aria-label={t('收起会话列表', 'Collapse session list')} title={t('收起会话列表', 'Collapse session list')}>
+              <SidebarIcon name="panel-close" />
             </button>
           </div>
         </div>
@@ -1091,10 +1170,107 @@ export default function App() {
         </nav>
       </aside>
 
+      {newSessionDialogOpen && (
+        <div
+          className="new-session-overlay"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setNewSessionDialogOpen(false);
+          }}
+        >
+          <section className="new-session-dialog" role="dialog" aria-modal="true" aria-labelledby="new-session-title">
+            <header className="new-session-dialog-head">
+              <p className="eyebrow">CODEX ANYWHERE</p>
+              <h2 id="new-session-title">{t('新建会话', 'New session')}</h2>
+              <span>{t('选择项目并发送第一条消息；创建前，当前会话保持不变。', 'Choose a project and send the first message. The current session stays unchanged until creation.')}</span>
+            </header>
+            <div className="new-session-dialog-body">
+              {existingProjects.length > 0 && (
+                <label className="new-session-field" htmlFor="existing-project">
+                  <span>{t('已有项目', 'Existing project')}</span>
+                  <select
+                    id="existing-project"
+                    value={selectedExistingProject}
+                    onChange={(event) => setNewSessionCwd(event.target.value)}
+                  >
+                    <option value="">{t('手动输入其他目录', 'Enter another directory')}</option>
+                    {existingProjects.map((project) => (
+                      <option key={project.toLocaleLowerCase()} value={project}>{projectLabel(project)}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              <label className="new-session-field" htmlFor="new-session-cwd">
+                <span>{t('项目目录', 'Project directory')}</span>
+                <input
+                  id="new-session-cwd"
+                  value={newSessionCwd}
+                  onChange={(event) => {
+                    setNewSessionCwd(event.target.value);
+                    setNewSessionError('');
+                  }}
+                  placeholder={t('例如 C:\\workspace\\my-app', 'For example, C:\\workspace\\my-app')}
+                  autoComplete="off"
+                />
+              </label>
+              <label className="new-session-field" htmlFor="new-session-prompt">
+                <span>{t('第一条消息', 'First message')}</span>
+                <textarea
+                  id="new-session-prompt"
+                  autoFocus
+                  rows={4}
+                  value={newSessionPrompt}
+                  onChange={(event) => {
+                    setNewSessionPrompt(event.target.value);
+                    setNewSessionError('');
+                  }}
+                  onKeyDown={(event) => {
+                    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') submitNewSession();
+                  }}
+                  placeholder={t('告诉 Codex 要做什么…', 'Tell Codex what to do…')}
+                />
+              </label>
+              {newSessionImage && (
+                <div className="new-session-image-preview">
+                  <img src={newSessionImage.previewUrl} alt="" />
+                  <span title={newSessionImage.file.name}>{newSessionImage.file.name}</span>
+                  <button type="button" onClick={() => setNewSessionImage(null)} aria-label={t('移除图片', 'Remove image')}>×</button>
+                </div>
+              )}
+              <input
+                ref={newSessionImageInputRef}
+                className="image-input"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={(event) => {
+                  void chooseNewSessionImage(event.target.files?.[0]);
+                  event.target.value = '';
+                }}
+              />
+              <button className="new-session-attach" type="button" onClick={() => newSessionImageInputRef.current?.click()}>
+                <span aria-hidden="true">＋</span>{t('添加图片', 'Add image')}
+              </button>
+              {newSessionError && <p className="new-session-error" role="alert">{newSessionError}</p>}
+            </div>
+            <footer className="new-session-dialog-actions">
+              <button type="button" onClick={() => setNewSessionDialogOpen(false)}>{t('取消', 'Cancel')}</button>
+              <button
+                className="primary-action"
+                type="button"
+                disabled={!online || running || uploading || !newSessionCwd.trim() || (!newSessionPrompt.trim() && !newSessionImage)}
+                onClick={submitNewSession}
+              >
+                {t('创建并发送', 'Create and send')}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
       <section className="conversation">
         <header className="topbar">
-          <button className="icon-button mobile-only" onClick={() => setDrawerOpen(true)} aria-label={t('打开会话列表', 'Open session list')}>
-            <SidebarIcon name="menu" />
+          <button className="icon-button mobile-only" onClick={() => setDrawerOpen(true)} aria-label={t('展开会话列表', 'Expand session list')} title={t('展开会话列表', 'Expand session list')}>
+            <SidebarIcon name="panel-open" />
           </button>
           <div className="conversation-heading">
             <strong>{activeSession?.title || (threadId ? t('Codex 会话', 'Codex session') : creatingNewSession ? t('新会话', 'New session') : t('最近会话', 'Recent session'))}</strong>
@@ -1107,36 +1283,7 @@ export default function App() {
           <span className={`presence ${online ? 'online' : 'offline'}`}><i />{statusText}</span>
         </header>
 
-        <div className="session-context">
-          {!threadId && creatingNewSession && (
-            <div className="new-session-setup">
-              {existingProjects.length > 0 && (
-                <>
-                  <label htmlFor="existing-project">{t('已有项目', 'Existing project')}</label>
-                  <select
-                    id="existing-project"
-                    value={selectedExistingProject}
-                    onChange={(event) => setNewSessionCwd(event.target.value)}
-                  >
-                    <option value="">{t('手动输入其他目录', 'Enter another directory')}</option>
-                    {existingProjects.map((project) => (
-                      <option key={project.toLocaleLowerCase()} value={project}>{projectLabel(project)}</option>
-                    ))}
-                  </select>
-                </>
-              )}
-              <label htmlFor="new-session-cwd">{t('项目目录', 'Project directory')}</label>
-              <input
-                id="new-session-cwd"
-                value={newSessionCwd}
-                onChange={(event) => setNewSessionCwd(event.target.value)}
-                placeholder={t('例如 C:\\workspace\\my-app', 'For example, C:\\workspace\\my-app')}
-                autoComplete="off"
-              />
-              <small>{t('已有项目来自最近会话的目录；也可以手动输入新目录。只影响新会话。', 'Existing projects come from recent sessions. You can also enter a new directory; it affects new sessions only.')}</small>
-            </div>
-          )}
-        </div>
+        <div className="session-context" />
 
         <div className="message-list" ref={messageListRef} onScroll={updateAutoFollowLatest}>
           {threadId && initialHistoryLoaded && nextCursor && (
@@ -1245,7 +1392,7 @@ export default function App() {
   );
 }
 
-type SidebarIconName = 'plus' | 'search' | 'search-close' | 'close' | 'menu';
+type SidebarIconName = 'plus' | 'search' | 'panel-open' | 'panel-close';
 
 function SidebarIcon({ name }: { name: SidebarIconName }) {
   if (name === 'plus') {
@@ -1254,13 +1401,10 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
   if (name === 'search') {
     return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5" /><path d="m14.7 14.7 4.8 4.8" /></svg>;
   }
-  if (name === 'search-close') {
-    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.8" /><path d="m14.9 14.9 4.6 4.6M8.3 8.3l4.4 4.4m0-4.4-4.4 4.4" /></svg>;
+  if (name === 'panel-open') {
+    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M9 4.5v15m4-10 3 2.5-3 2.5" /></svg>;
   }
-  if (name === 'menu') {
-    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>;
-  }
-  return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6.5 6.5 11 11m0-11-11 11" /></svg>;
+  return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M9 4.5v15m7-10-3 2.5 3 2.5" /></svg>;
 }
 
 function ExecutionIndicator({ state }: { state: ExecutionState }) {
