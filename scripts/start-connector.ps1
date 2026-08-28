@@ -89,6 +89,17 @@ $bridgeUri = $null
 if (-not [Uri]::TryCreate($bridgeUrl, [UriKind]::Absolute, [ref] $bridgeUri) -or $bridgeUri.Scheme -notin @('ws', 'wss')) {
     throw "Bridge URL must use ws:// or wss://: $bridgeUrl"
 }
+if (-not [string]::IsNullOrEmpty($bridgeUri.UserInfo) -or -not [string]::IsNullOrEmpty($bridgeUri.Query) -or -not [string]::IsNullOrEmpty($bridgeUri.Fragment)) {
+    throw 'Bridge URL must not contain credentials, query parameters, or a fragment.'
+}
+$bridgeAddress = $null
+$isLoopbackBridge = $bridgeUri.Host -eq 'localhost' -or (
+    [Net.IPAddress]::TryParse($bridgeUri.Host, [ref] $bridgeAddress) -and [Net.IPAddress]::IsLoopback($bridgeAddress)
+)
+if ($bridgeUri.Scheme -eq 'ws' -and -not $isLoopbackBridge) {
+    throw 'Bridge URL must use wss:// unless it points to this computer for development.'
+}
+$bridgeUrl = $bridgeUri.AbsoluteUri
 
 $protectedToken = [Convert]::FromBase64String((Get-Content -LiteralPath $secretPath -Raw).Trim())
 $plainBytes = [Security.Cryptography.ProtectedData]::Unprotect(

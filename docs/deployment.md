@@ -1,69 +1,132 @@
-# Deployment
+# Production deployment
 
-This deployment keeps the bridge process private on `127.0.0.1:3300` and publishes it only through Nginx TLS.
+Codex Anywhere is intended to use a small public ECS/VPS as a rendezvous relay. The relay is not
+Codex itself: Codex Desktop/CLI, project files, attachments, and generated files stay on the connector
+computer. `http://127.0.0.1:3300` is only a same-computer development test and has no practical value
+for remote phone access.
 
-## DNS and firewall
+## Required resources
+
+| Resource | Recommended single-user baseline |
+| --- | --- |
+| ECS/VPS | Linux, 1 vCPU, 1 GB RAM, 10–20 GB disk, public IPv4/EIP |
+| DNS | One dedicated A record, such as `codex.example.com` |
+| TLS | A publicly trusted certificate for that hostname |
+| Server software | Docker Engine, Docker Compose v2, Nginx, and a certificate client |
+| Local computer | Codex Desktop/CLI, Node.js 22+, and outbound TCP 443 |
+
+No database, Redis, object storage, public IP on the local computer, router port forwarding, or
+inbound local firewall rule is required.
+
+```text
+phone/browser ── HTTPS/WSS ──> ECS Nginx :443 ──> relay 127.0.0.1:3300
+                                      ▲
+local Connector ── outbound WSS ──────┘
+        │
+        └── Codex Desktop/CLI and project files
+```
+
+## Privacy and trust boundary
+
+The ECS reduces exposure of the personal computer: both endpoints make outbound TLS connections,
+the ECS keeps no conversation database, and port 3300 remains private. The relay forwards messages,
+image previews, and download chunks in memory and intentionally does not persist them.
+
+This is transport encryption, not end-to-end encryption through an untrusted relay. TLS terminates
+at Nginx on the ECS, and the relay sees plaintext frames in process memory. The ECS root administrator,
+cloud provider, reverse-proxy/CDN provider, and anyone who obtains the shared token are therefore in
+the trust boundary. Use infrastructure you control, minimize administrators and logs, keep the host
+patched, and rotate the token after any suspected disclosure.
+
+## 1. DNS, firewall, and host preparation
 
 1. Point a dedicated DNS A record to the ECS EIP.
-2. Allow inbound TCP 80 and 443.
-3. Restrict SSH to trusted source addresses.
-4. Do not expose TCP 3300 publicly.
+2. Allow inbound TCP 443. Allow TCP 80 only for certificate issuance and HTTPS redirect.
+3. Restrict SSH to trusted source addresses or a VPN and prefer SSH keys over passwords.
+4. Do **not** allow inbound TCP 3300 in the cloud security group or host firewall.
+5. Install maintained Docker Engine, Docker Compose v2, Nginx, and your certificate client using
+   their vendor documentation.
 
-## Server
+Use a dedicated, minimally privileged server where practical. Do not install Codex or copy local
+projects to this ECS.
 
-Create a random shared secret without putting it in shell history:
+## 2. Relay and secret
+
+Clone the repository on the ECS. Create the shared token in a root-readable `.env`; use at least 32
+cryptographically random bytes (64 hexadecimal characters). The following avoids putting the token
+in shell history:
 
 ```bash
+git clone https://github.com/gaotong132/codex-anywhere.git
+cd codex-anywhere
 umask 077
-read -rsp 'Bridge token: ' BRIDGE_TOKEN_INPUT
+BRIDGE_TOKEN_INPUT="$(openssl rand -hex 32)"
 printf 'BRIDGE_TOKEN=%s\n' "$BRIDGE_TOKEN_INPUT" > .env
 printf 'CODEX_UI_LANGUAGE=zh-CN\n' >> .env
 unset BRIDGE_TOKEN_INPUT
+chmod 600 .env
 docker compose up --build -d
 ```
 
-## Nginx
+Retrieve the token only over your encrypted administrator session and place it in a password manager.
+Never paste it into a chat, issue, screenshot, source file, shell argument, or CI log. Do not include
+`.env` in server backups unless that backup is encrypted and access-controlled.
 
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name codex.example.com;
-    ssl_certificate     /etc/letsencrypt/live/codex.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/codex.example.com/privkey.pem;
+The supplied Compose service:
 
-    location /ws {
-        proxy_pass http://127.0.0.1:3300;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 3600s;
-        proxy_send_timeout 3600s;
-    }
-    location / {
-        proxy_pass http://127.0.0.1:3300;
-        proxy_set_header Host $host;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
+- publishes `3300` only as `127.0.0.1:3300` on the ECS;
+- runs as an unprivileged user with a read-only filesystem;
+- drops all Linux capabilities and enables `no-new-privileges`;
+- limits processes, uses a small temporary filesystem, rotates container logs, and has a health check.
+
+Verify the binding before configuring the public proxy:
+
+```bash
+docker compose ps
+curl -fsS http://127.0.0.1:3300/health
+ss -ltn | grep 3300
 ```
 
-## Local connector
+The listener shown by `ss` must be `127.0.0.1:3300`, not `0.0.0.0:3300` or `[::]:3300`.
 
-Run the connector only after Codex CLI is authenticated on the local computer:
+## 3. TLS reverse proxy
+
+Obtain a trusted certificate for the dedicated hostname, then copy
+[`deploy/nginx-example.conf`](../deploy/nginx-example.conf) into the Nginx site configuration. Replace
+every `codex.example.com` with your hostname and adjust certificate paths if necessary.
+
+The supplied Nginx policy disables access logs by default to avoid retaining client IP and request
+metadata, keeps only warning/error diagnostics, overwrites the trusted `X-Real-IP`, and forwards the
+WebSocket only to ECS loopback. If troubleshooting requires an access log, enable it temporarily with
+short retention and disable it afterward.
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+curl -fsS https://codex.example.com/health
+```
+
+Do not place a third-party CDN or hosted reverse proxy in front unless you accept it as another party
+that can terminate TLS and retain metadata.
+
+## 4. Local connector
+
+The local computer must already have an authenticated Codex CLI/Desktop environment. The production
+URL must use `wss://`; the connector now rejects remote plaintext `ws://` URLs.
+
+For a foreground test:
 
 ```powershell
 $env:BRIDGE_TOKEN = Read-Host 'Bridge token'
 $env:BRIDGE_URL = 'wss://codex.example.com/ws'
 $env:CODEX_WORKSPACE = 'C:\workspace'
+$env:CODEX_ALLOWED_ROOTS = 'C:\workspace'
 $env:CODEX_NETWORK_ACCESS = '0'
 npm run connector
 ```
 
-For unattended use, keep the token in user-scoped encrypted storage and inject it only into the connector process. Do not store it in the repository or a world-readable script.
-
-This repository also includes a Windows login-startup installer that stores the token with user-scoped DPAPI encryption:
+On Windows, the login-startup installer stores the token with user-scoped DPAPI rather than in the
+repository or a plaintext script:
 
 ```powershell
 $token = Read-Host 'Bridge token' -AsSecureString
@@ -71,26 +134,36 @@ $token = Read-Host 'Bridge token' -AsSecureString
   -Token $token `
   -BridgeUrl 'wss://codex.example.com/ws' `
   -Workspace 'C:\workspace' `
-  -AllowedRoots @($env:USERPROFILE, 'C:\workspace')
+  -AllowedRoots @('C:\workspace')
 ```
 
-Downloads are limited to `AllowedRoots` by default. Add `-AllowAnyFileDownload` only on a trusted
-single-user machine when downloads outside those roots are intentionally required.
+Downloads are limited to `AllowedRoots` by default. Add `-AllowAnyFileDownload` only when this is a
+trusted single-user computer and unrestricted local download is intentional. Leave network access
+disabled unless the Codex task actually needs it.
 
-The encrypted credential and non-secret connector configuration are stored outside the checkout under `%LOCALAPPDATA%\PersonalCodexBridge`. Re-run the installer without `-Token` to change settings while retaining the existing credential.
+The encrypted credential and non-secret settings are stored outside the checkout under
+`%LOCALAPPDATA%\PersonalCodexBridge`. Re-run the installer without `-Token` to update settings while
+retaining the credential. `scripts/copy-token.ps1` copies it to the clipboard when browser login is
+needed; clear clipboard history afterward on shared computers.
 
-Copy the stored token when signing in from the same PC without printing it to the terminal:
+## 5. End-to-end validation
 
-```powershell
-.\scripts\copy-token.ps1
-```
+1. Open `https://codex.example.com`, enter the shared token, and verify the connector is online.
+2. Open an existing session and send a harmless test message.
+3. Confirm the message and reply appear in Codex Desktop and the browser.
+4. Confirm HTTP is redirected to HTTPS and `http://ECS-IP:3300` is unreachable externally.
+5. Check `docker compose ps`; the relay should become `healthy` after its startup period.
 
-## Validation
+## Updating
+
+Keep the ECS relay and local connector on the same commit because browser pagination and connector
+actions evolve together:
 
 ```bash
-curl -fsS https://codex.example.com/health
-docker compose ps
-docker compose logs --tail=100 bridge
+git pull --ff-only
+docker compose up --build -d
+curl -fsS http://127.0.0.1:3300/health
 ```
 
-After updating the connector code, restart the local connector as well as rebuilding the ECS container. This keeps the browser pagination protocol and connector actions on the same version.
+After connector code changes, restart the local connector too. Review release changes before pulling,
+and do not grant the ECS access to local project directories.

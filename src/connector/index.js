@@ -5,11 +5,13 @@ import { CodexDesktopClient, mergeDesktopSessionStatuses } from './codex-desktop
 import { readImageAttachment, saveImageAttachment } from './attachments.js';
 import { DownloadManager } from './file-downloads.js';
 import { acquireConnectorInstanceLock } from './instance-lock.js';
-import { MAX_FRAME_BYTES, parseFrame, publicError, safeSend } from '../shared/protocol.js';
+import {
+  MAX_FRAME_BYTES, parseFrame, publicError, requireSecureBridgeUrl, safeSend,
+} from '../shared/protocol.js';
 
 const token = String(process.env.BRIDGE_TOKEN || '');
 if (token.length < 32) throw new Error('BRIDGE_TOKEN must contain at least 32 characters');
-const url = process.env.BRIDGE_URL || 'ws://127.0.0.1:3300/ws';
+const url = requireSecureBridgeUrl(process.env.BRIDGE_URL || 'ws://127.0.0.1:3300/ws');
 const deviceId = process.env.BRIDGE_DEVICE_ID || 'personal-pc';
 const workspace = process.env.CODEX_WORKSPACE || process.cwd();
 const allowedRoots = String(process.env.CODEX_ALLOWED_ROOTS || workspace)

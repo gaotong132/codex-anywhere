@@ -46,23 +46,20 @@ export function createBridgeServer(options = {}) {
   });
 
   const httpServer = createServer((request, response) => {
-    setSecurityHeaders(response);
-    if (request.url === '/health' || request.url === '/healthz') {
-      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
-      response.end(JSON.stringify({ ok: true }));
-      return;
-    }
-    if (new URL(request.url || '/', 'http://localhost').pathname === '/config.js') {
-      serveRuntimeConfig(response, uiLanguage);
-      return;
-    }
-    serveStatic(publicDir, request, response);
+    handleHttpRequest({ publicDir, request, response, trustProxy, uiLanguage });
   });
   const webSocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
 
   httpServer.on('upgrade', (request, socket, head) => {
-    const url = new URL(request.url || '/', 'http://localhost');
-    if (url.pathname !== '/ws' || !originAllowed(request)) {
+    let url;
+    try {
+      url = new URL(request.url || '/', 'http://localhost');
+    } catch {
+      socket.write('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    if (request.method !== 'GET' || url.pathname !== '/ws' || !originAllowed(request)) {
       if (url.pathname === '/ws') socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
@@ -153,6 +150,40 @@ export function createBridgeServer(options = {}) {
   };
 }
 
+function handleHttpRequest({ publicDir, request, response, trustProxy, uiLanguage }) {
+  setSecurityHeaders(response, request, trustProxy);
+  const method = String(request.method || 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') {
+    response.writeHead(405, { allow: 'GET, HEAD', 'cache-control': 'no-store' });
+    response.end('Method not allowed');
+    return;
+  }
+  const headOnly = method === 'HEAD';
+  let pathname;
+  try {
+    pathname = new URL(request.url || '/', 'http://localhost').pathname;
+  } catch {
+    response.writeHead(400, { 'cache-control': 'no-store' });
+    response.end(headOnly ? '' : 'Bad request');
+    return;
+  }
+  if (pathname === '/health' || pathname === '/healthz') {
+    const body = JSON.stringify({ ok: true });
+    response.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'content-length': Buffer.byteLength(body),
+    });
+    response.end(headOnly ? '' : body);
+    return;
+  }
+  if (pathname === '/config.js') {
+    serveRuntimeConfig(response, uiLanguage, headOnly);
+    return;
+  }
+  serveStatic(publicDir, pathname, response, headOnly);
+}
+
 function authenticateSocket({
   socket, message, token, connectors, clients, socketMeta, authTimer, authLimiter, clientAddress,
 }) {
@@ -221,16 +252,25 @@ function normalizeUiLanguage(value) {
   return String(value || '').trim().toLowerCase().startsWith('en') ? 'en' : 'zh-CN';
 }
 
-function serveRuntimeConfig(response, locale) {
+function serveRuntimeConfig(response, locale, headOnly = false) {
+  const body = `window.__CODEX_ANYWHERE_CONFIG__ = ${JSON.stringify({ locale })};\n`;
   response.writeHead(200, {
     'content-type': 'text/javascript; charset=utf-8',
     'cache-control': 'no-store',
+    'content-length': Buffer.byteLength(body),
   });
-  response.end(`window.__CODEX_ANYWHERE_CONFIG__ = ${JSON.stringify({ locale })};\n`);
+  response.end(headOnly ? '' : body);
 }
 
-function serveStatic(publicDir, request, response) {
-  const requestPath = decodeURIComponent(new URL(request.url || '/', 'http://localhost').pathname);
+function serveStatic(publicDir, pathname, response, headOnly = false) {
+  let requestPath;
+  try {
+    requestPath = decodeURIComponent(pathname);
+  } catch {
+    response.writeHead(400, { 'cache-control': 'no-store' });
+    response.end(headOnly ? '' : 'Bad request');
+    return;
+  }
   const relative = requestPath === '/' ? 'index.html' : normalize(requestPath).replace(/^([/\\])+/, '');
   let filePath = resolve(join(publicDir, relative));
   const boundary = `${publicDir}${process.platform === 'win32' ? '\\' : '/'}`;
@@ -248,11 +288,13 @@ function serveStatic(publicDir, request, response) {
   response.writeHead(200, {
     'content-type': MIME_TYPES[extname(filePath)] || 'application/octet-stream',
     'cache-control': extname(filePath) === '.html' ? 'no-store' : 'public, max-age=3600',
+    'content-length': statSync(filePath).size,
   });
-  createReadStream(filePath).pipe(response);
+  if (headOnly) response.end();
+  else createReadStream(filePath).pipe(response);
 }
 
-function setSecurityHeaders(response) {
+function setSecurityHeaders(response, request, trustProxy) {
   response.setHeader('x-content-type-options', 'nosniff');
   response.setHeader('x-frame-options', 'DENY');
   response.setHeader('cross-origin-opener-policy', 'same-origin');
@@ -260,7 +302,24 @@ function setSecurityHeaders(response) {
   response.setHeader('referrer-policy', 'no-referrer');
   response.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
   response.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=()');
-  response.setHeader('content-security-policy', "default-src 'self'; connect-src 'self' ws: wss:; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; object-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+  const webSocketSource = currentWebSocketSource(request, trustProxy);
+  response.setHeader('content-security-policy', `default-src 'self'; connect-src 'self'${webSocketSource ? ` ${webSocketSource}` : ''}; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; object-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
+}
+
+function currentWebSocketSource(request, trustProxy) {
+  const host = String(request?.headers?.host || '').trim();
+  if (!host) return '';
+  try {
+    const parsed = new URL(`http://${host}`);
+    if (parsed.pathname !== '/' || parsed.username || parsed.password || parsed.search || parsed.hash) return '';
+    const forwardedProtocol = trustProxy
+      ? String(request.headers['x-forwarded-proto'] || '').trim().toLocaleLowerCase()
+      : '';
+    const protocol = forwardedProtocol === 'https' || request.socket?.encrypted ? 'wss' : 'ws';
+    return `${protocol}://${parsed.host}`;
+  } catch {
+    return '';
+  }
 }
 
 class AuthFailureLimiter {
@@ -334,4 +393,6 @@ function positiveInteger(value, fallback) {
   return Number.isSafeInteger(value) && value > 0 ? value : fallback;
 }
 
-export const internals = { AuthFailureLimiter, getClientAddress, originAllowed };
+export const internals = {
+  AuthFailureLimiter, currentWebSocketSource, getClientAddress, originAllowed,
+};

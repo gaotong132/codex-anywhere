@@ -2,6 +2,7 @@ services:
   bridge:
     build: .
     restart: unless-stopped
+    init: true
     environment:
       HOST: 0.0.0.0
       PORT: 3300
@@ -11,7 +12,22 @@ services:
     ports:
       - "127.0.0.1:3300:3300"
     read_only: true
+    pids_limit: 128
+    stop_grace_period: 15s
     tmpfs:
       - /tmp:size=16m,mode=1777
     cap_drop:
       - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3300/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

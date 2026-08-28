@@ -28,6 +28,48 @@ test('runtime UI language defaults to Chinese', async (t) => {
   assert.match(await response.text(), /"locale":"zh-CN"/);
 });
 
+test('server rejects unsafe HTTP methods and handles HEAD without a body', async (t) => {
+  const server = createBridgeServer({ token: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const origin = `http://127.0.0.1:${address.port}`;
+
+  const rejected = await fetch(`${origin}/config.js`, { method: 'POST' });
+  assert.equal(rejected.status, 405);
+  assert.equal(rejected.headers.get('allow'), 'GET, HEAD');
+
+  const head = await fetch(`${origin}/config.js`, { method: 'HEAD' });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), '');
+  assert.ok(Number(head.headers.get('content-length')) > 0);
+});
+
+test('malformed encoded paths return 400 without stopping the relay', async (t) => {
+  const server = createBridgeServer({ token: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const origin = `http://127.0.0.1:${address.port}`;
+
+  assert.equal((await fetch(`${origin}/%E0%A4%A`)).status, 400);
+  assert.equal((await fetch(`${origin}/health`)).status, 200);
+});
+
+test('content security policy limits WebSocket connections to the current host', async (t) => {
+  const server = createBridgeServer({ token: TOKEN, trustProxy: true });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/`, {
+    headers: { host: 'codex.example.com', 'x-forwarded-proto': 'https' },
+  });
+  const policy = response.headers.get('content-security-policy');
+  assert.match(policy, new RegExp(`connect-src 'self' wss:\\/\\/127\\.0\\.0\\.1:${address.port};`));
+  const connectSources = policy.split(';').find((directive) => directive.trim().startsWith('connect-src'))
+    .trim().split(/\s+/).slice(1);
+  assert.equal(connectSources.includes('ws:'), false);
+  assert.equal(connectSources.includes('wss:'), false);
+});
+
 test('server authenticates and relays client requests to connector', async (t) => {
   const server = createBridgeServer({ token: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
