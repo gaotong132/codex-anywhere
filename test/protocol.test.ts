@@ -122,6 +122,11 @@ test('automation heartbeat displays only its notification message', () => {
   <message>现网发布完成，详见 **发布记录**。</message>
 </heartbeat>`;
   assert.equal(displayAssistantMessage(heartbeat), '现网发布完成，详见 **发布记录**。');
+  const escapedHeartbeat = String.raw`\<heartbeat> \<automation\_id>automation\</automation\_id> \<current\_time\_iso>2026-08-28T10:11:13.241Z\</current\_time\_iso> \<instructions>执行现网升级\</instructions> \</heartbeat>`;
+  assert.equal(displayAssistantMessage(escapedHeartbeat), '');
+  const escapedNotification = String.raw`\<heartbeat>\<decision>NOTIFY\</decision>\<message>发布完成\</message>\</heartbeat>`;
+  assert.equal(displayAssistantMessage(escapedNotification), '发布完成');
+  assert.equal(displayAssistantMessage('&lt;heartbeat&gt;&lt;message&gt;检查完成&lt;/message&gt;&lt;/heartbeat&gt;'), '检查完成');
   assert.equal(displayAssistantMessage('解释 <heartbeat> 标签的含义'), '解释 <heartbeat> 标签的含义');
 });
 

@@ -18,7 +18,7 @@ export function displayUserMessage(value: unknown) {
 }
 
 export function displayAssistantMessage(value: unknown) {
-  const text = String(value || '').trim();
+  const text = normalizeControlEnvelope(String(value || '').trim());
   const heartbeat = HEARTBEAT_ENVELOPE.exec(text);
   const visibleText = heartbeat ? HEARTBEAT_MESSAGE.exec(heartbeat[1])?.[1]?.trim() || '' : text;
   return normalizeBareLinks(visibleText);
@@ -30,4 +30,13 @@ export function stripImageAttachments(value: unknown) {
 
 function normalizeBareLinks(text: string) {
   return text.replace(BARE_URL_BEFORE_CJK_PUNCTUATION, '<$1>');
+}
+
+function normalizeControlEnvelope(text: string) {
+  if (!/^\s*(?:\\?<heartbeat\b|&lt;heartbeat\b)/i.test(text)) return text;
+  return text
+    .replace(/\\(?=<\/?[a-z])/gi, '')
+    .replace(/<[^>]+>/g, (tag) => tag.replace(/\\([_:-])/g, '$1'))
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
 }
