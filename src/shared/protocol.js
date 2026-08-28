@@ -1,5 +1,4 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { isIP } from 'node:net';
 
 export const PROTOCOL_VERSION = 1;
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
@@ -40,7 +39,7 @@ export function publicError(error) {
   return message.slice(0, 500);
 }
 
-export function requireSecureBridgeUrl(value) {
+export function normalizeBridgeUrl(value) {
   let url;
   try {
     url = new URL(String(value || '').trim());
@@ -49,14 +48,5 @@ export function requireSecureBridgeUrl(value) {
   }
   if (url.protocol !== 'ws:' && url.protocol !== 'wss:') throw new Error('bridge_url_invalid');
   if (url.username || url.password || url.search || url.hash) throw new Error('bridge_url_invalid');
-  if (url.protocol === 'ws:' && !isLoopbackHost(url.hostname)) {
-    throw new Error('bridge_url_tls_required');
-  }
   return url.href;
-}
-
-function isLoopbackHost(hostname) {
-  const host = String(hostname || '').replace(/^\[|\]$/g, '').toLocaleLowerCase();
-  if (host === 'localhost' || host === '::1') return true;
-  return isIP(host) === 4 && host.startsWith('127.');
 }

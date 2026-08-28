@@ -3,7 +3,7 @@ import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { parseFrame, requireSecureBridgeUrl, tokenMatches } from '../src/shared/protocol.js';
+import { normalizeBridgeUrl, parseFrame, tokenMatches } from '../src/shared/protocol.js';
 import { displayAssistantMessage, displayUserMessage } from '../src/shared/message-content.js';
 import { CodexAppServer, internals } from '../src/connector/codex-app-server.js';
 import {
@@ -24,14 +24,12 @@ test('frame parser rejects arrays', () => {
   assert.throws(() => parseFrame('[]'), /invalid_frame/);
 });
 
-test('connector requires TLS except for loopback development URLs', () => {
-  assert.equal(requireSecureBridgeUrl('ws://127.0.0.1:3300/ws'), 'ws://127.0.0.1:3300/ws');
-  assert.equal(requireSecureBridgeUrl('ws://localhost:3300/ws'), 'ws://localhost:3300/ws');
-  assert.equal(requireSecureBridgeUrl('ws://[::1]:3300/ws'), 'ws://[::1]:3300/ws');
-  assert.equal(requireSecureBridgeUrl('wss://codex.example.com/ws'), 'wss://codex.example.com/ws');
-  assert.throws(() => requireSecureBridgeUrl('ws://203.0.113.10:3300/ws'), /bridge_url_tls_required/);
-  assert.throws(() => requireSecureBridgeUrl('wss://user:secret@codex.example.com/ws'), /bridge_url_invalid/);
-  assert.throws(() => requireSecureBridgeUrl('wss://codex.example.com/ws?token=secret'), /bridge_url_invalid/);
+test('connector supports ws and wss without allowing credentials in the URL', () => {
+  assert.equal(normalizeBridgeUrl('ws://127.0.0.1:3300/ws'), 'ws://127.0.0.1:3300/ws');
+  assert.equal(normalizeBridgeUrl('ws://203.0.113.10:3300/ws'), 'ws://203.0.113.10:3300/ws');
+  assert.equal(normalizeBridgeUrl('wss://codex.example.com/ws'), 'wss://codex.example.com/ws');
+  assert.throws(() => normalizeBridgeUrl('wss://user:secret@codex.example.com/ws'), /bridge_url_invalid/);
+  assert.throws(() => normalizeBridgeUrl('wss://codex.example.com/ws?token=secret'), /bridge_url_invalid/);
 });
 
 test('desktop native pipe frames use a little-endian length prefix', () => {

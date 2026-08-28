@@ -15,8 +15,8 @@ filesystem paths in a public issue.
 
 - Use a unique bridge token generated from at least 32 cryptographically random bytes.
 - Store the token only in the relay `.env` and the connector's DPAPI-protected state.
-- Use `wss://` for every remote connector. Plaintext `ws://` is permitted only for loopback
-  development and is rejected for remote hosts.
+- Prefer `wss://` for every remote connector. Plaintext `ws://` is supported by operator choice but
+  exposes the shared token and relayed content to the network path.
 - Terminate TLS at a maintained reverse proxy and never expose port 3300 directly. Confirm the
   container publishes only `127.0.0.1:3300`.
 - If `BRIDGE_TRUST_PROXY=1`, ensure the relay is reachable only through the proxy and that the proxy
@@ -33,7 +33,8 @@ filesystem paths in a public issue.
 ## Trust model and data handling
 
 The ECS avoids exposing the connector computer to inbound internet traffic. The browser and local
-connector both initiate outbound TLS connections; project files and Codex execution remain local.
+connector both initiate outbound connections; WSS is recommended on public networks. Project files
+and Codex execution remain local.
 The relay has no conversation database and does not intentionally persist messages, attachment
 previews, or download chunks.
 

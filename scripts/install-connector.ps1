@@ -30,14 +30,6 @@ if (-not [Uri]::TryCreate($BridgeUrl, [UriKind]::Absolute, [ref] $bridgeUri) -or
 if (-not [string]::IsNullOrEmpty($bridgeUri.UserInfo) -or -not [string]::IsNullOrEmpty($bridgeUri.Query) -or -not [string]::IsNullOrEmpty($bridgeUri.Fragment)) {
     throw 'BridgeUrl must not contain credentials, query parameters, or a fragment.'
 }
-$bridgeAddress = $null
-$isLoopbackBridge = $bridgeUri.Host -eq 'localhost' -or (
-    [Net.IPAddress]::TryParse($bridgeUri.Host, [ref] $bridgeAddress) -and [Net.IPAddress]::IsLoopback($bridgeAddress)
-)
-if ($bridgeUri.Scheme -eq 'ws' -and -not $isLoopbackBridge) {
-    throw 'BridgeUrl must use wss:// unless it points to this computer for development.'
-}
-
 New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
 if ($Token) {
     $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Token)

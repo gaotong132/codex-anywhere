@@ -23,26 +23,28 @@ Codex Anywhere is designed around a small public ECS/VPS relay. `http://127.0.0.
 same-computer development smoke test: it proves that the web app, relay, and connector can talk, but
 it provides no practical remote access from a phone or another network.
 
-For real use you need:
+The core requirements and replaceable deployment options are:
 
-| Resource | Practical baseline | Purpose |
+| Resource | Requirement | Practical baseline / purpose |
 | --- | --- | --- |
-| Public ECS/VPS | Linux, 1 vCPU, 1 GB RAM, 10–20 GB disk, public IPv4/EIP | Runs only the lightweight relay and TLS proxy |
-| Domain name | A dedicated DNS A record | Gives the browser and connector one stable endpoint |
-| HTTPS certificate | A trusted TLS certificate, for example Let's Encrypt | Protects the token and relayed traffic in transit |
-| Server software | Docker Engine + Compose v2, Nginx, and a certificate client | Isolates and publishes the relay safely |
-| Connector computer | Codex Desktop/CLI, Node.js 22+, outbound TCP 443 | Keeps projects and Codex execution on your own computer |
+| Reachable ECS/VPS | Required | Linux, 1 vCPU, 1 GB RAM, 10–20 GB disk; runs only the lightweight relay |
+| Connector computer | Required | Codex Desktop/CLI and Node.js 22+; keeps projects and execution local |
+| Encrypted transport | Strongly recommended across an untrusted/public network | A TLS endpoint, VPN, or secure tunnel; remote plaintext `ws://` is supported only when the operator accepts the exposure |
+| Domain and DNS | Optional | A convenient stable endpoint; a fixed address or secure tunnel can replace it |
+| HTTPS certificate | Optional component | Needed only when the chosen encrypted ingress terminates HTTPS/WSS itself |
+| Docker, Compose, Nginx, certificate tooling | Optional reference stack | The included deployment path; equivalent container, service-manager, proxy, or tunnel choices are supported |
 
 No database, Redis, object storage, inbound home-network port, or public IP on the connector
-computer is required. Both the browser and local connector initiate outbound TLS connections to the
-ECS.
+computer is required. Both the browser and local connector initiate outbound connections to the ECS;
+the recommended public setup encrypts both connections.
 
 The ECS exists primarily to improve personal privacy and reduce attack surface: your home computer
 does not accept public inbound connections, project files stay local, and the relay intentionally
 does not persist conversations or transferred files. It is still a trusted component, not an
-end-to-end-encrypted blind relay: TLS terminates on the ECS, so its root administrator and cloud host
-could inspect process memory. Use an ECS you control, harden it, retain as little logging as possible,
-and protect it as part of the trust boundary.
+end-to-end-encrypted blind relay: in the recommended WSS setup, TLS terminates on the ECS, so its root
+administrator and cloud host could inspect process memory. Plaintext WS additionally exposes traffic
+to the network path. Use an ECS you control, harden it, retain as little logging as possible, and
+protect it as part of the trust boundary.
 
 ## What it does
 
@@ -74,8 +76,8 @@ task tools for delivery to existing desktop sessions. It does not implement ACP.
 
 - A random bridge token of at least 32 characters is sent in the first encrypted WebSocket frame,
   never in the URL.
-- The connector rejects plaintext remote `ws://` endpoints; only loopback development may use
-  `ws://`, while ECS deployments must use `wss://`.
+- The connector supports both `ws://` and `wss://`. `wss://` is strongly recommended for public
+  deployments because `ws://` does not protect the token or conversation in transit.
 - Browser WebSocket upgrades must originate from the same web origin.
 - Repeated authentication failures are temporarily locked per client IP.
 - The relay rejects unsupported HTTP methods and malformed paths, applies a host-scoped CSP, and
@@ -104,7 +106,8 @@ local Connector ── outbound WSS ──┘
         └── Codex Desktop/CLI + local project files
 ```
 
-Never publish port 3300, never use `ws://` to a remote IP or domain, and do not install Codex or copy
+The reference deployment keeps port 3300 private and uses WSS. Operators can choose WS, but exposing
+3300 or using remote plaintext WS gives up transport confidentiality. Do not install Codex or copy
 project files onto the ECS.
 
 ## Local development smoke test
@@ -131,8 +134,8 @@ npm run connector
 
 Open `http://127.0.0.1:3300` and enter the same token. This loopback address works only on the same
 computer and exists solely for development/debugging; it is not the intended deployment and cannot
-provide useful phone access. For actual use, deploy the relay to an ECS with a domain and HTTPS as
-described in [docs/deployment.md](docs/deployment.md).
+provide useful phone access. For actual use, deploy the relay to an ECS as described in
+[docs/deployment.md](docs/deployment.md); an encrypted public ingress is strongly recommended.
 
 ## Configuration
 
@@ -151,7 +154,7 @@ described in [docs/deployment.md](docs/deployment.md).
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `BRIDGE_TOKEN` | required | Same shared secret as the relay |
-| `BRIDGE_URL` | `ws://127.0.0.1:3300/ws` | Development-only loopback default; production requires `wss://your-domain/ws` |
+| `BRIDGE_URL` | `ws://127.0.0.1:3300/ws` | Supports `ws://` and `wss://`; WSS is strongly recommended for public networks |
 | `BRIDGE_DEVICE_ID` | `personal-pc` | Connector identity |
 | `CODEX_BIN` | `codex` | Codex CLI command or path |
 | `CODEX_WORKSPACE` | current directory | Default project root |

@@ -5,15 +5,16 @@ Codex itself: Codex Desktop/CLI, project files, attachments, and generated files
 computer. `http://127.0.0.1:3300` is only a same-computer development test and has no practical value
 for remote phone access.
 
-## Required resources
+## Core requirements and deployment options
 
-| Resource | Recommended single-user baseline |
-| --- | --- |
-| ECS/VPS | Linux, 1 vCPU, 1 GB RAM, 10–20 GB disk, public IPv4/EIP |
-| DNS | One dedicated A record, such as `codex.example.com` |
-| TLS | A publicly trusted certificate for that hostname |
-| Server software | Docker Engine, Docker Compose v2, Nginx, and a certificate client |
-| Local computer | Codex Desktop/CLI, Node.js 22+, and outbound TCP 443 |
+| Resource | Requirement | Recommended single-user baseline |
+| --- | --- | --- |
+| Reachable ECS/VPS | Required | Linux, 1 vCPU, 1 GB RAM, 10–20 GB disk |
+| Local computer | Required | Codex Desktop/CLI, Node.js 22+, and outbound network access |
+| Encrypted transport | Strongly recommended across an untrusted/public network | TLS, a VPN, or a secure tunnel; plaintext `ws://` remains available at the operator's risk |
+| Domain and DNS | Optional | Convenient for a stable public TLS endpoint |
+| HTTPS certificate | Optional component | Use when your chosen ingress terminates HTTPS/WSS |
+| Docker, Compose, Nginx, certificate tooling | Optional reference stack | Replaceable by equivalent service and encrypted-ingress components |
 
 No database, Redis, object storage, public IP on the local computer, router port forwarding, or
 inbound local firewall rule is required.
@@ -28,24 +29,27 @@ local Connector ── outbound WSS ──────┘
 
 ## Privacy and trust boundary
 
-The ECS reduces exposure of the personal computer: both endpoints make outbound TLS connections,
-the ECS keeps no conversation database, and port 3300 remains private. The relay forwards messages,
-image previews, and download chunks in memory and intentionally does not persist them.
+The ECS reduces exposure of the personal computer: both endpoints make outbound connections, the
+ECS keeps no conversation database, and the reference deployment keeps port 3300 private. The relay
+forwards messages, image previews, and download chunks in memory and intentionally does not persist
+them. WSS is the recommended transport for these connections.
 
-This is transport encryption, not end-to-end encryption through an untrusted relay. TLS terminates
-at Nginx on the ECS, and the relay sees plaintext frames in process memory. The ECS root administrator,
-cloud provider, reverse-proxy/CDN provider, and anyone who obtains the shared token are therefore in
-the trust boundary. Use infrastructure you control, minimize administrators and logs, keep the host
-patched, and rotate the token after any suspected disclosure.
+This is not end-to-end encryption through an untrusted relay. In the recommended WSS setup, TLS
+terminates at the ECS ingress and the relay sees plaintext frames in process memory. With WS, the
+network path can see them too. The ECS root administrator, cloud provider, any proxy provider, and
+anyone who obtains the shared token are therefore in the trust boundary. Use infrastructure you
+control, minimize administrators and logs, keep the host patched, and rotate the token after any
+suspected disclosure.
 
-## 1. DNS, firewall, and host preparation
+## 1. Network and host preparation
 
-1. Point a dedicated DNS A record to the ECS EIP.
-2. Allow inbound TCP 443. Allow TCP 80 only for certificate issuance and HTTPS redirect.
+1. If using a domain, point its DNS record to the ECS EIP.
+2. Allow only the port used by your encrypted ingress. In the reference HTTPS deployment this is
+   TCP 443; TCP 80 is optional for redirect or certificate validation.
 3. Restrict SSH to trusted source addresses or a VPN and prefer SSH keys over passwords.
 4. Do **not** allow inbound TCP 3300 in the cloud security group or host firewall.
-5. Install maintained Docker Engine, Docker Compose v2, Nginx, and your certificate client using
-   their vendor documentation.
+5. For the included reference path, install maintained Docker Engine, Docker Compose v2, Nginx, and
+   the certificate tooling appropriate for your environment. Equivalent components may be used.
 
 Use a dedicated, minimally privileged server where practical. Do not install Codex or copy local
 projects to this ECS.
@@ -89,9 +93,9 @@ ss -ltn | grep 3300
 
 The listener shown by `ss` must be `127.0.0.1:3300`, not `0.0.0.0:3300` or `[::]:3300`.
 
-## 3. TLS reverse proxy
+## 3. Optional reference: TLS reverse proxy
 
-Obtain a trusted certificate for the dedicated hostname, then copy
+If using the included Nginx path, obtain a certificate appropriate for the endpoint, then copy
 [`deploy/nginx-example.conf`](../deploy/nginx-example.conf) into the Nginx site configuration. Replace
 every `codex.example.com` with your hostname and adjust certificate paths if necessary.
 
@@ -111,8 +115,9 @@ that can terminate TLS and retain metadata.
 
 ## 4. Local connector
 
-The local computer must already have an authenticated Codex CLI/Desktop environment. The production
-URL must use `wss://`; the connector now rejects remote plaintext `ws://` URLs.
+The local computer must already have an authenticated Codex CLI/Desktop environment. The connector
+accepts both `ws://` and `wss://`; WSS is strongly recommended whenever the route crosses a public or
+otherwise untrusted network.
 
 For a foreground test:
 
