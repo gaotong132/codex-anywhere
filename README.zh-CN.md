@@ -10,49 +10,24 @@
   <img src="docs/assets/readme-hero.svg" alt="Codex Anywhere 可以通过手机浏览器查看并继续运行在自己电脑上的 Codex 会话" width="100%">
 </p>
 
-通过手机或浏览器查看并继续运行在自己电脑上的 Codex 会话。
-Codex Anywhere 面向单用户自托管场景，项目文件与 Codex 执行过程始终保留在运行连接器的电脑上。
+Codex Anywhere 是一个面向单用户、自托管场景的远程桥接工具，让你可以从手机或其他浏览器
+查看并继续电脑上的 Codex 会话。Codex 和项目文件始终留在运行连接器的电脑上，你自己的
+ECS/VPS 只提供轻量的远程入口。
 
 > [!IMPORTANT]
 > 这是一个非官方社区项目，与 OpenAI 无隶属关系，也未得到 OpenAI 的认可或背书。
 
-## 实际部署方式与资源依赖
+## 功能与亮点
 
-Codex Anywhere 的实际使用架构依赖一台具有公网入口的 ECS/VPS。
-`http://127.0.0.1:3300` 只是同一台电脑上的开发冒烟测试地址：它只能验证网页、转发服务和
-连接器能否互通，对手机跨网络访问没有实际意义，也不是推荐的部署方式。
+- **继续已有会话**：在手机上浏览最近的 Codex 会话、查看 Markdown 历史，并发送新的文字或图片消息。
+- **跟随执行进度**：识别会话运行状态，自动刷新有用的助手进展，不展示内部思考和工具调用噪音。
+- **长会话也能快速打开**：会话列表与历史记录按需增量加载，不会一次下载所有会话的完整内容。
+- **针对手机操作优化**：可以在已有项目中新建会话、搜索最近会话、查看附件，并在确认后下载助手链接的本机文件。
+- **断线自动恢复**：手机网络切换或短暂断联后，浏览器和本机连接器会自动重连并同步当前状态。
+- **自主托管，保护本机**：本机无需开放公网入站端口；转发服务不会持久化会话、附件或下载文件。
+- **中英文界面**：通过运行时配置在 `zh-CN` 与 `en` 之间切换。
 
-核心依赖和可替换的部署选项如下：
-
-| 资源 | 是否必需 | 实用基线 / 用途 |
-| --- | --- | --- |
-| 可访问的 ECS/VPS | 必需 | Linux、1 核 CPU、1 GB 内存、10–20 GB 磁盘；只运行轻量转发服务 |
-| 本机电脑 | 必需 | Codex Desktop/CLI 与 Node.js 22+；保存项目并实际执行任务 |
-| 加密传输 | 经过公网或不受信网络时强烈推荐 | 可由 TLS 入口、VPN 或安全隧道提供；代码支持远程明文 `ws://`，但部署者需自行承担暴露风险 |
-| 域名与 DNS | 可选 | 提供便于记忆的稳定入口，也可使用固定地址或安全隧道替代 |
-| HTTPS 证书 | 可选组件 | 仅当所选加密入口自行终止 HTTPS/WSS 时需要 |
-| Docker、Compose、Nginx、证书工具 | 可选参考栈 | 仓库提供的部署路径；也可使用等效容器、服务管理器、代理或安全隧道 |
-
-不需要数据库、Redis、对象存储，也不需要为本机电脑配置公网 IP、端口映射或任何入站端口。
-手机浏览器和本机连接器都只主动向 ECS 建立出站连接；推荐的公网方案会加密这两段连接。
-
-引入 ECS 的首要目的，是保护个人隐私并缩小攻击面：家庭/办公电脑无需暴露到公网，项目文件
-始终留在本机，转发服务也不会主动持久化会话或传输文件。但 ECS 仍属于受信任组件，并非无法
-查看内容的端到端加密盲中继：在推荐的 WSS 方案中，TLS 会在 ECS 上终止，ECS 的 root 管理员或
-云平台理论上可以读取进程内存；使用明文 WS 还会让链路沿途具备读取流量的能力。因此应使用自己
-控制的 ECS，做好主机加固，尽量关闭访问日志，并把 ECS 纳入整体信任边界。
-
-## 主要功能
-
-- 列出最近的 Codex 会话，无需加载每个会话的全部内容。
-- 分页查看 Markdown 历史记录，并跟随正在运行的桌面会话。
-- 向已有会话发送文本及一张 JPG、PNG 或 WebP 图片。
-- 在已配置的项目目录中创建新会话。
-- 经浏览器明确确认后，下载助手回复中链接的本机文件。
-- 在短暂网络故障后自动恢复浏览器、转发服务与本机连接器的连接。
-- 通过运行时配置在中文与英文完整界面之间切换。
-
-本项目不会自动 fork 会话，不会在转发服务上持久化保存会话，也不会开放通用远程 Shell。
+Codex Anywhere 定位为个人桥接工具，不提供自动 fork、通用远程 Shell 或多用户网关。
 
 ## 架构
 
@@ -60,119 +35,105 @@ Codex Anywhere 的实际使用架构依赖一台具有公网入口的 ECS/VPS。
   <img src="docs/assets/how-it-works.svg" alt="Codex Anywhere 架构：手机浏览器、自托管转发服务、主动出站连接的本机连接器与 Codex Desktop" width="100%">
 </p>
 
-ECS 上的转发服务仅在内存中完成鉴权与实时帧转发。由 app-server 管理的新任务可以接收原生增量事件；对于桌面应用拥有的已有会话，则通过同一条 WebSocket 自适应轮询 rollout 尾部：内容变化期间约每 1.5 秒一次，静止时约每 6 秒一次。
-
-Codex Anywhere 对 app-server 会话使用 Codex app-server JSON-RPC 协议，对已有桌面会话使用 Codex Desktop 任务工具完成消息投递。本项目没有实现 ACP。
-
-## 默认安全措施
-
-- 至少 32 位的随机 Bridge Token 在首个加密 WebSocket 帧中发送，绝不会放入 URL。
-- 本机连接器同时支持 `ws://` 和 `wss://`。公网部署强烈推荐使用 `wss://`，因为 `ws://`
-  无法保护传输中的 Token 和会话内容。
-- 浏览器 WebSocket 升级请求必须来自相同的 Web Origin。
-- 针对同一客户端 IP 的连续鉴权失败会被临时锁定。
-- 转发服务会拒绝不支持的 HTTP 方法与畸形路径，使用仅限当前主机的 CSP，并限制 WebSocket
-  帧大小。
-- Codex 高权限操作仍需人工批准。
-- 连接器的网络访问默认关闭。
-- 项目访问与本机文件下载默认限制在 `CODEX_ALLOWED_ROOTS` 中。
-- 每次下载都需要确认，并使用短期有效、仅限单个文件且绑定客户端的能力凭证。
-- 转发服务不存储附件或下载文件。提供的容器使用非 root 用户和只读文件系统、删除全部 Linux
-  capabilities、限制进程数、轮转日志，并且只把 3300 端口绑定到 ECS 回环地址。
-
-本项目不是经过加固的多租户网关。请仅供一个受信任用户使用，并在暴露至互联网前阅读 [SECURITY.md](SECURITY.md)。
-
-## 正式部署
-
-准备好上述资源后，按照 [docs/deployment.md](docs/deployment.md) 部署。支持的实际拓扑为：
-
 ```text
-手机/浏览器 ── HTTPS/WSS ──> 你的 ECS（Nginx :443 → 转发服务 127.0.0.1:3300）
-                                  ▲
-本机 Connector ── 主动出站 WSS ──┘
-        │
-        └── Codex Desktop/CLI 与本机项目文件
+手机 / 浏览器 ── WS 或 WSS ──> 你的 ECS/VPS 转发服务
+                                      ▲
+本机连接器 ── 主动出站 WS/WSS ───────┘
+     │
+     └── Codex Desktop/CLI 与本机项目
 ```
 
-参考部署会隐藏 3300 端口并使用 WSS。部署者可以自行选择 WS，但公开 3300 或使用远程明文 WS
-意味着主动放弃传输保密性。ECS 上无需安装 Codex，也无需复制项目文件。
+浏览器和本机连接器都会主动连接转发服务。转发服务负责鉴权并在内存中转发实时消息，Codex
+执行和文件访问仍在本机完成。
 
-## 本机开发冒烟测试
+由 app-server 管理的轮次使用 Codex app-server JSON-RPC 协议，并可以接收原生增量事件；已有
+桌面会话使用 Codex Desktop 任务工具投递消息，并通过同一条 WebSocket 自适应轮询历史尾部。
+Codex Anywhere 没有实现 ACP。
 
-要求：Node.js 22 或更高版本，以及已完成登录认证的 Codex CLI。
+## 部署
+
+### 需要的资源
+
+| 资源 | 要求 |
+| --- | --- |
+| 可访问的 ECS/VPS | 必需。轻量 Linux 主机即可，约 1 核 CPU、1 GB 内存和 10–20 GB 磁盘。 |
+| 本机电脑 | 必需。运行 Codex Desktop/CLI、Node.js 22+、本机连接器和项目文件。 |
+| 公网入口 | 可选组件。根据环境选择固定地址、域名、反向代理、VPN 或安全隧道。 |
+
+不需要数据库、Redis、对象存储，也不需要为本机配置公网 IP、家庭网络端口映射或任何入站端口。
+ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接器提供一个稳定的汇合点。
+
+代码同时支持 `ws://` 和 `wss://`，具体传输方式由部署者决定。经过公网或不受信网络时，强烈
+推荐使用 `wss://` 或等效的安全隧道。
+
+### 开始部署
+
+1. 将转发服务部署到 ECS/VPS，并决定如何提供访问入口。完整步骤参见
+   [正式部署指南](docs/deployment.md)。
+2. 生成一个至少 32 位的随机 Token，并在转发服务和本机连接器中配置相同的值。
+3. 在运行 Codex 的电脑上安装连接器。Windows 可以将其注册为登录后自动启动：
+
+   ```powershell
+   $token = Read-Host 'Bridge token' -AsSecureString
+   .\scripts\install-connector.ps1 `
+     -Token $token `
+     -BridgeUrl 'wss://codex.example.com/ws' `
+     -Workspace 'C:\workspace' `
+     -AllowedRoots @('C:\workspace')
+   ```
+
+4. 在手机浏览器中打开转发服务地址，并输入相同的 Token。
+
+将服务暴露到互联网前请阅读 [SECURITY.md](SECURITY.md)。ECS/VPS 上不需要安装 Codex，也不要
+把项目文件复制到 ECS/VPS。
+
+### 必要配置
+
+| 环境变量 | 使用方 | 用途 |
+| --- | --- | --- |
+| `BRIDGE_TOKEN` | 转发服务和连接器 | 至少 32 位的共享密钥 |
+| `BRIDGE_URL` | 连接器 | 转发服务 WebSocket 地址，支持 `ws://` 和 `wss://` |
+| `CODEX_WORKSPACE` | 连接器 | 默认本机项目目录 |
+| `CODEX_ALLOWED_ROOTS` | 连接器 | 会话和下载可以访问的本机根目录 |
+| `CODEX_UI_LANGUAGE` | 转发服务 | Web 界面语言：`zh-CN` 或 `en` |
+
+完整配置见 [.env.example](.env.example) 和 [正式部署指南](docs/deployment.md)，其中包括代理信任、
+网络访问和不受目录限制的文件下载选项。
+
+## 本机开发
+
+`http://127.0.0.1:3300` 只是同一台电脑上的冒烟测试地址，用于验证网页、转发服务和连接器是否
+互通；它无法提供有实际意义的手机远程访问。正式使用必须部署上面的 ECS/VPS 转发服务。
+
+要求：Node.js 22+，以及已完成登录认证的 Codex CLI。
 
 ```powershell
 git clone https://github.com/gaotong132/codex-anywhere.git
 cd codex-anywhere
 npm ci
-$env:BRIDGE_TOKEN = "replace-with-at-least-32-random-characters"
+$env:BRIDGE_TOKEN = 'replace-with-at-least-32-random-characters'
 npm run server
 ```
 
-在另一个终端中运行：
+在另一个终端运行：
 
 ```powershell
-$env:BRIDGE_TOKEN = "replace-with-the-same-token"
-$env:BRIDGE_URL = "ws://127.0.0.1:3300/ws"
-$env:CODEX_WORKSPACE = "C:\workspace"
-$env:CODEX_ALLOWED_ROOTS = "C:\workspace"
+$env:BRIDGE_TOKEN = 'replace-with-the-same-token'
+$env:BRIDGE_URL = 'ws://127.0.0.1:3300/ws'
+$env:CODEX_WORKSPACE = 'C:\workspace'
+$env:CODEX_ALLOWED_ROOTS = 'C:\workspace'
 npm run connector
 ```
 
-打开 `http://127.0.0.1:3300` 并输入相同的 Token。这个回环地址只能由同一台电脑访问，仅用于
-开发和调测；它不是实际部署方式，也无法提供有意义的手机远程访问。正式使用时必须按照
-[docs/deployment.md](docs/deployment.md)，把转发服务部署到 ECS，并根据实际环境提供加密的公网入口。
-
-## 配置
-
-### 转发服务
-
-| 环境变量 | 默认值 | 用途 |
-| --- | --- | --- |
-| `BRIDGE_TOKEN` | 必填 | 共享密钥，至少 32 个字符 |
-| `HOST` | `127.0.0.1` | HTTP 监听地址 |
-| `PORT` | `3300` | HTTP 监听端口 |
-| `BRIDGE_TRUST_PROXY` | `0` | 信任 Nginx 的 `X-Real-IP`；仅在该代理之后启用 |
-| `CODEX_UI_LANGUAGE` | `zh-CN` | Web 界面语言：`zh-CN` 或 `en`；修改后需重启转发服务 |
-
-### 本机连接器
-
-| 环境变量 | 默认值 | 用途 |
-| --- | --- | --- |
-| `BRIDGE_TOKEN` | 必填 | 与转发服务相同的共享密钥 |
-| `BRIDGE_URL` | `ws://127.0.0.1:3300/ws` | 同时支持 `ws://` 和 `wss://`；公网环境强烈推荐 WSS |
-| `BRIDGE_DEVICE_ID` | `personal-pc` | 连接器标识 |
-| `CODEX_BIN` | `codex` | Codex CLI 命令或路径 |
-| `CODEX_WORKSPACE` | 当前目录 | 默认项目根目录 |
-| `CODEX_ALLOWED_ROOTS` | `CODEX_WORKSPACE` | 会话和下载可使用的根目录，多个路径使用操作系统分隔符 |
-| `CODEX_ALLOW_ANY_FILE_DOWNLOAD` | `0` | 仅在明确需要不受限制的本机下载时设为 `1` |
-| `CODEX_NETWORK_ACCESS` | `0` | 仅在 Codex 任务确实需要网络访问时设为 `1` |
-
-### Windows 登录后自动启动
-
-安装程序使用当前用户作用域的 Windows DPAPI 保存 Token，并将非敏感配置存放在 `%LOCALAPPDATA%\PersonalCodexBridge`。为了保证升级时不会丢失已有凭据，该旧版内部目录名会继续保留。
-
-```powershell
-$token = Read-Host 'Bridge token' -AsSecureString
-.\scripts\install-connector.ps1 `
-  -Token $token `
-  -BridgeUrl 'wss://codex.example.com/ws' `
-  -Workspace 'C:\workspace' `
-  -AllowedRoots @('C:\workspace')
-```
-
-重新运行安装程序且不传入 `-Token`，可以在保留 DPAPI 凭据的同时更新其他设置。只有当这个受信任的单用户连接器确实需要下载配置目录以外的文件时，才应添加 `-AllowAnyFileDownload`。
-
-## 开发
+打开 `http://127.0.0.1:3300` 并输入 Token。开发检查与构建命令：
 
 ```powershell
 npm run check
 npm run build
 ```
 
-应用源码和测试现已统一使用 TypeScript。Node 转发服务与连接器通过 `tsconfig.node.json` 编译；Windows 启动器仅在 TypeScript 源码更新时重新编译，随后以单个 Node 进程运行编译后的连接器，`tsx` 只用于测试。浏览器运行时配置由转发服务在 `/config.js` 动态生成，因此仓库不再需要保留 JavaScript 源文件。
-
-React 入口组件将会话与历史记录解析交给 `history-utils.ts`，图片处理交给 `image-utils.ts`，本机链接解析交给 `file-utils.ts`，共享展示组件交给 `ui-components.tsx`，纯展示辅助逻辑交给 `app-utils.ts`。协议相关逻辑位于 `src/server` 和 `src/connector`。
+应用源码和测试统一使用严格 TypeScript。转发服务和连接器运行编译后的 JavaScript；Windows
+启动器只会在 TypeScript 源码变化后重新构建，并保持单个 Node 连接器进程运行。
 
 ## 许可证
 
