@@ -18,6 +18,7 @@ import {
 } from '../src/connector/codex-desktop.js';
 import { internals as rolloutInternals, readRolloutTail } from '../src/connector/rollout-tail.js';
 import {
+  friendlyError,
   isConnectionInterruption,
   markSessionAttentionRead,
   reconcileSessionAttention,
@@ -117,6 +118,7 @@ test('only transient transport failures are treated as reconnectable connection 
   assert.equal(isConnectionInterruption(new Error('连接未建立')), true);
   assert.equal(isConnectionInterruption(new Error('turn_start_timeout')), false);
   assert.equal(isConnectionInterruption(new Error('desktop_delivery_failed')), false);
+  assert.equal(friendlyError(new Error('request_timeout')).includes('恢复到输入框'), false);
 });
 
 test('delegated desktop messages display only their user input', () => {

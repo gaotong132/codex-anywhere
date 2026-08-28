@@ -357,7 +357,7 @@ export default function App() {
     }
   }, [attachmentUrls, knownAttachments, online, request, threadId, timeline]);
 
-  const refreshSessions = useCallback(async (options: { silent?: boolean } = {}) => {
+  const refreshSessions = useCallback(async () => {
     if (sessionRefreshInFlightRef.current) return [];
     sessionRefreshInFlightRef.current = true;
     try {
@@ -377,13 +377,14 @@ export default function App() {
         if (currentSession) setActiveSession(currentSession);
       }
       return nextSessions;
-    } catch (error) {
-      if (!options.silent) reportTimelineError(error);
+    } catch {
+      // Session refreshes are background synchronization. Connection status and
+      // the next retry communicate failures without polluting the conversation.
       return [];
     } finally {
       sessionRefreshInFlightRef.current = false;
     }
-  }, [reportTimelineError, request, updateSessionAttention]);
+  }, [request, updateSessionAttention]);
 
   const handleBridgeMessage = useCallback((message: BridgeMessage) => {
     if (message.type === 'auth.ok') {
@@ -642,7 +643,7 @@ export default function App() {
   useEffect(() => {
     if (!authenticated || !online) return;
     const refreshVisibleSessions = () => {
-      if (document.visibilityState === 'visible') void refreshSessions({ silent: true });
+      if (document.visibilityState === 'visible') void refreshSessions();
     };
     const timer = setInterval(refreshVisibleSessions, SESSION_STATUS_REFRESH_MS);
     document.addEventListener('visibilitychange', refreshVisibleSessions);
@@ -1454,10 +1455,13 @@ export default function App() {
             />
             {running
               ? <button className="stop-button" onClick={() => void stopTurn()} aria-label={t('停止', 'Stop')}>■</button>
-              : <button className="send-button" disabled={!online || uploading || (!prompt.trim() && !pendingImage) || (!threadId && !newSessionCwd.trim())} onClick={() => void sendTurn()} aria-label={t('发送', 'Send')}>
-                  {uploading
-                    ? '…'
-                    : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Zm3 7h13" /></svg>}
+              : <button
+                  className={`send-button${uploading ? ' uploading' : ''}`}
+                  disabled={!online || uploading || (!prompt.trim() && !pendingImage) || (!threadId && !newSessionCwd.trim())}
+                  onClick={() => void sendTurn()}
+                  aria-label={uploading ? t('正在发送图片', 'Sending image') : t('发送', 'Send')}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Zm3 7h13" /></svg>
                 </button>}
           </div>
           <small>{t('Ctrl / ⌘ + Enter 发送 · 历史记录按页加载', 'Ctrl / ⌘ + Enter to send · History loads by page')}</small>

@@ -26,7 +26,7 @@ export function friendlyError(error: unknown) {
   if (message === 'project_directory_required') return t('新会话必须选择或填写项目目录。', 'Choose or enter a project directory for the new session.');
   if (message === 'session_project_directory_unavailable') return t('该会话没有可用的项目目录，无法通过连接器继续。', 'This session has no project directory available to the connector.');
   if (message === 'workspace_outside_allowed_root') return t('该目录不在连接器允许访问的范围内。', 'This directory is outside the connector allowed roots.');
-  if (message === 'request_timeout') return t('请求超过 30 秒没有响应，消息未确认发送，已恢复到输入框。', 'The request timed out after 30 seconds. Delivery was not confirmed and the message was restored.');
+  if (message === 'request_timeout') return t('请求超过 30 秒没有响应，请稍后重试。', 'The request timed out after 30 seconds. Try again shortly.');
   if (message === 'turn_start_timeout') return t('等待原会话可写超时，消息没有发送，已恢复到输入框。', 'Timed out waiting for the session to become writable. The message was not sent and has been restored.');
   if (message === 'desktop_app_unavailable') return t('桌面 Codex 当前不可用，请打开桌面应用后重试。', 'Codex Desktop is unavailable. Open it and try again.');
   if (message === 'desktop_delivery_timeout') return t('桌面 Codex 没有及时确认接收，消息已恢复到输入框，请确认后再重试。', 'Codex Desktop did not confirm receipt in time. The message was restored; verify the desktop app before retrying.');

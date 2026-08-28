@@ -503,10 +503,15 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .attach-button { width: 36px; height: 40px; padding: 0; border: 0; border-radius: 10px; color: #aeb9c9; background: transparent; font-size: 26px; font-weight: 300; }
 .attach-button:hover { color: #dce6f8; background: #1c2534; }
 .attach-button:disabled, .image-preview button:disabled { opacity: .45; }
-.send-button, .stop-button { width: 40px; height: 40px; border: 0; border-radius: 12px; color: white; font-size: 22px; font-weight: 800; }
-.send-button { background: #356dde; }
-.send-button svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.send-button, .stop-button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 12px; padding: 0; color: white; font-size: 22px; font-weight: 800; line-height: 1; }
+.send-button { position: relative; background: #356dde; }
+.send-button svg { position: relative; z-index: 1; width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.send-button.uploading:disabled { opacity: 1; }
+.send-button.uploading::after { content: ""; position: absolute; inset: 4px; border: 2px solid rgba(255, 255, 255, .22); border-top-color: #fff; border-radius: 50%; animation: send-image-spin .8s linear infinite; }
+.send-button.uploading svg { width: 17px; height: 17px; animation: send-image-pulse 1s ease-in-out infinite; }
 .stop-button { background: #9a343e; font-size: 14px; }
+@keyframes send-image-spin { to { transform: rotate(360deg); } }
+@keyframes send-image-pulse { 50% { transform: translate(1px, -1px) scale(.9); opacity: .68; } }
 .mobile-only { display: none; }
 .drawer-backdrop { display: none; }
 
