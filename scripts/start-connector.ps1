@@ -98,8 +98,9 @@ if (-not [Uri]::TryCreate($bridgeUrl, [UriKind]::Absolute, [ref] $bridgeUri) -or
 
 if (-not (Test-Path -LiteralPath $deviceSecretPath -PathType Leaf)) {
     $newDeviceKey = [byte[]]::new(32)
+    $randomNumberGenerator = [Security.Cryptography.RandomNumberGenerator]::Create()
     try {
-        [Security.Cryptography.RandomNumberGenerator]::Fill($newDeviceKey)
+        $randomNumberGenerator.GetBytes($newDeviceKey)
         $protectedDeviceKey = [Security.Cryptography.ProtectedData]::Protect(
             $newDeviceKey,
             $null,
@@ -112,6 +113,7 @@ if (-not (Test-Path -LiteralPath $deviceSecretPath -PathType Leaf)) {
         )
     }
     finally {
+        $randomNumberGenerator.Dispose()
         [Array]::Clear($newDeviceKey, 0, $newDeviceKey.Length)
         if ($protectedDeviceKey) { [Array]::Clear($protectedDeviceKey, 0, $protectedDeviceKey.Length) }
     }
@@ -136,7 +138,7 @@ $plainDeviceKey = [Security.Cryptography.ProtectedData]::Unprotect(
     $null,
     [Security.Cryptography.DataProtectionScope]::CurrentUser
 )
-$devicePrivateKey = [Convert]::ToHexString($plainDeviceKey).ToLowerInvariant()
+$devicePrivateKey = ([BitConverter]::ToString($plainDeviceKey) -replace '-', '').ToLowerInvariant()
 [Array]::Clear($plainDeviceKey, 0, $plainDeviceKey.Length)
 
 $nodePath = (Get-Command node.exe -ErrorAction SilentlyContinue | Select-Object -First 1).Source
