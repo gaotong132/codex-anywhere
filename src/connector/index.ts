@@ -12,8 +12,8 @@ import {
   MAX_FRAME_BYTES, normalizeBridgeUrl, parseFrame, safeSend,
 } from '../shared/protocol.js';
 
-const token = String(process.env.BRIDGE_TOKEN || '');
-if (token.length < 32) throw new Error('BRIDGE_TOKEN must contain at least 32 characters');
+const token = String(process.env.BRIDGE_CONNECTOR_TOKEN || '');
+if (token.length < 32) throw new Error('BRIDGE_CONNECTOR_TOKEN must contain at least 32 characters');
 const url = normalizeBridgeUrl(process.env.BRIDGE_URL || 'ws://127.0.0.1:3300/ws');
 const deviceId = process.env.BRIDGE_DEVICE_ID || 'personal-pc';
 const configuredAllowedRoots = String(process.env.CODEX_ALLOWED_ROOTS || '')

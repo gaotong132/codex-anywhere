@@ -81,10 +81,8 @@ manager. Pass only the connector token to the local installer. Never paste eithe
 issue, screenshot, source file, shell argument, or CI log. Do not include `.env` in server backups
 unless that backup is encrypted and access-controlled.
 
-`BRIDGE_TOKEN` remains available as a compatibility fallback when both role-specific variables are
-omitted. It is convenient for local smoke tests, but a public deployment should keep the roles separate.
 The relay uses fresh HMAC challenges, rejects captured-proof replay, locks repeated failures, and renews
-authenticated sockets every 12 hours (`BRIDGE_SESSION_MAX_AGE_MS`).
+authenticated sockets every hour (`BRIDGE_SESSION_MAX_AGE_MS`).
 
 The supplied Compose service:
 
@@ -132,7 +130,7 @@ otherwise untrusted network.
 For a foreground test:
 
 ```powershell
-$env:BRIDGE_TOKEN = Read-Host 'Connector token'
+$env:BRIDGE_CONNECTOR_TOKEN = Read-Host 'Connector token'
 $env:BRIDGE_URL = 'wss://codex.example.com/ws'
 $env:CODEX_NETWORK_ACCESS = '0'
 npm run connector
@@ -145,7 +143,7 @@ repository or a plaintext script:
 $connectorToken = Read-Host 'Connector token' -AsSecureString
 $clientToken = Read-Host 'Browser client token' -AsSecureString
 .\scripts\install-connector.ps1 `
-  -Token $connectorToken `
+  -ConnectorToken $connectorToken `
   -ClientToken $clientToken `
   -BridgeUrl 'wss://codex.example.com/ws'
 ```

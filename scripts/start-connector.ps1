@@ -10,7 +10,7 @@ Set-StrictMode -Version Latest
 
 $projectRoot = if ($ProjectRoot) { [IO.Path]::GetFullPath($ProjectRoot) } else { Split-Path -Parent $PSScriptRoot }
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PersonalCodexBridge'
-$secretPath = Join-Path $stateDirectory 'bridge-token.dpapi'
+$secretPath = Join-Path $stateDirectory 'connector-token.dpapi'
 $configPath = if ($ConfigPath) { [IO.Path]::GetFullPath($ConfigPath) } else { Join-Path $stateDirectory 'connector.json' }
 $failurePath = Join-Path $stateDirectory 'last-start-error.log'
 
@@ -157,7 +157,7 @@ try {
         Remove-Item -LiteralPath $failurePath -Force
     }
 
-    $env:BRIDGE_TOKEN = $plainToken
+    $env:BRIDGE_CONNECTOR_TOKEN = $plainToken
     $env:BRIDGE_URL = $bridgeUrl
     $env:BRIDGE_DEVICE_ID = $deviceId
     $env:CODEX_ALLOWED_ROOTS = $allowedRoots
@@ -189,7 +189,7 @@ try {
 finally {
     $plainToken = $null
     [Array]::Clear($protectedToken, 0, $protectedToken.Length)
-    Remove-Item Env:BRIDGE_TOKEN -ErrorAction SilentlyContinue
+    Remove-Item Env:BRIDGE_CONNECTOR_TOKEN -ErrorAction SilentlyContinue
     Remove-Item Env:BRIDGE_URL -ErrorAction SilentlyContinue
     Remove-Item Env:BRIDGE_DEVICE_ID -ErrorAction SilentlyContinue
     Remove-Item Env:CODEX_ALLOWED_ROOTS -ErrorAction SilentlyContinue

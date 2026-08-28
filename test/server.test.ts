@@ -13,6 +13,17 @@ const CLIENT_TOKEN = 'client-token-that-is-longer-than-32-characters';
 const CONNECTOR_TOKEN = 'connector-token-that-is-longer-than-32-characters';
 const nextJson = (socket) => once(socket, 'message').then(([data]) => JSON.parse(data.toString()));
 
+test('server requires independent client and connector credentials', () => {
+  assert.throws(
+    () => createBridgeServer({ clientToken: 'short', connectorToken: CONNECTOR_TOKEN }),
+    /BRIDGE_CLIENT_TOKEN/,
+  );
+  assert.throws(
+    () => createBridgeServer({ clientToken: CLIENT_TOKEN, connectorToken: 'short' }),
+    /BRIDGE_CONNECTOR_TOKEN/,
+  );
+});
+
 async function openSocket(url: string, options = {}) {
   const socket = new WebSocket(url, options);
   const challengeMessage = nextJson(socket);
@@ -43,7 +54,7 @@ async function authenticateSocket({
 }
 
 test('server exposes a no-store runtime UI language configuration', async (t) => {
-  const server = createBridgeServer({ token: TOKEN, uiLanguage: 'en-US' });
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN, uiLanguage: 'en-US' });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
 
@@ -55,7 +66,7 @@ test('server exposes a no-store runtime UI language configuration', async (t) =>
 });
 
 test('runtime UI language defaults to Chinese', async (t) => {
-  const server = createBridgeServer({ token: TOKEN });
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
 
@@ -64,7 +75,7 @@ test('runtime UI language defaults to Chinese', async (t) => {
 });
 
 test('server rejects unsafe HTTP methods and handles HEAD without a body', async (t) => {
-  const server = createBridgeServer({ token: TOKEN });
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
   const origin = `http://127.0.0.1:${address.port}`;
@@ -80,7 +91,7 @@ test('server rejects unsafe HTTP methods and handles HEAD without a body', async
 });
 
 test('malformed encoded paths return 400 without stopping the relay', async (t) => {
-  const server = createBridgeServer({ token: TOKEN });
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
   const origin = `http://127.0.0.1:${address.port}`;
@@ -96,7 +107,7 @@ test('static middleware serves assets and preserves SPA fallback caching', async
   await writeFile(join(publicDir, 'index.html'), '<main>Codex Anywhere</main>');
   await writeFile(join(publicDir, 'app.css'), 'body { color: white; }');
   await writeFile(join(fixtureDir, 'private.txt'), 'must not be served');
-  const server = createBridgeServer({ token: TOKEN, publicDir });
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN, publicDir });
   const address = await server.listen(0, '127.0.0.1');
   t.after(async () => {
     await server.close();
@@ -128,7 +139,7 @@ test('static middleware serves assets and preserves SPA fallback caching', async
 });
 
 test('content security policy limits WebSocket connections to the current host', async (t) => {
-  const server = createBridgeServer({ token: TOKEN, trustProxy: true });
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN, trustProxy: true });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
 
@@ -145,7 +156,7 @@ test('content security policy limits WebSocket connections to the current host',
 });
 
 test('server authenticates and relays client requests to connector', async (t) => {
-  const server = createBridgeServer({ token: TOKEN });
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
   const url = `ws://127.0.0.1:${address.port}/ws`;
@@ -183,7 +194,8 @@ test('server authenticates and relays client requests to connector', async (t) =
 
 test('server temporarily locks repeated authentication failures per real client address', async (t) => {
   const server = createBridgeServer({
-    token: TOKEN,
+    clientToken: TOKEN,
+    connectorToken: TOKEN,
     trustProxy: true,
     authFailureLimit: 2,
     authFailureWindowMs: 60_000,
@@ -218,7 +230,7 @@ test('server temporarily locks repeated authentication failures per real client 
 });
 
 test('server rejects legacy raw tokens without locking upgrades and rejects captured proof replay', async (t) => {
-  const server = createBridgeServer({ token: TOKEN });
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
   const url = `ws://127.0.0.1:${address.port}/ws`;
@@ -271,7 +283,7 @@ test('separate role credentials prevent a client token from replacing the connec
 });
 
 test('authenticated sockets expire and can reconnect with a fresh proof', async (t) => {
-  const server = createBridgeServer({ token: TOKEN, sessionMaxAgeMs: 40 });
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN, sessionMaxAgeMs: 40 });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
   const url = `ws://127.0.0.1:${address.port}/ws`;
@@ -300,7 +312,7 @@ test('authentication failure tracking is bounded and evicts the stalest address'
 });
 
 test('server rejects browser WebSocket connections from another origin', async (t) => {
-  const server = createBridgeServer({ token: TOKEN });
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
   const socket = new WebSocket(`ws://127.0.0.1:${address.port}/ws`, {

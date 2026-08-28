@@ -79,7 +79,7 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
    $connectorToken = Read-Host 'Connector token' -AsSecureString
    $clientToken = Read-Host 'Browser client token' -AsSecureString
    .\scripts\install-connector.ps1 `
-     -Token $connectorToken `
+     -ConnectorToken $connectorToken `
      -ClientToken $clientToken `
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
@@ -95,7 +95,6 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
 | --- | --- | --- |
 | `BRIDGE_CLIENT_TOKEN` | 转发服务和浏览器 | 浏览器控制密钥，应与连接器密钥分开 |
 | `BRIDGE_CONNECTOR_TOKEN` | 转发服务和连接器 | 本机连接器密钥 |
-| `BRIDGE_TOKEN` | 转发服务和连接器 | 可选兼容配置；未配置角色密钥时作为共用后备值 |
 | `BRIDGE_URL` | 连接器 | 转发服务 WebSocket 地址，支持 `ws://` 和 `wss://` |
 | `CODEX_UI_LANGUAGE` | 转发服务 | Web 界面语言：`zh-CN` 或 `en` |
 
@@ -121,14 +120,15 @@ VPN 或其他安全隧道。
 git clone https://github.com/gaotong132/codex-anywhere.git
 cd codex-anywhere
 npm ci
-$env:BRIDGE_TOKEN = 'replace-with-at-least-32-random-characters'
+$env:BRIDGE_CLIENT_TOKEN = 'replace-with-at-least-32-random-characters-for-the-browser'
+$env:BRIDGE_CONNECTOR_TOKEN = 'replace-with-a-different-32-random-characters-for-the-connector'
 npm run server
 ```
 
 在另一个终端运行：
 
 ```powershell
-$env:BRIDGE_TOKEN = 'replace-with-the-same-token'
+$env:BRIDGE_CONNECTOR_TOKEN = 'replace-with-the-connector-token-above'
 $env:BRIDGE_URL = 'ws://127.0.0.1:3300/ws'
 npm run connector
 ```

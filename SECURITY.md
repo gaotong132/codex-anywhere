@@ -14,8 +14,7 @@ filesystem paths in a public issue.
 ## Deployment checklist
 
 - Use independent browser-client and connector tokens, each generated from at least 32
-  cryptographically random bytes. `BRIDGE_TOKEN` is a compatibility fallback, not the preferred
-  public deployment.
+  cryptographically random bytes.
 - Store both tokens only in the relay `.env`; store only the connector token in the connector's
   DPAPI-protected state. Put the client token in a password manager and enter it only on trusted
   browser devices.
@@ -58,7 +57,7 @@ the browser token cannot impersonate the connector.
 
 WebSocket authentication sends an HMAC-SHA-256 proof bound to a fresh 256-bit relay challenge, role,
 and connector device ID; it never sends a raw token frame. Captured proofs are not reusable on a new
-connection. Authenticated sockets expire after 12 hours by default and reconnect with a fresh proof.
+connection. Authenticated sockets expire after one hour by default and reconnect with a fresh proof.
 Repeated failures are temporarily locked per client address. These controls reduce replay, brute-force,
 and stolen-live-session risk; they cannot make a valid stolen token harmless.
 
@@ -74,9 +73,7 @@ hashed local audit identifiers. Enabling unrestricted downloads intentionally ex
    Existing browser sockets are closed during restart; the connector credential remains valid.
 3. If `BRIDGE_CONNECTOR_TOKEN` leaked, replace it on the relay and re-run the connector installer with
    the new secure token, then restart both relay and connector.
-4. If the compatibility `BRIDGE_TOKEN` was shared by both roles, rotate it everywhere and restart both
-   sides. Move to role-specific tokens during the same incident.
-5. Review ECS/proxy logs, browser extensions, clipboard history, shell history, screenshots, CI output,
+4. Review ECS/proxy logs, browser extensions, clipboard history, shell history, screenshots, CI output,
    password-manager access, and unexpected connector replacements. Rotate any infrastructure credential
    exposed with it.
 

@@ -26,14 +26,13 @@ const AUTH_FAILURE_LIMIT = 8;
 const AUTH_FAILURE_WINDOW_MS = 5 * 60_000;
 const AUTH_LOCK_MS = 15 * 60_000;
 const AUTH_MAX_TRACKED_ADDRESSES = 4_096;
-const AUTH_SESSION_MAX_AGE_MS = 12 * 60 * 60_000;
+const AUTH_SESSION_MAX_AGE_MS = 60 * 60_000;
 
 type JsonObject = Record<string, any>;
 type AliveWebSocket = WebSocket & { isAlive?: boolean };
 type StaticHandler = ReturnType<typeof sirv>;
 type SocketMeta = { role: 'client'; id: string } | { role: 'connector'; deviceId: string };
 type BridgeServerOptions = {
-  token?: unknown;
   clientToken?: unknown;
   connectorToken?: unknown;
   publicDir?: string;
@@ -63,9 +62,8 @@ type AuthLimiterOptions = {
 type AuthEntry = { failures: number; windowStartedAt: number; lockedUntil: number };
 
 export function createBridgeServer(options: BridgeServerOptions = {}) {
-  const sharedToken = String(options.token || process.env.BRIDGE_TOKEN || '');
-  const clientToken = String(options.clientToken || process.env.BRIDGE_CLIENT_TOKEN || sharedToken);
-  const connectorToken = String(options.connectorToken || process.env.BRIDGE_CONNECTOR_TOKEN || sharedToken);
+  const clientToken = String(options.clientToken || process.env.BRIDGE_CLIENT_TOKEN || '');
+  const connectorToken = String(options.connectorToken || process.env.BRIDGE_CONNECTOR_TOKEN || '');
   if (clientToken.length < 32) throw new Error('BRIDGE_CLIENT_TOKEN must contain at least 32 characters');
   if (connectorToken.length < 32) throw new Error('BRIDGE_CONNECTOR_TOKEN must contain at least 32 characters');
   const publicDir = resolve(options.publicDir || defaultPublicDir);

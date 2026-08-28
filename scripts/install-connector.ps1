@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [Security.SecureString] $Token,
+    [Security.SecureString] $ConnectorToken,
     [Security.SecureString] $ClientToken,
     [string] $BridgeUrl = 'ws://127.0.0.1:3300/ws',
     [string] $DeviceId = 'personal-pc',
@@ -17,7 +17,7 @@ Set-StrictMode -Version Latest
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $launcherPath = Join-Path $PSScriptRoot 'start-connector.ps1'
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PersonalCodexBridge'
-$secretPath = Join-Path $stateDirectory 'bridge-token.dpapi'
+$secretPath = Join-Path $stateDirectory 'connector-token.dpapi'
 $clientSecretPath = Join-Path $stateDirectory 'bridge-client-token.dpapi'
 $configPath = Join-Path $stateDirectory 'connector.json'
 $startupDirectory = [Environment]::GetFolderPath('Startup')
@@ -62,11 +62,11 @@ function Save-ProtectedCredential {
     }
 }
 
-if ($Token) {
-    Save-ProtectedCredential -Value $Token -Path $secretPath -Name 'Connector token'
+if ($ConnectorToken) {
+    Save-ProtectedCredential -Value $ConnectorToken -Path $secretPath -Name 'Connector token'
 }
 elseif (-not (Test-Path -LiteralPath $secretPath -PathType Leaf)) {
-    throw 'Token is required for the first installation.'
+    throw 'ConnectorToken is required for the first installation.'
 }
 if ($ClientToken) {
     Save-ProtectedCredential -Value $ClientToken -Path $clientSecretPath -Name 'Browser client token'

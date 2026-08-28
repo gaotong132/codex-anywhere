@@ -1156,9 +1156,9 @@ export default function App() {
           <div className="brand-mark">C</div>
           <p className="eyebrow">PRIVATE BRIDGE</p>
           <h1>{t('连接本机 Codex', 'Connect to local Codex')}</h1>
-          <p className="login-copy">{t('输入 Bridge Token 以继续。', 'Enter the Bridge Token to continue.')}</p>
+          <p className="login-copy">{t('输入浏览器访问 Token 以继续。', 'Enter the browser access token to continue.')}</p>
           <form onSubmit={connect}>
-            <label htmlFor="token">Bridge Token</label>
+            <label htmlFor="token">Access Token</label>
             <input
               id="token"
               type="password"

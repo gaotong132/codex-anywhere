@@ -89,7 +89,7 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
    $connectorToken = Read-Host 'Connector token' -AsSecureString
    $clientToken = Read-Host 'Browser client token' -AsSecureString
    .\scripts\install-connector.ps1 `
-     -Token $connectorToken `
+     -ConnectorToken $connectorToken `
      -ClientToken $clientToken `
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
@@ -105,7 +105,6 @@ project files onto the ECS/VPS.
 | --- | --- | --- |
 | `BRIDGE_CLIENT_TOKEN` | Relay and browser | Browser-control secret; keep separate from the connector credential |
 | `BRIDGE_CONNECTOR_TOKEN` | Relay and connector | Local connector secret |
-| `BRIDGE_TOKEN` | Relay and connector | Optional compatibility fallback when role-specific tokens are omitted |
 | `BRIDGE_URL` | Connector | Relay WebSocket URL; supports `ws://` and `wss://` |
 | `CODEX_UI_LANGUAGE` | Relay | Web UI language: `zh-CN` or `en` |
 
@@ -132,14 +131,15 @@ Requirements: Node.js 22+ and an authenticated Codex CLI.
 git clone https://github.com/gaotong132/codex-anywhere.git
 cd codex-anywhere
 npm ci
-$env:BRIDGE_TOKEN = 'replace-with-at-least-32-random-characters'
+$env:BRIDGE_CLIENT_TOKEN = 'replace-with-at-least-32-random-characters-for-the-browser'
+$env:BRIDGE_CONNECTOR_TOKEN = 'replace-with-a-different-32-random-characters-for-the-connector'
 npm run server
 ```
 
 In another terminal:
 
 ```powershell
-$env:BRIDGE_TOKEN = 'replace-with-the-same-token'
+$env:BRIDGE_CONNECTOR_TOKEN = 'replace-with-the-connector-token-above'
 $env:BRIDGE_URL = 'ws://127.0.0.1:3300/ws'
 npm run connector
 ```
