@@ -1280,7 +1280,16 @@ export default function App() {
                 ? (newSessionCwd || t('尚未选择项目目录', 'No project directory selected'))
                 : t('从左上角菜单选择会话', 'Choose a session from the top-left menu')}</span>
           </div>
-          <span className={`presence ${online ? 'online' : 'offline'}`}><i />{statusText}</span>
+          <span
+            className={`presence ${online ? 'online' : 'offline'} ${online ? executionState : ''}`}
+            role="status"
+            aria-live="polite"
+            aria-label={presenceLabel(online, executionState, statusText)}
+            title={presenceLabel(online, executionState, statusText)}
+          >
+            <i aria-hidden="true" />
+            <span className="visually-hidden">{presenceLabel(online, executionState, statusText)}</span>
+          </span>
         </header>
 
         <div className="session-context" />
@@ -1320,7 +1329,6 @@ export default function App() {
         </div>
 
         <div className="execution-strip">
-          <ExecutionIndicator state={executionState} />
           <DownloadIndicator download={fileDownload} onCancel={cancelFileDownload} />
         </div>
 
@@ -1407,22 +1415,13 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
   return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M9 4.5v15m7-10-3 2.5 3 2.5" /></svg>;
 }
 
-function ExecutionIndicator({ state }: { state: ExecutionState }) {
-  if (state === 'idle') return null;
-  if (state === 'running' || state === 'waiting') {
-    return (
-      <div className={`execution-status ${state}`} role="status" aria-live="polite">
-        <span className="execution-dots" aria-hidden="true"><i /><i /><i /></span>
-        <span>{state === 'waiting' ? t('正在等待桌面会话空闲', 'Waiting for the desktop session') : t('Codex 正在执行', 'Codex is running')}</span>
-      </div>
-    );
-  }
-  return (
-    <div className={`execution-status ${state}`} role="status" aria-live="polite">
-      <span className="execution-result" aria-hidden="true">{state === 'completed' ? '✓' : '!'}</span>
-      <span>{state === 'completed' ? t('本轮执行完成', 'Run completed') : t('本轮执行失败', 'Run failed')}</span>
-    </div>
-  );
+function presenceLabel(online: boolean, state: ExecutionState, fallback: string) {
+  if (!online) return fallback || t('本机连接器离线', 'Local connector offline');
+  if (state === 'waiting') return t('正在等待桌面会话空闲', 'Waiting for the desktop session');
+  if (state === 'running') return t('Codex 正在执行', 'Codex is running');
+  if (state === 'failed') return t('本轮执行失败', 'Run failed');
+  if (state === 'completed') return t('本轮执行完成', 'Run completed');
+  return fallback || t('已连接', 'Connected');
 }
 
 function DownloadIndicator({
