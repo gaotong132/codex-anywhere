@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isIP } from 'node:net';
@@ -8,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { LRUCache } from 'lru-cache';
 import sirv from 'sirv';
 import { WebSocket, WebSocketServer } from 'ws';
+import { createAuthProof, normalizeAuthDeviceId } from '../shared/auth.js';
 import {
   CLIENT_ACTIONS,
   MAX_FRAME_BYTES,
@@ -15,7 +17,7 @@ import {
   parseFrame,
   publicError,
   safeSend,
-  tokenMatches,
+  secretMatches,
 } from '../shared/protocol.js';
 
 const moduleDir = resolve(fileURLToPath(new URL('.', import.meta.url)));
@@ -24,6 +26,7 @@ const AUTH_FAILURE_LIMIT = 8;
 const AUTH_FAILURE_WINDOW_MS = 5 * 60_000;
 const AUTH_LOCK_MS = 15 * 60_000;
 const AUTH_MAX_TRACKED_ADDRESSES = 4_096;
+const AUTH_SESSION_MAX_AGE_MS = 12 * 60 * 60_000;
 
 type JsonObject = Record<string, any>;
 type AliveWebSocket = WebSocket & { isAlive?: boolean };
@@ -31,6 +34,8 @@ type StaticHandler = ReturnType<typeof sirv>;
 type SocketMeta = { role: 'client'; id: string } | { role: 'connector'; deviceId: string };
 type BridgeServerOptions = {
   token?: unknown;
+  clientToken?: unknown;
+  connectorToken?: unknown;
   publicDir?: string;
   uiLanguage?: unknown;
   trustProxy?: boolean;
@@ -38,6 +43,7 @@ type BridgeServerOptions = {
   authFailureWindowMs?: number;
   authLockMs?: number;
   authMaxEntries?: number;
+  sessionMaxAgeMs?: number;
   clock?: () => number;
 };
 type HttpContext = {
@@ -57,8 +63,11 @@ type AuthLimiterOptions = {
 type AuthEntry = { failures: number; windowStartedAt: number; lockedUntil: number };
 
 export function createBridgeServer(options: BridgeServerOptions = {}) {
-  const token = String(options.token || process.env.BRIDGE_TOKEN || '');
-  if (token.length < 32) throw new Error('BRIDGE_TOKEN must contain at least 32 characters');
+  const sharedToken = String(options.token || process.env.BRIDGE_TOKEN || '');
+  const clientToken = String(options.clientToken || process.env.BRIDGE_CLIENT_TOKEN || sharedToken);
+  const connectorToken = String(options.connectorToken || process.env.BRIDGE_CONNECTOR_TOKEN || sharedToken);
+  if (clientToken.length < 32) throw new Error('BRIDGE_CLIENT_TOKEN must contain at least 32 characters');
+  if (connectorToken.length < 32) throw new Error('BRIDGE_CONNECTOR_TOKEN must contain at least 32 characters');
   const publicDir = resolve(options.publicDir || defaultPublicDir);
   const staticHandler = sirv(publicDir, {
     dev: !existsSync(publicDir),
@@ -74,6 +83,10 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   const clients = new Map<string, AliveWebSocket>();
   const socketMeta = new WeakMap<AliveWebSocket, SocketMeta>();
   const trustProxy = options.trustProxy ?? process.env.BRIDGE_TRUST_PROXY === '1';
+  const sessionMaxAgeMs = positiveInteger(
+    options.sessionMaxAgeMs ?? Number(process.env.BRIDGE_SESSION_MAX_AGE_MS),
+    AUTH_SESSION_MAX_AGE_MS,
+  );
   const authLimiter = new AuthFailureLimiter({
     limit: options.authFailureLimit,
     windowMs: options.authFailureWindowMs,
@@ -85,7 +98,11 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   const httpServer = createServer((request, response) => {
     handleHttpRequest({ request, response, trustProxy, uiLanguage, staticHandler });
   });
-  const webSocketServer = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
+  const webSocketServer = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_FRAME_BYTES,
+    perMessageDeflate: false,
+  });
 
   httpServer.on('upgrade', (request, socket, head) => {
     let url;
@@ -114,7 +131,9 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       return;
     }
     const authTimer = setTimeout(() => socket.close(4001, 'authentication timeout'), 10_000);
+    let sessionTimer: NodeJS.Timeout | undefined;
     authTimer.unref?.();
+    const authChallenge = randomBytes(32).toString('hex');
     socket.isAlive = true;
     socket.on('pong', () => { socket.isAlive = true; });
 
@@ -128,10 +147,15 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
             return;
           }
           const authenticated = authenticateSocket({
-            socket, message, token, connectors, clients, socketMeta, authTimer,
+            socket, message, clientToken, connectorToken, authChallenge,
+            connectors, clients, socketMeta, authTimer,
             authLimiter, clientAddress,
           });
-          if (authenticated) broadcastPresence(clients, connectors);
+          if (authenticated) {
+            sessionTimer = setTimeout(() => socket.close(4005, 'authentication expired'), sessionMaxAgeMs);
+            sessionTimer.unref?.();
+            broadcastPresence(clients, connectors);
+          }
           return;
         }
         if (message.type === 'ping') {
@@ -147,12 +171,14 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
 
     socket.on('close', () => {
       clearTimeout(authTimer);
+      if (sessionTimer) clearTimeout(sessionTimer);
       const meta = socketMeta.get(socket);
       if (!meta) return;
       if (meta.role === 'client') clients.delete(meta.id);
       if (meta.role === 'connector' && connectors.get(meta.deviceId) === socket) connectors.delete(meta.deviceId);
       broadcastPresence(clients, connectors);
     });
+    safeSend(socket, { type: 'auth.challenge', challenge: authChallenge });
   });
 
   const heartbeat = setInterval(() => {
@@ -228,11 +254,14 @@ function handleHttpRequest({ request, response, trustProxy, uiLanguage, staticHa
 }
 
 function authenticateSocket({
-  socket, message, token, connectors, clients, socketMeta, authTimer, authLimiter, clientAddress,
+  socket, message, clientToken, connectorToken, authChallenge,
+  connectors, clients, socketMeta, authTimer, authLimiter, clientAddress,
 }: {
   socket: AliveWebSocket;
   message: JsonObject;
-  token: string;
+  clientToken: string;
+  connectorToken: string;
+  authChallenge: string;
   connectors: Map<string, AliveWebSocket>;
   clients: Map<string, AliveWebSocket>;
   socketMeta: WeakMap<AliveWebSocket, SocketMeta>;
@@ -240,21 +269,23 @@ function authenticateSocket({
   authLimiter: AuthFailureLimiter;
   clientAddress: string;
 }) {
-  if (message.type !== 'auth' || !tokenMatches(message.token, token)) {
+  const role = message.role === 'connector' ? 'connector' : message.role === 'client' ? 'client' : '';
+  const deviceId = normalizeAuthDeviceId(message.deviceId);
+  const roleToken = role === 'connector' ? connectorToken : clientToken;
+  let expectedProof = '';
+  try {
+    if (role) expectedProof = createAuthProof(roleToken, authChallenge, role, deviceId);
+  } catch {
+    expectedProof = '';
+  }
+  if (message.type !== 'auth.response' || !role || !secretMatches(message.proof, expectedProof)) {
     const locked = authLimiter.recordFailure(clientAddress);
     socket.close(locked ? 4429 : 4003, locked ? 'authentication temporarily locked' : 'authentication failed');
-    return false;
-  }
-  const role = message.role === 'connector' ? 'connector' : message.role === 'client' ? 'client' : '';
-  if (!role) {
-    const locked = authLimiter.recordFailure(clientAddress);
-    socket.close(locked ? 4429 : 4003, locked ? 'authentication temporarily locked' : 'invalid role');
     return false;
   }
   authLimiter.recordSuccess(clientAddress);
   clearTimeout(authTimer);
   if (role === 'connector') {
-    const deviceId = String(message.deviceId || 'personal-pc').trim().slice(0, 128);
     const previous = connectors.get(deviceId);
     if (previous && previous !== socket) previous.close(4004, 'connector replaced');
     connectors.set(deviceId, socket);

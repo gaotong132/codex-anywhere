@@ -80,8 +80,8 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
 
 1. Deploy the relay to your ECS/VPS and choose how it will be reachable. Follow the complete
    [production deployment guide](docs/deployment.md).
-2. Generate one random token of at least 32 characters and configure the same token on the relay and
-   connector.
+2. Generate two independent secrets from at least 32 random bytes: one browser-client token and one
+   connector token. Configure both on the relay and give only the connector token to the connector.
 3. On the computer that runs Codex, install the connector. Windows users can register it for login
    startup with:
 
@@ -92,7 +92,7 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
 
-4. Open the relay URL in the phone browser and enter the same token.
+4. Open the relay URL in the phone browser and enter the browser-client token.
 
 Read [SECURITY.md](SECURITY.md) before exposing the relay to the internet. Do not install Codex or copy
 project files onto the ECS/VPS.
@@ -101,9 +101,15 @@ project files onto the ECS/VPS.
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
-| `BRIDGE_TOKEN` | Relay and connector | Shared secret of at least 32 characters |
+| `BRIDGE_CLIENT_TOKEN` | Relay and browser | Browser-control secret; keep separate from the connector credential |
+| `BRIDGE_CONNECTOR_TOKEN` | Relay and connector | Local connector secret |
+| `BRIDGE_TOKEN` | Relay and connector | Optional compatibility fallback when role-specific tokens are omitted |
 | `BRIDGE_URL` | Connector | Relay WebSocket URL; supports `ws://` and `wss://` |
 | `CODEX_UI_LANGUAGE` | Relay | Web UI language: `zh-CN` or `en` |
+
+Authentication uses a fresh challenge and HMAC-SHA-256 proof, so the credential itself is never sent
+as a WebSocket frame and a captured proof cannot be replayed on a new connection. This does not make
+plaintext `ws://` private: use `wss://`, a VPN, or another secure tunnel on untrusted networks.
 
 New sessions always require an explicit project directory selected in the web UI; the connector has no
 configurable default workspace. `-AllowedRoots` is optional and limits which local directories may be

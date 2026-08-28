@@ -3,7 +3,8 @@ import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { normalizeBridgeUrl, parseFrame, tokenMatches } from '../src/shared/protocol.js';
+import { createAuthProof } from '../src/shared/auth.js';
+import { normalizeBridgeUrl, parseFrame, secretMatches } from '../src/shared/protocol.js';
 import {
   displayAssistantMessage,
   displayUserMessage,
@@ -25,10 +26,22 @@ import {
 } from '../web/src/app-utils.js';
 import { historyItems } from '../web/src/history-utils.js';
 
-test('token comparison requires an exact non-empty match', () => {
-  assert.equal(tokenMatches('a'.repeat(32), 'a'.repeat(32)), true);
-  assert.equal(tokenMatches('a'.repeat(32), 'b'.repeat(32)), false);
-  assert.equal(tokenMatches('', ''), false);
+test('authentication proofs are role, device and challenge bound', () => {
+  const token = 'a'.repeat(32);
+  const challenge = 'b'.repeat(64);
+  const clientProof = createAuthProof(token, challenge, 'client');
+  assert.equal(clientProof.length, 64);
+  assert.equal(secretMatches(clientProof, createAuthProof(token, challenge, 'client')), true);
+  assert.equal(secretMatches(clientProof, createAuthProof(token, 'c'.repeat(64), 'client')), false);
+  assert.equal(secretMatches(clientProof, createAuthProof(token, challenge, 'connector', 'pc')), false);
+  assert.equal(
+    secretMatches(
+      createAuthProof(token, challenge, 'connector', 'pc'),
+      createAuthProof(token, challenge, 'connector', 'other-pc'),
+    ),
+    false,
+  );
+  assert.throws(() => createAuthProof(token, 'not-a-challenge', 'client'), /invalid_auth_challenge/);
 });
 
 test('frame parser rejects arrays', () => {

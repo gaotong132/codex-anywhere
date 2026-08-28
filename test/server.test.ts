@@ -6,9 +6,41 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { WebSocket } from 'ws';
 import { createBridgeServer, internals as serverInternals } from '../src/server/server.js';
+import { createAuthProof } from '../src/shared/auth.js';
 
 const TOKEN = 'test-token-that-is-longer-than-32-characters';
+const CLIENT_TOKEN = 'client-token-that-is-longer-than-32-characters';
+const CONNECTOR_TOKEN = 'connector-token-that-is-longer-than-32-characters';
 const nextJson = (socket) => once(socket, 'message').then(([data]) => JSON.parse(data.toString()));
+
+async function openSocket(url: string, options = {}) {
+  const socket = new WebSocket(url, options);
+  const challengeMessage = nextJson(socket);
+  await once(socket, 'open');
+  const challenge = await challengeMessage;
+  assert.equal(challenge.type, 'auth.challenge');
+  assert.match(challenge.challenge, /^[a-f0-9]{64}$/);
+  return { socket, challenge: challenge.challenge as string };
+}
+
+async function authenticateSocket({
+  url, role, token, deviceId = '', options = {},
+}: {
+  url: string;
+  role: 'client' | 'connector';
+  token: string;
+  deviceId?: string;
+  options?: ConstructorParameters<typeof WebSocket>[1];
+}) {
+  const opened = await openSocket(url, options);
+  opened.socket.send(JSON.stringify({
+    type: 'auth.response',
+    role,
+    deviceId: role === 'connector' ? deviceId : undefined,
+    proof: createAuthProof(token, opened.challenge, role, deviceId),
+  }));
+  return { ...opened, auth: await nextJson(opened.socket) };
+}
 
 test('server exposes a no-store runtime UI language configuration', async (t) => {
   const server = createBridgeServer({ token: TOKEN, uiLanguage: 'en-US' });
@@ -118,15 +150,15 @@ test('server authenticates and relays client requests to connector', async (t) =
   t.after(() => server.close());
   const url = `ws://127.0.0.1:${address.port}/ws`;
 
-  const connector = new WebSocket(url);
-  await once(connector, 'open');
-  connector.send(JSON.stringify({ type: 'auth', role: 'connector', token: TOKEN, deviceId: 'personal-pc' }));
-  assert.equal((await nextJson(connector)).type, 'auth.ok');
+  const connectorConnection = await authenticateSocket({
+    url, role: 'connector', token: TOKEN, deviceId: 'personal-pc',
+  });
+  const connector = connectorConnection.socket;
+  assert.equal(connectorConnection.auth.type, 'auth.ok');
 
-  const client = new WebSocket(url);
-  await once(client, 'open');
-  client.send(JSON.stringify({ type: 'auth', role: 'client', token: TOKEN }));
-  const auth = await nextJson(client);
+  const clientConnection = await authenticateSocket({ url, role: 'client', token: TOKEN });
+  const client = clientConnection.socket;
+  const auth = clientConnection.auth;
   assert.equal(auth.type, 'auth.ok');
   assert.deepEqual(auth.devices, ['personal-pc']);
 
@@ -162,10 +194,12 @@ test('server temporarily locks repeated authentication failures per real client 
   const url = `ws://127.0.0.1:${address.port}/ws`;
 
   async function authenticate(token, clientAddress) {
-    const socket = new WebSocket(url, { headers: { 'x-real-ip': clientAddress } });
-    await once(socket, 'open');
-    socket.send(JSON.stringify({ type: 'auth', role: 'client', token }));
-    return { socket, close: once(socket, 'close') };
+    const { socket, challenge } = await openSocket(url, { headers: { 'x-real-ip': clientAddress } });
+    const close = once(socket, 'close');
+    socket.send(JSON.stringify({
+      type: 'auth.response', role: 'client', proof: createAuthProof(token, challenge, 'client'),
+    }));
+    return { socket, close };
   }
 
   const first = await authenticate('wrong-one', '203.0.113.10');
@@ -173,12 +207,81 @@ test('server temporarily locks repeated authentication failures per real client 
   const second = await authenticate('wrong-two', '203.0.113.10');
   assert.equal((await second.close)[0], 4429);
 
-  const locked = await authenticate(TOKEN, '203.0.113.10');
-  assert.equal((await locked.close)[0], 4429);
+  const lockedSocket = new WebSocket(url, { headers: { 'x-real-ip': '203.0.113.10' } });
+  const lockedClose = once(lockedSocket, 'close');
+  await once(lockedSocket, 'open');
+  assert.equal((await lockedClose)[0], 4429);
 
   const otherAddress = await authenticate(TOKEN, '203.0.113.11');
   assert.equal((await nextJson(otherAddress.socket)).type, 'auth.ok');
   otherAddress.socket.close();
+});
+
+test('server never accepts a raw token and rejects a captured proof on a fresh challenge', async (t) => {
+  const server = createBridgeServer({ token: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+
+  const raw = await openSocket(url);
+  const rawClose = once(raw.socket, 'close');
+  raw.socket.send(JSON.stringify({ type: 'auth', role: 'client', token: TOKEN }));
+  assert.equal((await rawClose)[0], 4003);
+
+  const first = await openSocket(url);
+  const capturedProof = createAuthProof(TOKEN, first.challenge, 'client');
+  first.socket.close();
+
+  const second = await openSocket(url);
+  assert.notEqual(first.challenge, second.challenge);
+  const replayClose = once(second.socket, 'close');
+  second.socket.send(JSON.stringify({ type: 'auth.response', role: 'client', proof: capturedProof }));
+  assert.equal((await replayClose)[0], 4003);
+});
+
+test('separate role credentials prevent a client token from replacing the connector', async (t) => {
+  const server = createBridgeServer({ clientToken: CLIENT_TOKEN, connectorToken: CONNECTOR_TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+
+  const connector = await authenticateSocket({
+    url, role: 'connector', token: CONNECTOR_TOKEN, deviceId: 'personal-pc',
+  });
+  assert.equal(connector.auth.type, 'auth.ok');
+
+  const impostor = await openSocket(url);
+  const close = once(impostor.socket, 'close');
+  impostor.socket.send(JSON.stringify({
+    type: 'auth.response', role: 'connector', deviceId: 'personal-pc',
+    proof: createAuthProof(CLIENT_TOKEN, impostor.challenge, 'connector', 'personal-pc'),
+  }));
+  assert.equal((await close)[0], 4003);
+  assert.equal(server.connectors.size, 1);
+  assert.equal(connector.socket.readyState, WebSocket.OPEN);
+
+  const clientImpostor = await openSocket(url);
+  const clientClose = once(clientImpostor.socket, 'close');
+  clientImpostor.socket.send(JSON.stringify({
+    type: 'auth.response', role: 'client',
+    proof: createAuthProof(CONNECTOR_TOKEN, clientImpostor.challenge, 'client'),
+  }));
+  assert.equal((await clientClose)[0], 4003);
+  connector.socket.close();
+});
+
+test('authenticated sockets expire and can reconnect with a fresh proof', async (t) => {
+  const server = createBridgeServer({ token: TOKEN, sessionMaxAgeMs: 40 });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+
+  const first = await authenticateSocket({ url, role: 'client', token: TOKEN });
+  const firstClose = once(first.socket, 'close');
+  assert.equal((await firstClose)[0], 4005);
+  const second = await authenticateSocket({ url, role: 'client', token: TOKEN });
+  assert.equal(second.auth.type, 'auth.ok');
+  second.socket.close();
 });
 
 test('authentication failure tracking is bounded and evicts the stalest address', () => {

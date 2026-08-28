@@ -41,10 +41,6 @@ export function secretMatches(actual: unknown, expected: unknown) {
   return left.length === right.length && left.length > 0 && timingSafeEqual(left, right);
 }
 
-export function tokenMatches(actual: unknown, expected: unknown) {
-  return secretMatches(actual, expected);
-}
-
 export function publicError(error: unknown) {
   const message = String(error instanceof Error ? error.message : error || 'unknown_error');
   if (/token|secret|password|credential/i.test(message)) return 'authentication_failed';

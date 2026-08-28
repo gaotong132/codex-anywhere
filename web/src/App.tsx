@@ -54,6 +54,7 @@ import {
   type SessionAttentionState,
 } from './app-utils';
 import { DownloadIndicator, MessageBubble, SidebarIcon } from './ui-components';
+import { createAuthProof } from '../../src/shared/auth';
 import type {
   Approval,
   AwaitingDesktopTurn,
@@ -498,12 +499,19 @@ export default function App() {
     const socket = new WebSocket(`${scheme}//${location.host}/ws`);
     socketRef.current = socket;
     socketAuthenticatedRef.current = false;
-    socket.addEventListener('open', () => {
-      socket.send(JSON.stringify({ type: 'auth', role: 'client', token: value }));
-    });
     socket.addEventListener('message', (incoming) => {
       lastServerActivityRef.current = Date.now();
-      try { messageHandlerRef.current(JSON.parse(String(incoming.data)) as BridgeMessage); } catch { /* ignore invalid frame */ }
+      try {
+        const message = JSON.parse(String(incoming.data)) as BridgeMessage;
+        if (message.type === 'auth.challenge') {
+          const proof = createAuthProof(value, String(message.challenge || ''), 'client');
+          socket.send(JSON.stringify({ type: 'auth.response', role: 'client', proof }));
+          return;
+        }
+        messageHandlerRef.current(message);
+      } catch {
+        if (!socketAuthenticatedRef.current) socket.close(4003, 'invalid authentication challenge');
+      }
     });
     socket.addEventListener('close', (event) => {
       if (socketRef.current !== socket) return;
@@ -516,6 +524,9 @@ export default function App() {
       rejectPendingRequests(t('连接已断开', 'Connection closed'));
       if (event.code === 4003) {
         reconnectWantedRef.current = false;
+        sessionStorage.removeItem('bridge.token');
+        tokenRef.current = '';
+        setToken('');
         setAuthenticated(false);
         setStatusText(t('Token 验证失败', 'Token verification failed'));
         return;

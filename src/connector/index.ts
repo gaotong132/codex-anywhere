@@ -7,6 +7,7 @@ import { DownloadManager } from './file-downloads.js';
 import { generatedImagesDirectory } from './generated-images.js';
 import { acquireConnectorInstanceLock } from './instance-lock.js';
 import { createRequestHandler } from './request-handler.js';
+import { createAuthProof } from '../shared/auth.js';
 import {
   MAX_FRAME_BYTES, normalizeBridgeUrl, parseFrame, safeSend,
 } from '../shared/protocol.js';
@@ -48,14 +49,23 @@ codex.on('turn-event', (message) => safeSend(socket, { type: 'event', ...message
 
 function connect() {
   if (stopped) return;
-  socket = new WebSocket(url, { maxPayload: MAX_FRAME_BYTES });
-  socket.on('open', () => {
-    reconnectAttempt = 0;
-    safeSend(socket, { type: 'auth', role: 'connector', token, deviceId });
-  });
+  socket = new WebSocket(url, { maxPayload: MAX_FRAME_BYTES, perMessageDeflate: false });
   socket.on('message', async (data) => {
     let message;
     try { message = parseFrame(data); } catch { return; }
+    if (message.type === 'auth.challenge') {
+      try {
+        const proof = createAuthProof(token, String(message.challenge || ''), 'connector', deviceId);
+        safeSend(socket, { type: 'auth.response', role: 'connector', proof, deviceId });
+      } catch {
+        socket?.close(4003, 'invalid authentication challenge');
+      }
+      return;
+    }
+    if (message.type === 'auth.ok') {
+      reconnectAttempt = 0;
+      return;
+    }
     if (message.type === 'request') {
       safeSend(socket, await handleRequest({ ...message, action: String(message.action || '') }));
     }

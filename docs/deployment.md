@@ -37,9 +37,9 @@ them. WSS is the recommended transport for these connections.
 This is not end-to-end encryption through an untrusted relay. In the recommended WSS setup, TLS
 terminates at the ECS ingress and the relay sees plaintext frames in process memory. With WS, the
 network path can see them too. The ECS root administrator, cloud provider, any proxy provider, and
-anyone who obtains the shared token are therefore in the trust boundary. Use infrastructure you
-control, minimize administrators and logs, keep the host patched, and rotate the token after any
-suspected disclosure.
+anyone who obtains a valid browser or connector token is therefore in the trust boundary. Use
+infrastructure you control, minimize administrators and logs, keep the host patched, separate the two
+roles, and rotate an affected token after any suspected disclosure.
 
 ## 1. Network and host preparation
 
@@ -47,7 +47,9 @@ suspected disclosure.
 2. Allow only the port used by your encrypted ingress. In the reference HTTPS deployment this is
    TCP 443; TCP 80 is optional for redirect or certificate validation.
 3. Restrict SSH to trusted source addresses or a VPN and prefer SSH keys over passwords.
-4. Do **not** allow inbound TCP 3300 in the cloud security group or host firewall.
+4. In the reference reverse-proxy deployment, do **not** allow inbound TCP 3300 in the cloud security
+   group or host firewall. If you deliberately choose direct `ws://`, expose only the selected relay
+   port, restrict its source range where practical, and accept that messages are plaintext in transit.
 5. For the included reference path, install maintained Docker Engine, Docker Compose v2, Nginx, and
    the certificate tooling appropriate for your environment. Equivalent components may be used.
 
@@ -56,25 +58,33 @@ projects to this ECS.
 
 ## 2. Relay and secret
 
-Clone the repository on the ECS. Create the shared token in a root-readable `.env`; use at least 32
-cryptographically random bytes (64 hexadecimal characters). The following avoids putting the token
-in shell history:
+Clone the repository on the ECS. Create separate browser-client and connector tokens in a root-readable
+`.env`; use at least 32 cryptographically random bytes (64 hexadecimal characters) for each. The
+following avoids putting them in shell history:
 
 ```bash
 git clone https://github.com/gaotong132/codex-anywhere.git
 cd codex-anywhere
 umask 077
-BRIDGE_TOKEN_INPUT="$(openssl rand -hex 32)"
-printf 'BRIDGE_TOKEN=%s\n' "$BRIDGE_TOKEN_INPUT" > .env
+BRIDGE_CLIENT_TOKEN_INPUT="$(openssl rand -hex 32)"
+BRIDGE_CONNECTOR_TOKEN_INPUT="$(openssl rand -hex 32)"
+printf 'BRIDGE_CLIENT_TOKEN=%s\n' "$BRIDGE_CLIENT_TOKEN_INPUT" > .env
+printf 'BRIDGE_CONNECTOR_TOKEN=%s\n' "$BRIDGE_CONNECTOR_TOKEN_INPUT" >> .env
 printf 'CODEX_UI_LANGUAGE=zh-CN\n' >> .env
-unset BRIDGE_TOKEN_INPUT
+unset BRIDGE_CLIENT_TOKEN_INPUT BRIDGE_CONNECTOR_TOKEN_INPUT
 chmod 600 .env
 docker compose up --build -d
 ```
 
-Retrieve the token only over your encrypted administrator session and place it in a password manager.
-Never paste it into a chat, issue, screenshot, source file, shell argument, or CI log. Do not include
-`.env` in server backups unless that backup is encrypted and access-controlled.
+Retrieve the client token only over your encrypted administrator session and place it in a password
+manager. Pass only the connector token to the local installer. Never paste either value into a chat,
+issue, screenshot, source file, shell argument, or CI log. Do not include `.env` in server backups
+unless that backup is encrypted and access-controlled.
+
+`BRIDGE_TOKEN` remains available as a compatibility fallback when both role-specific variables are
+omitted. It is convenient for local smoke tests, but a public deployment should keep the roles separate.
+The relay uses fresh HMAC challenges, rejects captured-proof replay, locks repeated failures, and renews
+authenticated sockets every 12 hours (`BRIDGE_SESSION_MAX_AGE_MS`).
 
 The supplied Compose service:
 
@@ -122,7 +132,7 @@ otherwise untrusted network.
 For a foreground test:
 
 ```powershell
-$env:BRIDGE_TOKEN = Read-Host 'Bridge token'
+$env:BRIDGE_TOKEN = Read-Host 'Connector token'
 $env:BRIDGE_URL = 'wss://codex.example.com/ws'
 $env:CODEX_NETWORK_ACCESS = '0'
 npm run connector
@@ -132,7 +142,7 @@ On Windows, the login-startup installer stores the token with user-scoped DPAPI 
 repository or a plaintext script:
 
 ```powershell
-$token = Read-Host 'Bridge token' -AsSecureString
+$token = Read-Host 'Connector token' -AsSecureString
 .\scripts\install-connector.ps1 `
   -Token $token `
   -BridgeUrl 'wss://codex.example.com/ws'
@@ -146,12 +156,13 @@ is intentional. Leave network access disabled unless the Codex task actually nee
 
 The encrypted credential and non-secret settings are stored outside the checkout under
 `%LOCALAPPDATA%\PersonalCodexBridge`. Re-run the installer without `-Token` to update settings while
-retaining the credential. `scripts/copy-token.ps1` copies it to the clipboard when browser login is
-needed; clear clipboard history afterward on shared computers.
+retaining the credential. `scripts/copy-token.ps1` copies this connector credential only for connector
+recovery or migration; do not use it as the browser token in a role-separated deployment, and clear
+clipboard history afterward on shared computers.
 
 ## 5. End-to-end validation
 
-1. Open `https://codex.example.com`, enter the shared token, and verify the connector is online.
+1. Open `https://codex.example.com`, enter `BRIDGE_CLIENT_TOKEN`, and verify the connector is online.
 2. Open an existing session and send a harmless test message.
 3. Confirm the message and reply appear in Codex Desktop and the browser.
 4. Confirm HTTP is redirected to HTTPS and `http://ECS-IP:3300` is unreachable externally.

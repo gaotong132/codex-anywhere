@@ -25,6 +25,7 @@
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "fast-xml-parser": "5.11.1",
     "file-type": "22.0.2",
     "lru-cache": "11.5.2",

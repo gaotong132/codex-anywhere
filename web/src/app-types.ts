@@ -26,6 +26,7 @@ export type PendingRequest = {
 };
 export type BridgeMessage = {
   type: string;
+  challenge?: string;
   requestId?: string;
   ok?: boolean;
   error?: string;
