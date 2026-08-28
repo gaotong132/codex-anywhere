@@ -114,6 +114,7 @@ export default function App() {
   const [statusText, setStatusText] = useState('未连接');
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionSearch, setSessionSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
@@ -939,35 +940,12 @@ export default function App() {
 
   const filteredSessions = useMemo(() => {
     const query = sessionSearch.trim().toLocaleLowerCase();
-    if (!query) return sessions;
-    return sessions.filter((session) => `${session.title} ${session.cwd || ''} ${session.preview || ''}`
-      .toLocaleLowerCase().includes(query));
+    const matches = query
+      ? sessions.filter((session) => `${session.title} ${session.cwd || ''} ${session.preview || ''}`
+        .toLocaleLowerCase().includes(query))
+      : sessions;
+    return [...matches].sort((left, right) => sessionUpdatedAt(right.updatedAt) - sessionUpdatedAt(left.updatedAt));
   }, [sessionSearch, sessions]);
-  const runningSessionCount = filteredSessions.filter((session) => (
-    isSessionRunning(session.status)
-    || (session.id === threadId && (executionState === 'running' || executionState === 'waiting'))
-  )).length;
-  const sessionGroups = useMemo(() => {
-    const groups: Array<{ key: string; projectName: string; projectPath: string; sessions: Session[] }> = [];
-    const projects = new Map<string, (typeof groups)[number]>();
-    for (const session of filteredSessions) {
-      const projectName = sessionProjectName(session.cwd);
-      if (!projectName) {
-        groups.push({ key: `session:${session.id}`, projectName: '', projectPath: '', sessions: [session] });
-        continue;
-      }
-      const projectPath = String(session.cwd || '').trim().replace(/[\\/]+$/, '');
-      const key = projectPath.toLocaleLowerCase();
-      let group = projects.get(key);
-      if (!group) {
-        group = { key: `project:${key}`, projectName, projectPath, sessions: [] };
-        projects.set(key, group);
-        groups.push(group);
-      }
-      group.sessions.push(session);
-    }
-    return groups;
-  }, [filteredSessions]);
 
   const existingProjects = useMemo(() => {
     const seen = new Set<string>();
@@ -1022,50 +1000,56 @@ export default function App() {
           </div>
           <button className="icon-button mobile-only" onClick={() => setDrawerOpen(false)} aria-label="关闭">×</button>
         </div>
-        <button className="new-session" onClick={beginNewSession}>＋ 新会话</button>
-        <div className="search-row">
-          <label className="search-field">
-            <span>⌕</span>
-            <input value={sessionSearch} onChange={(event) => setSessionSearch(event.target.value)} placeholder="搜索会话或目录" />
-          </label>
-          <button className="refresh-button" onClick={() => void refreshSessions()} aria-label="刷新会话">↻</button>
-        </div>
-        <div className="session-count">
-          {filteredSessions.length} 个会话
-          {runningSessionCount > 0 && <strong> · {runningSessionCount} 个运行中</strong>}
+        <div className="sidebar-toolbar">
+          {searchOpen ? (
+            <label className="compact-search">
+              <span>⌕</span>
+              <input
+                autoFocus
+                value={sessionSearch}
+                onChange={(event) => setSessionSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setSessionSearch('');
+                    setSearchOpen(false);
+                  }
+                }}
+                placeholder="搜索会话或目录"
+              />
+            </label>
+          ) : <div className="session-count">{filteredSessions.length} 个会话</div>}
+          <button className="sidebar-tool primary-tool" onClick={beginNewSession} aria-label="新会话" title="新会话">＋</button>
+          <button
+            className={`sidebar-tool ${searchOpen ? 'active' : ''}`}
+            onClick={() => {
+              if (searchOpen) setSessionSearch('');
+              setSearchOpen((open) => !open);
+            }}
+            aria-label={searchOpen ? '关闭搜索' : '搜索会话'}
+            title={searchOpen ? '关闭搜索' : '搜索会话'}
+          >⌕</button>
+          <button className="sidebar-tool" onClick={() => void refreshSessions()} aria-label="刷新会话" title="刷新会话">↻</button>
         </div>
         <nav className="session-list">
-          {sessionGroups.map((group) => (
-            <section key={group.key} className={`session-group ${group.projectName ? 'grouped' : 'ungrouped'}`}>
-              {group.projectName && (
-                <div className="session-project-heading" title={group.projectPath}>
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M3.75 6.75h5l2 2h9.5v8.5a2 2 0 0 1-2 2H5.75a2 2 0 0 1-2-2V6.75Z" />
-                  </svg>
-                  <span>{group.projectName}</span>
-                </div>
-              )}
-              <div className="session-group-list">
-                {group.sessions.map((session) => {
-                  const sessionRunning = isSessionRunning(session.status)
-                    || (session.id === threadId && (executionState === 'running' || executionState === 'waiting'));
-                  return (
-                    <button
-                      key={session.id}
-                      className={`session-card ${threadId === session.id ? 'active' : ''} ${sessionRunning ? 'running' : ''}`}
-                      onClick={() => selectSession(session)}
-                    >
-                      <span className="session-title" title={session.title || session.id}>{session.title || session.id}</span>
-                      <span className="session-meta">
-                        {sessionRunning && <span className="session-running-badge"><i />运行中</span>}
-                        <time>{formatDate(session.updatedAt)}</time>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+          {filteredSessions.map((session) => {
+            const sessionRunning = isSessionRunning(session.status)
+              || (session.id === threadId && (executionState === 'running' || executionState === 'waiting'));
+            const projectName = sessionProjectName(session.cwd);
+            return (
+              <button
+                key={session.id}
+                className={`session-card ${threadId === session.id ? 'active' : ''} ${sessionRunning ? 'running' : ''}`}
+                onClick={() => selectSession(session)}
+              >
+                <span className="session-title" title={session.title || session.id}>{session.title || session.id}</span>
+                <span className="session-meta">
+                  {projectName && <span className="session-project" title={session.cwd}>{projectName}</span>}
+                  {sessionRunning && <span className="session-running-dot" aria-label="运行中" title="运行中" />}
+                  <time>{formatDate(session.updatedAt)}</time>
+                </span>
+              </button>
+            );
+          })}
           {!filteredSessions.length && <p className="empty-list">没有匹配的会话</p>}
         </nav>
       </aside>
@@ -1354,6 +1338,13 @@ function shortId(value: string) {
 
 function isSessionRunning(status?: string) {
   return /^(?:active|running|inProgress|waiting)$/i.test(String(status || ''));
+}
+
+function sessionUpdatedAt(value: Session['updatedAt']) {
+  if (!value) return 0;
+  const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1000 : value;
+  const timestamp = new Date(numeric).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function projectLabel(path: string) {
