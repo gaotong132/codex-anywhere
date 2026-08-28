@@ -166,7 +166,6 @@ export default function App() {
   const optimisticRestoreRef = useRef<string | null>(null);
   const runningRef = useRef(running);
   const executionStateRef = useRef(executionState);
-  const connectionNoticeIdRef = useRef<string | null>(null);
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
   useEffect(() => { tokenRef.current = token; }, [token]);
@@ -256,34 +255,10 @@ export default function App() {
     return item.id;
   }, []);
 
-  const showConnectionNotice = useCallback((text = t(
-    '连接中断，正在自动重连…',
-    'Connection lost. Reconnecting…',
-  )) => {
-    const id = connectionNoticeIdRef.current || makeId();
-    connectionNoticeIdRef.current = id;
-    setTimeline((current) => {
-      const notice = { id, kind: 'notice' as const, text, transient: true };
-      return current.some((item) => item.id === id)
-        ? current.map((item) => item.id === id ? notice : item)
-        : [...current, notice];
-    });
-  }, []);
-
-  const clearConnectionNotice = useCallback(() => {
-    const id = connectionNoticeIdRef.current;
-    if (!id) return;
-    connectionNoticeIdRef.current = null;
-    setTimeline((current) => current.filter((item) => item.id !== id));
-  }, []);
-
   const reportTimelineError = useCallback((error: unknown) => {
-    if (isConnectionInterruption(error)) {
-      showConnectionNotice();
-      return;
-    }
+    if (isConnectionInterruption(error)) return;
     addTimeline('error', friendlyError(error));
-  }, [addTimeline, showConnectionNotice]);
+  }, [addTimeline]);
 
   const rememberAttachment = useCallback((targetThreadId: string, text: string, attachment: ImageAttachment) => {
     if (!targetThreadId || !text.trim()) return;
@@ -365,7 +340,10 @@ export default function App() {
         || Object.prototype.hasOwnProperty.call(attachmentUrls, attachment.path)
         || attachmentLoadsRef.current.has(attachment.path)) continue;
       attachmentLoadsRef.current.add(attachment.path);
-      void request<DownloadedImage>('attachment.read', { path: attachment.path })
+      void request<DownloadedImage>('attachment.read', {
+        path: attachment.path,
+        source: attachment.source,
+      })
         .then((image) => {
           if (!isValidImagePayload(image.mimeType, image.data)) throw new Error('attachment_content_mismatch');
           if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
@@ -409,7 +387,6 @@ export default function App() {
 
   const handleBridgeMessage = useCallback((message: BridgeMessage) => {
     if (message.type === 'auth.ok') {
-      clearConnectionNotice();
       socketAuthenticatedRef.current = true;
       reconnectAttemptRef.current = 0;
       setAuthenticated(true);
@@ -478,7 +455,7 @@ export default function App() {
       setExecutionState((current) => current === 'failed' ? current : 'completed');
       void refreshSessions();
     }
-  }, [addTimeline, appendStream, clearConnectionNotice, finishAssistant, refreshSessions]);
+  }, [addTimeline, appendStream, finishAssistant, refreshSessions]);
 
   const messageHandlerRef = useRef(handleBridgeMessage);
   useEffect(() => { messageHandlerRef.current = handleBridgeMessage; }, [handleBridgeMessage]);
@@ -535,7 +512,6 @@ export default function App() {
       setConnecting(false);
       setOnline(false);
       setRunning(false);
-      showConnectionNotice();
       rejectPendingRequests(t('连接已断开', 'Connection closed'));
       if (event.code === 4003) {
         reconnectWantedRef.current = false;
@@ -557,7 +533,7 @@ export default function App() {
     socket.addEventListener('error', () => {
       if (socketRef.current === socket) setStatusText(t('连接失败', 'Connection failed'));
     });
-  }, [clearReconnectTimer, rejectPendingRequests, showConnectionNotice]);
+  }, [clearReconnectTimer, rejectPendingRequests]);
 
   const scheduleReconnect = useCallback((immediate = false) => {
     if (!reconnectWantedRef.current || tokenRef.current.trim().length < 32) return;
@@ -625,7 +601,6 @@ export default function App() {
       setOnline(false);
       setConnecting(false);
       setStatusText(t('等待网络恢复', 'Waiting for network'));
-      showConnectionNotice(t('网络已断开，恢复后将自动重连…', 'Network offline. Reconnecting when available…'));
     };
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') reconnectNow();
@@ -644,7 +619,7 @@ export default function App() {
       socket?.close(1000, 'page closed');
       rejectPendingRequests(t('页面已关闭', 'Page closed'));
     };
-  }, [clearReconnectTimer, rejectPendingRequests, scheduleReconnect, showConnectionNotice]);
+  }, [clearReconnectTimer, rejectPendingRequests, scheduleReconnect]);
 
   useEffect(() => {
     const heartbeat = setInterval(() => {
@@ -1026,7 +1001,6 @@ export default function App() {
         });
       }
       if (error instanceof Error && error.message === 'turn_cancelled') {
-        addTimeline('notice', t('已取消发送，原消息已放回输入框。', 'Sending was cancelled and the original message was restored.'));
         return;
       }
       reportTimelineError(error);
@@ -1480,7 +1454,11 @@ export default function App() {
             />
             {running
               ? <button className="stop-button" onClick={() => void stopTurn()} aria-label={t('停止', 'Stop')}>■</button>
-              : <button className="send-button" disabled={!online || uploading || (!prompt.trim() && !pendingImage) || (!threadId && !newSessionCwd.trim())} onClick={() => void sendTurn()} aria-label={t('发送', 'Send')}>{uploading ? '…' : '↑'}</button>}
+              : <button className="send-button" disabled={!online || uploading || (!prompt.trim() && !pendingImage) || (!threadId && !newSessionCwd.trim())} onClick={() => void sendTurn()} aria-label={t('发送', 'Send')}>
+                  {uploading
+                    ? '…'
+                    : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Zm3 7h13" /></svg>}
+                </button>}
           </div>
           <small>{t('Ctrl / ⌘ + Enter 发送 · 历史记录按页加载', 'Ctrl / ⌘ + Enter to send · History loads by page')}</small>
         </footer>}

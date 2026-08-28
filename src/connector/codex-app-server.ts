@@ -6,6 +6,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
 import { readRolloutTail } from './rollout-tail.js';
+import { extractGeneratedImageAttachment } from './generated-images.js';
 
 const RPC_TIMEOUT_MS = 20_000;
 const SUMMARY_LIMIT = 4_000;
@@ -541,10 +542,17 @@ function mapTurns(turns: unknown) {
     items: (Array.isArray(turn.items) ? turn.items : [])
       .filter((item: JsonObject) => {
         const type = String(item.type || '');
-        return !/reasoning|command|tool|webSearch|fileChange|system|developer/i.test(type)
-          && /user|agent|assistant|message/i.test(type);
+        return Boolean(extractGeneratedImageAttachment(item))
+          || (!/reasoning|command|tool|webSearch|fileChange|system|developer/i.test(type)
+            && /user|agent|assistant|message/i.test(type));
       })
       .map((item: JsonObject) => {
+        const attachment = extractGeneratedImageAttachment(item);
+        if (attachment) {
+          return {
+            type: 'agentMessage', phase: 'final_answer', status: item.status || '', text: '', attachment,
+          };
+        }
         const content = /user/i.test(String(item.type || ''))
           ? parseUserMessage(extractText(item)) : parseAssistantMessage(extractText(item));
         return {
@@ -554,7 +562,7 @@ function mapTurns(turns: unknown) {
           ...content,
         };
       })
-      .filter((item: JsonObject) => item.text),
+      .filter((item: JsonObject) => item.text || item.attachment),
   }));
 }
 

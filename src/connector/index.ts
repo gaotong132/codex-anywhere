@@ -4,6 +4,7 @@ import { CodexAppServer } from './codex-app-server.js';
 import { CodexDesktopClient } from './codex-desktop.js';
 import { readImageAttachment, saveImageAttachment } from './attachments.js';
 import { DownloadManager } from './file-downloads.js';
+import { generatedImagesDirectory } from './generated-images.js';
 import { acquireConnectorInstanceLock } from './instance-lock.js';
 import { createRequestHandler } from './request-handler.js';
 import {
@@ -29,7 +30,7 @@ const codex = new CodexAppServer({
 });
 const desktop = new CodexDesktopClient();
 const downloads = new DownloadManager({
-  allowedRoots,
+  allowedRoots: [...allowedRoots, generatedImagesDirectory()],
   allowAnyFileDownload: process.env.CODEX_ALLOW_ANY_FILE_DOWNLOAD === '1',
 });
 const handleRequest = createRequestHandler({

@@ -3,6 +3,7 @@ import { lstat, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/prom
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
+import { readGeneratedImagePreview } from './generated-images.js';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 512 * 1024;
@@ -22,10 +23,16 @@ type ImagePayload = {
   size?: unknown;
   data?: unknown;
   path?: unknown;
+  source?: unknown;
   preview?: ImagePayload;
 };
 
-type AttachmentOptions = { directory?: string; now?: number; maxAgeMs?: number };
+type AttachmentOptions = {
+  directory?: string;
+  generatedDirectory?: string;
+  now?: number;
+  maxAgeMs?: number;
+};
 
 export async function saveImageAttachment(payload: ImagePayload, options: AttachmentOptions = {}) {
   const original = await decodeImagePayload(payload, MAX_IMAGE_BYTES);
@@ -56,6 +63,9 @@ export async function saveImageAttachment(payload: ImagePayload, options: Attach
 }
 
 export async function readImageAttachment(payload: ImagePayload, options: AttachmentOptions = {}) {
+  if (payload?.source === 'generated') {
+    return readGeneratedImagePreview(payload, { directory: options.generatedDirectory });
+  }
   const directory = resolve(options.directory || DEFAULT_ATTACHMENT_DIRECTORY);
   await ensureSafeDirectory(directory);
   const path = resolve(String(payload?.path || ''));

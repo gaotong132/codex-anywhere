@@ -19,6 +19,7 @@ type TurnItem = {
   input?: string;
   output?: string;
   contexts?: MessageContext[];
+  attachment?: ImageAttachment;
 };
 
 export type Turn = {
@@ -28,8 +29,8 @@ export type Turn = {
   items?: TurnItem[];
 };
 
-export type TimelineKind = 'user' | 'assistant' | 'progress' | 'error' | 'notice';
-export type ImageAttachment = { path: string; name: string };
+export type TimelineKind = 'user' | 'assistant' | 'progress' | 'error';
+export type ImageAttachment = { path: string; name: string; source?: 'generated' };
 export type TimelineItem = {
   id: string;
   kind: TimelineKind;
@@ -47,18 +48,19 @@ export function historyItems(turns: Turn[]) {
     for (const [index, item] of (turn.items || []).entries()) {
       const type = item.type || '';
       const rawText = item.text?.trim();
-      const attachment = /user/i.test(type) ? extractImageAttachment(rawText || '') : undefined;
+      const attachment = item.attachment
+        || (/user/i.test(type) ? extractImageAttachment(rawText || '') : undefined);
       const content = /user/i.test(type)
         ? parseUserMessage(rawText || '')
         : parseAssistantMessage(rawText || '');
       const text = content.text;
       let kind: TimelineKind | null = null;
       const displayText = text || '';
-      if (/user/i.test(type) && text) kind = 'user';
-      else if (/agent|assistant|message/i.test(type) && text) {
+      if (/user/i.test(type) && (text || attachment)) kind = 'user';
+      else if (/agent|assistant|message/i.test(type) && (text || attachment)) {
         kind = !item.phase || item.phase === 'final_answer' ? 'assistant' : 'progress';
       }
-      if (!kind || !displayText) continue;
+      if (!kind || (!displayText && !attachment)) continue;
       const previous = items.at(-1);
       if (kind === 'progress' && previous?.kind === 'progress' && previous.historyTurnId === turn.id) {
         previous.text = `${previous.text}\n\n${displayText}`;
@@ -104,6 +106,7 @@ export function historyFingerprint(turns: Turn[]) {
       input: item.input,
       output: item.output,
       contexts: item.contexts,
+      attachment: item.attachment,
     })),
   })));
 }
@@ -139,7 +142,7 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
 }
 
 function messageIdentity(item: TimelineItem) {
-  return `${item.kind}\0${canonicalMessageText(item.text)}`;
+  return `${item.kind}\0${canonicalMessageText(item.text)}\0${item.attachment?.path || ''}`;
 }
 
 function canonicalMessageText(text: string) {

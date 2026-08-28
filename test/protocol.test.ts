@@ -22,6 +22,7 @@ import {
   markSessionAttentionRead,
   reconcileSessionAttention,
 } from '../web/src/app-utils.js';
+import { historyItems } from '../web/src/history-utils.js';
 
 test('token comparison requires an exact non-empty match', () => {
   assert.equal(tokenMatches('a'.repeat(32), 'a'.repeat(32)), true);
@@ -226,6 +227,65 @@ test('rollout tail mapping keeps only user-visible conversation updates', () => 
   assert.equal(items[1].text, 'visible update');
   assert.equal(items[2].phase, 'final_answer');
   assert.equal(items[2].text, 'done');
+});
+
+test('history readers expose generated images as lightweight local references', () => {
+  const path = 'C:\\Users\\example\\.codex\\generated_images\\thread-1\\result.png';
+  const tailItems = rolloutInternals.mapRolloutRows([{
+    type: 'event_msg',
+    payload: {
+      type: 'image_generation_end', status: 'completed', saved_path: path,
+      result: 'data:image/png;base64,' + 'x'.repeat(5_000),
+    },
+  }]);
+  assert.deepEqual(tailItems, [{
+    type: 'agentMessage',
+    phase: 'final_answer',
+    text: '',
+    attachment: { path, name: 'result.png', source: 'generated' },
+    status: '', name: '', input: '', output: '',
+  }]);
+
+  const turns = internals.mapTurns([{ id: 't1', items: [{
+    type: 'imageGeneration', status: 'completed', savedPath: path,
+  }] }]);
+  assert.deepEqual(turns[0].items, [{
+    type: 'agentMessage', phase: 'final_answer', status: 'completed', text: '',
+    attachment: { path, name: 'result.png', source: 'generated' },
+  }]);
+
+  assert.deepEqual(historyItems(turns), [{
+    id: 'history:t1:0', kind: 'assistant', text: '', historyTurnId: 't1',
+    attachment: { path, name: 'result.png', source: 'generated' }, contexts: [],
+  }]);
+});
+
+test('rollout tail recovers a generated image reference from a truncated Base64 event row', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-image-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const path = 'C:\\Users\\example\\.codex\\generated_images\\thread-1\\result.png';
+  const row = (value) => `${JSON.stringify(value)}\n`;
+  try {
+    await writeFile(filePath, [
+      row({
+        type: 'event_msg', payload: {
+          type: 'image_generation_end', status: 'completed', result: 'x'.repeat(80 * 1024), saved_path: path,
+        },
+      }),
+      row({ type: 'response_item', payload: { type: 'custom_tool_call_output', output: 'x'.repeat(40 * 1024) } }),
+      row({
+        type: 'response_item', payload: { type: 'message', role: 'assistant', phase: 'final_answer', content: [
+          { type: 'output_text', text: 'image ready' },
+        ] },
+      }),
+    ].join(''));
+    const result = await readRolloutTail({ filePath, threadId: 'thread-image', maxBytes: 64 * 1024 });
+    assert.equal(result.turns[0].items[0].attachment.path, path);
+    assert.equal(result.turns[0].items[1].text, 'image ready');
+  } finally {
+    rolloutInternals.rolloutCache.delete(filePath);
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('rollout tail unwraps and deduplicates heartbeat event formats', () => {

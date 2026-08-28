@@ -99,6 +99,31 @@ test('image read prefers the stored lightweight preview', async (t) => {
   assert.equal(result.data, ONE_PIXEL_PNG.toString('base64'));
 });
 
+test('generated image read returns a lightweight preview only from the Codex image directory', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-generated-image-test-'));
+  const threadDirectory = join(directory, 'thread-1');
+  await mkdir(threadDirectory);
+  const generated = join(threadDirectory, 'result.png');
+  const outside = join(tmpdir(), `outside-${Date.now()}.png`);
+  await writeFile(generated, ONE_PIXEL_PNG);
+  await writeFile(outside, ONE_PIXEL_PNG);
+  t.after(async () => {
+    await rm(directory, { recursive: true, force: true });
+    await rm(outside, { force: true });
+  });
+
+  const result = await readImageAttachment({
+    path: generated, source: 'generated',
+  }, { generatedDirectory: directory });
+  assert.equal(result.mimeType, 'image/webp');
+  assert.ok(result.size > 0);
+  assert.ok(result.data.length > 0);
+  await assert.rejects(
+    () => readImageAttachment({ path: outside, source: 'generated' }, { generatedDirectory: directory }),
+    /generated_image_path_not_allowed/,
+  );
+});
+
 test('attachment cleanup deletes only expired regular files', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-attachment-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));

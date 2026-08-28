@@ -2,6 +2,10 @@ import { open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
 import type { MessageContext } from '../shared/message-content.js';
+import {
+  extractGeneratedImageAttachment,
+  type GeneratedImageAttachment,
+} from './generated-images.js';
 
 const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_ITEMS = 80;
@@ -21,6 +25,7 @@ type RolloutItem = {
   name?: string;
   input?: string;
   output?: string;
+  attachment?: GeneratedImageAttachment;
 };
 type RolloutOptions = { filePath: string; threadId: string; maxBytes?: number; maxItems?: number };
 type SnapshotOptions = { threadId: string; maxBytes: number; maxItems: number };
@@ -121,18 +126,20 @@ async function readCompleteRows(
   const { bytesRead } = await handle.read(buffer, 0, length, start);
   const data = bytesRead === buffer.length ? buffer : buffer.subarray(0, bytesRead);
   let begin = 0;
+  const recoveredRows: RolloutRow[] = [];
   if (dropLeadingPartial) {
     const firstNewline = data.indexOf(0x0a);
     if (firstNewline < 0) return { rows: [], parsedOffset: start, firstCompleteOffset: end };
+    recoveredRows.push(...recoverGeneratedImageRows(data.subarray(0, firstNewline).toString('utf8')));
     begin = firstNewline + 1;
   }
   const firstCompleteOffset = start + begin;
   const lastNewline = data.lastIndexOf(0x0a);
   if (lastNewline < begin) {
-    return { rows: [], parsedOffset: firstCompleteOffset, firstCompleteOffset };
+    return { rows: recoveredRows, parsedOffset: firstCompleteOffset, firstCompleteOffset };
   }
-  const rows = data.subarray(begin, lastNewline + 1).toString('utf8')
-    .split('\n').filter(Boolean).map(parseRow).filter((row): row is RolloutRow => Boolean(row));
+  const rows = recoveredRows.concat(data.subarray(begin, lastNewline + 1).toString('utf8')
+    .split('\n').filter(Boolean).map(parseRow).filter((row): row is RolloutRow => Boolean(row)));
   return { rows, parsedOffset: start + lastNewline + 1, firstCompleteOffset };
 }
 
@@ -203,6 +210,23 @@ function parseRow(line: string): RolloutRow | null {
   try { return JSON.parse(line); } catch { return null; }
 }
 
+function recoverGeneratedImageRows(partialRow: string): RolloutRow[] {
+  const rows: RolloutRow[] = [];
+  const pattern = /"saved_path"\s*:\s*("(?:\\.|[^"\\])*")/g;
+  for (const match of partialRow.matchAll(pattern)) {
+    try {
+      const savedPath = JSON.parse(match[1]);
+      if (typeof savedPath === 'string' && /\.codex[\\/]generated_images[\\/]/i.test(savedPath)) {
+        rows.push({
+          type: 'event_msg',
+          payload: { type: 'image_generation_end', status: 'completed', saved_path: savedPath },
+        });
+      }
+    } catch { /* incomplete JSON string */ }
+  }
+  return rows;
+}
+
 function mapRolloutRows(rows: RolloutRow[]): RolloutItem[] {
   const items: RolloutItem[] = [];
   for (const row of Array.isArray(rows) ? rows : []) {
@@ -225,6 +249,11 @@ function mapRolloutRows(rows: RolloutRow[]): RolloutItem[] {
           ...content,
         });
       }
+    } else if (row?.type === 'event_msg' && payloadType === 'image_generation_end') {
+      const attachment = extractGeneratedImageAttachment(payload);
+      if (payload.status === 'completed' && attachment) {
+        pushText(items, { type: 'agentMessage', phase: 'final_answer', text: '', attachment });
+      }
     }
   }
   return items;
@@ -232,11 +261,12 @@ function mapRolloutRows(rows: RolloutRow[]): RolloutItem[] {
 
 function pushText(items: RolloutItem[], item: RolloutItem) {
   const text = capText(item.text);
-  if (!text) return;
+  if (!text && !item.attachment) return;
   const previous = items.at(-1);
   if (previous?.type === item.type
     && previous.phase === item.phase
     && previous.text === text
+    && previous.attachment?.path === item.attachment?.path
     && JSON.stringify(previous.contexts || []) === JSON.stringify(item.contexts || [])) return;
   items.push({ ...item, text, status: '', name: '', input: '', output: '' });
 }
@@ -259,5 +289,5 @@ function capText(value: unknown, limit = MAX_TEXT_LENGTH) {
 
 export const internals = {
   capText, extractContent, findLatestActivityBefore, inferRolloutActivity, inferRolloutStatus,
-  mapRolloutRows, rolloutCache,
+  mapRolloutRows, recoverGeneratedImageRows, rolloutCache,
 };

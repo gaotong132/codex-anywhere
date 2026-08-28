@@ -149,11 +149,19 @@ export function MessageBubble({
           {imageSource === undefined && <div className="message-image-state">{t('正在加载图片…', 'Loading image…')}</div>}
           {imageSource === '' && <div className="message-image-state">{t('图片已过期或无法读取', 'Image expired or unavailable')}</div>}
           {imageSource && (
-            <a href={imageSource} target="_blank" rel="noreferrer noopener" aria-label={t('查看原图', 'View full image')}>
+            <a href={imageSource} target="_blank" rel="noreferrer noopener" aria-label={t('查看图片预览', 'View image preview')}>
               <img src={imageSource} alt={item.attachment.name} loading="lazy" />
             </a>
           )}
-          <figcaption>{item.attachment.name}</figcaption>
+          <figcaption>
+            <span>{item.attachment.name}</span>
+            {item.attachment.source === 'generated' && (
+              <button type="button" onClick={() => onDownloadFile(item.attachment!.path)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m-4-4 4 4 4-4M5 19h14" /></svg>
+                {t('下载原图', 'Download original')}
+              </button>
+            )}
+          </figcaption>
         </figure>
       )}
     </div>
