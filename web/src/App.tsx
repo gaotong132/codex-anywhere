@@ -40,6 +40,7 @@ import {
   followLabel,
   formatDate,
   friendlyError,
+  isConnectionInterruption,
   isSessionRunning,
   isTemporaryProjectPath,
   makeId,
@@ -165,6 +166,7 @@ export default function App() {
   const optimisticRestoreRef = useRef<string | null>(null);
   const runningRef = useRef(running);
   const executionStateRef = useRef(executionState);
+  const connectionNoticeIdRef = useRef<string | null>(null);
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
   useEffect(() => { tokenRef.current = token; }, [token]);
@@ -253,6 +255,35 @@ export default function App() {
     setTimeline((current) => [...current, item]);
     return item.id;
   }, []);
+
+  const showConnectionNotice = useCallback((text = t(
+    '连接中断，正在自动重连…',
+    'Connection lost. Reconnecting…',
+  )) => {
+    const id = connectionNoticeIdRef.current || makeId();
+    connectionNoticeIdRef.current = id;
+    setTimeline((current) => {
+      const notice = { id, kind: 'notice' as const, text, transient: true };
+      return current.some((item) => item.id === id)
+        ? current.map((item) => item.id === id ? notice : item)
+        : [...current, notice];
+    });
+  }, []);
+
+  const clearConnectionNotice = useCallback(() => {
+    const id = connectionNoticeIdRef.current;
+    if (!id) return;
+    connectionNoticeIdRef.current = null;
+    setTimeline((current) => current.filter((item) => item.id !== id));
+  }, []);
+
+  const reportTimelineError = useCallback((error: unknown) => {
+    if (isConnectionInterruption(error)) {
+      showConnectionNotice();
+      return;
+    }
+    addTimeline('error', friendlyError(error));
+  }, [addTimeline, showConnectionNotice]);
 
   const rememberAttachment = useCallback((targetThreadId: string, text: string, attachment: ImageAttachment) => {
     if (!targetThreadId || !text.trim()) return;
@@ -369,15 +400,16 @@ export default function App() {
       }
       return nextSessions;
     } catch (error) {
-      if (!options.silent) addTimeline('error', friendlyError(error));
+      if (!options.silent) reportTimelineError(error);
       return [];
     } finally {
       sessionRefreshInFlightRef.current = false;
     }
-  }, [addTimeline, request, updateSessionAttention]);
+  }, [reportTimelineError, request, updateSessionAttention]);
 
   const handleBridgeMessage = useCallback((message: BridgeMessage) => {
     if (message.type === 'auth.ok') {
+      clearConnectionNotice();
       socketAuthenticatedRef.current = true;
       reconnectAttemptRef.current = 0;
       setAuthenticated(true);
@@ -446,7 +478,7 @@ export default function App() {
       setExecutionState((current) => current === 'failed' ? current : 'completed');
       void refreshSessions();
     }
-  }, [addTimeline, appendStream, finishAssistant, refreshSessions]);
+  }, [addTimeline, appendStream, clearConnectionNotice, finishAssistant, refreshSessions]);
 
   const messageHandlerRef = useRef(handleBridgeMessage);
   useEffect(() => { messageHandlerRef.current = handleBridgeMessage; }, [handleBridgeMessage]);
@@ -503,6 +535,7 @@ export default function App() {
       setConnecting(false);
       setOnline(false);
       setRunning(false);
+      showConnectionNotice();
       rejectPendingRequests(t('连接已断开', 'Connection closed'));
       if (event.code === 4003) {
         reconnectWantedRef.current = false;
@@ -524,7 +557,7 @@ export default function App() {
     socket.addEventListener('error', () => {
       if (socketRef.current === socket) setStatusText(t('连接失败', 'Connection failed'));
     });
-  }, [clearReconnectTimer, rejectPendingRequests]);
+  }, [clearReconnectTimer, rejectPendingRequests, showConnectionNotice]);
 
   const scheduleReconnect = useCallback((immediate = false) => {
     if (!reconnectWantedRef.current || tokenRef.current.trim().length < 32) return;
@@ -583,21 +616,27 @@ export default function App() {
       reconnectAttemptRef.current = 0;
       scheduleReconnect(true);
     };
+    const handleOnline = () => {
+      if (!reconnectWantedRef.current) return;
+      reconnectAttemptRef.current = 0;
+      scheduleReconnect(true);
+    };
     const handleOffline = () => {
       setOnline(false);
       setConnecting(false);
       setStatusText(t('等待网络恢复', 'Waiting for network'));
+      showConnectionNotice(t('网络已断开，恢复后将自动重连…', 'Network offline. Reconnecting when available…'));
     };
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') reconnectNow();
     };
-    window.addEventListener('online', reconnectNow);
+    window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     document.addEventListener('visibilitychange', handleVisibility);
     return () => {
       reconnectWantedRef.current = false;
       clearReconnectTimer();
-      window.removeEventListener('online', reconnectNow);
+      window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       document.removeEventListener('visibilitychange', handleVisibility);
       const socket = socketRef.current;
@@ -605,7 +644,7 @@ export default function App() {
       socket?.close(1000, 'page closed');
       rejectPendingRequests(t('页面已关闭', 'Page closed'));
     };
-  }, [clearReconnectTimer, rejectPendingRequests, scheduleReconnect]);
+  }, [clearReconnectTimer, rejectPendingRequests, scheduleReconnect, showConnectionNotice]);
 
   useEffect(() => {
     const heartbeat = setInterval(() => {
@@ -666,11 +705,11 @@ export default function App() {
       if (!cursor) setHistoryTruncated(Boolean(page.truncated));
       setInitialHistoryLoaded(true);
     } catch (error) {
-      if (selectedRequestRef.current === requestVersion) addTimeline('error', friendlyError(error), false);
+      if (selectedRequestRef.current === requestVersion) reportTimelineError(error);
     } finally {
       if (selectedRequestRef.current === requestVersion) setHistoryLoading(false);
     }
-  }, [addTimeline, request]);
+  }, [reportTimelineError, request]);
 
   useEffect(() => {
     if (!threadId) {
@@ -840,9 +879,9 @@ export default function App() {
         previewUrl: URL.createObjectURL(prepared.file),
       });
     } catch (error) {
-      addTimeline('error', friendlyError(error));
+      reportTimelineError(error);
     }
-  }, [addTimeline]);
+  }, [reportTimelineError]);
 
   const chooseNewSessionImage = useCallback(async (file?: File) => {
     if (!file) return;
@@ -990,11 +1029,11 @@ export default function App() {
         addTimeline('notice', t('已取消发送，原消息已放回输入框。', 'Sending was cancelled and the original message was restored.'));
         return;
       }
-      addTimeline('error', friendlyError(error));
+      reportTimelineError(error);
     } finally {
       sendingRef.current = false;
     }
-  }, [addTimeline, newSessionCwd, pendingImage, prompt, rememberAttachment, request, running, uploading]);
+  }, [addTimeline, newSessionCwd, pendingImage, prompt, rememberAttachment, reportTimelineError, request, running, uploading]);
 
   useEffect(() => {
     if (!creatingNewSession || !newSessionAutoSendRef.current || running || uploading) return;
@@ -1003,11 +1042,11 @@ export default function App() {
   }, [creatingNewSession, pendingImage, prompt, running, sendTurn, uploading]);
 
   const stopTurn = useCallback(async () => {
-    try { await request('turn.stop', {}); } catch (error) { addTimeline('error', friendlyError(error)); }
+    try { await request('turn.stop', {}); } catch (error) { reportTimelineError(error); }
     setRunning(false);
     awaitingDesktopTurnRef.current = null;
     setExecutionState('idle');
-  }, [addTimeline, request]);
+  }, [reportTimelineError, request]);
 
   const answerApproval = useCallback(async (approved: boolean) => {
     if (!approval) return;
@@ -1016,9 +1055,9 @@ export default function App() {
     try {
       await request('approval.respond', { approvalId: current.approvalId, approved });
     } catch (error) {
-      addTimeline('error', friendlyError(error));
+      reportTimelineError(error);
     }
-  }, [addTimeline, approval, request]);
+  }, [approval, reportTimelineError, request]);
 
   const downloadLocalFile = useCallback(async (path: string) => {
     if (fileDownloadRef.current) return;
@@ -1074,7 +1113,7 @@ export default function App() {
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (error) {
       if (!(error instanceof Error && error.message === 'download_cancelled')) {
-        addTimeline('error', friendlyError(error));
+        reportTimelineError(error);
       }
     } finally {
       if (opened && !completed) {
@@ -1087,7 +1126,7 @@ export default function App() {
       fileDownloadCancelRef.current = false;
       setFileDownload(null);
     }
-  }, [addTimeline, request]);
+  }, [reportTimelineError, request]);
 
   const cancelFileDownload = useCallback(() => {
     fileDownloadCancelRef.current = true;

@@ -57,6 +57,11 @@ export function friendlyError(error: unknown) {
   return message;
 }
 
+export function isConnectionInterruption(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /^(?:连接已断开|连接未建立|Connection closed|Connection is not established)$/i.test(message.trim());
+}
+
 export function shortId(value: string) {
   return value.length > 20 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value;
 }

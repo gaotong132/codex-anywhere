@@ -17,7 +17,11 @@ import {
   mergeDesktopSessionStatuses,
 } from '../src/connector/codex-desktop.js';
 import { internals as rolloutInternals, readRolloutTail } from '../src/connector/rollout-tail.js';
-import { markSessionAttentionRead, reconcileSessionAttention } from '../web/src/app-utils.js';
+import {
+  isConnectionInterruption,
+  markSessionAttentionRead,
+  reconcileSessionAttention,
+} from '../web/src/app-utils.js';
 
 test('token comparison requires an exact non-empty match', () => {
   assert.equal(tokenMatches('a'.repeat(32), 'a'.repeat(32)), true);
@@ -105,6 +109,13 @@ test('session completion stays unread until the session is opened', () => {
     { id: 'thread-1', title: 'Deploy', status: 'completed' },
   ], 'thread-1');
   assert.deepEqual(completedWhileOpen, {});
+});
+
+test('only transient transport failures are treated as reconnectable connection interruptions', () => {
+  assert.equal(isConnectionInterruption(new Error('Connection closed')), true);
+  assert.equal(isConnectionInterruption(new Error('连接未建立')), true);
+  assert.equal(isConnectionInterruption(new Error('turn_start_timeout')), false);
+  assert.equal(isConnectionInterruption(new Error('desktop_delivery_failed')), false);
 });
 
 test('delegated desktop messages display only their user input', () => {
