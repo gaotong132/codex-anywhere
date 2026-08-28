@@ -371,6 +371,7 @@ test('large rollout keeps activity across an incremental tail read', async () =>
     await writeFile(filePath, [
       row({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-large' } }),
       row({ type: 'response_item', payload: { type: 'custom_tool_call_output', output: 'x'.repeat(80 * 1024) } }),
+      row({ type: 'event_msg', payload: { type: 'agent_reasoning', text: '**Checking persistent state**' } }),
       row({ type: 'response_item', payload: { type: 'message', role: 'assistant', phase: 'commentary', content: [
         { type: 'output_text', text: 'still running' },
       ] } }),
@@ -378,6 +379,13 @@ test('large rollout keeps activity across an incremental tail read', async () =>
     const running = await readRolloutTail({ filePath, threadId: 'thread-large', maxBytes: 64 * 1024 });
     assert.equal(running.turns[0].status, 'inProgress');
     assert.equal(running.turns[0].items.at(-1).text, 'still running');
+    assert.equal(running.toolPurpose, 'Checking persistent state');
+
+    await appendFile(filePath, row({
+      type: 'event_msg', payload: { type: 'agent_reasoning', text: '**Verifying the final result**' },
+    }));
+    const refreshed = await readRolloutTail({ filePath, threadId: 'thread-large', maxBytes: 64 * 1024 });
+    assert.equal(refreshed.toolPurpose, 'Verifying the final result');
 
     await appendFile(filePath, row({
       type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn-large' },
@@ -385,6 +393,7 @@ test('large rollout keeps activity across an incremental tail read', async () =>
     const completed = await readRolloutTail({ filePath, threadId: 'thread-large', maxBytes: 64 * 1024 });
     assert.equal(completed.turns[0].status, 'completed');
     assert.equal(completed.activityId, 'turn-large');
+    assert.equal(completed.toolPurpose, '');
   } finally {
     rolloutInternals.rolloutCache.delete(filePath);
     await rm(directory, { recursive: true, force: true });

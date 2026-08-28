@@ -55,6 +55,7 @@ import {
 } from './app-utils';
 import { DownloadIndicator, MessageBubble, SidebarIcon } from './ui-components';
 import { createAuthProof } from '../../src/shared/auth';
+import { normalizeToolPurpose } from '../../src/shared/message-content';
 import {
   createBrowserDeviceProof,
   loadOrCreateBrowserDeviceIdentity,
@@ -135,6 +136,7 @@ export default function App() {
   const [approval, setApproval] = useState<Approval | null>(null);
   const [followState, setFollowState] = useState<FollowState>('idle');
   const [executionState, setExecutionState] = useState<ExecutionState>('idle');
+  const [toolPurpose, setToolPurpose] = useState('');
   const [fileDownload, setFileDownload] = useState<FileDownloadState | null>(null);
   const [creatingNewSession, setCreatingNewSession] = useState(false);
   const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
@@ -490,8 +492,10 @@ export default function App() {
     if (message.event === 'turn.waiting') {
       setRunning(true);
       setExecutionState('waiting');
+      setToolPurpose('');
       streamItemRef.current = null;
     } else if (message.event === 'turn.started') {
+      setToolPurpose('');
       const nextThreadId = String(payload.threadId || '');
       if (nextThreadId) {
         setThreadId(nextThreadId);
@@ -503,6 +507,8 @@ export default function App() {
       }
     } else if (message.event === 'turn.delta') {
       appendStream(payload.phase === 'final_answer' ? 'assistant' : 'progress', String(payload.delta || ''));
+    } else if (message.event === 'turn.reasoning') {
+      setToolPurpose(normalizeToolPurpose(payload.text));
     } else if (message.event === 'turn.final') {
       const text = String(payload.text || '');
       finishAssistant(text);
@@ -524,12 +530,14 @@ export default function App() {
     } else if (message.event === 'turn.error') {
       streamItemRef.current = null;
       setApproval(null);
+      setToolPurpose('');
       setRunning(false);
       setExecutionState('failed');
       addTimeline('error', String(payload.error || t('Codex 运行错误', 'Codex execution error')));
     } else if (message.event === 'turn.ended') {
       streamItemRef.current = null;
       setApproval(null);
+      setToolPurpose('');
       setRunning(false);
       setExecutionState((current) => current === 'failed' ? current : 'completed');
       void refreshSessions();
@@ -793,6 +801,7 @@ export default function App() {
         const active = latestStatus === 'inProgress';
         const failed = latestStatus === 'failed';
         setExecutionState(active ? 'running' : failed ? 'failed' : 'idle');
+        setToolPurpose(active ? normalizeToolPurpose(page.toolPurpose) : '');
       }
       setNextCursor(page.nextCursor || null);
       if (!cursor) setHistoryTruncated(Boolean(page.truncated));
@@ -836,6 +845,7 @@ export default function App() {
         const latestStatus = page.turns[0]?.status;
         const inProgress = latestStatus === 'inProgress';
         const failed = latestStatus === 'failed';
+        setToolPurpose(inProgress ? normalizeToolPurpose(page.toolPurpose) : '');
         const latestItems = historyItems(page.turns);
         const awaitingDesktopTurn = awaitingDesktopTurnRef.current;
         const awaitedMessageSeen = Boolean(awaitingDesktopTurn
@@ -918,6 +928,7 @@ export default function App() {
     awaitingDesktopTurnRef.current = null;
     setFollowState(nextThreadId ? 'checking' : 'idle');
     setExecutionState('idle');
+    setToolPurpose('');
     setApproval(null);
     autoFollowLatestRef.current = true;
     streamItemRef.current = null;
@@ -1637,6 +1648,13 @@ export default function App() {
         </div>
 
         <div className="execution-strip">
+          {toolPurpose && executionState === 'running' && (
+            <div className="tool-purpose" role="status" aria-live="polite" title={toolPurpose}>
+              <i aria-hidden="true" />
+              <span>Purpose</span>
+              <strong>{toolPurpose}</strong>
+            </div>
+          )}
           <DownloadIndicator download={fileDownload} onCancel={cancelFileDownload} />
         </div>
 

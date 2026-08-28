@@ -538,6 +538,11 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .progress-card pre { padding: 5px 11px 10px; font-size: 12px; line-height: 1.55; }
 .execution-strip { padding: 8px max(22px, calc((100% - 860px) / 2)); border-top: 1px solid $panel-divider; background: #0d121c; }
 .execution-strip:empty { display: none; }
+.tool-purpose { display: flex; min-width: 0; max-width: $content-width; align-items: center; gap: 7px; margin: 0 auto; color: #8491a5; font-size: 11px; }
+.tool-purpose i { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: #6f8fd3; box-shadow: 0 0 0 0 rgba(111, 143, 211, .45); animation: purpose-pulse 1.8s ease-out infinite; }
+.tool-purpose span { flex: 0 0 auto; color: #65738a; font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.tool-purpose strong { min-width: 0; @include truncate; color: #aab6c8; font-weight: 500; }
+@keyframes purpose-pulse { 70%, 100% { box-shadow: 0 0 0 5px rgba(111, 143, 211, 0); } }
 .download-status { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; max-width: $content-width; color: #aebbd0; font-size: 11px; }
 .download-status span { @include truncate; }
 .download-status strong { color: #8cb5ff; font-variant-numeric: tabular-nums; }
@@ -546,7 +551,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .download-status progress::-webkit-progress-value { border-radius: 999px; background: #477ee5; }
 .download-status progress::-moz-progress-bar { border-radius: 999px; background: #477ee5; }
 .download-status button { grid-column: 1 / -1; justify-self: end; border: 0; padding: 2px 0; color: #9fb9e8; background: transparent; font: inherit; cursor: pointer; }
-@media (prefers-reduced-motion: reduce) { .presence.running::before, .presence.running::after, .presence.waiting::before, .session-running-dot { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .presence.running::before, .presence.running::after, .presence.waiting::before, .session-running-dot, .tool-purpose i { animation: none; } }
 
 .approval-card { margin: 0 max(18px, calc((100% - 860px) / 2)) 10px; padding: 14px; border: 1px solid #79511e; border-radius: 14px; background: #2a1d0c; }
 .approval-card > div:first-child { display: flex; justify-content: space-between; gap: 10px; }

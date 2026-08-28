@@ -76,6 +76,7 @@ export type HistoryPage = {
   truncated?: boolean;
   source?: string;
   activityId?: string;
+  toolPurpose?: string;
 };
 export type TurnStartResult = { threadId: string; delivery?: 'desktop' | 'appServer' };
 export type PendingImage = { file: File; transferPreview?: File; previewUrl: string };

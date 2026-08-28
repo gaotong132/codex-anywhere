@@ -52,6 +52,16 @@ export function stripImageAttachments(value: unknown) {
   return String(value || '').replace(IMAGE_ATTACHMENT, '').replace(ESCAPED_IMAGE_ATTACHMENT, '');
 }
 
+export function normalizeToolPurpose(value: unknown, limit = 160) {
+  const firstLine = String(value || '').trim().split(/\r?\n/, 1)[0]
+    .replace(/^\*{1,2}\s*/, '')
+    .replace(/\s*\*{1,2}$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!firstLine) return '';
+  return firstLine.length <= limit ? firstLine : `${firstLine.slice(0, limit - 1).trimEnd()}…`;
+}
+
 function parseMessageContent(value: unknown, role: 'user' | 'assistant'): ParsedMessageContent {
   let text = String(value || '').trim();
   const contexts: MessageContext[] = [];

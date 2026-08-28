@@ -1,6 +1,6 @@
 import { open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
+import { normalizeToolPurpose, parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
 import type { MessageContext } from '../shared/message-content.js';
 import {
   extractGeneratedImageAttachment,
@@ -34,6 +34,7 @@ type RolloutSnapshot = SnapshotOptions & {
   parsedOffset: number;
   items: RolloutItem[];
   activity: RolloutActivity;
+  toolPurpose: string;
 };
 type CompleteRows = { rows: RolloutRow[]; parsedOffset: number; firstCompleteOffset: number };
 const activityMarkers = [
@@ -79,6 +80,7 @@ export async function readRolloutTail(options: RolloutOptions) {
       source: 'rolloutTail',
       fileSize: fileStat.size,
       activityId: snapshot.activity.id,
+      toolPurpose: snapshot.activity.status === 'inProgress' ? snapshot.toolPurpose : '',
     };
   } finally {
     await handle.close();
@@ -98,6 +100,7 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
     parsedOffset: window.parsedOffset,
     items: mapRolloutRows(window.rows).slice(-options.maxItems),
     activity,
+    toolPurpose: updateToolPurpose('', window.rows, activity.status),
   };
 }
 
@@ -108,12 +111,14 @@ async function updateSnapshot(handle: FileHandle, fileSize: number, cached: Roll
   }
   const appended = await readCompleteRows(handle, cached.parsedOffset, fileSize, false);
   const appendedActivity = inferRolloutActivity(appended.rows);
+  const activity = appendedActivity.status === 'unknown' ? cached.activity : appendedActivity;
   return {
     ...cached,
     fileSize,
     parsedOffset: appended.parsedOffset,
     items: appendItems(cached.items, mapRolloutRows(appended.rows), cached.maxItems),
-    activity: appendedActivity.status === 'unknown' ? cached.activity : appendedActivity,
+    activity,
+    toolPurpose: updateToolPurpose(cached.toolPurpose, appended.rows, activity.status),
   };
 }
 
@@ -206,6 +211,21 @@ function inferRolloutStatus(rows: RolloutRow[]) {
   return inferRolloutActivity(rows).status;
 }
 
+function updateToolPurpose(current: string, rows: RolloutRow[], status: RolloutStatus) {
+  let purpose = current;
+  for (const row of rows) {
+    if (row?.type !== 'event_msg') continue;
+    const payload = row.payload || {};
+    const type = String(payload.type || '');
+    if (type === 'task_started' || /task_complete|task_failed|turn_aborted|turn_error/.test(type)) {
+      purpose = '';
+    } else if (type === 'agent_reasoning') {
+      purpose = normalizeToolPurpose(payload.text);
+    }
+  }
+  return status === 'inProgress' ? purpose : '';
+}
+
 function parseRow(line: string): RolloutRow | null {
   try { return JSON.parse(line); } catch { return null; }
 }
@@ -289,5 +309,5 @@ function capText(value: unknown, limit = MAX_TEXT_LENGTH) {
 
 export const internals = {
   capText, extractContent, findLatestActivityBefore, inferRolloutActivity, inferRolloutStatus,
-  mapRolloutRows, recoverGeneratedImageRows, rolloutCache,
+  mapRolloutRows, recoverGeneratedImageRows, rolloutCache, updateToolPurpose,
 };
