@@ -998,38 +998,38 @@ export default function App() {
             <p className="eyebrow">PERSONAL CODEX</p>
             <h1>会话</h1>
           </div>
-          <button className="icon-button mobile-only" onClick={() => setDrawerOpen(false)} aria-label="关闭">×</button>
+          <div className="sidebar-actions">
+            <button className="sidebar-tool primary-tool" onClick={beginNewSession} aria-label="新会话" title="新会话">＋</button>
+            <button
+              className={`sidebar-tool ${searchOpen ? 'active' : ''}`}
+              onClick={() => {
+                if (searchOpen) setSessionSearch('');
+                setSearchOpen((open) => !open);
+              }}
+              aria-label={searchOpen ? '关闭搜索' : '搜索会话'}
+              title={searchOpen ? '关闭搜索' : '搜索会话'}
+            >⌕</button>
+            <button className="sidebar-tool" onClick={() => void refreshSessions()} aria-label="刷新会话" title="刷新会话">↻</button>
+            <button className="sidebar-tool mobile-only" onClick={() => setDrawerOpen(false)} aria-label="关闭" title="关闭">×</button>
+          </div>
         </div>
-        <div className="sidebar-toolbar">
-          {searchOpen ? (
-            <label className="compact-search">
-              <span>⌕</span>
-              <input
-                autoFocus
-                value={sessionSearch}
-                onChange={(event) => setSessionSearch(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Escape') {
-                    setSessionSearch('');
-                    setSearchOpen(false);
-                  }
-                }}
-                placeholder="搜索会话或目录"
-              />
-            </label>
-          ) : <div className="session-count">{filteredSessions.length} 个会话</div>}
-          <button className="sidebar-tool primary-tool" onClick={beginNewSession} aria-label="新会话" title="新会话">＋</button>
-          <button
-            className={`sidebar-tool ${searchOpen ? 'active' : ''}`}
-            onClick={() => {
-              if (searchOpen) setSessionSearch('');
-              setSearchOpen((open) => !open);
-            }}
-            aria-label={searchOpen ? '关闭搜索' : '搜索会话'}
-            title={searchOpen ? '关闭搜索' : '搜索会话'}
-          >⌕</button>
-          <button className="sidebar-tool" onClick={() => void refreshSessions()} aria-label="刷新会话" title="刷新会话">↻</button>
-        </div>
+        {searchOpen && (
+          <label className="compact-search session-search-panel">
+            <span>⌕</span>
+            <input
+              autoFocus
+              value={sessionSearch}
+              onChange={(event) => setSessionSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setSessionSearch('');
+                  setSearchOpen(false);
+                }
+              }}
+              placeholder="搜索会话或目录"
+            />
+          </label>
+        )}
         <nav className="session-list">
           {filteredSessions.map((session) => {
             const sessionRunning = isSessionRunning(session.status)
@@ -1043,8 +1043,8 @@ export default function App() {
               >
                 <span className="session-title" title={session.title || session.id}>{session.title || session.id}</span>
                 <span className="session-meta">
-                  {projectName && <span className="session-project" title={session.cwd}>{projectName}</span>}
                   {sessionRunning && <span className="session-running-dot" aria-label="运行中" title="运行中" />}
+                  {projectName && <span className="session-project" title={session.cwd}>{projectName}</span>}
                   <time>{formatDate(session.updatedAt)}</time>
                 </span>
               </button>

@@ -4,6 +4,10 @@
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+<p align="center">
+  <img src="docs/assets/readme-hero.svg" alt="Codex Anywhere lets a mobile browser follow and continue Codex sessions running on your own computer" width="100%">
+</p>
+
 Use a phone or browser to follow and continue Codex sessions running on your own computer.
 Codex Anywhere is single-user, self-hosted, and keeps project files and Codex execution on the
 connector computer.
@@ -25,12 +29,9 @@ remote shell.
 
 ## Architecture
 
-```text
-Mobile browser -- HTTPS/WSS --> relay <-- outbound WSS -- Windows connector
-                                                       |-- Codex app-server
-                                                       |-- Codex Desktop task delivery
-                                                       `-- bounded rollout-tail reader
-```
+<p align="center">
+  <img src="docs/assets/how-it-works.svg" alt="Codex Anywhere architecture: mobile browser, self-hosted relay, outbound local connector, and Codex Desktop" width="100%">
+</p>
 
 The relay authenticates and forwards live frames in memory. New app-server-owned turns can stream
 native delta events. Existing desktop-owned sessions are followed by adaptive rollout-tail polling
