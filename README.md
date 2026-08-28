@@ -33,6 +33,8 @@ computer; a lightweight relay on your own ECS/VPS provides the remote entry poin
   attachments, and keep common actions within easy reach.
 - **Resilient connection** — the browser and connector recover automatically from transient disconnects
   and network switches.
+- **Device-bound access** — tokens are only the first factor; every browser and connector also signs
+  in with its own approved Ed25519 device key, and trusted devices can approve or revoke others.
 - **Self-hosted and private by design** — the local computer accepts no public inbound connection; the
   relay does not persist conversations, attachments, or downloaded files.
 - **Chinese and English UI** — select `zh-CN` or `en` through runtime configuration.
@@ -98,7 +100,11 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
 
-4. Open the relay URL in the phone browser and enter the browser-client token.
+4. Open the relay URL in the phone browser and enter the browser-client token. The browser generates
+   its device identity automatically and shows a pending device ID.
+5. On the first installation, verify and approve that exact ID from the ECS/VPS using the one-time
+   operator procedure in the [production deployment guide](docs/deployment.md). Future browsers and
+   connectors can be approved or revoked from an already trusted browser.
 
 Read [SECURITY.md](SECURITY.md) before exposing the relay to the internet. Do not install Codex or copy
 project files onto the ECS/VPS.
@@ -109,12 +115,14 @@ project files onto the ECS/VPS.
 | --- | --- | --- |
 | `BRIDGE_CLIENT_TOKEN` | Relay and browser | Browser-control secret; keep separate from the connector credential |
 | `BRIDGE_CONNECTOR_TOKEN` | Relay and connector | Local connector secret |
+| `BRIDGE_DEVICE_REGISTRY_FILE` | Relay | Persistent approved/pending public device records; Compose configures this automatically |
 | `BRIDGE_URL` | Connector | Relay WebSocket URL; supports `ws://` and `wss://` |
 | `CODEX_UI_LANGUAGE` | Relay | Web UI language: `zh-CN` or `en` |
 
-Authentication uses a fresh challenge and HMAC-SHA-256 proof, so the credential itself is never sent
-as a WebSocket frame and a captured proof cannot be replayed on a new connection. This does not make
-plaintext `ws://` private: use `wss://`, a VPN, or another secure tunnel on untrusted networks.
+Authentication requires both a fresh HMAC-SHA-256 token proof and a signature from an approved,
+persistent Ed25519 device key. The challenge binds both proofs to the role, connection, and connector
+route, so captured proofs cannot be replayed. This does not make plaintext `ws://` private: use
+`wss://`, a VPN, or another secure tunnel on untrusted networks.
 
 New sessions always require an explicit project directory selected in the web UI; the connector has no
 configurable default workspace. `-AllowedRoots` is optional and limits which local directories may be
@@ -148,7 +156,9 @@ $env:BRIDGE_URL = 'ws://127.0.0.1:3300/ws'
 npm run connector
 ```
 
-Open `http://127.0.0.1:3300` and enter the token. For development checks and builds:
+Open `http://127.0.0.1:3300` and enter the token. Strict device approval still applies in local
+development; approve the pending browser record in `data/devices.json` out of band rather than adding
+an automatic first-device exception. For development checks and builds:
 
 ```powershell
 npm run check

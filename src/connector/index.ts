@@ -6,8 +6,10 @@ import { readImageAttachment, saveImageAttachment } from './attachments.js';
 import { DownloadManager } from './file-downloads.js';
 import { generatedImagesDirectory } from './generated-images.js';
 import { acquireConnectorInstanceLock } from './instance-lock.js';
+import { loadOrCreateConnectorDeviceIdentity } from './device-identity.js';
 import { createRequestHandler } from './request-handler.js';
 import { createAuthProof } from '../shared/auth.js';
+import { createDeviceAuthProof } from '../shared/device-auth.js';
 import {
   MAX_FRAME_BYTES, normalizeBridgeUrl, parseFrame, safeSend,
 } from '../shared/protocol.js';
@@ -16,6 +18,7 @@ const token = String(process.env.BRIDGE_CONNECTOR_TOKEN || '');
 if (token.length < 32) throw new Error('BRIDGE_CONNECTOR_TOKEN must contain at least 32 characters');
 const url = normalizeBridgeUrl(process.env.BRIDGE_URL || 'ws://127.0.0.1:3300/ws');
 const deviceId = process.env.BRIDGE_DEVICE_ID || 'personal-pc';
+const deviceIdentity = loadOrCreateConnectorDeviceIdentity();
 const configuredAllowedRoots = String(process.env.CODEX_ALLOWED_ROOTS || '')
   .split(delimiter).map((value) => value.trim()).filter(Boolean);
 const allowedRoots = configuredAllowedRoots.length ? configuredAllowedRoots : [process.cwd()];
@@ -56,10 +59,20 @@ function connect() {
     if (message.type === 'auth.challenge') {
       try {
         const proof = createAuthProof(token, String(message.challenge || ''), 'connector', deviceId);
-        safeSend(socket, { type: 'auth.response', role: 'connector', proof, deviceId });
+        const device = createDeviceAuthProof(deviceIdentity, {
+          challenge: String(message.challenge || ''),
+          role: 'connector',
+          routeDeviceId: deviceId,
+          authProof: proof,
+        }, `Connector · ${deviceId}`);
+        safeSend(socket, { type: 'auth.response', role: 'connector', proof, deviceId, device });
       } catch {
         socket?.close(4003, 'invalid authentication challenge');
       }
+      return;
+    }
+    if (message.type === 'auth.pairing') {
+      console.log(`Connector device approval required: ${deviceIdentity.id}`);
       return;
     }
     if (message.type === 'auth.ok') {
@@ -93,5 +106,5 @@ async function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-console.log(`Connecting device ${deviceId} to ${new URL(url).origin}`);
+console.log(`Connecting device ${deviceId} (${deviceIdentity.id.slice(0, 12)}) to ${new URL(url).origin}`);
 connect();

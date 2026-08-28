@@ -13,6 +13,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=web-build /app/build ./build
 COPY --from=web-build /app/dist ./dist
+RUN mkdir -p /data && chown node:node /data
 ENV HOST=0.0.0.0
 ENV PORT=3300
 EXPOSE 3300

@@ -37,9 +37,9 @@ them. WSS is the recommended transport for these connections.
 This is not end-to-end encryption through an untrusted relay. In the recommended WSS setup, TLS
 terminates at the ECS ingress and the relay sees plaintext frames in process memory. With WS, the
 network path can see them too. The ECS root administrator, cloud provider, any proxy provider, and
-anyone who obtains a valid browser or connector token is therefore in the trust boundary. Use
-infrastructure you control, minimize administrators and logs, keep the host patched, separate the two
-roles, and rotate an affected token after any suspected disclosure.
+anyone who controls an approved device together with its role token is therefore in the trust boundary.
+Use infrastructure you control, minimize administrators and logs, keep the host patched, separate the
+two roles, and revoke a device or rotate an affected token after any suspected disclosure.
 
 ## 1. Network and host preparation
 
@@ -81,8 +81,10 @@ manager. Pass only the connector token to the local installer. Never paste eithe
 issue, screenshot, source file, shell argument, or CI log. Do not include `.env` in server backups
 unless that backup is encrypted and access-controlled.
 
-The relay uses fresh HMAC challenges, rejects captured-proof replay, locks repeated failures, and renews
-authenticated sockets every hour (`BRIDGE_SESSION_MAX_AGE_MS`).
+The relay requires both a fresh HMAC token proof and an Ed25519 signature from an approved device key,
+rejects captured-proof replay, locks repeated failures, and renews authenticated sockets every hour
+(`BRIDGE_SESSION_MAX_AGE_MS`). The Compose volume `bridge-state` persists only public device keys and
+pairing metadata at `/data/devices.json`; device private keys never enter the relay.
 
 The supplied Compose service:
 
@@ -137,7 +139,8 @@ npm run connector
 ```
 
 On Windows, the login-startup installer stores the token with user-scoped DPAPI rather than in the
-repository or a plaintext script:
+repository or a plaintext script. It also creates a separate persistent Ed25519 connector identity and
+protects that private key with the same user-scoped DPAPI boundary:
 
 ```powershell
 $connectorToken = Read-Host 'Connector token' -AsSecureString
@@ -159,9 +162,48 @@ The encrypted credential and non-secret settings are stored outside the checkout
 retaining the credentials. `scripts/copy-token.ps1` copies only the separately stored browser token;
 it never exposes the connector credential. Clear clipboard history afterward on shared computers.
 
-## 5. End-to-end validation
+## 5. Approve the first trusted browser
 
-1. Open `https://codex.example.com`, enter `BRIDGE_CLIENT_TOKEN`, and verify the connector is online.
+The relay never auto-approves a first device. Open the Web page, enter the browser token, and leave the
+page at “waiting for approval”. It displays the browser's automatically generated 64-character device
+ID. From an encrypted ECS administrator session, list pending records and compare the complete ID—not
+just its prefix—with the phone:
+
+```bash
+docker compose exec bridge node -e '
+const fs=require("node:fs"), p="/data/devices.json";
+const s=JSON.parse(fs.readFileSync(p,"utf8"));
+console.table(s.pending.map(({requestId,id,role,label,address,requestedAt})=>
+  ({requestId,id,role,label,address,requestedAt:new Date(requestedAt).toISOString()})));
+'
+```
+
+After copying the exact `requestId` for the verified phone, approve it with this one-time operator
+command. The command modifies deployment state only; it does not add a device or bypass to the source
+code.
+
+```bash
+read -r -p 'Verified request ID: ' DEVICE_REQUEST_ID
+docker compose exec -e DEVICE_REQUEST_ID="$DEVICE_REQUEST_ID" bridge node -e '
+const fs=require("node:fs"), p="/data/devices.json", id=process.env.DEVICE_REQUEST_ID;
+const s=JSON.parse(fs.readFileSync(p,"utf8")), i=s.pending.findIndex(x=>x.requestId===id);
+if(i<0) throw new Error("pending device not found");
+const d=s.pending.splice(i,1)[0], key=`${d.role}:${d.id}`;
+s.approved=s.approved.filter(x=>`${x.role}:${x.id}`!==key);
+s.approved.push({id:d.id,publicKey:d.publicKey,role:d.role,...(d.routeDeviceId?{routeDeviceId:d.routeDeviceId}:{}),label:d.label,approvedAt:Date.now()});
+const t=`${p}.${process.pid}.tmp`; fs.writeFileSync(t,JSON.stringify(s,null,2)+"\n",{mode:0o600}); fs.renameSync(t,p);
+console.log(`Approved ${d.role} device ${d.id}`);
+'
+unset DEVICE_REQUEST_ID
+```
+
+The waiting browser reconnects automatically. Open its trusted-device panel to approve the local
+connector and future browsers. Verify every full device ID before approval; reject unfamiliar pending
+requests and revoke lost devices. The relay reloads out-of-band registry changes without a restart.
+
+## 6. End-to-end validation
+
+1. Open `https://codex.example.com`, enter `BRIDGE_CLIENT_TOKEN`, and verify the approved connector is online.
 2. Open an existing session and send a harmless test message.
 3. Confirm the message and reply appear in Codex Desktop and the browser.
 4. Confirm HTTP is redirected to HTTPS and `http://ECS-IP:3300` is unreachable externally.

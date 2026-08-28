@@ -7,11 +7,19 @@ import test from 'node:test';
 import { WebSocket } from 'ws';
 import { createBridgeServer, internals as serverInternals } from '../src/server/server.js';
 import { createAuthProof } from '../src/shared/auth.js';
+import { createDeviceAuthProof, createDeviceIdentity, type DeviceIdentity } from '../src/shared/device-auth.js';
+import type { DeviceRegistry } from '../src/server/device-registry.js';
 
 const TOKEN = 'test-token-that-is-longer-than-32-characters';
 const CLIENT_TOKEN = 'client-token-that-is-longer-than-32-characters';
 const CONNECTOR_TOKEN = 'connector-token-that-is-longer-than-32-characters';
 const nextJson = (socket) => once(socket, 'message').then(([data]) => JSON.parse(data.toString()));
+async function nextResponse(socket: WebSocket, requestId: string) {
+  while (true) {
+    const message = await nextJson(socket);
+    if (message.type === 'response' && message.requestId === requestId) return message;
+  }
+}
 
 test('server requires independent client and connector credentials', () => {
   assert.throws(
@@ -35,22 +43,37 @@ async function openSocket(url: string, options = {}) {
 }
 
 async function authenticateSocket({
-  url, role, token, deviceId = '', options = {},
+  url, role, token, deviceId = '', options = {}, registry, identity = createDeviceIdentity(),
 }: {
   url: string;
   role: 'client' | 'connector';
   token: string;
   deviceId?: string;
   options?: ConstructorParameters<typeof WebSocket>[1];
+  registry: DeviceRegistry;
+  identity?: DeviceIdentity;
 }) {
+  if (!registry.isApproved(role, identity)) {
+    const registered = registry.requestPairing({
+      role,
+      routeDeviceId: role === 'connector' ? deviceId : undefined,
+      device: { id: identity.id, publicKey: identity.publicKey, signature: '0'.repeat(128), label: 'Test device' },
+      address: '127.0.0.1',
+    });
+    registry.approve(registered.requestId);
+  }
   const opened = await openSocket(url, options);
+  const proof = createAuthProof(token, opened.challenge, role, deviceId);
   opened.socket.send(JSON.stringify({
     type: 'auth.response',
     role,
     deviceId: role === 'connector' ? deviceId : undefined,
-    proof: createAuthProof(token, opened.challenge, role, deviceId),
+    proof,
+    device: createDeviceAuthProof(identity, {
+      challenge: opened.challenge, role, routeDeviceId: deviceId, authProof: proof,
+    }, 'Test device'),
   }));
-  return { ...opened, auth: await nextJson(opened.socket) };
+  return { ...opened, auth: await nextJson(opened.socket), identity };
 }
 
 test('server exposes a no-store runtime UI language configuration', async (t) => {
@@ -162,12 +185,14 @@ test('server authenticates and relays client requests to connector', async (t) =
   const url = `ws://127.0.0.1:${address.port}/ws`;
 
   const connectorConnection = await authenticateSocket({
-    url, role: 'connector', token: TOKEN, deviceId: 'personal-pc',
+    url, role: 'connector', token: TOKEN, deviceId: 'personal-pc', registry: server.deviceRegistry,
   });
   const connector = connectorConnection.socket;
   assert.equal(connectorConnection.auth.type, 'auth.ok');
 
-  const clientConnection = await authenticateSocket({ url, role: 'client', token: TOKEN });
+  const clientConnection = await authenticateSocket({
+    url, role: 'client', token: TOKEN, registry: server.deviceRegistry,
+  });
   const client = clientConnection.socket;
   const auth = clientConnection.auth;
   assert.equal(auth.type, 'auth.ok');
@@ -192,6 +217,85 @@ test('server authenticates and relays client requests to connector', async (t) =
   client.close();
 });
 
+test('valid tokens cannot sign in from an unapproved device', async (t) => {
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+  const identity = createDeviceIdentity();
+  const opened = await openSocket(url);
+  const proof = createAuthProof(TOKEN, opened.challenge, 'client');
+  const close = once(opened.socket, 'close');
+  opened.socket.send(JSON.stringify({
+    type: 'auth.response', role: 'client', proof,
+    device: createDeviceAuthProof(identity, {
+      challenge: opened.challenge, role: 'client', authProof: proof,
+    }, 'Unapproved browser'),
+  }));
+  const pairing = await nextJson(opened.socket);
+  assert.equal(pairing.type, 'auth.pairing');
+  assert.equal(pairing.deviceId, identity.id);
+  assert.equal((await close)[0], 4403);
+  const inventory = server.deviceRegistry.list();
+  assert.equal(inventory.approved.length, 0);
+  assert.equal(inventory.pending.length, 1);
+  assert.equal(inventory.pending[0].label, 'Unapproved browser');
+});
+
+test('a trusted browser can approve another signed device and revoke it later', async (t) => {
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+  const admin = await authenticateSocket({
+    url, role: 'client', token: TOKEN, registry: server.deviceRegistry,
+  });
+  const candidateIdentity = createDeviceIdentity();
+  const candidate = await openSocket(url);
+  const candidateProof = createAuthProof(TOKEN, candidate.challenge, 'client');
+  const candidateClose = once(candidate.socket, 'close');
+  candidate.socket.send(JSON.stringify({
+    type: 'auth.response', role: 'client', proof: candidateProof,
+    device: createDeviceAuthProof(candidateIdentity, {
+      challenge: candidate.challenge, role: 'client', authProof: candidateProof,
+    }, 'Second browser'),
+  }));
+  const pairing = await nextJson(candidate.socket);
+  assert.equal(pairing.type, 'auth.pairing');
+  await candidateClose;
+
+  admin.socket.send(JSON.stringify({
+    type: 'request', requestId: 'list-devices', action: 'devices.list', payload: {},
+  }));
+  const listed = await nextResponse(admin.socket, 'list-devices');
+  assert.equal(listed.ok, true);
+  assert.equal(listed.data.currentDeviceId, admin.identity.id);
+  assert.equal(listed.data.pending[0].id, candidateIdentity.id);
+
+  admin.socket.send(JSON.stringify({
+    type: 'request', requestId: 'approve-device', action: 'devices.approve',
+    payload: { requestId: pairing.requestId },
+  }));
+  const approved = await nextResponse(admin.socket, 'approve-device');
+  assert.equal(approved.ok, true);
+  assert.equal(server.deviceRegistry.isApproved('client', candidateIdentity), true);
+
+  const connected = await authenticateSocket({
+    url, role: 'client', token: TOKEN, registry: server.deviceRegistry, identity: candidateIdentity,
+  });
+  assert.equal(connected.auth.type, 'auth.ok');
+  const revokedClose = once(connected.socket, 'close');
+  admin.socket.send(JSON.stringify({
+    type: 'request', requestId: 'remove-device', action: 'devices.remove',
+    payload: { role: 'client', deviceId: candidateIdentity.id },
+  }));
+  const removed = await nextResponse(admin.socket, 'remove-device');
+  assert.equal(removed.ok, true);
+  assert.equal((await revokedClose)[0], 4408);
+  assert.equal(server.deviceRegistry.isApproved('client', candidateIdentity), false);
+  admin.socket.close();
+});
+
 test('server temporarily locks repeated authentication failures per real client address', async (t) => {
   const server = createBridgeServer({
     clientToken: TOKEN,
@@ -206,10 +310,23 @@ test('server temporarily locks repeated authentication failures per real client 
   const url = `ws://127.0.0.1:${address.port}/ws`;
 
   async function authenticate(token, clientAddress) {
+    const identity = createDeviceIdentity();
+    if (token === TOKEN) {
+      const requested = server.deviceRegistry.requestPairing({
+        role: 'client',
+        device: { id: identity.id, publicKey: identity.publicKey, signature: '0'.repeat(128) },
+        address: clientAddress,
+      });
+      server.deviceRegistry.approve(requested.requestId);
+    }
     const { socket, challenge } = await openSocket(url, { headers: { 'x-real-ip': clientAddress } });
     const close = once(socket, 'close');
+    const proof = createAuthProof(token, challenge, 'client');
     socket.send(JSON.stringify({
-      type: 'auth.response', role: 'client', proof: createAuthProof(token, challenge, 'client'),
+      type: 'auth.response', role: 'client', proof,
+      device: createDeviceAuthProof(identity, {
+        challenge, role: 'client', authProof: proof,
+      }),
     }));
     return { socket, close };
   }
@@ -258,7 +375,7 @@ test('separate role credentials prevent a client token from replacing the connec
   const url = `ws://127.0.0.1:${address.port}/ws`;
 
   const connector = await authenticateSocket({
-    url, role: 'connector', token: CONNECTOR_TOKEN, deviceId: 'personal-pc',
+    url, role: 'connector', token: CONNECTOR_TOKEN, deviceId: 'personal-pc', registry: server.deviceRegistry,
   });
   assert.equal(connector.auth.type, 'auth.ok');
 
@@ -288,10 +405,15 @@ test('authenticated sockets expire and can reconnect with a fresh proof', async 
   t.after(() => server.close());
   const url = `ws://127.0.0.1:${address.port}/ws`;
 
-  const first = await authenticateSocket({ url, role: 'client', token: TOKEN });
+  const identity = createDeviceIdentity();
+  const first = await authenticateSocket({
+    url, role: 'client', token: TOKEN, registry: server.deviceRegistry, identity,
+  });
   const firstClose = once(first.socket, 'close');
   assert.equal((await firstClose)[0], 4005);
-  const second = await authenticateSocket({ url, role: 'client', token: TOKEN });
+  const second = await authenticateSocket({
+    url, role: 'client', token: TOKEN, registry: server.deviceRegistry, identity,
+  });
   assert.equal(second.auth.type, 'auth.ok');
   second.socket.close();
 });

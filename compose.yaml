@@ -9,6 +9,7 @@ services:
       BRIDGE_CLIENT_TOKEN: ${BRIDGE_CLIENT_TOKEN:?set BRIDGE_CLIENT_TOKEN in .env}
       BRIDGE_CONNECTOR_TOKEN: ${BRIDGE_CONNECTOR_TOKEN:?set BRIDGE_CONNECTOR_TOKEN in .env}
       BRIDGE_SESSION_MAX_AGE_MS: ${BRIDGE_SESSION_MAX_AGE_MS:-3600000}
+      BRIDGE_DEVICE_REGISTRY_FILE: /data/devices.json
       CODEX_UI_LANGUAGE: ${CODEX_UI_LANGUAGE:-zh-CN}
     ports:
       - "127.0.0.1:3300:3300"
@@ -17,6 +18,8 @@ services:
     stop_grace_period: 15s
     tmpfs:
       - /tmp:size=16m,mode=1777
+    volumes:
+      - bridge-state:/data
     cap_drop:
       - ALL
     healthcheck:
@@ -30,3 +33,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+volumes:
+  bridge-state:

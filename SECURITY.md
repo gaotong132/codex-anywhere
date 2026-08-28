@@ -18,6 +18,8 @@ filesystem paths in a public issue.
 - Store both tokens only in the relay `.env`; store only the connector token in the connector's
   DPAPI-protected state. Put the client token in a password manager and enter it only on trusted
   browser devices.
+- Keep the device registry volume persistent and root-administered. Verify the complete device ID
+  before approving the first browser, review pending requests, and revoke lost or retired devices.
 - Prefer `wss://` for every remote connector. Plaintext `ws://` is supported by operator choice but
   exposes relayed content and permits active network attackers to interfere with an authenticated
   connection. Challenge-response authentication avoids sending the token itself, but is not a
@@ -49,17 +51,20 @@ see plaintext frames in memory. This project does not provide application-layer 
 that hides content from the ECS operator or cloud host. Protect process memory, `.env`, proxy error
 logs, backups, DNS and cloud accounts, and every administrator with access to the host.
 
-The client token grants full browser-control access to the single-user bridge. It is stored in browser
-`sessionStorage` (not persistent local storage) for the active tab and in a root-readable ECS `.env`.
+The client token is the browser's first authentication factor. It is stored in browser `sessionStorage`
+(not persistent local storage) for the active tab and in a root-readable ECS `.env`.
 The connector token can register or replace a local connector and is stored in the ECS `.env` and
 user-scoped DPAPI storage when the Windows installer is used. Keep the roles separate so disclosure of
 the browser token cannot impersonate the connector.
 
-WebSocket authentication sends an HMAC-SHA-256 proof bound to a fresh 256-bit relay challenge, role,
-and connector device ID; it never sends a raw token frame. Captured proofs are not reusable on a new
-connection. Authenticated sockets expire after one hour by default and reconnect with a fresh proof.
-Repeated failures are temporarily locked per client address. These controls reduce replay, brute-force,
-and stolen-live-session risk; they cannot make a valid stolen token harmless.
+WebSocket authentication also requires an Ed25519 signature from an approved device identity. The
+signature binds the public device key to the fresh 256-bit challenge, HMAC proof, role, and connector
+route ID; raw tokens and private device keys are never sent to the relay. Browser device keys persist
+in that browser profile, while the Windows connector key is protected with user-scoped DPAPI. The
+registry stores only public keys and pairing metadata. Captured proofs are not reusable, and a token
+alone can create only a visible pending request—not an authenticated session. Authenticated sockets
+expire after one hour by default and reconnect with fresh proofs; repeated failures are temporarily
+locked per client address.
 
 File downloads require explicit browser confirmation and use a random, short-lived, one-file,
 client-bound capability. The connector canonicalizes paths, rejects directories and path escapes,
@@ -69,11 +74,13 @@ hashed local audit identifiers. Enabling unrestricted downloads intentionally ex
 ## If a token may have leaked
 
 1. Treat it as compromised; do not wait for evidence of use.
-2. If only `BRIDGE_CLIENT_TOKEN` leaked, replace it with a new random value and restart the relay.
+2. Revoke any affected browser or connector device in the trusted-device panel. If a device private
+   key may have leaked, assume that identity is compromised even if its token remains secret.
+3. If only `BRIDGE_CLIENT_TOKEN` leaked, replace it with a new random value and restart the relay.
    Existing browser sockets are closed during restart; the connector credential remains valid.
-3. If `BRIDGE_CONNECTOR_TOKEN` leaked, replace it on the relay and re-run the connector installer with
+4. If `BRIDGE_CONNECTOR_TOKEN` leaked, replace it on the relay and re-run the connector installer with
    the new secure token, then restart both relay and connector.
-4. Review ECS/proxy logs, browser extensions, clipboard history, shell history, screenshots, CI output,
+5. Review ECS/proxy logs, browser extensions, clipboard history, shell history, screenshots, CI output,
    password-manager access, and unexpected connector replacements. Rotate any infrastructure credential
    exposed with it.
 
@@ -81,5 +88,5 @@ hashed local audit identifiers. Enabling unrestricted downloads intentionally ex
 
 Codex Anywhere is not a multi-tenant identity provider, a zero-trust gateway, or a general remote
 shell. It does not defend against a compromised connector computer, compromised ECS root account,
-malicious browser extension, a valid stolen token before it is revoked, or an authorized Codex action
-that the user approves.
+malicious browser extension that can use an approved browser identity, simultaneous compromise of the
+required credentials, or an authorized Codex action that the user approves.

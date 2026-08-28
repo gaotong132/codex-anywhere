@@ -18,6 +18,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $launcherPath = Join-Path $PSScriptRoot 'start-connector.ps1'
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PersonalCodexBridge'
 $secretPath = Join-Path $stateDirectory 'connector-token.dpapi'
+$deviceSecretPath = Join-Path $stateDirectory 'connector-device-key.dpapi'
 $clientSecretPath = Join-Path $stateDirectory 'bridge-client-token.dpapi'
 $configPath = Join-Path $stateDirectory 'connector.json'
 $startupDirectory = [Environment]::GetFolderPath('Startup')
@@ -118,6 +119,7 @@ if (-not $NoStart) {
 
 Write-Output "Installed login shortcut: $shortcutPath"
 Write-Output "Connector credential stored with Windows DPAPI: $secretPath"
+Write-Output "Connector device key will be stored with Windows DPAPI: $deviceSecretPath"
 if (Test-Path -LiteralPath $clientSecretPath -PathType Leaf) {
     Write-Output "Browser credential stored with Windows DPAPI: $clientSecretPath"
 }

@@ -5,6 +5,11 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { createAuthProof } from '../src/shared/auth.js';
+import {
+  createDeviceAuthProof,
+  createDeviceIdentity,
+  verifyDeviceAuthProof,
+} from '../src/shared/device-auth.js';
 import { normalizeBridgeUrl, parseFrame, secretMatches } from '../src/shared/protocol.js';
 import {
   displayAssistantMessage,
@@ -43,6 +48,28 @@ test('authentication proofs are role, device and challenge bound', () => {
     false,
   );
   assert.throws(() => createAuthProof(token, 'not-a-challenge', 'client'), /invalid_auth_challenge/);
+});
+
+test('device signatures are key, token proof, role, route and challenge bound', () => {
+  const identity = createDeviceIdentity();
+  const params = {
+    challenge: 'b'.repeat(64),
+    role: 'connector' as const,
+    routeDeviceId: 'personal-pc',
+    authProof: 'c'.repeat(64),
+  };
+  const proof = createDeviceAuthProof(identity, params, 'Test connector');
+  assert.equal(proof.id.length, 64);
+  assert.equal(proof.signature.length, 128);
+  assert.equal(verifyDeviceAuthProof(proof, params), true);
+  assert.equal(verifyDeviceAuthProof(proof, { ...params, challenge: 'd'.repeat(64) }), false);
+  assert.equal(verifyDeviceAuthProof(proof, { ...params, authProof: 'e'.repeat(64) }), false);
+  assert.equal(verifyDeviceAuthProof(proof, { ...params, routeDeviceId: 'other-pc' }), false);
+  assert.equal(verifyDeviceAuthProof(proof, { ...params, role: 'client' }), false);
+
+  const attacker = createDeviceIdentity();
+  assert.equal(verifyDeviceAuthProof({ ...proof, publicKey: attacker.publicKey }, params), false);
+  assert.throws(() => createDeviceIdentity('00'), /invalid_device_private_key/);
 });
 
 test('frame parser rejects arrays', () => {
