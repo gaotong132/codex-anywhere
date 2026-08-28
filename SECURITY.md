@@ -74,8 +74,9 @@ hashed local audit identifiers. Enabling unrestricted downloads intentionally ex
 ## If a token may have leaked
 
 1. Treat it as compromised; do not wait for evidence of use.
-2. Revoke any affected browser or connector device in the trusted-device panel. If a device private
-   key may have leaked, assume that identity is compromised even if its token remains secret.
+2. Remove any affected browser or connector identity from the ECS device registry. If a device private
+   key may have leaked, assume that identity is compromised even if its token remains secret. Registry
+   identities and pairing metadata are intentionally unavailable to the Web client.
 3. If only `BRIDGE_CLIENT_TOKEN` leaked, replace it with a new random value and restart the relay.
    Existing browser sockets are closed during restart; the connector credential remains valid.
 4. If `BRIDGE_CONNECTOR_TOKEN` leaked, replace it on the relay and re-run the connector installer with

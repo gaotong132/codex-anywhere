@@ -34,9 +34,6 @@ export type PendingRequest = {
 export type BridgeMessage = {
   type: string;
   challenge?: string;
-  deviceAuth?: string;
-  deviceId?: string;
-  identityId?: string;
   requestId?: string;
   ok?: boolean;
   error?: string;
@@ -44,30 +41,6 @@ export type BridgeMessage = {
   devices?: string[];
   event?: string;
   payload?: Record<string, unknown>;
-};
-export type DeviceRole = 'client' | 'connector';
-export type ApprovedDevice = {
-  id: string;
-  publicKey: string;
-  role: DeviceRole;
-  routeDeviceId?: string;
-  label: string;
-  approvedAt: number;
-};
-export type PendingDevice = {
-  requestId: string;
-  id: string;
-  publicKey: string;
-  role: DeviceRole;
-  routeDeviceId?: string;
-  label: string;
-  address: string;
-  requestedAt: number;
-};
-export type DeviceInventory = {
-  currentDeviceId: string | null;
-  approved: ApprovedDevice[];
-  pending: PendingDevice[];
 };
 export type HistoryPage = {
   threadId: string;

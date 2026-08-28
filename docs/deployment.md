@@ -164,10 +164,11 @@ it never exposes the connector credential. Clear clipboard history afterward on 
 
 ## 5. Approve the first trusted browser
 
-The relay never auto-approves a first device. Open the Web page, enter the browser token, and leave the
-page at “waiting for approval”. It displays the browser's automatically generated 64-character device
-ID. From an encrypted ECS administrator session, list pending records and compare the complete ID—not
-just its prefix—with the phone:
+The relay never auto-approves a device. Open the Web page, enter the browser token, and leave it at the
+generic “waiting for approval” state. The Web UI deliberately receives no device ID, request ID, public
+key, address, or registry listing. From an encrypted ECS administrator session, list pending records;
+use the role, label, source address, request time, and a freshly initiated connection to identify the
+new record. Do not approve an ambiguous request:
 
 ```bash
 docker compose exec bridge node -e '
@@ -178,7 +179,7 @@ console.table(s.pending.map(({requestId,id,role,label,address,requestedAt})=>
 '
 ```
 
-After copying the exact `requestId` for the verified phone, approve it with this one-time operator
+After copying the exact `requestId` of the identified record, approve it with this one-time operator
 command. The command modifies deployment state only; it does not add a device or bypass to the source
 code.
 
@@ -197,9 +198,10 @@ console.log(`Approved ${d.role} device ${d.id}`);
 unset DEVICE_REQUEST_ID
 ```
 
-The waiting browser reconnects automatically. Open its trusted-device panel to approve the local
-connector and future browsers. Verify every full device ID before approval; reject unfamiliar pending
-requests and revoke lost devices. The relay reloads out-of-band registry changes without a restart.
+The waiting browser or connector reconnects automatically. Repeat the same ECS-only procedure for each
+new endpoint. Remove unfamiliar pending records and revoke lost devices directly in the registry; these
+administrative details are intentionally not exposed through WebSocket APIs. The relay reloads
+out-of-band registry changes without a restart.
 
 ## 6. End-to-end validation
 

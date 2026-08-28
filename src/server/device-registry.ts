@@ -125,11 +125,10 @@ export class DeviceRegistry {
     return pending;
   }
 
-  list(currentDeviceId?: string) {
+  list() {
     this.refresh();
     this.prune(true);
     return {
-      currentDeviceId: currentDeviceId || null,
       approved: this.state.approved.map((entry) => ({ ...entry })),
       pending: this.state.pending.map((entry) => ({ ...entry })),
     };

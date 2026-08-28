@@ -6,7 +6,7 @@ import { t } from './i18n';
 import type { TimelineItem } from './history-utils';
 import type { FileDownloadState } from './app-types';
 
-type SidebarIconName = 'plus' | 'search' | 'shield' | 'panel-open' | 'panel-close';
+type SidebarIconName = 'plus' | 'search' | 'panel-open' | 'panel-close';
 
 export function SidebarIcon({ name }: { name: SidebarIconName }) {
   if (name === 'plus') {
@@ -14,9 +14,6 @@ export function SidebarIcon({ name }: { name: SidebarIconName }) {
   }
   if (name === 'search') {
     return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5" /><path d="m14.7 14.7 4.8 4.8" /></svg>;
-  }
-  if (name === 'shield') {
-    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 19 6v5.5c0 4.2-2.6 7.3-7 9-4.4-1.7-7-4.8-7-9V6l7-2.5Z" /><path d="m9.2 12 1.8 1.8 3.8-4" /></svg>;
   }
   if (name === 'panel-open') {
     return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M9 4.5v15m4-10 3 2.5-3 2.5" /></svg>;

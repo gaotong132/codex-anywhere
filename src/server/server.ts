@@ -34,8 +34,8 @@ type JsonObject = Record<string, any>;
 type AliveWebSocket = WebSocket & { isAlive?: boolean };
 type StaticHandler = ReturnType<typeof sirv>;
 type SocketMeta =
-  | { role: 'client'; id: string; identityId: string }
-  | { role: 'connector'; deviceId: string; identityId: string };
+  | { role: 'client'; id: string }
+  | { role: 'connector'; deviceId: string };
 type BridgeServerOptions = {
   clientToken?: unknown;
   connectorToken?: unknown;
@@ -172,9 +172,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
           safeSend(socket, { type: 'pong', at: Date.now() });
           return;
         }
-        if (meta.role === 'client') routeClientMessage({
-          socket, meta, message, connectors, clients, socketMeta, deviceRegistry,
-        });
+        if (meta.role === 'client') routeClientMessage({ socket, meta, message, connectors });
         else routeConnectorMessage({ message, clients, meta });
       } catch (error) {
         safeSend(socket, { type: 'error', error: publicError(error) });
@@ -190,7 +188,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       if (meta.role === 'connector' && connectors.get(meta.deviceId) === socket) connectors.delete(meta.deviceId);
       broadcastPresence(clients, connectors);
     });
-    safeSend(socket, { type: 'auth.challenge', challenge: authChallenge, deviceAuth: 'required' });
+    safeSend(socket, { type: 'auth.challenge', challenge: authChallenge });
   });
 
   const heartbeat = setInterval(() => {
@@ -325,7 +323,7 @@ function authenticateSocket({
   }
   authLimiter.recordSuccess(clientAddress);
   if (!deviceRegistry.isApproved(role, device)) {
-    const pending = deviceRegistry.requestPairing({
+    deviceRegistry.requestPairing({
       role,
       routeDeviceId: role === 'connector' ? deviceId : undefined,
       device,
@@ -333,11 +331,8 @@ function authenticateSocket({
     });
     safeSend(socket, {
       type: 'auth.pairing',
-      requestId: pending.requestId,
-      deviceId: pending.id,
       role,
     });
-    broadcastDeviceRegistryChanged(clients, deviceRegistry);
     socket.close(4403, 'device approval required');
     return false;
   }
@@ -346,34 +341,28 @@ function authenticateSocket({
     const previous = connectors.get(deviceId);
     if (previous && previous !== socket) previous.close(4004, 'connector replaced');
     connectors.set(deviceId, socket);
-    socketMeta.set(socket, { role, deviceId, identityId: device.id });
-    safeSend(socket, { type: 'auth.ok', role, deviceId, identityId: device.id });
+    socketMeta.set(socket, { role, deviceId });
+    safeSend(socket, { type: 'auth.ok', role, deviceId });
     return true;
   }
   const id = createId('client');
   clients.set(id, socket);
-  socketMeta.set(socket, { role, id, identityId: device.id });
+  socketMeta.set(socket, { role, id });
   safeSend(socket, {
-    type: 'auth.ok', role, clientId: id, identityId: device.id,
+    type: 'auth.ok', role, clientId: id,
     devices: [...connectors.keys()],
   });
   return true;
 }
 
 function routeClientMessage({
-  socket, meta, message, connectors, clients, socketMeta, deviceRegistry,
+  socket, meta, message, connectors,
 }: {
   socket: AliveWebSocket;
   meta: Extract<SocketMeta, { role: 'client' }>;
   message: JsonObject;
   connectors: Map<string, AliveWebSocket>;
-  clients: Map<string, AliveWebSocket>;
-  socketMeta: WeakMap<AliveWebSocket, SocketMeta>;
-  deviceRegistry: DeviceRegistry;
 }) {
-  if (message.type === 'request' && handleDeviceRegistryRequest({
-    socket, meta, message, clients, connectors, socketMeta, deviceRegistry,
-  })) return;
   if (message.type !== 'request' || !CLIENT_ACTIONS.has(message.action)) {
     safeSend(socket, { type: 'error', requestId: message.requestId, error: 'unsupported_action' });
     return;
@@ -393,71 +382,6 @@ function routeClientMessage({
   });
 }
 
-function handleDeviceRegistryRequest({
-  socket, meta, message, clients, connectors, socketMeta, deviceRegistry,
-}: {
-  socket: AliveWebSocket;
-  meta: Extract<SocketMeta, { role: 'client' }>;
-  message: JsonObject;
-  clients: Map<string, AliveWebSocket>;
-  connectors: Map<string, AliveWebSocket>;
-  socketMeta: WeakMap<AliveWebSocket, SocketMeta>;
-  deviceRegistry: DeviceRegistry;
-}) {
-  const requestId = String(message.requestId || '');
-  const action = String(message.action || '');
-  const payload = message.payload && typeof message.payload === 'object' ? message.payload : {};
-  if (action === 'devices.list') {
-    safeSend(socket, {
-      type: 'response', requestId, ok: true,
-      data: deviceRegistry.list(meta.identityId),
-    });
-    return true;
-  }
-  if (action === 'devices.approve') {
-    const approved = deviceRegistry.approve(String(payload.requestId || ''));
-    safeSend(socket, {
-      type: 'response', requestId, ok: Boolean(approved),
-      ...(approved ? { data: approved } : { error: 'pairing_request_not_found' }),
-    });
-    if (approved) broadcastDeviceRegistryChanged(clients, deviceRegistry);
-    return true;
-  }
-  if (action === 'devices.reject') {
-    const rejected = deviceRegistry.reject(String(payload.requestId || ''));
-    safeSend(socket, {
-      type: 'response', requestId, ok: rejected,
-      ...(rejected ? { data: { rejected: true } } : { error: 'pairing_request_not_found' }),
-    });
-    if (rejected) broadcastDeviceRegistryChanged(clients, deviceRegistry);
-    return true;
-  }
-  if (action === 'devices.remove') {
-    const role = payload.role === 'connector' ? 'connector' : payload.role === 'client' ? 'client' : '';
-    const id = String(payload.deviceId || '');
-    if (!role || !id || (role === 'client' && id === meta.identityId)) {
-      safeSend(socket, { type: 'response', requestId, ok: false, error: 'device_removal_not_allowed' });
-      return true;
-    }
-    const removed = deviceRegistry.remove(role, id);
-    safeSend(socket, {
-      type: 'response', requestId, ok: removed,
-      ...(removed ? { data: { removed: true } } : { error: 'device_not_found' }),
-    });
-    if (removed) broadcastDeviceRegistryChanged(clients, deviceRegistry);
-    if (removed) {
-      for (const active of [...clients.values(), ...connectors.values()]) {
-        const activeMeta = socketMeta.get(active);
-        if (activeMeta?.role === role && activeMeta.identityId === id) {
-          active.close(4408, 'device access revoked');
-        }
-      }
-    }
-    return true;
-  }
-  return false;
-}
-
 function routeConnectorMessage({ message, clients, meta }: {
   message: JsonObject;
   clients: Map<string, AliveWebSocket>;
@@ -472,16 +396,6 @@ function routeConnectorMessage({ message, clients, meta }: {
 function broadcastPresence(clients: Map<string, AliveWebSocket>, connectors: Map<string, AliveWebSocket>) {
   const payload = { type: 'presence', devices: [...connectors.keys()] };
   for (const socket of clients.values()) safeSend(socket, payload);
-}
-
-function broadcastDeviceRegistryChanged(
-  clients: Map<string, AliveWebSocket>,
-  deviceRegistry: DeviceRegistry,
-) {
-  const pendingCount = deviceRegistry.list().pending.length;
-  for (const socket of clients.values()) safeSend(socket, {
-    type: 'event', event: 'devices.changed', payload: { pendingCount },
-  });
 }
 
 function normalizeUiLanguage(value: unknown) {

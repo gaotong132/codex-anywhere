@@ -14,12 +14,6 @@ const TOKEN = 'test-token-that-is-longer-than-32-characters';
 const CLIENT_TOKEN = 'client-token-that-is-longer-than-32-characters';
 const CONNECTOR_TOKEN = 'connector-token-that-is-longer-than-32-characters';
 const nextJson = (socket) => once(socket, 'message').then(([data]) => JSON.parse(data.toString()));
-async function nextResponse(socket: WebSocket, requestId: string) {
-  while (true) {
-    const message = await nextJson(socket);
-    if (message.type === 'response' && message.requestId === requestId) return message;
-  }
-}
 
 test('server requires independent client and connector credentials', () => {
   assert.throws(
@@ -39,6 +33,7 @@ async function openSocket(url: string, options = {}) {
   const challenge = await challengeMessage;
   assert.equal(challenge.type, 'auth.challenge');
   assert.match(challenge.challenge, /^[a-f0-9]{64}$/);
+  assert.equal(challenge.deviceAuth, undefined);
   return { socket, challenge: challenge.challenge as string };
 }
 
@@ -196,6 +191,7 @@ test('server authenticates and relays client requests to connector', async (t) =
   const client = clientConnection.socket;
   const auth = clientConnection.auth;
   assert.equal(auth.type, 'auth.ok');
+  assert.equal(auth.identityId, undefined);
   assert.deepEqual(auth.devices, ['personal-pc']);
 
   client.send(JSON.stringify({ type: 'ping', at: 123 }));
@@ -234,7 +230,8 @@ test('valid tokens cannot sign in from an unapproved device', async (t) => {
   }));
   const pairing = await nextJson(opened.socket);
   assert.equal(pairing.type, 'auth.pairing');
-  assert.equal(pairing.deviceId, identity.id);
+  assert.equal(pairing.deviceId, undefined);
+  assert.equal(pairing.requestId, undefined);
   assert.equal((await close)[0], 4403);
   const inventory = server.deviceRegistry.list();
   assert.equal(inventory.approved.length, 0);
@@ -242,58 +239,22 @@ test('valid tokens cannot sign in from an unapproved device', async (t) => {
   assert.equal(inventory.pending[0].label, 'Unapproved browser');
 });
 
-test('a trusted browser can approve another signed device and revoke it later', async (t) => {
+test('authenticated browsers cannot query or modify the device registry', async (t) => {
   const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
   const url = `ws://127.0.0.1:${address.port}/ws`;
-  const admin = await authenticateSocket({
+  const browser = await authenticateSocket({
     url, role: 'client', token: TOKEN, registry: server.deviceRegistry,
   });
-  const candidateIdentity = createDeviceIdentity();
-  const candidate = await openSocket(url);
-  const candidateProof = createAuthProof(TOKEN, candidate.challenge, 'client');
-  const candidateClose = once(candidate.socket, 'close');
-  candidate.socket.send(JSON.stringify({
-    type: 'auth.response', role: 'client', proof: candidateProof,
-    device: createDeviceAuthProof(candidateIdentity, {
-      challenge: candidate.challenge, role: 'client', authProof: candidateProof,
-    }, 'Second browser'),
-  }));
-  const pairing = await nextJson(candidate.socket);
-  assert.equal(pairing.type, 'auth.pairing');
-  await candidateClose;
-
-  admin.socket.send(JSON.stringify({
+  browser.socket.send(JSON.stringify({
     type: 'request', requestId: 'list-devices', action: 'devices.list', payload: {},
   }));
-  const listed = await nextResponse(admin.socket, 'list-devices');
-  assert.equal(listed.ok, true);
-  assert.equal(listed.data.currentDeviceId, admin.identity.id);
-  assert.equal(listed.data.pending[0].id, candidateIdentity.id);
-
-  admin.socket.send(JSON.stringify({
-    type: 'request', requestId: 'approve-device', action: 'devices.approve',
-    payload: { requestId: pairing.requestId },
-  }));
-  const approved = await nextResponse(admin.socket, 'approve-device');
-  assert.equal(approved.ok, true);
-  assert.equal(server.deviceRegistry.isApproved('client', candidateIdentity), true);
-
-  const connected = await authenticateSocket({
-    url, role: 'client', token: TOKEN, registry: server.deviceRegistry, identity: candidateIdentity,
-  });
-  assert.equal(connected.auth.type, 'auth.ok');
-  const revokedClose = once(connected.socket, 'close');
-  admin.socket.send(JSON.stringify({
-    type: 'request', requestId: 'remove-device', action: 'devices.remove',
-    payload: { role: 'client', deviceId: candidateIdentity.id },
-  }));
-  const removed = await nextResponse(admin.socket, 'remove-device');
-  assert.equal(removed.ok, true);
-  assert.equal((await revokedClose)[0], 4408);
-  assert.equal(server.deviceRegistry.isApproved('client', candidateIdentity), false);
-  admin.socket.close();
+  const rejected = await nextJson(browser.socket);
+  assert.equal(rejected.type, 'error');
+  assert.equal(rejected.error, 'unsupported_action');
+  assert.equal(rejected.data, undefined);
+  browser.socket.close();
 });
 
 test('server temporarily locks repeated authentication failures per real client address', async (t) => {

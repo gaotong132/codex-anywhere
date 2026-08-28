@@ -58,16 +58,13 @@ import { createAuthProof } from '../../src/shared/auth';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
 import {
   createBrowserDeviceProof,
-  loadOrCreateBrowserDeviceIdentity,
 } from './device-identity';
 import type {
-  ApprovedDevice,
   Approval,
   AwaitingDesktopTurn,
   BridgeMessage,
   DownloadedImage,
   DownloadFileChunk,
-  DeviceInventory,
   ExecutionState,
   FileDownloadState,
   FollowState,
@@ -144,12 +141,6 @@ export default function App() {
   const [newSessionImage, setNewSessionImage] = useState<PendingImage | null>(null);
   const [newSessionError, setNewSessionError] = useState('');
   const [connectionEpoch, setConnectionEpoch] = useState(0);
-  const [browserIdentity] = useState(() => loadOrCreateBrowserDeviceIdentity());
-  const [pairingDeviceId, setPairingDeviceId] = useState<string | null>(null);
-  const [deviceDialogOpen, setDeviceDialogOpen] = useState(false);
-  const [deviceInventory, setDeviceInventory] = useState<DeviceInventory | null>(null);
-  const [deviceInventoryLoading, setDeviceInventoryLoading] = useState(false);
-  const [deviceInventoryError, setDeviceInventoryError] = useState('');
 
   const socketRef = useRef<WebSocket | null>(null);
   const pendingRef = useRef(new Map<string, PendingRequest>());
@@ -348,49 +339,6 @@ export default function App() {
     });
   }, []);
 
-  const refreshDeviceInventory = useCallback(async () => {
-    if (!socketAuthenticatedRef.current) return null;
-    setDeviceInventoryLoading(true);
-    try {
-      const inventory = await request<DeviceInventory>('devices.list', {});
-      setDeviceInventory(inventory);
-      setDeviceInventoryError('');
-      return inventory;
-    } catch (error) {
-      setDeviceInventoryError(friendlyError(error));
-      return null;
-    } finally {
-      setDeviceInventoryLoading(false);
-    }
-  }, [request]);
-
-  const approveDevice = useCallback(async (requestId: string) => {
-    try {
-      await request('devices.approve', { requestId });
-      await refreshDeviceInventory();
-    } catch (error) {
-      setDeviceInventoryError(friendlyError(error));
-    }
-  }, [refreshDeviceInventory, request]);
-
-  const rejectDevice = useCallback(async (requestId: string) => {
-    try {
-      await request('devices.reject', { requestId });
-      await refreshDeviceInventory();
-    } catch (error) {
-      setDeviceInventoryError(friendlyError(error));
-    }
-  }, [refreshDeviceInventory, request]);
-
-  const removeDevice = useCallback(async (device: ApprovedDevice) => {
-    try {
-      await request('devices.remove', { deviceId: device.id, role: device.role });
-      await refreshDeviceInventory();
-    } catch (error) {
-      setDeviceInventoryError(friendlyError(error));
-    }
-  }, [refreshDeviceInventory, request]);
-
   useEffect(() => {
     if (!online) return;
     for (const item of timeline) {
@@ -447,7 +395,6 @@ export default function App() {
 
   const handleBridgeMessage = useCallback((message: BridgeMessage) => {
     if (message.type === 'auth.pairing') {
-      setPairingDeviceId(String(message.deviceId || browserIdentity.id));
       setStatusText(t('当前设备等待批准', 'This device is waiting for approval'));
       return;
     }
@@ -455,7 +402,6 @@ export default function App() {
       socketAuthenticatedRef.current = true;
       reconnectAttemptRef.current = 0;
       setAuthenticated(true);
-      setPairingDeviceId(null);
       setConnecting(false);
       setConnectionEpoch((current) => current + 1);
       const connected = Boolean(message.devices?.includes(DEVICE_ID));
@@ -484,10 +430,6 @@ export default function App() {
       return;
     }
     if (message.type !== 'event') return;
-    if (message.event === 'devices.changed') {
-      void refreshDeviceInventory();
-      return;
-    }
     const payload = message.payload || {};
     if (message.event === 'turn.waiting') {
       setRunning(true);
@@ -542,7 +484,7 @@ export default function App() {
       setExecutionState((current) => current === 'failed' ? current : 'completed');
       void refreshSessions();
     }
-  }, [addTimeline, appendStream, browserIdentity.id, finishAssistant, refreshDeviceInventory, refreshSessions]);
+  }, [addTimeline, appendStream, finishAssistant, refreshSessions]);
 
   const messageHandlerRef = useRef(handleBridgeMessage);
   useEffect(() => { messageHandlerRef.current = handleBridgeMessage; }, [handleBridgeMessage]);
@@ -623,8 +565,7 @@ export default function App() {
       }
       if (event.code === 4403) {
         setAuthenticated(false);
-        setPairingDeviceId(browserIdentity.id);
-        setStatusText(t('当前设备等待已信任设备批准…', 'Waiting for a trusted device to approve this device…'));
+        setStatusText(t('当前设备等待管理员批准…', 'Waiting for administrator approval…'));
         scheduleReconnectRef.current();
         return;
       }
@@ -654,7 +595,7 @@ export default function App() {
     socket.addEventListener('error', () => {
       if (socketRef.current === socket) setStatusText(t('连接失败', 'Connection failed'));
     });
-  }, [browserIdentity.id, clearReconnectTimer, rejectPendingRequests]);
+  }, [clearReconnectTimer, rejectPendingRequests]);
 
   const scheduleReconnect = useCallback((immediate = false) => {
     if (!reconnectWantedRef.current || tokenRef.current.trim().length < 32) return;
@@ -681,11 +622,6 @@ export default function App() {
   }, [clearReconnectTimer, openSocket]);
 
   useEffect(() => { scheduleReconnectRef.current = scheduleReconnect; }, [scheduleReconnect]);
-
-  useEffect(() => {
-    if (!authenticated || connectionEpoch < 1) return;
-    void refreshDeviceInventory();
-  }, [authenticated, connectionEpoch, refreshDeviceInventory]);
 
   const connect = useCallback((event?: FormEvent) => {
     event?.preventDefault();
@@ -1322,12 +1258,6 @@ export default function App() {
             <button className="primary wide" disabled={connecting}>{connecting ? t('连接中…', 'Connecting…') : t('连接', 'Connect')}</button>
           </form>
           <div className="login-status">{statusText}</div>
-          {pairingDeviceId && (
-            <div className="pairing-device" role="status">
-              <span>{t('当前设备 ID', 'Current device ID')}</span>
-              <code title={pairingDeviceId}>{pairingDeviceId}</code>
-            </div>
-          )}
         </section>
       </main>
     );
@@ -1355,22 +1285,6 @@ export default function App() {
               title={searchOpen ? t('收起搜索', 'Collapse search') : t('搜索会话', 'Search sessions')}
             >
               <SidebarIcon name="search" />
-            </button>
-            <button
-              className={`sidebar-tool ${deviceDialogOpen ? 'active' : ''}`}
-              onClick={() => {
-                setDeviceDialogOpen(true);
-                void refreshDeviceInventory();
-              }}
-              aria-label={t('可信设备', 'Trusted devices')}
-              title={t('可信设备', 'Trusted devices')}
-            >
-              <SidebarIcon name="shield" />
-              {Boolean(deviceInventory?.pending.length) && (
-                <span className="sidebar-badge" aria-label={t('有设备等待批准', 'Devices are waiting for approval')}>
-                  {deviceInventory!.pending.length}
-                </span>
-              )}
             </button>
             <button className="sidebar-tool mobile-only" onClick={() => setDrawerOpen(false)} aria-label={t('收起会话列表', 'Collapse session list')} title={t('收起会话列表', 'Collapse session list')}>
               <SidebarIcon name="panel-close" />
@@ -1424,70 +1338,6 @@ export default function App() {
           {!filteredSessions.length && <p className="empty-list">{t('没有匹配的会话', 'No matching sessions')}</p>}
         </nav>
       </aside>
-
-      {deviceDialogOpen && (
-        <div
-          className="new-session-overlay"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setDeviceDialogOpen(false);
-          }}
-        >
-          <section className="new-session-dialog device-dialog" role="dialog" aria-modal="true" aria-labelledby="device-dialog-title">
-            <header className="new-session-dialog-head">
-              <p className="eyebrow">CODEX ANYWHERE</p>
-              <h2 id="device-dialog-title">{t('可信设备', 'Trusted devices')}</h2>
-              <span>{t('只有经过批准并持有设备私钥的浏览器或连接器才能登录。', 'Only approved browsers and connectors holding their device key can sign in.')}</span>
-            </header>
-            <div className="new-session-dialog-body device-dialog-body">
-              <section className="current-device-card">
-                <span>{t('当前浏览器', 'Current browser')}</span>
-                <code title={browserIdentity.id}>{browserIdentity.id}</code>
-              </section>
-              {Boolean(deviceInventory?.pending.length) && (
-                <section className="device-group">
-                  <h3>{t('等待批准', 'Waiting for approval')}</h3>
-                  {deviceInventory!.pending.map((device) => (
-                    <article className="device-row pending" key={device.requestId}>
-                      <div>
-                        <strong>{device.label}</strong>
-                        <span>{device.role === 'connector' ? t('本机连接器', 'Local connector') : t('Web 浏览器', 'Web browser')} · {shortId(device.id)}</span>
-                      </div>
-                      <div className="device-row-actions">
-                        <button className="approve" type="button" onClick={() => void approveDevice(device.requestId)}>{t('批准', 'Approve')}</button>
-                        <button type="button" onClick={() => void rejectDevice(device.requestId)}>{t('拒绝', 'Reject')}</button>
-                      </div>
-                    </article>
-                  ))}
-                </section>
-              )}
-              <section className="device-group">
-                <h3>{t('已信任', 'Approved')}</h3>
-                {deviceInventory?.approved.map((device) => {
-                  const current = device.role === 'client' && device.id === browserIdentity.id;
-                  return (
-                    <article className="device-row" key={`${device.role}:${device.id}`}>
-                      <div>
-                        <strong>{device.label}{current ? ` · ${t('当前', 'Current')}` : ''}</strong>
-                        <span>{device.role === 'connector' ? t('本机连接器', 'Local connector') : t('Web 浏览器', 'Web browser')} · {shortId(device.id)}</span>
-                      </div>
-                      {!current && <button type="button" onClick={() => void removeDevice(device)}>{t('撤销', 'Revoke')}</button>}
-                    </article>
-                  );
-                })}
-                {!deviceInventoryLoading && !deviceInventory?.approved.length && (
-                  <p className="device-empty">{t('暂无已信任设备', 'No approved devices')}</p>
-                )}
-              </section>
-              {deviceInventoryLoading && <p className="device-empty">{t('正在刷新…', 'Refreshing…')}</p>}
-              {deviceInventoryError && <p className="new-session-error" role="alert">{deviceInventoryError}</p>}
-            </div>
-            <footer className="new-session-dialog-actions">
-              <button type="button" onClick={() => setDeviceDialogOpen(false)}>{t('关闭', 'Close')}</button>
-            </footer>
-          </section>
-        </div>
-      )}
 
       {newSessionDialogOpen && (
         <div
@@ -1651,7 +1501,6 @@ export default function App() {
           {toolPurpose && executionState === 'running' && (
             <div className="tool-purpose" role="status" aria-live="polite" title={toolPurpose}>
               <i aria-hidden="true" />
-              <span>Purpose</span>
               <strong>{toolPurpose}</strong>
             </div>
           )}

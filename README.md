@@ -34,7 +34,7 @@ computer; a lightweight relay on your own ECS/VPS provides the remote entry poin
 - **Resilient connection** — the browser and connector recover automatically from transient disconnects
   and network switches.
 - **Device-bound access** — tokens are only the first factor; every browser and connector also signs
-  in with its own approved Ed25519 device key, and trusted devices can approve or revoke others.
+  in with its own operator-approved Ed25519 device key, while identity details stay off the Web UI.
 - **Self-hosted and private by design** — the local computer accepts no public inbound connection; the
   relay does not persist conversations, attachments, or downloaded files.
 - **Chinese and English UI** — select `zh-CN` or `en` through runtime configuration.
@@ -101,10 +101,10 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
    ```
 
 4. Open the relay URL in the phone browser and enter the browser-client token. The browser generates
-   its device identity automatically and shows a pending device ID.
-5. On the first installation, verify and approve that exact ID from the ECS/VPS using the one-time
-   operator procedure in the [production deployment guide](docs/deployment.md). Future browsers and
-   connectors can be approved or revoked from an already trusted browser.
+   its device identity automatically and shows only a generic waiting state.
+5. Approve the new pending record from the ECS/VPS using the one-time operator procedure in the
+   [production deployment guide](docs/deployment.md). Device identity and registry details are never
+   exposed to the browser UI.
 
 Read [SECURITY.md](SECURITY.md) before exposing the relay to the internet. Do not install Codex or copy
 project files onto the ECS/VPS.
