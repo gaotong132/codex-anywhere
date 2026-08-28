@@ -172,6 +172,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
   &::-webkit-scrollbar { display: none; width: 0; height: 0; }
 }
 .session-card {
+  position: relative;
   width: 100%;
   display: grid;
   gap: 4px;
@@ -185,6 +186,17 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
   &:hover { background: #141a26; }
   &.active { border-color: #2f5daa; background: #18243a; }
   &.running:not(.active) { border-color: rgba(57, 201, 121, .24); background: rgba(28, 76, 53, .12); }
+
+  & + &::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    right: 10px;
+    left: 10px;
+    height: 1px;
+    background: rgba(123, 137, 158, .16);
+    pointer-events: none;
+  }
 }
 .session-title { min-width: 0; @include truncate; color: #e8edf5; font-size: 14px; font-weight: 680; line-height: 1.32; }
 .session-meta { min-width: 0; display: flex; align-items: center; gap: 6px; color: #657287; font-size: 10px; }
