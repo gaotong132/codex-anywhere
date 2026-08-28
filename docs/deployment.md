@@ -80,7 +80,7 @@ The supplied Compose service:
 
 - publishes `3300` only as `127.0.0.1:3300` on the ECS;
 - runs as an unprivileged user with a read-only filesystem;
-- drops all Linux capabilities and enables `no-new-privileges`;
+- drops all Linux capabilities;
 - limits processes, uses a small temporary filesystem, rotates container logs, and has a health check.
 
 Verify the binding before configuring the public proxy:

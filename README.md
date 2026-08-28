@@ -86,9 +86,9 @@ task tools for delivery to existing desktop sessions. It does not implement ACP.
 - Connector network access is disabled by default.
 - Project access and local-file downloads are limited to `CODEX_ALLOWED_ROOTS` by default.
 - Each download requires confirmation and a short-lived, one-file, client-bound capability.
-- The relay never stores attachments or downloaded files. The supplied container is read-only,
-  drops Linux capabilities, blocks privilege escalation, limits processes, rotates logs, and binds
-  port 3300 only to ECS loopback.
+- The relay never stores attachments or downloaded files. The supplied container runs as a non-root
+  user, is read-only, drops Linux capabilities, limits processes, rotates logs, and binds port 3300
+  only to ECS loopback.
 
 This is not a hardened multi-tenant gateway. Use it for one trusted user and read
 [SECURITY.md](SECURITY.md) before exposing it to the internet.

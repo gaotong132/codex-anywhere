@@ -2,7 +2,6 @@ services:
   bridge:
     build: .
     restart: unless-stopped
-    init: true
     environment:
       HOST: 0.0.0.0
       PORT: 3300
@@ -18,8 +17,6 @@ services:
       - /tmp:size=16m,mode=1777
     cap_drop:
       - ALL
-    security_opt:
-      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3300/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s

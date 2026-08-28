@@ -77,8 +77,8 @@ Codex Anywhere 对 app-server 会话使用 Codex app-server JSON-RPC 协议，�
 - 连接器的网络访问默认关闭。
 - 项目访问与本机文件下载默认限制在 `CODEX_ALLOWED_ROOTS` 中。
 - 每次下载都需要确认，并使用短期有效、仅限单个文件且绑定客户端的能力凭证。
-- 转发服务不存储附件或下载文件。提供的容器采用只读文件系统、删除全部 Linux capabilities、
-  禁止提权、限制进程数、轮转日志，并且只把 3300 端口绑定到 ECS 回环地址。
+- 转发服务不存储附件或下载文件。提供的容器使用非 root 用户和只读文件系统、删除全部 Linux
+  capabilities、限制进程数、轮转日志，并且只把 3300 端口绑定到 ECS 回环地址。
 
 本项目不是经过加固的多租户网关。请仅供一个受信任用户使用，并在暴露至互联网前阅读 [SECURITY.md](SECURITY.md)。
 
