@@ -32,7 +32,14 @@ type PendingRpc = {
   reject: (reason: Error) => void;
   timer: NodeJS.Timeout;
 };
-type PendingApproval = { id: string | number; method: string; params: JsonObject };
+type PendingApproval = {
+  id: string | number;
+  method: string;
+  params: JsonObject;
+  threadId: string;
+  kind: string;
+  summary: string;
+};
 type SessionMetadata = { cwd: string; path: string; canAcceptDirectInput: boolean };
 type TurnContext = {
   clientId?: string;
@@ -47,7 +54,16 @@ type StartTurnOptions = {
   cwd?: unknown;
   clientId?: string;
   requestId?: string;
+  waitForActiveWriter?: boolean;
 };
+
+const APPROVAL_METHODS = new Set([
+  'item/commandExecution/requestApproval',
+  'item/fileChange/requestApproval',
+  'item/permissions/requestApproval',
+  'applyPatchApproval',
+  'execCommandApproval',
+]);
 
 export class CodexAppServer extends EventEmitter {
   bin: string;
@@ -220,6 +236,11 @@ export class CodexAppServer extends EventEmitter {
     try { return (await stat(filePath)).size >= LARGE_ROLLOUT_BYTES; } catch { return false; }
   }
 
+  canOwnSession(threadId: unknown) {
+    const cwd = this.sessionMetadata.get(String(threadId || '').trim())?.cwd;
+    return Boolean(cwd && isAllowedWorkspace(this.allowedRoots, cwd));
+  }
+
   getControllerThreadId(targetThreadId: unknown) {
     const target = String(targetThreadId || '').trim();
     // Desktop requires a valid caller task for app tool requests. Prefer a
@@ -232,7 +253,9 @@ export class CodexAppServer extends EventEmitter {
     return readRolloutTail({ filePath, threadId });
   }
 
-  async startTurn({ text, threadId, cwd, clientId, requestId }: StartTurnOptions) {
+  async startTurn({
+    text, threadId, cwd, clientId, requestId, waitForActiveWriter = true,
+  }: StartTurnOptions) {
     if (this.activeTurn) throw new Error('another_turn_is_active');
     let resolvedThreadId = String(threadId || '').trim();
     if (!resolvedThreadId && !String(cwd || '').trim()) throw new Error('project_directory_required');
@@ -257,6 +280,7 @@ export class CodexAppServer extends EventEmitter {
       const threadParams = {
         cwd: turnCwd,
         approvalPolicy: 'untrusted',
+        approvalsReviewer: 'user',
         sandbox: 'workspace-write',
         config: {
           sandbox_mode: 'workspace-write',
@@ -269,7 +293,9 @@ export class CodexAppServer extends EventEmitter {
         },
       };
       if (resolvedThreadId) {
-        const result = await this.resumeWhenWritable(resolvedThreadId, threadParams, turnContext);
+        const result = await this.resumeWhenWritable(
+          resolvedThreadId, threadParams, turnContext, waitForActiveWriter,
+        );
         resolvedThreadId = result?.thread?.id || result?.id || resolvedThreadId;
       } else {
         const result = await this.rpcRaw('thread/start', threadParams);
@@ -284,6 +310,8 @@ export class CodexAppServer extends EventEmitter {
         threadId: resolvedThreadId,
         input: [{ type: 'text', text: String(text || '') }],
         cwd: turnCwd,
+        approvalPolicy: 'untrusted',
+        approvalsReviewer: 'user',
       }, true);
       return { threadId: resolvedThreadId };
     } catch (error) {
@@ -292,7 +320,12 @@ export class CodexAppServer extends EventEmitter {
     }
   }
 
-  async resumeWhenWritable(threadId: string, threadParams: JsonObject, turnContext: TurnContext) {
+  async resumeWhenWritable(
+    threadId: string,
+    threadParams: JsonObject,
+    turnContext: TurnContext,
+    waitForActiveWriter = true,
+  ) {
     const deadline = Date.now() + this.activeWriterWaitMs;
     let waitingNotified = false;
     while (this.activeTurn === turnContext) {
@@ -301,6 +334,7 @@ export class CodexAppServer extends EventEmitter {
       } catch (error) {
         if (this.activeTurn !== turnContext) throw new Error('turn_cancelled');
         if (!isActiveWriterError(error)) throw error;
+        if (!waitForActiveWriter) throw new Error('thread_active_writer_conflict');
         if (Date.now() >= deadline) throw new Error('thread_active_writer_timeout');
         if (!waitingNotified) {
           waitingNotified = true;
@@ -317,13 +351,36 @@ export class CodexAppServer extends EventEmitter {
     throw new Error('turn_cancelled');
   }
 
-  async respondApproval(approvalId: unknown, approved: boolean) {
+  listApprovals(threadId: unknown, clientId?: string) {
+    const targetThreadId = String(threadId || '').trim();
+    if (clientId && this.activeTurn?.threadId === targetThreadId) {
+      this.activeTurn.clientId = clientId;
+    }
+    return {
+      approvals: [...this.approvals.entries()]
+        .filter(([, pending]) => !targetThreadId || pending.threadId === targetThreadId)
+        .map(([approvalId, pending]) => ({
+          approvalId,
+          threadId: pending.threadId,
+          kind: pending.kind,
+          summary: pending.summary,
+        })),
+    };
+  }
+
+  async respondApproval(approvalId: unknown, approved: boolean, threadId?: unknown) {
     const pending = this.approvals.get(String(approvalId));
     if (!pending) throw new Error('approval_not_found');
+    const expectedThreadId = String(threadId || '').trim();
+    if (expectedThreadId && pending.threadId !== expectedThreadId) throw new Error('approval_thread_mismatch');
+    this.writeRpc({
+      jsonrpc: '2.0',
+      id: pending.id,
+      result: approvalResult(
+        pending.method, approved, pending.params, this.allowedRoots, this.networkAccess,
+      ),
+    });
     this.approvals.delete(String(approvalId));
-    const turnCwd = this.activeTurn?.cwd;
-    if (!turnCwd) throw new Error('turn_project_directory_unavailable');
-    this.writeRpc({ jsonrpc: '2.0', id: pending.id, result: approvalResult(pending.method, approved, turnCwd) });
     return { approvalId: String(approvalId), approved: approved === true };
   }
 
@@ -331,6 +388,7 @@ export class CodexAppServer extends EventEmitter {
     if (!this.child) return { stopped: false };
     const previous = this.activeTurn;
     this.activeTurn = null;
+    this.clearApprovalsForThread(previous?.threadId);
     this.child.kill();
     this.child = null;
     this.emit('turn-event', {
@@ -391,12 +449,27 @@ export class CodexAppServer extends EventEmitter {
 
   handleServerRequest(message: JsonObject) {
     const method = message.method || '';
+    if (!APPROVAL_METHODS.has(method)) {
+      this.writeRpc({
+        jsonrpc: '2.0',
+        id: message.id,
+        error: { code: -32601, message: `Unsupported app-server request: ${method}` },
+      });
+      return;
+    }
+    const params = message.params || {};
     const approvalId = String(message.id);
-    this.approvals.set(approvalId, { id: message.id, method, params: message.params || {} });
+    const threadId = String(params.threadId || params.conversationId || this.activeTurn?.threadId || '');
+    const kind = approvalKind(method);
+    const summary = approvalSummary(method, params);
+    this.approvals.set(approvalId, {
+      id: message.id, method, params, threadId, kind, summary,
+    });
     this.emitTurn('approval.requested', {
       approvalId,
-      kind: approvalKind(method),
-      summary: approvalSummary(method, message.params || {}),
+      threadId,
+      kind,
+      summary,
     });
   }
 
@@ -433,12 +506,21 @@ export class CodexAppServer extends EventEmitter {
     }
     if (method === 'turn/completed' || method === 'turn.completed') {
       const previous = this.activeTurn;
+      this.clearApprovalsForThread(previous?.threadId);
       this.emitTurn('turn.ended', { reason: 'completed', threadId: previous?.threadId, usage: params.usage || params.turn?.usage });
       this.activeTurn = null;
       return;
     }
     if (method === 'error' || method.includes('error')) {
       this.emitTurn('turn.error', { error: String(params.message || params.error?.message || 'Codex error').slice(0, SUMMARY_LIMIT) });
+    }
+  }
+
+  clearApprovalsForThread(threadId: unknown) {
+    const targetThreadId = String(threadId || '').trim();
+    if (!targetThreadId) return;
+    for (const [approvalId, pending] of this.approvals) {
+      if (pending.threadId === targetThreadId) this.approvals.delete(approvalId);
     }
   }
 
@@ -477,30 +559,59 @@ function approvalKind(method: string) {
 }
 
 function approvalSummary(method: string, params: JsonObject) {
-  const value = params.command || params.tool || params.reason || params.path || params.input || params.questions || method;
+  const value = params.command || params.reason || params.grantRoot || params.permissions
+    || params.path || params.input || method;
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   return text.slice(0, SUMMARY_LIMIT);
 }
 
-function approvalResult(method: string, approved: boolean, cwd: string) {
+function approvalResult(
+  method: string,
+  approved: boolean,
+  params: JsonObject = {},
+  allowedRoots: string[] = [],
+  networkAccess = false,
+) {
   if (/permissions\/requestApproval/i.test(method)) {
-    return approved ? {
-      permissions: {
-        fileSystem: {
-          read: [cwd], write: [cwd],
-          entries: [
-            { path: { type: 'path', path: cwd }, access: 'read' },
-            { path: { type: 'path', path: cwd }, access: 'write' },
-          ],
-        },
-        network: { enabled: false },
-      },
-      scope: 'session',
-    } : { permissions: {}, scope: 'turn' };
+    return approved
+      ? { permissions: approvedPermissions(params.permissions, allowedRoots, networkAccess), scope: 'turn' }
+      : { permissions: {}, scope: 'turn' };
   }
-  if (/applyPatchApproval/i.test(method)) return { decision: approved ? 'approved' : 'denied' };
-  if (/requestUserInput/i.test(method)) return { continue: approved === true };
-  return { decision: approved ? 'accept' : 'reject' };
+  if (/applyPatchApproval|execCommandApproval/i.test(method)) {
+    return {
+      decision: approved ? 'approved' : { denied: { rejection: 'Rejected from Codex Anywhere' } },
+    };
+  }
+  return { decision: approved ? 'accept' : 'decline' };
+}
+
+function approvedPermissions(requested: JsonObject = {}, allowedRoots: string[], networkAccess: boolean) {
+  const permissions: JsonObject = {};
+  const requestedFileSystem = requested?.fileSystem;
+  if (requestedFileSystem && typeof requestedFileSystem === 'object') {
+    const read = filterAllowedPaths(requestedFileSystem.read, allowedRoots);
+    const write = filterAllowedPaths(requestedFileSystem.write, allowedRoots);
+    const entries = (Array.isArray(requestedFileSystem.entries) ? requestedFileSystem.entries : [])
+      .filter((entry: JsonObject) => entry?.path?.type === 'path'
+        && isAllowedWorkspace(allowedRoots, entry.path.path));
+    if (read.length || write.length || entries.length) {
+      permissions.fileSystem = {
+        read: read.length ? read : null,
+        write: write.length ? write : null,
+        ...(entries.length ? { entries } : {}),
+      };
+    }
+  }
+  if (networkAccess && requested?.network?.enabled === true) {
+    permissions.network = { enabled: true };
+  }
+  return permissions;
+}
+
+function filterAllowedPaths(values: unknown, allowedRoots: string[]) {
+  return (Array.isArray(values) ? values : [])
+    .map((value) => String(value || '').trim())
+    .filter((value) => value && isAllowedWorkspace(allowedRoots, value));
 }
 
 function summarizeItem(item: JsonObject) {
@@ -601,6 +712,6 @@ function isAllowedWorkspace(roots: string[] | string, candidate: unknown) {
 }
 
 export const internals = {
-  approvalKind, approvalResult, extractText, isActiveWriterError, mapTurns,
+  approvedPermissions, approvalKind, approvalResult, extractText, isActiveWriterError, mapTurns,
   isAllowedWorkspace, resolveAllowedWorkspace, summarizeItem,
 };

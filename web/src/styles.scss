@@ -471,7 +471,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .approval-card pre { max-height: 150px; margin: 10px 0; overflow: auto; color: #e9d9bd; font-size: 12px; }
 .approval-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .approval-actions button { padding: 8px 12px; border: 1px solid #55442d; border-radius: 9px; background: #251e15; }
-.approval-actions .danger { border-color: #9f3a43; background: #8c2932; }
+.approval-actions .approve { border-color: #3c6fc7; background: #315fae; color: #fff; }
 
 .composer-wrap {
   min-width: 0;

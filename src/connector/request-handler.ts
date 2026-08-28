@@ -16,12 +16,15 @@ type CodexGateway = {
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
   startTurn(options: Payload): Promise<Record<string, any>>;
   stopTurn(): Promise<any>;
-  respondApproval(approvalId: unknown, approved: boolean): Promise<any>;
+  listApprovals(threadId: unknown, clientId?: string): any;
+  respondApproval(approvalId: unknown, approved: boolean, threadId?: unknown): Promise<any>;
   getControllerThreadId(threadId: string): string;
   isLargeSession(threadId: string): Promise<boolean>;
+  canOwnSession(threadId: string): boolean;
 };
 type DesktopGateway = {
   listThreads(options: Payload): Promise<any[]>;
+  readThreadState(options: Payload): Promise<any>;
   sendMessage(options: Payload): Promise<any>;
 };
 type Dependencies = {
@@ -90,7 +93,34 @@ async function dispatchAction({
   if (action === 'file.download.close') return downloads.close(payload, clientId);
   if (action === 'turn.start') return startTurn({ codex, desktop, payload, clientId, requestId });
   if (action === 'turn.stop') return codex.stopTurn();
-  if (action === 'approval.respond') return codex.respondApproval(payload.approvalId, payload.approved === true);
+  if (action === 'approval.pending') {
+    const pending = await codex.listApprovals(payload.threadId, clientId);
+    if (pending.approvals?.length) return pending;
+    const threadId = String(payload.threadId || '').trim();
+    if (!threadId) return pending;
+    try {
+      const state = await desktop.readThreadState({
+        threadId,
+        callerThreadId: codex.getControllerThreadId(threadId),
+      });
+      if (state.waitingOnApproval) {
+        return {
+          ...pending,
+          externalApproval: {
+            approvalId: '',
+            threadId,
+            kind: 'desktop',
+            summary: 'This approval is owned by Codex Desktop.',
+            actionable: false,
+          },
+        };
+      }
+    } catch { /* absence of Desktop status must not block app-server approvals */ }
+    return pending;
+  }
+  if (action === 'approval.respond') {
+    return codex.respondApproval(payload.approvalId, payload.approved === true, payload.threadId);
+  }
   throw new Error('unsupported_action');
 }
 
@@ -100,6 +130,18 @@ async function startTurn({
   const threadId = String(payload.threadId || '').trim();
   if (!threadId) {
     return { ...await codex.startTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
+  }
+  if (codex.canOwnSession(threadId) && !await codex.isLargeSession(threadId)) {
+    try {
+      return {
+        ...await codex.startTurn({
+          ...payload, clientId, requestId, waitForActiveWriter: false,
+        }),
+        delivery: 'appServer',
+      };
+    } catch (error) {
+      if (String(error instanceof Error ? error.message : error) !== 'thread_active_writer_conflict') throw error;
+    }
   }
   try {
     return await desktop.sendMessage({

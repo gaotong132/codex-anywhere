@@ -77,6 +77,31 @@ export class CodexDesktopClient {
     }));
   }
 
+  async readThreadState({ threadId, callerThreadId }: { threadId?: unknown; callerThreadId?: unknown }) {
+    const targetThreadId = String(threadId || '').trim();
+    const caller = String(callerThreadId || '').trim();
+    if (!targetThreadId || !caller) throw new Error('thread_id_required');
+    const result = await this.callTool({
+      tool: 'read_thread',
+      arguments: {
+        threadId: targetThreadId,
+        turnLimit: 1,
+        includeOutputs: false,
+        maxOutputCharsPerItem: 1_000,
+      },
+      callerThreadId: caller,
+      callId: `bridge-read-state-${randomUUID()}`,
+    });
+    if (result?.success !== true) throw new Error('desktop_thread_read_failed');
+    const payload = parseToolPayload(result);
+    const status = payload?.thread?.status;
+    const activeFlags = Array.isArray(status?.activeFlags) ? status.activeFlags.map(String) : [];
+    return {
+      status: String(status?.type || status || 'unknown'),
+      waitingOnApproval: activeFlags.includes('waitingOnApproval'),
+    };
+  }
+
   async callTool({ tool, arguments: toolArguments, callerThreadId, callId }: ToolCall): Promise<JsonObject> {
     const client = await this.getClient();
     try {

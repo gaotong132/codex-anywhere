@@ -18,7 +18,14 @@ export type AwaitingDesktopTurn = {
   activityId: string;
   seen: boolean;
 };
-export type Approval = { approvalId: string; kind?: string; summary?: string };
+export type Approval = {
+  approvalId: string;
+  threadId: string;
+  kind?: string;
+  summary?: string;
+  actionable?: boolean;
+};
+export type PendingApprovals = { approvals: Approval[]; externalApproval?: Approval };
 export type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;

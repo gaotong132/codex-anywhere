@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -103,6 +104,26 @@ test('desktop task list status overrides stale app-server session status', () =>
     { id: 'thread-running', status: 'active' },
     { id: 'thread-idle', status: 'notLoaded' },
   ]);
+});
+
+test('desktop thread state exposes waiting approval without loading conversation history', async () => {
+  const desktop = new CodexDesktopClient();
+  let call;
+  desktop.callTool = async (request) => {
+    call = request;
+    return {
+      success: true,
+      contentItems: [{ text: JSON.stringify({
+        thread: { status: { type: 'active', activeFlags: ['waitingOnApproval'] } },
+      }) }],
+    };
+  };
+  assert.deepEqual(await desktop.readThreadState({
+    threadId: 'thread-1', callerThreadId: 'controller-thread',
+  }), { status: 'active', waitingOnApproval: true });
+  assert.equal(call.tool, 'read_thread');
+  assert.equal(call.arguments.turnLimit, 1);
+  assert.equal(call.arguments.includeOutputs, false);
 });
 
 test('session completion stays unread until the session is opened', () => {
@@ -370,10 +391,67 @@ test('both history readers hide the desktop delegation envelope', () => {
 });
 
 test('approval results stay inside workspace and keep network disabled', () => {
-  const result = internals.approvalResult('item/permissions/requestApproval', true, 'D:\\project\\demo');
+  const result = internals.approvalResult(
+    'item/permissions/requestApproval',
+    true,
+    {
+      permissions: {
+        fileSystem: {
+          read: ['D:\\project\\demo', 'D:\\private'],
+          write: ['D:\\project\\demo\\output'],
+          entries: [
+            { path: { type: 'path', path: 'D:\\project\\demo' }, access: 'read' },
+            { path: { type: 'path', path: 'D:\\private' }, access: 'write' },
+          ],
+        },
+        network: { enabled: true },
+      },
+    },
+    ['D:\\project\\demo'],
+    false,
+  );
   assert.deepEqual(result.permissions.fileSystem.read, ['D:\\project\\demo']);
-  assert.deepEqual(result.permissions.fileSystem.write, ['D:\\project\\demo']);
-  assert.equal(result.permissions.network.enabled, false);
+  assert.deepEqual(result.permissions.fileSystem.write, ['D:\\project\\demo\\output']);
+  assert.equal(result.permissions.fileSystem.entries.length, 1);
+  assert.equal(result.permissions.network, undefined);
+  assert.equal(result.scope, 'turn');
+  assert.deepEqual(
+    internals.approvalResult('item/commandExecution/requestApproval', false),
+    { decision: 'decline' },
+  );
+});
+
+test('app-server approval requests survive reconnect and use protocol decisions', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  const writes = [];
+  codex.writeRpc = (message) => writes.push(message);
+  codex.activeTurn = {
+    clientId: 'old-client', requestId: 'old-request', threadId: 'thread-1',
+    cwd: process.cwd(), state: 'running',
+  };
+  const eventPromise = once(codex, 'turn-event');
+  codex.handleServerRequest({
+    jsonrpc: '2.0', id: 41, method: 'item/commandExecution/requestApproval',
+    params: { threadId: 'thread-1', command: 'npm test' },
+  });
+  const [event] = await eventPromise;
+  assert.equal(event.event, 'approval.requested');
+  assert.equal(event.payload.threadId, 'thread-1');
+  assert.match(event.payload.summary, /npm test/);
+
+  const pending = codex.listApprovals('thread-1', 'new-client');
+  assert.equal(pending.approvals.length, 1);
+  assert.equal(codex.activeTurn.clientId, 'new-client');
+  await codex.respondApproval('41', true, 'thread-1');
+  assert.deepEqual(writes.at(-1).result, { decision: 'accept' });
+  assert.equal(codex.listApprovals('thread-1').approvals.length, 0);
+
+  codex.handleServerRequest({
+    jsonrpc: '2.0', id: 42, method: 'item/tool/call',
+    params: { threadId: 'thread-1', tool: 'unsupported' },
+  });
+  assert.equal(writes.at(-1).error.code, -32601);
+  assert.equal(codex.listApprovals('thread-1').approvals.length, 0);
 });
 
 test('history mapping keeps user-visible messages and hides internal work', () => {

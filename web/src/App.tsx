@@ -67,6 +67,7 @@ import type {
   HistoryPage,
   OpenedDownload,
   PendingImage,
+  PendingApprovals,
   PendingRequest,
   Session,
   TurnStartResult,
@@ -441,18 +442,29 @@ export default function App() {
       const text = String(payload.text || '');
       finishAssistant(text);
     } else if (message.event === 'approval.requested') {
-      setApproval({
+      const nextApproval = {
         approvalId: String(payload.approvalId || ''),
+        threadId: String(payload.threadId || threadIdRef.current || ''),
         kind: String(payload.kind || 'action'),
         summary: String(payload.summary || ''),
-      });
+        actionable: true,
+      };
+      if (!nextApproval.threadId || nextApproval.threadId === threadIdRef.current) {
+        setApproval(nextApproval);
+        setRunning(true);
+        setExecutionState('waiting');
+        autoFollowLatestRef.current = true;
+        shouldScrollBottomRef.current = true;
+      }
     } else if (message.event === 'turn.error') {
       streamItemRef.current = null;
+      setApproval(null);
       setRunning(false);
       setExecutionState('failed');
       addTimeline('error', String(payload.error || t('Codex 运行错误', 'Codex execution error')));
     } else if (message.event === 'turn.ended') {
       streamItemRef.current = null;
+      setApproval(null);
       setRunning(false);
       setExecutionState((current) => current === 'failed' ? current : 'completed');
       void refreshSessions();
@@ -818,6 +830,7 @@ export default function App() {
     awaitingDesktopTurnRef.current = null;
     setFollowState(nextThreadId ? 'checking' : 'idle');
     setExecutionState('idle');
+    setApproval(null);
     autoFollowLatestRef.current = true;
     streamItemRef.current = null;
     setDrawerOpen(false);
@@ -1041,15 +1054,55 @@ export default function App() {
   }, [reportTimelineError, request]);
 
   const answerApproval = useCallback(async (approved: boolean) => {
-    if (!approval) return;
+    if (!approval || approval.actionable === false) return;
     const current = approval;
     setApproval(null);
     try {
-      await request('approval.respond', { approvalId: current.approvalId, approved });
+      await request('approval.respond', {
+        approvalId: current.approvalId,
+        threadId: current.threadId,
+        approved,
+      });
     } catch (error) {
+      setApproval(current);
       reportTimelineError(error);
     }
   }, [approval, reportTimelineError, request]);
+
+  useEffect(() => {
+    if (!authenticated || !online || !threadId) {
+      setApproval(null);
+      return;
+    }
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const syncApproval = async () => {
+      try {
+        const result = await request<PendingApprovals>('approval.pending', { threadId });
+        if (disposed || threadIdRef.current !== threadId) return;
+        const pending = result.approvals?.[0] || result.externalApproval || null;
+        if (pending) {
+          setApproval(pending);
+          setRunning(true);
+          setExecutionState('waiting');
+          autoFollowLatestRef.current = true;
+          shouldScrollBottomRef.current = true;
+        } else if (approval?.actionable === false) {
+          setApproval(null);
+          setRunning(false);
+          setExecutionState('running');
+        }
+        if (pending?.actionable === false || executionState === 'running' || executionState === 'waiting') {
+          timer = setTimeout(syncApproval, 4_000);
+        }
+      } catch { /* session history polling remains the fallback */ }
+    };
+    void syncApproval();
+    return () => {
+      disposed = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [approval?.actionable, authenticated, connectionEpoch, executionState, online, request, threadId]);
 
   const downloadLocalFile = useCallback(async (path: string) => {
     if (fileDownloadRef.current) return;
@@ -1414,13 +1467,25 @@ export default function App() {
         </div>
 
         {approval && (
-          <section className="approval-card">
-            <div><strong>{t('需要你的批准', 'Your approval is required')}</strong><span>{approval.kind}</span></div>
-            <pre>{approval.summary}</pre>
-            <div className="approval-actions">
-              <button onClick={() => void answerApproval(false)}>{t('拒绝', 'Reject')}</button>
-              <button className="danger" onClick={() => void answerApproval(true)}>{t('批准一次', 'Approve once')}</button>
+          <section className="approval-card" aria-live="assertive">
+            <div>
+              <strong>{approval.actionable === false
+                ? t('需要在电脑上批准', 'Approval required on your computer')
+                : t('需要你的批准', 'Your approval is required')}</strong>
+              <span>{approval.kind}</span>
             </div>
+            <pre>{approval.actionable === false
+              ? t(
+                '这项请求已经由 Codex Desktop 持有，当前无法转交给 Web。请在电脑上处理这一次；之后从 Web 发起且由连接器持有的轮次，可以直接在这里批准或拒绝。',
+                'Codex Desktop already owns this request, so it cannot be transferred to the Web. Handle this one on your computer; later connector-owned turns started from the Web can be approved or rejected here.',
+              )
+              : approval.summary}</pre>
+            {approval.actionable !== false && (
+              <div className="approval-actions">
+                <button onClick={() => void answerApproval(false)}>{t('拒绝', 'Reject')}</button>
+                <button className="approve" onClick={() => void answerApproval(true)}>{t('批准一次', 'Approve once')}</button>
+              </div>
+            )}
           </section>
         )}
 

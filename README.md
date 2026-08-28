@@ -23,6 +23,8 @@ computer; a lightweight relay on your own ECS/VPS provides the remote entry poin
   text or image messages from a phone.
 - **Follow work in progress** — see running state and automatically refresh useful assistant progress
   without exposing internal reasoning or tool-call noise.
+- **Approve from your phone** — command, file-change, and permission prompts from Web-owned turns can
+  be accepted or rejected in the browser, and pending prompts survive a reconnect.
 - **Download local files** — after confirmation, download local files linked in assistant replies to a
   phone or browser without an extension allowlist or persistent storage on the relay.
 - **Fast on long histories** — session lists and conversation history are loaded incrementally instead
@@ -55,9 +57,11 @@ local connector ── outbound WS/WSS ───┘
 Both the browser and the local connector initiate connections to the relay. The relay authenticates
 them and forwards live frames in memory; Codex execution and file access remain local.
 
-App-server-owned turns use the Codex app-server JSON-RPC protocol and can stream native deltas.
-Existing desktop-owned sessions use Codex Desktop task tools for delivery and adaptive history-tail
-polling over the same WebSocket. Codex Anywhere does not implement ACP.
+New sessions and eligible idle sessions are owned by the connector through the Codex app-server
+JSON-RPC protocol, enabling native deltas and browser approval prompts. Sessions that are already
+active in Codex Desktop remain Desktop-owned and use task tools for delivery plus adaptive history-tail
+polling over the same WebSocket; an approval already pending there must still be handled in Desktop.
+Codex Anywhere does not implement ACP.
 
 ## Deployment
 
