@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { localFilePathFromHref } from './file-utils';
@@ -48,6 +49,29 @@ export function MessageBubble({
   imageSource?: string;
   onDownloadFile: (path: string) => void;
 }) {
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copyable = item.kind === 'user' || item.kind === 'assistant';
+
+  useEffect(() => {
+    setCopyState('idle');
+    return () => {
+      if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+    };
+  }, [item.text]);
+
+  async function copyMessage() {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('clipboard_unavailable');
+      await navigator.clipboard.writeText(item.text);
+      setCopyState('copied');
+    } catch {
+      setCopyState('failed');
+    }
+    if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
+    copyResetTimer.current = setTimeout(() => setCopyState('idle'), 1_800);
+  }
+
   if (item.kind === 'progress') {
     return (
       <details className="progress-card" open>
@@ -56,8 +80,27 @@ export function MessageBubble({
       </details>
     );
   }
+  const copyLabel = copyState === 'copied'
+    ? t('已复制', 'Copied')
+    : copyState === 'failed'
+      ? t('复制失败', 'Copy failed')
+      : t('复制消息', 'Copy message');
   return (
-    <div className={`message ${item.kind}`}>
+    <div className={`message ${item.kind}${copyable ? ' copyable' : ''}`}>
+      {copyable && (
+        <button
+          className={`message-copy ${copyState}`}
+          type="button"
+          onClick={() => void copyMessage()}
+          aria-label={copyLabel}
+          aria-live="polite"
+          title={copyLabel}
+        >
+          {copyState === 'copied'
+            ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
+            : <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>}
+        </button>
+      )}
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

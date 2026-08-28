@@ -1,7 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
-import './styles.css';
+import './styles.scss';
 
 if ('serviceWorker' in navigator) {
   void navigator.serviceWorker.getRegistrations().then((registrations) => {

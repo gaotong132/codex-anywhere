@@ -1,0 +1,12 @@
+$page-bg: #080b12;
+$panel-divider: #202735;
+$content-width: 860px;
+$mobile-breakpoint: 760px;
+$success: #39c979;
+$focus: #4f82ec;
+
+@mixin truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
