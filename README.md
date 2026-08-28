@@ -23,6 +23,7 @@ connector computer.
 - Creates a new session in a configured project directory.
 - Downloads an assistant-linked local file after explicit browser confirmation.
 - Reconnects the browser, relay, and local connector after transient network failures.
+- Switches the complete web interface between Chinese and English through runtime configuration.
 
 It does not automatically fork sessions, persist conversations on the relay, or expose a general
 remote shell.
@@ -90,6 +91,7 @@ Open `http://127.0.0.1:3300` and enter the same token. For an internet deploymen
 | `HOST` | `127.0.0.1` | HTTP listen address |
 | `PORT` | `3300` | HTTP listen port |
 | `BRIDGE_TRUST_PROXY` | `0` | Trust Nginx `X-Real-IP`; enable only behind that proxy |
+| `CODEX_UI_LANGUAGE` | `zh-CN` | Web UI language: `zh-CN` or `en`; restart the relay after changing it |
 
 ### Connector
 

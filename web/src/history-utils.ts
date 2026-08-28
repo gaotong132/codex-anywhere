@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 const ATTACHMENT_STORAGE_KEY = 'bridge.knownAttachments.v2';
 
 export type TurnItem = {
@@ -86,7 +88,7 @@ function extractImageAttachment(text: string): ImageAttachment | undefined {
   const path = (image?.[1] || image?.[2] || '').trim();
   if (!path) return undefined;
   const metadataName = /(?:^|\r?\n)##\s+([^:\r\n]+):\s+[A-Za-z]:[\\/]/m.exec(decoded)?.[1]?.trim();
-  const fallbackName = path.split(/[\\/]/).at(-1) || '图片';
+  const fallbackName = path.split(/[\\/]/).at(-1) || t('图片', 'Image');
   return { path, name: metadataName || fallbackName };
 }
 

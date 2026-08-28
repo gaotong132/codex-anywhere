@@ -7,6 +7,27 @@ import { createBridgeServer } from '../src/server/server.js';
 const TOKEN = 'test-token-that-is-longer-than-32-characters';
 const nextJson = (socket) => once(socket, 'message').then(([data]) => JSON.parse(data.toString()));
 
+test('server exposes a no-store runtime UI language configuration', async (t) => {
+  const server = createBridgeServer({ token: TOKEN, uiLanguage: 'en-US' });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/config.js`);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.match(response.headers.get('content-type'), /^text\/javascript/);
+  assert.match(await response.text(), /"locale":"en"/);
+});
+
+test('runtime UI language defaults to Chinese', async (t) => {
+  const server = createBridgeServer({ token: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+
+  const response = await fetch(`http://127.0.0.1:${address.port}/config.js`);
+  assert.match(await response.text(), /"locale":"zh-CN"/);
+});
+
 test('server authenticates and relays client requests to connector', async (t) => {
   const server = createBridgeServer({ token: TOKEN });
   const address = await server.listen(0, '127.0.0.1');

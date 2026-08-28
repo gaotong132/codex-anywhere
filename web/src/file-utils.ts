@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 export function localFilePathFromHref(href?: string) {
   if (!href) return null;
   let value = href.trim();
@@ -18,7 +20,7 @@ export function localFilePathFromHref(href?: string) {
 }
 
 export function localFileName(path: string) {
-  return path.split(/[\\/]/).at(-1) || '本机文件';
+  return path.split(/[\\/]/).at(-1) || t('本机文件', 'Local file');
 }
 
 export function safeDownloadName(value: string) {

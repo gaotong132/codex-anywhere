@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 512 * 1024;
 const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -77,7 +79,7 @@ export async function fileToBase64(file: File) {
 }
 
 export function buildImageMessage(text: string, image: UploadedImage) {
-  const request = text.trim() || '请查看并分析这张图片。';
+  const request = text.trim() || t('请查看并分析这张图片。', 'Please inspect and analyze this image.');
   const name = image.name.replace(/[<>`#]/g, '_');
   const metadataPath = image.path.replace(/\\/g, '/');
   const imagePath = image.path.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

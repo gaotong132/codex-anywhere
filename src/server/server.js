@@ -33,6 +33,7 @@ export function createBridgeServer(options = {}) {
   const token = String(options.token || process.env.BRIDGE_TOKEN || '');
   if (token.length < 32) throw new Error('BRIDGE_TOKEN must contain at least 32 characters');
   const publicDir = resolve(options.publicDir || defaultPublicDir);
+  const uiLanguage = normalizeUiLanguage(options.uiLanguage ?? process.env.CODEX_UI_LANGUAGE);
   const connectors = new Map();
   const clients = new Map();
   const socketMeta = new WeakMap();
@@ -49,6 +50,10 @@ export function createBridgeServer(options = {}) {
     if (request.url === '/health' || request.url === '/healthz') {
       response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
       response.end(JSON.stringify({ ok: true }));
+      return;
+    }
+    if (new URL(request.url || '/', 'http://localhost').pathname === '/config.js') {
+      serveRuntimeConfig(response, uiLanguage);
       return;
     }
     serveStatic(publicDir, request, response);
@@ -210,6 +215,18 @@ function routeConnectorMessage({ message, clients, meta }) {
 function broadcastPresence(clients, connectors) {
   const payload = { type: 'presence', devices: [...connectors.keys()] };
   for (const socket of clients.values()) safeSend(socket, payload);
+}
+
+function normalizeUiLanguage(value) {
+  return String(value || '').trim().toLowerCase().startsWith('en') ? 'en' : 'zh-CN';
+}
+
+function serveRuntimeConfig(response, locale) {
+  response.writeHead(200, {
+    'content-type': 'text/javascript; charset=utf-8',
+    'cache-control': 'no-store',
+  });
+  response.end(`window.__CODEX_ANYWHERE_CONFIG__ = ${JSON.stringify({ locale })};\n`);
 }
 
 function serveStatic(publicDir, request, response) {

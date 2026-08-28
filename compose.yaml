@@ -7,6 +7,7 @@ services:
       PORT: 3300
       BRIDGE_TRUST_PROXY: "1"
       BRIDGE_TOKEN: ${BRIDGE_TOKEN:?set BRIDGE_TOKEN in .env}
+      CODEX_UI_LANGUAGE: ${CODEX_UI_LANGUAGE:-zh-CN}
     ports:
       - "127.0.0.1:3300:3300"
     read_only: true

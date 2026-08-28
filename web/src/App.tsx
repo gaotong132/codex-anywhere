@@ -39,6 +39,7 @@ import {
   localFilePathFromHref,
   safeDownloadName,
 } from './file-utils';
+import { dateLocale, t } from './i18n';
 
 const DEVICE_ID = 'personal-pc';
 const HISTORY_PAGE_SIZE = 6;
@@ -111,7 +112,7 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [online, setOnline] = useState(false);
-  const [statusText, setStatusText] = useState('未连接');
+  const [statusText, setStatusText] = useState(t('未连接', 'Disconnected'));
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionSearch, setSessionSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -259,7 +260,7 @@ export default function App() {
 
   const request = useCallback(<T,>(action: string, payload: Record<string, unknown>): Promise<T> => {
     const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error('连接未建立'));
+    if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error(t('连接未建立', 'Connection is not established')));
     const requestId = makeId();
     const timeoutMs = action === 'turn.start' ? TURN_START_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
     return new Promise<T>((resolve, reject) => {
@@ -327,7 +328,7 @@ export default function App() {
       const connected = Boolean(message.devices?.includes(DEVICE_ID));
       connectorOnlineRef.current = connected;
       setOnline(connected);
-      setStatusText(connected ? '电脑在线' : '电脑离线');
+      setStatusText(connected ? t('电脑在线', 'Computer online') : t('电脑离线', 'Computer offline'));
       return;
     }
     if (message.type === 'pong') return;
@@ -336,7 +337,7 @@ export default function App() {
       const connected = Boolean(message.devices?.includes(DEVICE_ID));
       connectorOnlineRef.current = connected;
       setOnline(connected);
-      setStatusText(connected ? '电脑在线' : '电脑离线');
+      setStatusText(connected ? t('电脑在线', 'Computer online') : t('电脑离线', 'Computer offline'));
       if (connected && !wasConnected) void refreshSessions();
       return;
     }
@@ -346,7 +347,7 @@ export default function App() {
       pendingRef.current.delete(message.requestId);
       clearTimeout(pending.timer);
       if (message.ok) pending.resolve(message.data);
-      else pending.reject(new Error(message.error || '请求失败'));
+      else pending.reject(new Error(message.error || t('请求失败', 'Request failed')));
       return;
     }
     if (message.type !== 'event') return;
@@ -380,7 +381,7 @@ export default function App() {
       streamItemRef.current = null;
       setRunning(false);
       setExecutionState('failed');
-      addTimeline('error', String(payload.error || 'Codex 运行错误'));
+      addTimeline('error', String(payload.error || t('Codex 运行错误', 'Codex execution error')));
     } else if (message.event === 'turn.ended') {
       streamItemRef.current = null;
       setRunning(false);
@@ -411,7 +412,7 @@ export default function App() {
     if (navigator.onLine === false) {
       setConnecting(false);
       setOnline(false);
-      setStatusText('等待网络恢复');
+      setStatusText(t('等待网络恢复', 'Waiting for network'));
       return;
     }
     const existing = socketRef.current;
@@ -424,7 +425,7 @@ export default function App() {
     }
     clearReconnectTimer();
     setConnecting(true);
-    setStatusText(reconnectAttemptRef.current ? '正在重新连接…' : '正在连接…');
+    setStatusText(reconnectAttemptRef.current ? t('正在重新连接…', 'Reconnecting…') : t('正在连接…', 'Connecting…'));
     const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(`${scheme}//${location.host}/ws`);
     socketRef.current = socket;
@@ -444,24 +445,26 @@ export default function App() {
       setConnecting(false);
       setOnline(false);
       setRunning(false);
-      rejectPendingRequests('连接已断开');
+      rejectPendingRequests(t('连接已断开', 'Connection closed'));
       if (event.code === 4003) {
         reconnectWantedRef.current = false;
         setAuthenticated(false);
-        setStatusText('Token 验证失败');
+        setStatusText(t('Token 验证失败', 'Token verification failed'));
         return;
       }
       if (event.code === 4429) {
         reconnectWantedRef.current = false;
         setAuthenticated(false);
-        setStatusText('登录尝试过多，请 15 分钟后重试');
+        setStatusText(t('登录尝试过多，请 15 分钟后重试', 'Too many login attempts. Try again in 15 minutes.'));
         return;
       }
-      setStatusText(navigator.onLine === false ? '等待网络恢复' : '连接中断，准备重连…');
+      setStatusText(navigator.onLine === false
+        ? t('等待网络恢复', 'Waiting for network')
+        : t('连接中断，准备重连…', 'Connection lost. Reconnecting…'));
       scheduleReconnectRef.current();
     });
     socket.addEventListener('error', () => {
-      if (socketRef.current === socket) setStatusText('连接失败');
+      if (socketRef.current === socket) setStatusText(t('连接失败', 'Connection failed'));
     });
   }, [clearReconnectTimer, rejectPendingRequests]);
 
@@ -470,7 +473,7 @@ export default function App() {
     clearReconnectTimer();
     if (navigator.onLine === false) {
       setConnecting(false);
-      setStatusText('等待网络恢复');
+      setStatusText(t('等待网络恢复', 'Waiting for network'));
       return;
     }
     const attempt = reconnectAttemptRef.current;
@@ -479,7 +482,10 @@ export default function App() {
       : Math.min(RECONNECT_MAX_DELAY_MS, 1_000 * (2 ** attempt)) + Math.floor(Math.random() * 500);
     reconnectAttemptRef.current = immediate ? attempt : attempt + 1;
     setConnecting(true);
-    setStatusText(delay ? `将在 ${Math.max(1, Math.ceil(delay / 1_000))} 秒后重连…` : '正在重新连接…');
+    const seconds = Math.max(1, Math.ceil(delay / 1_000));
+    setStatusText(delay
+      ? t(`将在 ${seconds} 秒后重连…`, `Reconnecting in ${seconds}s…`)
+      : t('正在重新连接…', 'Reconnecting…'));
     reconnectTimerRef.current = setTimeout(() => {
       reconnectTimerRef.current = null;
       openSocket(tokenRef.current.trim(), true);
@@ -492,7 +498,7 @@ export default function App() {
     event?.preventDefault();
     const value = tokenRef.current.trim();
     if (value.length < 32) {
-      setStatusText('Token 长度不足');
+      setStatusText(t('Token 长度不足', 'Token is too short'));
       return;
     }
     sessionStorage.setItem('bridge.token', value);
@@ -522,7 +528,7 @@ export default function App() {
     const handleOffline = () => {
       setOnline(false);
       setConnecting(false);
-      setStatusText('等待网络恢复');
+      setStatusText(t('等待网络恢复', 'Waiting for network'));
     };
     const handleVisibility = () => {
       if (document.visibilityState === 'visible') reconnectNow();
@@ -539,7 +545,7 @@ export default function App() {
       const socket = socketRef.current;
       socketRef.current = null;
       socket?.close(1000, 'page closed');
-      rejectPendingRequests('页面已关闭');
+      rejectPendingRequests(t('页面已关闭', 'Page closed'));
     };
   }, [clearReconnectTimer, rejectPendingRequests, scheduleReconnect]);
 
@@ -756,7 +762,7 @@ export default function App() {
     const isExistingSession = Boolean(threadIdRef.current);
     const workspace = newSessionCwd.trim();
     if (!isExistingSession && !workspace) {
-      addTimeline('error', '请先填写新会话的项目目录。');
+      addTimeline('error', t('请先填写新会话的项目目录。', 'Enter a project directory for the new session.'));
       return;
     }
     if (!isExistingSession) localStorage.setItem('bridge.newSessionCwd', workspace);
@@ -841,7 +847,7 @@ export default function App() {
         });
       }
       if (error instanceof Error && error.message === 'turn_cancelled') {
-        addTimeline('notice', '已取消发送，原消息已放回输入框。');
+        addTimeline('notice', t('已取消发送，原消息已放回输入框。', 'Sending was cancelled and the original message was restored.'));
         return;
       }
       addTimeline('error', friendlyError(error));
@@ -871,7 +877,10 @@ export default function App() {
   const downloadLocalFile = useCallback(async (path: string) => {
     if (fileDownloadRef.current) return;
     const accepted = window.confirm(
-      `是否从这台电脑下载以下文件？\n\n${path}\n\n确认后会签发一项 2 分钟、仅限当前页面和此文件的一次性权限。`,
+      t(
+        `是否从这台电脑下载以下文件？\n\n${path}\n\n确认后会签发一项 2 分钟、仅限当前页面和此文件的一次性权限。`,
+        `Download this file from your computer?\n\n${path}\n\nConfirming grants this page a one-time, file-specific permission valid for 2 minutes.`,
+      ),
     );
     if (!accepted) return;
     fileDownloadRef.current = true;
@@ -969,8 +978,8 @@ export default function App() {
         <section className="login-card">
           <div className="brand-mark">C</div>
           <p className="eyebrow">PRIVATE BRIDGE</p>
-          <h1>连接本机 Codex</h1>
-          <p className="login-copy">输入 Bridge Token 以继续。</p>
+          <h1>{t('连接本机 Codex', 'Connect to local Codex')}</h1>
+          <p className="login-copy">{t('输入 Bridge Token 以继续。', 'Enter the Bridge Token to continue.')}</p>
           <form onSubmit={connect}>
             <label htmlFor="token">Bridge Token</label>
             <input
@@ -979,9 +988,9 @@ export default function App() {
               autoComplete="current-password"
               value={token}
               onChange={(event) => setToken(event.target.value)}
-              placeholder="粘贴至少 32 位 Token"
+              placeholder={t('粘贴至少 32 位 Token', 'Paste a token with at least 32 characters')}
             />
-            <button className="primary wide" disabled={connecting}>{connecting ? '连接中…' : '连接'}</button>
+            <button className="primary wide" disabled={connecting}>{connecting ? t('连接中…', 'Connecting…') : t('连接', 'Connect')}</button>
           </form>
           <div className="login-status">{statusText}</div>
         </section>
@@ -991,26 +1000,26 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      {drawerOpen && <button className="drawer-backdrop" aria-label="关闭会话列表" onClick={() => setDrawerOpen(false)} />}
+      {drawerOpen && <button className="drawer-backdrop" aria-label={t('关闭会话列表', 'Close session list')} onClick={() => setDrawerOpen(false)} />}
       <aside className={`sidebar ${drawerOpen ? 'open' : ''}`}>
         <div className="sidebar-head">
           <div>
             <p className="eyebrow">PERSONAL CODEX</p>
-            <h1>会话</h1>
+            <h1>{t('会话', 'Sessions')}</h1>
           </div>
           <div className="sidebar-actions">
-            <button className="sidebar-tool primary-tool" onClick={beginNewSession} aria-label="新会话" title="新会话">＋</button>
+            <button className="sidebar-tool primary-tool" onClick={beginNewSession} aria-label={t('新会话', 'New session')} title={t('新会话', 'New session')}>＋</button>
             <button
               className={`sidebar-tool ${searchOpen ? 'active' : ''}`}
               onClick={() => {
                 if (searchOpen) setSessionSearch('');
                 setSearchOpen((open) => !open);
               }}
-              aria-label={searchOpen ? '关闭搜索' : '搜索会话'}
-              title={searchOpen ? '关闭搜索' : '搜索会话'}
+              aria-label={searchOpen ? t('关闭搜索', 'Close search') : t('搜索会话', 'Search sessions')}
+              title={searchOpen ? t('关闭搜索', 'Close search') : t('搜索会话', 'Search sessions')}
             >⌕</button>
-            <button className="sidebar-tool" onClick={() => void refreshSessions()} aria-label="刷新会话" title="刷新会话">↻</button>
-            <button className="sidebar-tool mobile-only" onClick={() => setDrawerOpen(false)} aria-label="关闭" title="关闭">×</button>
+            <button className="sidebar-tool" onClick={() => void refreshSessions()} aria-label={t('刷新会话', 'Refresh sessions')} title={t('刷新会话', 'Refresh sessions')}>↻</button>
+            <button className="sidebar-tool mobile-only" onClick={() => setDrawerOpen(false)} aria-label={t('关闭', 'Close')} title={t('关闭', 'Close')}>×</button>
           </div>
         </div>
         {searchOpen && (
@@ -1026,7 +1035,7 @@ export default function App() {
                   setSearchOpen(false);
                 }
               }}
-              placeholder="搜索会话或目录"
+              placeholder={t('搜索会话或目录', 'Search sessions or folders')}
             />
           </label>
         )}
@@ -1043,25 +1052,27 @@ export default function App() {
               >
                 <span className="session-title" title={session.title || session.id}>{session.title || session.id}</span>
                 <span className="session-meta">
-                  {sessionRunning && <span className="session-running-dot" aria-label="运行中" title="运行中" />}
+                  {sessionRunning && <span className="session-running-dot" aria-label={t('运行中', 'Running')} title={t('运行中', 'Running')} />}
                   {projectName && <span className="session-project" title={session.cwd}>{projectName}</span>}
                   <time>{formatDate(session.updatedAt)}</time>
                 </span>
               </button>
             );
           })}
-          {!filteredSessions.length && <p className="empty-list">没有匹配的会话</p>}
+          {!filteredSessions.length && <p className="empty-list">{t('没有匹配的会话', 'No matching sessions')}</p>}
         </nav>
       </aside>
 
       <section className="conversation">
         <header className="topbar">
-          <button className="icon-button mobile-only" onClick={() => setDrawerOpen(true)} aria-label="打开会话列表">☰</button>
+          <button className="icon-button mobile-only" onClick={() => setDrawerOpen(true)} aria-label={t('打开会话列表', 'Open session list')}>☰</button>
           <div className="conversation-heading">
-            <strong>{activeSession?.title || (threadId ? 'Codex 会话' : creatingNewSession ? '新会话' : '最近会话')}</strong>
+            <strong>{activeSession?.title || (threadId ? t('Codex 会话', 'Codex session') : creatingNewSession ? t('新会话', 'New session') : t('最近会话', 'Recent session'))}</strong>
             <span>{threadId
               ? `${followLabel(followState)} · ${activeSession?.cwd || shortId(threadId)}`
-              : creatingNewSession ? (newSessionCwd || '尚未选择项目目录') : '从左上角菜单选择会话'}</span>
+              : creatingNewSession
+                ? (newSessionCwd || t('尚未选择项目目录', 'No project directory selected'))
+                : t('从左上角菜单选择会话', 'Choose a session from the top-left menu')}</span>
           </div>
           <span className={`presence ${online ? 'online' : 'offline'}`}><i />{statusText}</span>
         </header>
@@ -1071,28 +1082,28 @@ export default function App() {
             <div className="new-session-setup">
               {existingProjects.length > 0 && (
                 <>
-                  <label htmlFor="existing-project">已有项目</label>
+                  <label htmlFor="existing-project">{t('已有项目', 'Existing project')}</label>
                   <select
                     id="existing-project"
                     value={selectedExistingProject}
                     onChange={(event) => setNewSessionCwd(event.target.value)}
                   >
-                    <option value="">手动输入其他目录</option>
+                    <option value="">{t('手动输入其他目录', 'Enter another directory')}</option>
                     {existingProjects.map((project) => (
                       <option key={project.toLocaleLowerCase()} value={project}>{projectLabel(project)}</option>
                     ))}
                   </select>
                 </>
               )}
-              <label htmlFor="new-session-cwd">项目目录</label>
+              <label htmlFor="new-session-cwd">{t('项目目录', 'Project directory')}</label>
               <input
                 id="new-session-cwd"
                 value={newSessionCwd}
                 onChange={(event) => setNewSessionCwd(event.target.value)}
-                placeholder="例如 C:\\workspace\\my-app"
+                placeholder={t('例如 C:\\workspace\\my-app', 'For example, C:\\workspace\\my-app')}
                 autoComplete="off"
               />
-              <small>已有项目来自最近会话的目录；也可以手动输入新目录。只影响新会话。</small>
+              <small>{t('已有项目来自最近会话的目录；也可以手动输入新目录。只影响新会话。', 'Existing projects come from recent sessions. You can also enter a new directory; it affects new sessions only.')}</small>
             </div>
           )}
         </div>
@@ -1100,22 +1111,22 @@ export default function App() {
         <div className="message-list" ref={messageListRef} onScroll={updateAutoFollowLatest}>
           {threadId && initialHistoryLoaded && nextCursor && (
             <button className="load-older" disabled={historyLoading} onClick={loadOlder}>
-              {historyLoading ? '正在加载…' : '加载更早记录'}
+              {historyLoading ? t('正在加载…', 'Loading…') : t('加载更早记录', 'Load older messages')}
             </button>
           )}
           {threadId && initialHistoryLoaded && historyTruncated && (
-            <div className="history-tail-notice">该会话记录较大，当前展示最近活动；新输出会继续实时同步。</div>
+            <div className="history-tail-notice">{t('该会话记录较大，当前展示最近活动；新输出会继续实时同步。', 'This session is large, so only recent activity is shown. New output will continue to sync live.')}</div>
           )}
-          {threadId && historyLoading && !initialHistoryLoaded && <div className="history-skeleton">正在加载最近记录…</div>}
+          {threadId && historyLoading && !initialHistoryLoaded && <div className="history-skeleton">{t('正在加载最近记录…', 'Loading recent messages…')}</div>}
           {!timeline.length && !historyLoading && (
             <div className="empty-conversation">
               <div className="brand-mark small">C</div>
-              <h2>{threadId ? '这个分页暂无消息' : creatingNewSession ? '创建一个新会话' : '选择已有会话'}</h2>
+              <h2>{threadId ? t('这个分页暂无消息', 'No messages on this page') : creatingNewSession ? t('创建一个新会话', 'Create a new session') : t('选择已有会话', 'Choose an existing session')}</h2>
               <p>{threadId
-                ? '历史记录按页加载，不再一次拉取整个会话。'
+                ? t('历史记录按页加载，不再一次拉取整个会话。', 'History loads page by page instead of fetching the entire session.')
                 : creatingNewSession
-                  ? '选择本机项目目录后，第一条消息将在该目录中运行。'
-                  : '打开左上角菜单选择会话；新会话入口也已移入菜单。'}</p>
+                  ? t('选择本机项目目录后，第一条消息将在该目录中运行。', 'Choose a local project directory; the first message will run there.')
+                  : t('打开左上角菜单选择会话；新会话入口也已移入菜单。', 'Open the top-left menu to choose a session or start a new one.')}</p>
             </div>
           )}
           {timeline.map((item) => {
@@ -1138,11 +1149,11 @@ export default function App() {
 
         {approval && (
           <section className="approval-card">
-            <div><strong>需要你的批准</strong><span>{approval.kind}</span></div>
+            <div><strong>{t('需要你的批准', 'Your approval is required')}</strong><span>{approval.kind}</span></div>
             <pre>{approval.summary}</pre>
             <div className="approval-actions">
-              <button onClick={() => void answerApproval(false)}>拒绝</button>
-              <button className="danger" onClick={() => void answerApproval(true)}>批准一次</button>
+              <button onClick={() => void answerApproval(false)}>{t('拒绝', 'Reject')}</button>
+              <button className="danger" onClick={() => void answerApproval(true)}>{t('批准一次', 'Approve once')}</button>
             </div>
           </section>
         )}
@@ -1150,13 +1161,13 @@ export default function App() {
         {(threadId || creatingNewSession) && <footer className="composer-wrap">
           {pendingImage && (
             <div className="image-preview">
-              <img src={pendingImage.previewUrl} alt="待发送图片预览" />
+              <img src={pendingImage.previewUrl} alt={t('待发送图片预览', 'Image ready to send')} />
               <span><strong>{pendingImage.file.name}</strong><small>{formatBytes(pendingImage.file.size)}</small></span>
               <button
                 type="button"
                 onClick={() => setPendingImage(null)}
                 disabled={uploading || running}
-                aria-label="移除图片"
+                aria-label={t('移除图片', 'Remove image')}
               >×</button>
             </div>
           )}
@@ -1178,8 +1189,8 @@ export default function App() {
               type="button"
               onClick={() => imageInputRef.current?.click()}
               disabled={!online || running || uploading}
-              aria-label="添加图片"
-              title="添加图片"
+              aria-label={t('添加图片', 'Add image')}
+              title={t('添加图片', 'Add image')}
             >＋</button>
             <textarea
               rows={1}
@@ -1188,14 +1199,16 @@ export default function App() {
               onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
                 if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void sendTurn();
               }}
-              placeholder={uploading ? '正在上传图片…' : online ? '发送给本机 Codex…' : '本机连接器离线'}
+              placeholder={uploading
+                ? t('正在上传图片…', 'Uploading image…')
+                : online ? t('发送给本机 Codex…', 'Send to local Codex…') : t('本机连接器离线', 'Local connector is offline')}
               disabled={!online || uploading}
             />
             {running
-              ? <button className="stop-button" onClick={() => void stopTurn()} aria-label="停止">■</button>
-              : <button className="send-button" disabled={!online || uploading || (!prompt.trim() && !pendingImage) || (!threadId && !newSessionCwd.trim())} onClick={() => void sendTurn()} aria-label="发送">{uploading ? '…' : '↑'}</button>}
+              ? <button className="stop-button" onClick={() => void stopTurn()} aria-label={t('停止', 'Stop')}>■</button>
+              : <button className="send-button" disabled={!online || uploading || (!prompt.trim() && !pendingImage) || (!threadId && !newSessionCwd.trim())} onClick={() => void sendTurn()} aria-label={t('发送', 'Send')}>{uploading ? '…' : '↑'}</button>}
           </div>
-          <small>Ctrl / ⌘ + Enter 发送 · 历史记录按页加载</small>
+          <small>{t('Ctrl / ⌘ + Enter 发送 · 历史记录按页加载', 'Ctrl / ⌘ + Enter to send · History loads by page')}</small>
         </footer>}
       </section>
     </main>
@@ -1208,14 +1221,14 @@ function ExecutionIndicator({ state }: { state: ExecutionState }) {
     return (
       <div className={`execution-status ${state}`} role="status" aria-live="polite">
         <span className="execution-dots" aria-hidden="true"><i /><i /><i /></span>
-        <span>{state === 'waiting' ? '正在等待桌面会话空闲' : 'Codex 正在执行'}</span>
+        <span>{state === 'waiting' ? t('正在等待桌面会话空闲', 'Waiting for the desktop session') : t('Codex 正在执行', 'Codex is running')}</span>
       </div>
     );
   }
   return (
     <div className={`execution-status ${state}`} role="status" aria-live="polite">
       <span className="execution-result" aria-hidden="true">{state === 'completed' ? '✓' : '!'}</span>
-      <span>{state === 'completed' ? '本轮执行完成' : '本轮执行失败'}</span>
+      <span>{state === 'completed' ? t('本轮执行完成', 'Run completed') : t('本轮执行失败', 'Run failed')}</span>
     </div>
   );
 }
@@ -1231,10 +1244,10 @@ function DownloadIndicator({
   const progress = download.size > 0 ? Math.min(100, Math.round(download.received / download.size * 100)) : 0;
   return (
     <div className="download-status" role="status" aria-live="polite">
-      <span>正在下载 {download.name}</span>
-      <strong>{download.size > 0 ? `${progress}%` : '准备中'}</strong>
+      <span>{t(`正在下载 ${download.name}`, `Downloading ${download.name}`)}</span>
+      <strong>{download.size > 0 ? `${progress}%` : t('准备中', 'Preparing')}</strong>
       <progress value={download.received} max={Math.max(1, download.size)} />
-      <button type="button" onClick={onCancel}>取消下载</button>
+      <button type="button" onClick={onCancel}>{t('取消下载', 'Cancel download')}</button>
     </div>
   );
 }
@@ -1251,7 +1264,7 @@ function MessageBubble({
   if (item.kind === 'progress') {
     return (
       <details className="progress-card" open>
-        <summary>进度更新</summary>
+        <summary>{t('进度更新', 'Progress update')}</summary>
         <pre>{item.text}</pre>
       </details>
     );
@@ -1276,10 +1289,10 @@ function MessageBubble({
       </ReactMarkdown>
       {item.attachment && imageSource !== '' && (
         <figure className="message-image">
-          {imageSource === undefined && <div className="message-image-state">正在加载图片…</div>}
-          {imageSource === '' && <div className="message-image-state">图片已过期或无法读取</div>}
+          {imageSource === undefined && <div className="message-image-state">{t('正在加载图片…', 'Loading image…')}</div>}
+          {imageSource === '' && <div className="message-image-state">{t('图片已过期或无法读取', 'Image expired or unavailable')}</div>}
           {imageSource && (
-            <a href={imageSource} target="_blank" rel="noreferrer noopener" aria-label="查看原图">
+            <a href={imageSource} target="_blank" rel="noreferrer noopener" aria-label={t('查看原图', 'View full image')}>
               <img src={imageSource} alt={item.attachment.name} loading="lazy" />
             </a>
           )}
@@ -1291,43 +1304,44 @@ function MessageBubble({
 }
 
 function followLabel(state: FollowState) {
-  if (state === 'following') return '实时跟随';
-  if (state === 'checking') return '检查进度';
-  if (state === 'error') return '跟随重试中';
-  return '已同步';
+  if (state === 'following') return t('实时跟随', 'Following live');
+  if (state === 'checking') return t('检查进度', 'Checking progress');
+  if (state === 'error') return t('跟随重试中', 'Retrying follow');
+  return t('已同步', 'Synced');
 }
 
 function friendlyError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || '请求失败');
-  if (message === 'connector_offline') return '本机连接器离线，请确认电脑已开机且连接器正在运行。';
-  if (message === 'another_turn_is_active') return '当前已有一个任务在运行，请等待完成或先停止。';
-  if (message === 'workspace_outside_allowed_root') return '该目录不在连接器允许访问的范围内。';
-  if (message === 'request_timeout') return '请求超过 30 秒没有响应，消息未确认发送，已恢复到输入框。';
-  if (message === 'turn_start_timeout') return '等待原会话可写超时，消息没有发送，已恢复到输入框。';
-  if (message === 'desktop_app_unavailable') return '桌面 Codex 当前不可用，请打开桌面应用后重试。';
-  if (message === 'desktop_delivery_timeout') return '桌面 Codex 没有及时确认接收，消息已恢复到输入框，请确认后再重试。';
-  if (message === 'desktop_required_for_large_session') return '这是一个超大会话，需要桌面 Codex 打开后才能安全发送到原会话。';
-  if (message === 'attachment_type_not_allowed') return '只支持 JPG、PNG 和 WebP 图片。';
-  if (message === 'attachment_too_large') return '图片处理后仍超过 4 MB，请换一张更小的图片。';
+  const message = error instanceof Error ? error.message : String(error || t('请求失败', 'Request failed'));
+  if (message === 'connector_offline') return t('本机连接器离线，请确认电脑已开机且连接器正在运行。', 'The local connector is offline. Make sure the computer and connector are running.');
+  if (message === 'another_turn_is_active') return t('当前已有一个任务在运行，请等待完成或先停止。', 'Another task is running. Wait for it to finish or stop it first.');
+  if (message === 'workspace_outside_allowed_root') return t('该目录不在连接器允许访问的范围内。', 'This directory is outside the connector allowed roots.');
+  if (message === 'request_timeout') return t('请求超过 30 秒没有响应，消息未确认发送，已恢复到输入框。', 'The request timed out after 30 seconds. Delivery was not confirmed and the message was restored.');
+  if (message === 'turn_start_timeout') return t('等待原会话可写超时，消息没有发送，已恢复到输入框。', 'Timed out waiting for the session to become writable. The message was not sent and has been restored.');
+  if (message === 'desktop_app_unavailable') return t('桌面 Codex 当前不可用，请打开桌面应用后重试。', 'Codex Desktop is unavailable. Open it and try again.');
+  if (message === 'desktop_delivery_timeout') return t('桌面 Codex 没有及时确认接收，消息已恢复到输入框，请确认后再重试。', 'Codex Desktop did not confirm receipt in time. The message was restored; verify the desktop app before retrying.');
+  if (message === 'desktop_required_for_large_session') return t('这是一个超大会话，需要桌面 Codex 打开后才能安全发送到原会话。', 'This large session requires Codex Desktop to be open before a message can be delivered safely.');
+  if (message === 'attachment_type_not_allowed') return t('只支持 JPG、PNG 和 WebP 图片。', 'Only JPG, PNG, and WebP images are supported.');
+  if (message === 'attachment_too_large') return t('图片处理后仍超过 4 MB，请换一张更小的图片。', 'The processed image is still larger than 4 MB. Choose a smaller image.');
   if (message === 'attachment_invalid_base64' || message === 'attachment_size_mismatch' || message === 'attachment_content_mismatch') {
-    return '图片内容校验失败，请重新选择后再试。';
+    return t('图片内容校验失败，请重新选择后再试。', 'Image validation failed. Select the image again and retry.');
   }
-  if (message === 'download_file_not_found') return '本机文件不存在，可能已被移动或删除。';
-  if (message === 'download_not_a_file') return '该链接不是可下载的普通文件。';
-  if (message === 'download_path_not_allowed') return '该文件不在连接器允许下载的目录中。';
-  if (message === 'download_file_changed') return '文件在下载过程中发生变化，请重新点击下载。';
-  if (message === 'download_capability_invalid') return '下载授权已失效或不属于当前页面，请重新点击文件链接。';
-  if (message === 'download_rate_limited') return '下载请求过快，请稍后重新点击文件链接。';
-  if (message === 'download_confirmation_required') return '需要在当前页面确认后才能下载本机文件。';
-  if (message.startsWith('download_')) return '本机文件下载失败，请检查电脑连接后重试。';
+  if (message === 'download_file_not_found') return t('本机文件不存在，可能已被移动或删除。', 'The local file does not exist; it may have been moved or deleted.');
+  if (message === 'download_not_a_file') return t('该链接不是可下载的普通文件。', 'This link does not point to a downloadable regular file.');
+  if (message === 'download_path_not_allowed') return t('该文件不在连接器允许下载的目录中。', 'The file is outside the connector download roots.');
+  if (message === 'download_file_changed') return t('文件在下载过程中发生变化，请重新点击下载。', 'The file changed during download. Click the link again.');
+  if (message === 'download_capability_invalid') return t('下载授权已失效或不属于当前页面，请重新点击文件链接。', 'The download permission expired or belongs to another page. Click the file link again.');
+  if (message === 'download_rate_limited') return t('下载请求过快，请稍后重新点击文件链接。', 'Download requests are too frequent. Wait and click the file link again.');
+  if (message === 'download_confirmation_required') return t('需要在当前页面确认后才能下载本机文件。', 'Confirm the download on this page first.');
+  if (message.startsWith('download_')) return t('本机文件下载失败，请检查电脑连接后重试。', 'Local file download failed. Check the computer connection and retry.');
   if (message.startsWith('desktop_delivery_failed:')) {
-    return `桌面 Codex 未接收这条消息：${message.slice('desktop_delivery_failed:'.length)}`;
+    const detail = message.slice('desktop_delivery_failed:'.length);
+    return t(`桌面 Codex 未接收这条消息：${detail}`, `Codex Desktop did not receive this message: ${detail}`);
   }
   if (message === 'thread_active_writer_timeout') {
-    return '等待原会话可写已超时，消息没有发送，也没有创建 fork。请确认桌面任务已经结束后重试。';
+    return t('等待原会话可写已超时，消息没有发送，也没有创建 fork。请确认桌面任务已经结束后重试。', 'Timed out waiting for the original session. The message was not sent and no fork was created. Ensure the desktop task has ended, then retry.');
   }
   if (/already has an active writer/i.test(message)) {
-    return '这个会话当前正由桌面 Codex 占用，不能同时从手机写入。请先让桌面任务结束并关闭该会话，再重试；系统不会自动创建 fork。';
+    return t('这个会话当前正由桌面 Codex 占用，不能同时从手机写入。请先让桌面任务结束并关闭该会话，再重试；系统不会自动创建 fork。', 'Codex Desktop is currently writing to this session, so the phone cannot write at the same time. Finish and close the desktop task before retrying; no fork will be created automatically.');
   }
   return message;
 }
@@ -1370,11 +1384,11 @@ function isTemporaryProjectPath(path: string) {
 }
 
 function formatDate(value: Session['updatedAt']) {
-  if (!value) return '未知时间';
+  if (!value) return t('未知时间', 'Unknown time');
   const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1000 : value;
   const date = new Date(numeric);
-  if (Number.isNaN(date.getTime())) return '最近更新';
-  return new Intl.DateTimeFormat('zh-CN', {
+  if (Number.isNaN(date.getTime())) return t('最近更新', 'Recently updated');
+  return new Intl.DateTimeFormat(dateLocale, {
     month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
   }).format(date);
 }

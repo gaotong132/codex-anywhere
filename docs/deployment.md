@@ -17,6 +17,7 @@ Create a random shared secret without putting it in shell history:
 umask 077
 read -rsp 'Bridge token: ' BRIDGE_TOKEN_INPUT
 printf 'BRIDGE_TOKEN=%s\n' "$BRIDGE_TOKEN_INPUT" > .env
+printf 'CODEX_UI_LANGUAGE=zh-CN\n' >> .env
 unset BRIDGE_TOKEN_INPUT
 docker compose up --build -d
 ```
