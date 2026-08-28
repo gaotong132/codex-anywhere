@@ -169,6 +169,13 @@ export class CodexAppServer extends EventEmitter {
     try { return (await stat(filePath)).size >= LARGE_ROLLOUT_BYTES; } catch { return false; }
   }
 
+  getControllerThreadId(targetThreadId) {
+    const target = String(targetThreadId || '').trim();
+    // Desktop requires a valid caller task for app tool requests. Prefer a
+    // different known task so the destination stays writable and explicit.
+    return [...this.sessionMetadata.keys()].find((threadId) => threadId !== target) || target;
+  }
+
   async readSessionTail(threadId, filePath) {
     if (!filePath) throw new Error('session_history_unavailable');
     return readRolloutTail({ filePath, threadId });

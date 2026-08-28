@@ -31,7 +31,7 @@ test('desktop native pipe frames use a little-endian length prefix', () => {
   assert.deepEqual(JSON.parse(frame.subarray(4).toString('utf8')), message);
 });
 
-test('desktop follow-up omits cross-task provenance while keeping the target thread', async () => {
+test('desktop follow-up includes the caller required by the native app protocol', async () => {
   const desktop = new CodexDesktopClient();
   let call;
   desktop.getClient = async () => ({
@@ -43,11 +43,12 @@ test('desktop follow-up omits cross-task provenance while keeping the target thr
   });
   assert.deepEqual(await desktop.sendMessage({
     threadId: 'target-thread', text: '普通用户消息', requestId: 'request-1',
+    callerThreadId: 'controller-thread',
   }), { threadId: 'target-thread', delivery: 'desktop' });
   assert.equal(call.method, 'tools/call');
   assert.equal(call.params.arguments.threadId, 'target-thread');
   assert.equal(call.params.arguments.prompt, '普通用户消息');
-  assert.equal(Object.hasOwn(call.params, 'threadId'), false);
+  assert.equal(call.params.threadId, 'controller-thread');
 });
 
 test('desktop task list status overrides stale app-server session status', () => {
