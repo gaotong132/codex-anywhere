@@ -14,7 +14,10 @@ const ACTIVITY_SCAN_CHUNK_BYTES = 4 * 1024 * 1024;
 const ACTIVITY_SCAN_OVERLAP_BYTES = 1_024;
 const MAX_CACHED_ROLLOUTS = 12;
 type RolloutStatus = 'unknown' | 'inProgress' | 'completed' | 'failed';
-type RolloutActivity = { status: RolloutStatus; id: string };
+type RolloutActivity = { status: RolloutStatus; id: string; startedAt: number | null };
+type LiveActivityKind = 'starting' | 'planning' | 'command' | 'editing' | 'searching'
+  | 'connectedTool' | 'generating' | 'waiting' | 'checking' | 'working';
+type LiveActivity = { kind: LiveActivityKind; updatedAt: number | null };
 type RolloutRow = Record<string, any>;
 type RolloutItem = {
   type: string;
@@ -34,6 +37,7 @@ type RolloutSnapshot = SnapshotOptions & {
   parsedOffset: number;
   items: RolloutItem[];
   activity: RolloutActivity;
+  liveActivity: LiveActivity;
   toolPurpose: string;
 };
 type CompleteRows = { rows: RolloutRow[]; parsedOffset: number; firstCompleteOffset: number };
@@ -80,6 +84,9 @@ export async function readRolloutTail(options: RolloutOptions) {
       source: 'rolloutTail',
       fileSize: fileStat.size,
       activityId: snapshot.activity.id,
+      activityKind: snapshot.activity.status === 'inProgress' ? snapshot.liveActivity.kind : '',
+      activityStartedAt: snapshot.activity.status === 'inProgress' ? snapshot.activity.startedAt : null,
+      activityUpdatedAt: snapshot.activity.status === 'inProgress' ? snapshot.liveActivity.updatedAt : null,
       toolPurpose: snapshot.activity.status === 'inProgress' ? snapshot.toolPurpose : '',
     };
   } finally {
@@ -100,6 +107,7 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
     parsedOffset: window.parsedOffset,
     items: mapRolloutRows(window.rows).slice(-options.maxItems),
     activity,
+    liveActivity: updateLiveActivity({ kind: 'working', updatedAt: activity.startedAt }, window.rows, activity.status),
     toolPurpose: updateToolPurpose('', window.rows, activity.status),
   };
 }
@@ -111,13 +119,17 @@ async function updateSnapshot(handle: FileHandle, fileSize: number, cached: Roll
   }
   const appended = await readCompleteRows(handle, cached.parsedOffset, fileSize, false);
   const appendedActivity = inferRolloutActivity(appended.rows);
-  const activity = appendedActivity.status === 'unknown' ? cached.activity : appendedActivity;
+  const activity = appendedActivity.status === 'unknown' ? cached.activity : {
+    ...appendedActivity,
+    startedAt: appendedActivity.startedAt || cached.activity.startedAt,
+  };
   return {
     ...cached,
     fileSize,
     parsedOffset: appended.parsedOffset,
     items: appendItems(cached.items, mapRolloutRows(appended.rows), cached.maxItems),
     activity,
+    liveActivity: updateLiveActivity(cached.liveActivity, appended.rows, activity.status),
     toolPurpose: updateToolPurpose(cached.toolPurpose, appended.rows, activity.status),
   };
 }
@@ -170,11 +182,11 @@ async function findLatestActivityBefore(handle: FileHandle, endOffset: number): 
       if (exactActivity.status !== 'unknown') return exactActivity;
       const context = data.subarray(latest.index, Math.min(data.length, latest.index + 1_024)).toString('utf8');
       const id = /"(?:turn_id|turnId)"\s*:\s*"([^"]*)"/.exec(context)?.[1] || '';
-      return { status: latest.status, id };
+      return { status: latest.status, id, startedAt: null };
     }
     cursor = start;
   }
-  return { status: 'unknown', id: '' };
+  return { status: 'unknown', id: '', startedAt: null };
 }
 
 function appendItems(current: RolloutItem[], appended: RolloutItem[], maxItems: number) {
@@ -200,11 +212,12 @@ function inferRolloutActivity(rows: RolloutRow[]): RolloutActivity {
     const payload = row?.payload || {};
     const type = String(payload.type || '');
     const id = String(payload.turn_id || payload.turnId || '');
-    if (type === 'task_complete') return { status: 'completed', id };
-    if (type === 'task_started') return { status: 'inProgress', id };
-    if (/task_failed|turn_aborted|turn_error/.test(type)) return { status: 'failed', id };
+    const startedAt = epochMillis(payload.started_at || payload.startedAt || row.timestamp);
+    if (type === 'task_complete') return { status: 'completed', id, startedAt };
+    if (type === 'task_started') return { status: 'inProgress', id, startedAt };
+    if (/task_failed|turn_aborted|turn_error/.test(type)) return { status: 'failed', id, startedAt };
   }
-  return { status: 'unknown', id: '' };
+  return { status: 'unknown', id: '', startedAt: null };
 }
 
 function inferRolloutStatus(rows: RolloutRow[]) {
@@ -224,6 +237,44 @@ function updateToolPurpose(current: string, rows: RolloutRow[], status: RolloutS
     }
   }
   return status === 'inProgress' ? purpose : '';
+}
+
+function updateLiveActivity(current: LiveActivity, rows: RolloutRow[], status: RolloutStatus): LiveActivity {
+  let activity = current;
+  for (const row of rows) {
+    const kind = activityKind(row);
+    if (!kind) continue;
+    activity = { kind, updatedAt: epochMillis(row.timestamp) || activity.updatedAt };
+  }
+  return status === 'inProgress' ? activity : { kind: 'working', updatedAt: null };
+}
+
+function activityKind(row: RolloutRow): LiveActivityKind | null {
+  const payload = row?.payload || {};
+  const type = String(payload.type || '');
+  const itemType = String(payload.item?.type || '');
+  const name = String(payload.name || payload.item?.name || '').toLowerCase();
+  if (type === 'task_started') return 'starting';
+  if (/task_complete|task_failed|turn_aborted|turn_error/.test(type)) return null;
+  if (type === 'agent_reasoning' || type === 'reasoning' || itemType === 'Reasoning') return 'planning';
+  if (/patch_apply|file_change/i.test(type) || /FileChange/i.test(itemType) || /apply.?patch/.test(name)) return 'editing';
+  if (/web_search/i.test(type) || /WebSearch/i.test(itemType) || /web.?search/.test(name)) return 'searching';
+  if (/image_generation/i.test(type) || /ImageGeneration/i.test(itemType) || /image.?gen/.test(name)) return 'generating';
+  if (/mcp_tool_call/i.test(type) || /McpTool/i.test(itemType)) return 'connectedTool';
+  if (row?.type === 'response_item' && /custom_tool_call|function_call/.test(type)) {
+    if (name === 'wait' || /wait/.test(name)) return 'waiting';
+    if (name === 'exec' || /command|shell/.test(name)) return 'command';
+    return 'connectedTool';
+  }
+  if (row?.type === 'response_item' && /custom_tool_call_output|function_call_output/.test(type)) return 'checking';
+  if (/CommandExecution/i.test(itemType)) return 'command';
+  return null;
+}
+
+function epochMillis(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value > 10_000_000_000 ? value : value * 1_000;
+  const parsed = Date.parse(String(value || ''));
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function parseRow(line: string): RolloutRow | null {
@@ -308,6 +359,7 @@ function capText(value: unknown, limit = MAX_TEXT_LENGTH) {
 }
 
 export const internals = {
-  capText, extractContent, findLatestActivityBefore, inferRolloutActivity, inferRolloutStatus,
-  mapRolloutRows, recoverGeneratedImageRows, rolloutCache, updateToolPurpose,
+  activityKind, capText, epochMillis, extractContent, findLatestActivityBefore, inferRolloutActivity,
+  inferRolloutStatus, mapRolloutRows, recoverGeneratedImageRows, rolloutCache, updateLiveActivity,
+  updateToolPurpose,
 };

@@ -12,6 +12,8 @@ export type Session = {
 
 export type FollowState = 'idle' | 'checking' | 'following' | 'synced' | 'error';
 export type ExecutionState = 'idle' | 'waiting' | 'running' | 'completed' | 'failed';
+export type LiveActivityKind = 'starting' | 'planning' | 'command' | 'editing' | 'searching'
+  | 'connectedTool' | 'generating' | 'waiting' | 'checking' | 'responding' | 'working';
 export type AwaitingDesktopTurn = {
   text: string;
   previousActivityId: string;
@@ -49,6 +51,9 @@ export type HistoryPage = {
   truncated?: boolean;
   source?: string;
   activityId?: string;
+  activityKind?: LiveActivityKind;
+  activityStartedAt?: number | null;
+  activityUpdatedAt?: number | null;
   toolPurpose?: string;
 };
 export type TurnStartResult = { threadId: string; delivery?: 'desktop' | 'appServer' };

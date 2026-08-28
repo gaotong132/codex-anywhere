@@ -458,7 +458,10 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .execution-strip:empty { display: none; }
 .tool-purpose { display: flex; min-width: 0; max-width: $content-width; align-items: center; gap: 7px; margin: 0 auto; color: #8491a5; font-size: 11px; }
 .tool-purpose i { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: #6f8fd3; box-shadow: 0 0 0 0 rgba(111, 143, 211, .45); animation: purpose-pulse 1.8s ease-out infinite; }
-.tool-purpose strong { min-width: 0; @include truncate; color: #aab6c8; font-weight: 500; }
+.tool-purpose .activity-kind { flex: 0 0 auto; color: #9eacc1; font-weight: 650; }
+.tool-purpose strong { min-width: 0; flex: 1 1 auto; @include truncate; color: #aab6c8; font-weight: 500; }
+.tool-purpose strong::before { margin-right: 7px; color: #526077; content: '·'; }
+.tool-purpose time { flex: 0 0 auto; margin-left: auto; color: #637187; font-variant-numeric: tabular-nums; }
 @keyframes purpose-pulse { 70%, 100% { box-shadow: 0 0 0 5px rgba(111, 143, 211, 0); } }
 .download-status { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; max-width: $content-width; color: #aebbd0; font-size: 11px; }
 .download-status span { @include truncate; }

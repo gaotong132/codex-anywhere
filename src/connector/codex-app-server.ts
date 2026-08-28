@@ -615,13 +615,8 @@ function filterAllowedPaths(values: unknown, allowedRoots: string[]) {
 }
 
 function summarizeItem(item: JsonObject) {
-  const input = item.command || item.query || item.input || item.arguments || item.changes || item.path || '';
-  const output = item.output || item.aggregatedOutput || item.result || '';
   return {
-    id: item.id || '', type: item.type || '',
-    name: item.name || item.tool || (item.type === 'commandExecution' ? 'exec' : item.type),
-    input: (typeof input === 'string' ? input : JSON.stringify(input)).slice(0, SUMMARY_LIMIT),
-    output: (typeof output === 'string' ? output : JSON.stringify(output)).slice(0, SUMMARY_LIMIT),
+    type: item.type || '',
     status: item.status || '',
   };
 }

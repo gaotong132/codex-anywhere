@@ -69,6 +69,7 @@ import type {
   FileDownloadState,
   FollowState,
   HistoryPage,
+  LiveActivityKind,
   OpenedDownload,
   PendingImage,
   PendingApprovals,
@@ -100,6 +101,75 @@ function loadSessionAttention(): SessionAttentionState {
 
 function storeSessionAttention(value: SessionAttentionState) {
   try { localStorage.setItem(SESSION_ATTENTION_KEY, JSON.stringify(value)); } catch { /* keep in memory */ }
+}
+
+const ACTIVITY_LABELS: Record<LiveActivityKind, [string, string]> = {
+  starting: ['正在启动', 'Starting'],
+  planning: ['正在规划', 'Planning'],
+  command: ['正在执行', 'Running'],
+  editing: ['正在修改文件', 'Editing files'],
+  searching: ['正在搜索', 'Searching'],
+  connectedTool: ['正在处理', 'Using a tool'],
+  generating: ['正在生成图片', 'Generating an image'],
+  waiting: ['正在等待', 'Waiting'],
+  checking: ['正在检查结果', 'Checking results'],
+  responding: ['正在整理回复', 'Preparing a response'],
+  working: ['正在处理', 'Working'],
+};
+
+function safeActivityKind(value: unknown): LiveActivityKind {
+  return Object.hasOwn(ACTIVITY_LABELS, String(value || ''))
+    ? String(value) as LiveActivityKind : 'working';
+}
+
+function activityLabel(kind: LiveActivityKind) {
+  return t(...ACTIVITY_LABELS[kind]);
+}
+
+function liveEventActivity(payload: Record<string, unknown>): LiveActivityKind {
+  const type = String(payload.type || '').toLowerCase();
+  const name = String(payload.name || '').toLowerCase();
+  if (/websearch|web_search/.test(type) || /web.?search/.test(name)) return 'searching';
+  if (/commandexecution|command_execution/.test(type) || /command|shell|exec/.test(name)) return 'command';
+  if (/image/.test(type) || /image.?gen/.test(name)) return 'generating';
+  return 'connectedTool';
+}
+
+function epochMillis(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value > 10_000_000_000 ? value : value * 1_000;
+  const parsed = Date.parse(String(value || ''));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function elapsedLabel(startedAt: number | null, now: number) {
+  if (!startedAt) return '';
+  const totalSeconds = Math.max(0, Math.floor((now - startedAt) / 1_000));
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+    : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function LiveActivityStatus({
+  kind, purpose, startedAt,
+}: { kind: LiveActivityKind; purpose: string; startedAt: number | null }) {
+  const [clock, setClock] = useState(Date.now());
+  useEffect(() => {
+    if (!startedAt) return;
+    setClock(Date.now());
+    const timer = setInterval(() => setClock(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [startedAt]);
+  return (
+    <div className="tool-purpose" role="status" aria-live="polite" title={purpose || activityLabel(kind)}>
+      <i aria-hidden="true" />
+      <span className="activity-kind">{activityLabel(kind)}</span>
+      {purpose && <strong>{purpose}</strong>}
+      {startedAt && <time>{elapsedLabel(startedAt, clock)}</time>}
+    </div>
+  );
 }
 
 export default function App() {
@@ -134,6 +204,8 @@ export default function App() {
   const [followState, setFollowState] = useState<FollowState>('idle');
   const [executionState, setExecutionState] = useState<ExecutionState>('idle');
   const [toolPurpose, setToolPurpose] = useState('');
+  const [liveActivity, setLiveActivity] = useState<LiveActivityKind>('working');
+  const [activityStartedAt, setActivityStartedAt] = useState<number | null>(null);
   const [fileDownload, setFileDownload] = useState<FileDownloadState | null>(null);
   const [creatingNewSession, setCreatingNewSession] = useState(false);
   const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
@@ -435,9 +507,13 @@ export default function App() {
       setRunning(true);
       setExecutionState('waiting');
       setToolPurpose('');
+      setLiveActivity('waiting');
+      setActivityStartedAt((current) => current || Date.now());
       streamItemRef.current = null;
     } else if (message.event === 'turn.started') {
       setToolPurpose('');
+      setLiveActivity('starting');
+      setActivityStartedAt(Date.now());
       const nextThreadId = String(payload.threadId || '');
       if (nextThreadId) {
         setThreadId(nextThreadId);
@@ -448,10 +524,17 @@ export default function App() {
         setExecutionState('running');
       }
     } else if (message.event === 'turn.delta') {
+      setLiveActivity('responding');
       appendStream(payload.phase === 'final_answer' ? 'assistant' : 'progress', String(payload.delta || ''));
     } else if (message.event === 'turn.reasoning') {
+      setLiveActivity('planning');
       setToolPurpose(normalizeToolPurpose(payload.text));
+    } else if (message.event === 'tool.started') {
+      setLiveActivity(liveEventActivity(payload));
+    } else if (message.event === 'tool.completed') {
+      setLiveActivity('checking');
     } else if (message.event === 'turn.final') {
+      setLiveActivity('responding');
       const text = String(payload.text || '');
       finishAssistant(text);
     } else if (message.event === 'approval.requested') {
@@ -466,6 +549,8 @@ export default function App() {
         setApproval(nextApproval);
         setRunning(true);
         setExecutionState('waiting');
+        setLiveActivity('waiting');
+        setActivityStartedAt((current) => current || Date.now());
         autoFollowLatestRef.current = true;
         shouldScrollBottomRef.current = true;
       }
@@ -473,6 +558,8 @@ export default function App() {
       streamItemRef.current = null;
       setApproval(null);
       setToolPurpose('');
+      setLiveActivity('working');
+      setActivityStartedAt(null);
       setRunning(false);
       setExecutionState('failed');
       addTimeline('error', String(payload.error || t('Codex 运行错误', 'Codex execution error')));
@@ -480,6 +567,8 @@ export default function App() {
       streamItemRef.current = null;
       setApproval(null);
       setToolPurpose('');
+      setLiveActivity('working');
+      setActivityStartedAt(null);
       setRunning(false);
       setExecutionState((current) => current === 'failed' ? current : 'completed');
       void refreshSessions();
@@ -738,6 +827,10 @@ export default function App() {
         const failed = latestStatus === 'failed';
         setExecutionState(active ? 'running' : failed ? 'failed' : 'idle');
         setToolPurpose(active ? normalizeToolPurpose(page.toolPurpose) : '');
+        setLiveActivity(active ? safeActivityKind(page.activityKind || (page.toolPurpose ? 'planning' : 'working')) : 'working');
+        setActivityStartedAt(active
+          ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || Date.now()
+          : null);
       }
       setNextCursor(page.nextCursor || null);
       if (!cursor) setHistoryTruncated(Boolean(page.truncated));
@@ -782,6 +875,10 @@ export default function App() {
         const inProgress = latestStatus === 'inProgress';
         const failed = latestStatus === 'failed';
         setToolPurpose(inProgress ? normalizeToolPurpose(page.toolPurpose) : '');
+        setLiveActivity(inProgress ? safeActivityKind(page.activityKind || (page.toolPurpose ? 'planning' : 'working')) : 'working');
+        setActivityStartedAt((current) => (inProgress
+          ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || current || Date.now()
+          : null));
         const latestItems = historyItems(page.turns);
         const awaitingDesktopTurn = awaitingDesktopTurnRef.current;
         const awaitedMessageSeen = Boolean(awaitingDesktopTurn
@@ -865,6 +962,8 @@ export default function App() {
     setFollowState(nextThreadId ? 'checking' : 'idle');
     setExecutionState('idle');
     setToolPurpose('');
+    setLiveActivity('working');
+    setActivityStartedAt(null);
     setApproval(null);
     autoFollowLatestRef.current = true;
     streamItemRef.current = null;
@@ -1019,6 +1118,8 @@ export default function App() {
       streamItemRef.current = null;
       setRunning(true);
       setExecutionState('running');
+      setLiveActivity('starting');
+      setActivityStartedAt(Date.now());
       const data = await request<TurnStartResult>('turn.start', {
         text: turnText,
         threadId: threadIdRef.current,
@@ -1055,6 +1156,8 @@ export default function App() {
       setUploading(false);
       setRunning(false);
       setExecutionState('idle');
+      setLiveActivity('working');
+      setActivityStartedAt(null);
       if (optimisticItemId) {
         setTimeline((current) => current.filter((item) => item.id !== optimisticItemId));
       }
@@ -1086,6 +1189,8 @@ export default function App() {
     setRunning(false);
     awaitingDesktopTurnRef.current = null;
     setExecutionState('idle');
+    setLiveActivity('working');
+    setActivityStartedAt(null);
   }, [reportTimelineError, request]);
 
   const answerApproval = useCallback(async (approved: boolean) => {
@@ -1120,12 +1225,15 @@ export default function App() {
           setApproval(pending);
           setRunning(true);
           setExecutionState('waiting');
+          setLiveActivity('waiting');
+          setActivityStartedAt((current) => current || Date.now());
           autoFollowLatestRef.current = true;
           shouldScrollBottomRef.current = true;
         } else if (approval?.actionable === false) {
           setApproval(null);
           setRunning(false);
           setExecutionState('running');
+          setLiveActivity('working');
         }
         if (pending?.actionable === false || executionState === 'running' || executionState === 'waiting') {
           timer = setTimeout(syncApproval, 4_000);
@@ -1498,11 +1606,8 @@ export default function App() {
         </div>
 
         <div className="execution-strip">
-          {toolPurpose && executionState === 'running' && (
-            <div className="tool-purpose" role="status" aria-live="polite" title={toolPurpose}>
-              <i aria-hidden="true" />
-              <strong>{toolPurpose}</strong>
-            </div>
+          {(executionState === 'running' || executionState === 'waiting') && (
+            <LiveActivityStatus kind={liveActivity} purpose={toolPurpose} startedAt={activityStartedAt} />
           )}
           <DownloadIndicator download={fileDownload} onCancel={cancelFileDownload} />
         </div>

@@ -380,12 +380,14 @@ test('large rollout keeps activity across an incremental tail read', async () =>
     assert.equal(running.turns[0].status, 'inProgress');
     assert.equal(running.turns[0].items.at(-1).text, 'still running');
     assert.equal(running.toolPurpose, 'Checking persistent state');
+    assert.equal(running.activityKind, 'planning');
 
     await appendFile(filePath, row({
       type: 'event_msg', payload: { type: 'agent_reasoning', text: '**Verifying the final result**' },
     }));
     const refreshed = await readRolloutTail({ filePath, threadId: 'thread-large', maxBytes: 64 * 1024 });
     assert.equal(refreshed.toolPurpose, 'Verifying the final result');
+    assert.equal(refreshed.activityKind, 'planning');
 
     await appendFile(filePath, row({
       type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn-large' },
@@ -394,6 +396,7 @@ test('large rollout keeps activity across an incremental tail read', async () =>
     assert.equal(completed.turns[0].status, 'completed');
     assert.equal(completed.activityId, 'turn-large');
     assert.equal(completed.toolPurpose, '');
+    assert.equal(completed.activityKind, '');
   } finally {
     rolloutInternals.rolloutCache.delete(filePath);
     await rm(directory, { recursive: true, force: true });
@@ -408,8 +411,26 @@ test('rollout activity requires an explicit task completion marker', () => {
   assert.equal(rolloutInternals.inferRolloutStatus([started, completed]), 'completed');
   assert.equal(rolloutInternals.inferRolloutStatus([started, completed, started]), 'inProgress');
   assert.deepEqual(rolloutInternals.inferRolloutActivity([started, completed]), {
-    status: 'completed', id: 'turn-1',
+    status: 'completed', id: 'turn-1', startedAt: null,
   });
+});
+
+test('rollout activity exposes changing safe categories without tool details', () => {
+  assert.equal(rolloutInternals.activityKind({
+    type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', input: 'private command' },
+  }), 'command');
+  assert.equal(rolloutInternals.activityKind({
+    type: 'event_msg', payload: { type: 'patch_apply_end', changes: ['private path'] },
+  }), 'editing');
+  assert.equal(rolloutInternals.activityKind({
+    type: 'event_msg', payload: { type: 'web_search_end', query: 'private query' },
+  }), 'searching');
+  assert.equal(rolloutInternals.activityKind({
+    type: 'event_msg', payload: { type: 'mcp_tool_call_end', invocation: { server: 'private' } },
+  }), 'connectedTool');
+  assert.equal(rolloutInternals.activityKind({
+    type: 'response_item', payload: { type: 'function_call', name: 'wait', arguments: '{}' },
+  }), 'waiting');
 });
 
 test('both history readers hide the desktop delegation envelope', () => {
@@ -505,6 +526,13 @@ test('history mapping keeps user-visible messages and hides internal work', () =
   assert.equal(turns[0].items[0].text, 'hello');
   assert.equal(turns[0].items[1].text, 'visible update');
   assert.equal(turns[0].items[2].text, 'world');
+});
+
+test('live tool activity never forwards commands, arguments, paths, or output', () => {
+  assert.deepEqual(internals.summarizeItem({
+    id: 'private-id', type: 'commandExecution', name: 'exec', command: 'private command',
+    path: 'C:\\private', aggregatedOutput: 'private output', status: 'completed',
+  }), { type: 'commandExecution', status: 'completed' });
 });
 
 test('conversation history uses a lightweight bounded descending cursor page', async () => {
