@@ -163,6 +163,7 @@ export default function App() {
   const fileDownloadRef = useRef(false);
   const fileDownloadCancelRef = useRef(false);
   const sessionRefreshInFlightRef = useRef(false);
+  const optimisticRestoreRef = useRef<string | null>(null);
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
   useEffect(() => { tokenRef.current = token; }, [token]);
@@ -700,6 +701,12 @@ export default function App() {
 
   const selectSession = useCallback((session: Session | null) => {
     const nextThreadId = session?.id || null;
+    if (nextThreadId && nextThreadId === threadIdRef.current) {
+      setActiveSession(session);
+      setDrawerOpen(false);
+      return;
+    }
+    optimisticRestoreRef.current = null;
     selectedRequestRef.current += 1;
     const requestVersion = selectedRequestRef.current;
     setActiveSession(session);
@@ -729,6 +736,23 @@ export default function App() {
     selectSession(null);
     setCreatingNewSession(true);
   }, [selectSession]);
+
+  useEffect(() => {
+    if (!authenticated || !online || !connectionEpoch || creatingNewSession || threadId) return;
+    const previousThreadId = localStorage.getItem('bridge.lastThreadId');
+    if (!previousThreadId) return;
+    selectSession({ id: previousThreadId, title: '' });
+    optimisticRestoreRef.current = previousThreadId;
+  }, [authenticated, connectionEpoch, creatingNewSession, online, selectSession, threadId]);
+
+  useEffect(() => {
+    const restoredThreadId = optimisticRestoreRef.current;
+    if (!restoredThreadId || !sessions.length || threadId !== restoredThreadId) return;
+    optimisticRestoreRef.current = null;
+    const restoredSession = sessions.find((session) => session.id === restoredThreadId);
+    if (restoredSession) setActiveSession(restoredSession);
+    else selectSession(sessions[0]);
+  }, [selectSession, sessions, threadId]);
 
   useEffect(() => {
     if (!authenticated || creatingNewSession || threadId || !sessions.length) return;
