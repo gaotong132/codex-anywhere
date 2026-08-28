@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { once } from 'node:events';
 import { WebSocket } from 'ws';
-import { createBridgeServer } from '../src/server/server.js';
+import { createBridgeServer, internals as serverInternals } from '../src/server/server.js';
 
 const TOKEN = 'test-token-that-is-longer-than-32-characters';
 const nextJson = (socket) => once(socket, 'message').then(([data]) => JSON.parse(data.toString()));
@@ -148,6 +148,19 @@ test('server temporarily locks repeated authentication failures per real client 
   const otherAddress = await authenticate(TOKEN, '203.0.113.11');
   assert.equal((await nextJson(otherAddress.socket)).type, 'auth.ok');
   otherAddress.socket.close();
+});
+
+test('authentication failure tracking is bounded and evicts the stalest address', () => {
+  const { AuthFailureLimiter } = serverInternals;
+  const limiter = new AuthFailureLimiter({ maxEntries: 3, limit: 8 });
+  limiter.recordFailure('203.0.113.1');
+  limiter.recordFailure('203.0.113.2');
+  limiter.recordFailure('203.0.113.3');
+  limiter.recordFailure('203.0.113.1');
+  limiter.recordFailure('203.0.113.4');
+  assert.deepEqual([...limiter.entries.keys()], [
+    '203.0.113.3', '203.0.113.1', '203.0.113.4',
+  ]);
 });
 
 test('server rejects browser WebSocket connections from another origin', async (t) => {

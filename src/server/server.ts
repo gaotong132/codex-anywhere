@@ -1,9 +1,11 @@
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isIP } from 'node:net';
+import type { TLSSocket } from 'node:tls';
 import { extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { WebSocketServer } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
 import {
   CLIENT_ACTIONS,
   MAX_FRAME_BYTES,
@@ -14,7 +16,7 @@ import {
   tokenMatches,
 } from '../shared/protocol.js';
 
-const MIME_TYPES = {
+const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -28,20 +30,52 @@ const defaultPublicDir = resolve(moduleDir, '../../dist');
 const AUTH_FAILURE_LIMIT = 8;
 const AUTH_FAILURE_WINDOW_MS = 5 * 60_000;
 const AUTH_LOCK_MS = 15 * 60_000;
+const AUTH_MAX_TRACKED_ADDRESSES = 4_096;
 
-export function createBridgeServer(options = {}) {
+type JsonObject = Record<string, any>;
+type AliveWebSocket = WebSocket & { isAlive?: boolean };
+type SocketMeta = { role: 'client'; id: string } | { role: 'connector'; deviceId: string };
+type BridgeServerOptions = {
+  token?: unknown;
+  publicDir?: string;
+  uiLanguage?: unknown;
+  trustProxy?: boolean;
+  authFailureLimit?: number;
+  authFailureWindowMs?: number;
+  authLockMs?: number;
+  authMaxEntries?: number;
+  clock?: () => number;
+};
+type HttpContext = {
+  publicDir: string;
+  request: IncomingMessage;
+  response: ServerResponse;
+  trustProxy: boolean;
+  uiLanguage: string;
+};
+type AuthLimiterOptions = {
+  limit?: number;
+  windowMs?: number;
+  lockMs?: number;
+  maxEntries?: number;
+  clock?: () => number;
+};
+type AuthEntry = { failures: number; windowStartedAt: number; lockedUntil: number };
+
+export function createBridgeServer(options: BridgeServerOptions = {}) {
   const token = String(options.token || process.env.BRIDGE_TOKEN || '');
   if (token.length < 32) throw new Error('BRIDGE_TOKEN must contain at least 32 characters');
   const publicDir = resolve(options.publicDir || defaultPublicDir);
   const uiLanguage = normalizeUiLanguage(options.uiLanguage ?? process.env.CODEX_UI_LANGUAGE);
-  const connectors = new Map();
-  const clients = new Map();
-  const socketMeta = new WeakMap();
+  const connectors = new Map<string, AliveWebSocket>();
+  const clients = new Map<string, AliveWebSocket>();
+  const socketMeta = new WeakMap<AliveWebSocket, SocketMeta>();
   const trustProxy = options.trustProxy ?? process.env.BRIDGE_TRUST_PROXY === '1';
   const authLimiter = new AuthFailureLimiter({
     limit: options.authFailureLimit,
     windowMs: options.authFailureWindowMs,
     lockMs: options.authLockMs,
+    maxEntries: options.authMaxEntries,
     clock: options.clock,
   });
 
@@ -69,7 +103,8 @@ export function createBridgeServer(options = {}) {
     });
   });
 
-  webSocketServer.on('connection', (socket, request) => {
+  webSocketServer.on('connection', (rawSocket, request) => {
+    const socket = rawSocket as AliveWebSocket;
     const clientAddress = getClientAddress(request, trustProxy);
     if (authLimiter.isBlocked(clientAddress)) {
       socket.close(4429, 'authentication temporarily locked');
@@ -118,7 +153,8 @@ export function createBridgeServer(options = {}) {
   });
 
   const heartbeat = setInterval(() => {
-    for (const socket of webSocketServer.clients) {
+    for (const rawSocket of webSocketServer.clients) {
+      const socket = rawSocket as AliveWebSocket;
       if (socket.isAlive === false) {
         socket.terminate();
         continue;
@@ -132,8 +168,8 @@ export function createBridgeServer(options = {}) {
   return {
     httpServer, webSocketServer, connectors, clients,
     async listen(port = 3300, host = '127.0.0.1') {
-      await new Promise((resolveListen, reject) => {
-        const onError = (error) => reject(error);
+      await new Promise<void>((resolveListen, reject) => {
+        const onError = (error: Error) => reject(error);
         httpServer.once('error', onError);
         httpServer.listen(port, host, () => {
           httpServer.off('error', onError);
@@ -145,12 +181,12 @@ export function createBridgeServer(options = {}) {
     async close() {
       clearInterval(heartbeat);
       for (const socket of webSocketServer.clients) socket.close(1001, 'server shutdown');
-      await new Promise((resolveClose) => httpServer.close(() => resolveClose()));
+      await new Promise<void>((resolveClose) => httpServer.close(() => resolveClose()));
     },
   };
 }
 
-function handleHttpRequest({ publicDir, request, response, trustProxy, uiLanguage }) {
+function handleHttpRequest({ publicDir, request, response, trustProxy, uiLanguage }: HttpContext) {
   setSecurityHeaders(response, request, trustProxy);
   const method = String(request.method || 'GET').toUpperCase();
   if (method !== 'GET' && method !== 'HEAD') {
@@ -186,6 +222,16 @@ function handleHttpRequest({ publicDir, request, response, trustProxy, uiLanguag
 
 function authenticateSocket({
   socket, message, token, connectors, clients, socketMeta, authTimer, authLimiter, clientAddress,
+}: {
+  socket: AliveWebSocket;
+  message: JsonObject;
+  token: string;
+  connectors: Map<string, AliveWebSocket>;
+  clients: Map<string, AliveWebSocket>;
+  socketMeta: WeakMap<AliveWebSocket, SocketMeta>;
+  authTimer: NodeJS.Timeout;
+  authLimiter: AuthFailureLimiter;
+  clientAddress: string;
 }) {
   if (message.type !== 'auth' || !tokenMatches(message.token, token)) {
     const locked = authLimiter.recordFailure(clientAddress);
@@ -216,7 +262,12 @@ function authenticateSocket({
   return true;
 }
 
-function routeClientMessage({ socket, meta, message, connectors }) {
+function routeClientMessage({ socket, meta, message, connectors }: {
+  socket: AliveWebSocket;
+  meta: Extract<SocketMeta, { role: 'client' }>;
+  message: JsonObject;
+  connectors: Map<string, AliveWebSocket>;
+}) {
   if (message.type !== 'request' || !CLIENT_ACTIONS.has(message.action)) {
     safeSend(socket, { type: 'error', requestId: message.requestId, error: 'unsupported_action' });
     return;
@@ -236,23 +287,27 @@ function routeClientMessage({ socket, meta, message, connectors }) {
   });
 }
 
-function routeConnectorMessage({ message, clients, meta }) {
+function routeConnectorMessage({ message, clients, meta }: {
+  message: JsonObject;
+  clients: Map<string, AliveWebSocket>;
+  meta: Extract<SocketMeta, { role: 'connector' }>;
+}) {
   if (message.type !== 'response' && message.type !== 'event') return;
   const client = clients.get(String(message.clientId || ''));
   if (!client) return;
   safeSend(client, { ...message, deviceId: meta.deviceId });
 }
 
-function broadcastPresence(clients, connectors) {
+function broadcastPresence(clients: Map<string, AliveWebSocket>, connectors: Map<string, AliveWebSocket>) {
   const payload = { type: 'presence', devices: [...connectors.keys()] };
   for (const socket of clients.values()) safeSend(socket, payload);
 }
 
-function normalizeUiLanguage(value) {
+function normalizeUiLanguage(value: unknown) {
   return String(value || '').trim().toLowerCase().startsWith('en') ? 'en' : 'zh-CN';
 }
 
-function serveRuntimeConfig(response, locale, headOnly = false) {
+function serveRuntimeConfig(response: ServerResponse, locale: string, headOnly = false) {
   const body = `window.__CODEX_ANYWHERE_CONFIG__ = ${JSON.stringify({ locale })};\n`;
   response.writeHead(200, {
     'content-type': 'text/javascript; charset=utf-8',
@@ -262,7 +317,7 @@ function serveRuntimeConfig(response, locale, headOnly = false) {
   response.end(headOnly ? '' : body);
 }
 
-function serveStatic(publicDir, pathname, response, headOnly = false) {
+function serveStatic(publicDir: string, pathname: string, response: ServerResponse, headOnly = false) {
   let requestPath;
   try {
     requestPath = decodeURIComponent(pathname);
@@ -294,7 +349,7 @@ function serveStatic(publicDir, pathname, response, headOnly = false) {
   else createReadStream(filePath).pipe(response);
 }
 
-function setSecurityHeaders(response, request, trustProxy) {
+function setSecurityHeaders(response: ServerResponse, request: IncomingMessage, trustProxy: boolean) {
   response.setHeader('x-content-type-options', 'nosniff');
   response.setHeader('x-frame-options', 'DENY');
   response.setHeader('cross-origin-opener-policy', 'same-origin');
@@ -306,8 +361,9 @@ function setSecurityHeaders(response, request, trustProxy) {
   response.setHeader('content-security-policy', `default-src 'self'; connect-src 'self'${webSocketSource ? ` ${webSocketSource}` : ''}; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; object-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
 }
 
-function currentWebSocketSource(request, trustProxy) {
-  const host = String(request?.headers?.host || '').trim();
+function currentWebSocketSource(request: IncomingMessage | undefined, trustProxy: boolean) {
+  if (!request) return '';
+  const host = String(request.headers?.host || '').trim();
   if (!host) return '';
   try {
     const parsed = new URL(`http://${host}`);
@@ -315,7 +371,7 @@ function currentWebSocketSource(request, trustProxy) {
     const forwardedProtocol = trustProxy
       ? String(request.headers['x-forwarded-proto'] || '').trim().toLocaleLowerCase()
       : '';
-    const protocol = forwardedProtocol === 'https' || request.socket?.encrypted ? 'wss' : 'ws';
+    const protocol = forwardedProtocol === 'https' || (request.socket as TLSSocket | undefined)?.encrypted ? 'wss' : 'ws';
     return `${protocol}://${parsed.host}`;
   } catch {
     return '';
@@ -323,15 +379,23 @@ function currentWebSocketSource(request, trustProxy) {
 }
 
 class AuthFailureLimiter {
-  constructor(options = {}) {
+  limit: number;
+  windowMs: number;
+  lockMs: number;
+  maxEntries: number;
+  clock: () => number;
+  entries: Map<string, AuthEntry>;
+
+  constructor(options: AuthLimiterOptions = {}) {
     this.limit = positiveInteger(options.limit, AUTH_FAILURE_LIMIT);
     this.windowMs = positiveInteger(options.windowMs, AUTH_FAILURE_WINDOW_MS);
     this.lockMs = positiveInteger(options.lockMs, AUTH_LOCK_MS);
+    this.maxEntries = positiveInteger(options.maxEntries, AUTH_MAX_TRACKED_ADDRESSES);
     this.clock = options.clock || (() => Date.now());
     this.entries = new Map();
   }
 
-  isBlocked(address) {
+  isBlocked(address: string) {
     const entry = this.entries.get(address);
     if (!entry) return false;
     const now = this.clock();
@@ -340,7 +404,7 @@ class AuthFailureLimiter {
     return false;
   }
 
-  recordFailure(address) {
+  recordFailure(address: string) {
     const now = this.clock();
     let entry = this.entries.get(address);
     if (!entry || entry.lockedUntil || now - entry.windowStartedAt >= this.windowMs) {
@@ -349,26 +413,35 @@ class AuthFailureLimiter {
     }
     entry.failures += 1;
     if (entry.failures >= this.limit) entry.lockedUntil = now + this.lockMs;
+    // Keep insertion order aligned with recent activity so bounded eviction
+    // removes the stalest address first.
+    this.entries.delete(address);
+    this.entries.set(address, entry);
     this.#prune(now);
     return entry.lockedUntil > now;
   }
 
-  recordSuccess(address) {
+  recordSuccess(address: string) {
     this.entries.delete(address);
   }
 
-  #prune(now) {
-    if (this.entries.size < 1_000) return;
+  #prune(now: number) {
+    if (this.entries.size <= this.maxEntries) return;
     for (const [address, entry] of this.entries) {
       if ((entry.lockedUntil && entry.lockedUntil <= now)
         || (!entry.lockedUntil && now - entry.windowStartedAt >= this.windowMs)) {
         this.entries.delete(address);
       }
     }
+    while (this.entries.size > this.maxEntries) {
+      const oldestAddress = this.entries.keys().next().value;
+      if (oldestAddress === undefined) break;
+      this.entries.delete(oldestAddress);
+    }
   }
 }
 
-function getClientAddress(request, trustProxy) {
+function getClientAddress(request: IncomingMessage, trustProxy: boolean) {
   if (trustProxy) {
     const forwarded = String(request.headers['x-real-ip'] || '').trim();
     if (isIP(forwarded)) return forwarded;
@@ -376,7 +449,7 @@ function getClientAddress(request, trustProxy) {
   return String(request.socket.remoteAddress || 'unknown').replace(/^::ffff:/, '');
 }
 
-function originAllowed(request) {
+function originAllowed(request: IncomingMessage) {
   const origin = String(request.headers.origin || '').trim();
   if (!origin) return true;
   try {
@@ -389,8 +462,8 @@ function originAllowed(request) {
   }
 }
 
-function positiveInteger(value, fallback) {
-  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+function positiveInteger(value: unknown, fallback: number) {
+  return Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : fallback;
 }
 
 export const internals = {

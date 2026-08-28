@@ -1,8 +1,10 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { appendFile, mkdir, open, realpath, stat } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
-  basename, dirname, isAbsolute, join, relative, resolve, sep, win32,
+  basename, dirname, isAbsolute, join, posix, resolve, win32,
 } from 'node:path';
 
 export const DOWNLOAD_CHUNK_BYTES = 384 * 1024;
@@ -11,8 +13,49 @@ const DEFAULT_RATE_WINDOW_MS = 10_000;
 const DEFAULT_MAX_CHUNKS_PER_WINDOW = 200;
 const MAX_AUDIT_BYTES = 1024 * 1024;
 
+type DownloadPayload = Record<string, any>;
+type DownloadManagerOptions = {
+  clock?: () => number;
+  ttlMs?: number;
+  rateWindowMs?: number;
+  maxChunksPerWindow?: number;
+  auditPath?: string | null;
+  allowedRoots?: unknown[];
+  allowAnyFileDownload?: boolean;
+};
+type FileSnapshot = {
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+  dev: string;
+  ino: string;
+};
+type DownloadSession = {
+  id: string;
+  token: string;
+  clientId: string;
+  path: string;
+  handle: FileHandle;
+  name: string;
+  snapshot: FileSnapshot;
+  nextOffset: number;
+  expiresAt: number;
+  busy: boolean;
+};
+type ClientRate = { windowStartedAt: number; chunks: number };
+
 export class DownloadManager {
-  constructor(options = {}) {
+  clock: () => number;
+  ttlMs: number;
+  rateWindowMs: number;
+  maxChunksPerWindow: number;
+  auditPath: string | null;
+  allowedRoots: string[];
+  allowAnyFileDownload: boolean;
+  sessions: Map<string, DownloadSession>;
+  clientRates: Map<string, ClientRate>;
+
+  constructor(options: DownloadManagerOptions = {}) {
     this.clock = options.clock || (() => Date.now());
     this.ttlMs = positiveInteger(options.ttlMs, DOWNLOAD_SESSION_TTL_MS);
     this.rateWindowMs = positiveInteger(options.rateWindowMs, DEFAULT_RATE_WINDOW_MS);
@@ -29,7 +72,7 @@ export class DownloadManager {
     this.clientRates = new Map();
   }
 
-  async open(payload, clientId) {
+  async open(payload: DownloadPayload, clientId: unknown) {
     const owner = requireClientId(clientId);
     if (payload?.confirmed !== true) throw new Error('download_confirmation_required');
     await this.#pruneExpired();
@@ -41,7 +84,7 @@ export class DownloadManager {
       throw new Error('download_path_not_allowed');
     }
     const handle = await open(path, 'r').catch((error) => {
-      if (error?.code === 'ENOENT') throw new Error('download_file_not_found');
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('download_file_not_found');
       throw error;
     });
     let stats;
@@ -76,7 +119,7 @@ export class DownloadManager {
     };
   }
 
-  async read(payload, clientId) {
+  async read(payload: DownloadPayload, clientId: unknown) {
     await this.#pruneExpired();
     const session = this.#authorize(payload, clientId);
     if (session.busy) throw new Error('download_in_progress');
@@ -88,7 +131,7 @@ export class DownloadManager {
     }
   }
 
-  async #readSession(session, payload) {
+  async #readSession(session: DownloadSession, payload: DownloadPayload) {
     const offset = Number(payload?.offset);
     if (!Number.isSafeInteger(offset) || offset < 0 || offset !== session.nextOffset) {
       throw new Error('download_offset_invalid');
@@ -126,7 +169,7 @@ export class DownloadManager {
     return result;
   }
 
-  async close(payload, clientId) {
+  async close(payload: DownloadPayload, clientId: unknown) {
     await this.#pruneExpired();
     const session = this.#authorize(payload, clientId);
     if (session.busy) throw new Error('download_in_progress');
@@ -139,7 +182,7 @@ export class DownloadManager {
     this.clientRates.clear();
   }
 
-  #authorize(payload, clientId) {
+  #authorize(payload: DownloadPayload, clientId: unknown) {
     const session = this.sessions.get(String(payload?.downloadId || ''));
     if (!session) throw new Error('download_capability_invalid');
     const owner = requireClientId(clientId);
@@ -149,7 +192,7 @@ export class DownloadManager {
     return session;
   }
 
-  #consumeRateLimit(session) {
+  #consumeRateLimit(session: DownloadSession) {
     const now = this.clock();
     let rate = this.clientRates.get(session.clientId);
     if (!rate || now - rate.windowStartedAt >= this.rateWindowMs) {
@@ -169,20 +212,20 @@ export class DownloadManager {
     }
   }
 
-  async #revokeClientSessions(clientId, reason) {
+  async #revokeClientSessions(clientId: string, reason: string) {
     const previous = [...this.sessions.values()].filter((session) => session.clientId === clientId);
     if (previous.some((session) => session.busy)) throw new Error('download_in_progress');
     await Promise.all(previous.map((session) => this.#finish(session, reason)));
   }
 
-  async #finish(session, event) {
+  async #finish(session: DownloadSession, event: string) {
     if (this.sessions.get(session.id) !== session) return;
     this.sessions.delete(session.id);
     await session.handle.close().catch(() => {});
     await this.#audit(event, session);
   }
 
-  async #audit(event, session) {
+  async #audit(event: string, session: DownloadSession) {
     if (!this.auditPath) return;
     const record = {
       at: new Date(this.clock()).toISOString(),
@@ -196,7 +239,7 @@ export class DownloadManager {
     try {
       await mkdir(dirname(this.auditPath), { recursive: true });
       const existing = await stat(this.auditPath).catch((error) => {
-        if (error?.code === 'ENOENT') return null;
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
         throw error;
       });
       if (existing && existing.size >= MAX_AUDIT_BYTES) return;
@@ -207,7 +250,7 @@ export class DownloadManager {
   }
 }
 
-function resolveDownloadPath(value) {
+function resolveDownloadPath(value: unknown) {
   let path = String(value || '').trim();
   if (/^\/[A-Za-z]:[\\/]/.test(path)) path = path.slice(1);
   if (isAbsolute(path)) return resolve(path);
@@ -215,14 +258,14 @@ function resolveDownloadPath(value) {
   throw new Error('download_path_must_be_absolute');
 }
 
-async function canonicalDownloadPath(path) {
+async function canonicalDownloadPath(path: string) {
   return realpath(path).catch((error) => {
-    if (error?.code === 'ENOENT') throw new Error('download_file_not_found');
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('download_file_not_found');
     throw error;
   });
 }
 
-async function pathAllowedByRoots(path, roots) {
+async function pathAllowedByRoots(path: string, roots: string[]) {
   for (const root of roots) {
     const canonicalRoot = await realpath(root).catch(() => root);
     if (pathWithinRoot(path, canonicalRoot)) return true;
@@ -230,20 +273,18 @@ async function pathAllowedByRoots(path, roots) {
   return false;
 }
 
-function pathWithinRoot(path, root) {
-  const api = win32.isAbsolute(path) || win32.isAbsolute(root)
-    ? win32
-    : { isAbsolute, relative, resolve, sep };
+function pathWithinRoot(path: string, root: string) {
+  const api = win32.isAbsolute(path) || win32.isAbsolute(root) ? win32 : posix;
   const difference = api.relative(api.resolve(root), api.resolve(path));
   return difference === ''
     || (difference !== '..' && !difference.startsWith(`..${api.sep}`) && !api.isAbsolute(difference));
 }
 
-function fileName(path) {
+function fileName(path: string) {
   return (win32.isAbsolute(path) ? win32.basename(path) : basename(path)) || 'download';
 }
 
-function fileSnapshot(stats) {
+function fileSnapshot(stats: Stats): FileSnapshot {
   return {
     size: stats.size,
     mtimeMs: stats.mtimeMs,
@@ -253,7 +294,7 @@ function fileSnapshot(stats) {
   };
 }
 
-function sameSnapshot(left, right) {
+function sameSnapshot(left: FileSnapshot, right: FileSnapshot) {
   return left.size === right.size
     && left.mtimeMs === right.mtimeMs
     && left.ctimeMs === right.ctimeMs
@@ -261,23 +302,23 @@ function sameSnapshot(left, right) {
     && left.ino === right.ino;
 }
 
-function requireClientId(value) {
+function requireClientId(value: unknown) {
   const clientId = String(value || '').trim();
   if (!clientId) throw new Error('download_client_required');
   return clientId;
 }
 
-function secretMatches(actual, expected) {
+function secretMatches(actual: unknown, expected: unknown) {
   const left = Buffer.from(String(actual || ''), 'utf8');
   const right = Buffer.from(String(expected || ''), 'utf8');
   return left.length === right.length && left.length > 0 && timingSafeEqual(left, right);
 }
 
-function positiveInteger(value, fallback) {
-  return Number.isSafeInteger(value) && value > 0 ? value : fallback;
+function positiveInteger(value: unknown, fallback: number) {
+  return Number.isSafeInteger(value) && Number(value) > 0 ? Number(value) : fallback;
 }
 
-function shortHash(value) {
+function shortHash(value: string) {
   return createHash('sha256').update(String(value)).digest('hex').slice(0, 24);
 }
 

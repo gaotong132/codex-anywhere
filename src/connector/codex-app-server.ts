@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
@@ -15,8 +16,54 @@ const LARGE_ROLLOUT_BYTES = 64 * 1024 * 1024;
 const DEFAULT_ACTIVE_WRITER_WAIT_MS = 10 * 60_000;
 const DEFAULT_ACTIVE_WRITER_RETRY_MS = 2_000;
 
+type JsonObject = Record<string, any>;
+type CodexAppServerOptions = {
+  bin?: string;
+  workspace?: string;
+  allowedRoots?: string[];
+  networkAccess?: boolean;
+  activeWriterWaitMs?: number;
+  activeWriterRetryMs?: number;
+};
+type PendingRpc = {
+  method: string;
+  resolve: (value: any) => void;
+  reject: (reason: Error) => void;
+  timer: NodeJS.Timeout;
+};
+type PendingApproval = { id: string | number; method: string; params: JsonObject };
+type SessionMetadata = { cwd: string; path: string; canAcceptDirectInput: boolean };
+type TurnContext = {
+  clientId?: string;
+  requestId?: string;
+  threadId: string;
+  workspace: string;
+  state: string;
+};
+type StartTurnOptions = {
+  text?: unknown;
+  threadId?: unknown;
+  cwd?: unknown;
+  clientId?: string;
+  requestId?: string;
+};
+
 export class CodexAppServer extends EventEmitter {
-  constructor(options = {}) {
+  bin: string;
+  workspace: string;
+  allowedRoots: string[];
+  networkAccess: boolean;
+  activeWriterWaitMs: number;
+  activeWriterRetryMs: number;
+  child: ChildProcessWithoutNullStreams | null;
+  readyPromise: Promise<void> | null;
+  nextId: number;
+  pending: Map<number, PendingRpc>;
+  approvals: Map<string, PendingApproval>;
+  activeTurn: TurnContext | null;
+  sessionMetadata: Map<string, SessionMetadata>;
+
+  constructor(options: CodexAppServerOptions = {}) {
     super();
     this.bin = options.bin || 'codex';
     this.workspace = options.workspace || process.cwd();
@@ -26,9 +73,9 @@ export class CodexAppServer extends EventEmitter {
     resolveAllowedWorkspace(this.allowedRoots, this.workspace);
     this.networkAccess = options.networkAccess === true;
     this.activeWriterWaitMs = Number.isFinite(options.activeWriterWaitMs)
-      ? Math.max(0, options.activeWriterWaitMs) : DEFAULT_ACTIVE_WRITER_WAIT_MS;
+      ? Math.max(0, Number(options.activeWriterWaitMs)) : DEFAULT_ACTIVE_WRITER_WAIT_MS;
     this.activeWriterRetryMs = Number.isFinite(options.activeWriterRetryMs)
-      ? Math.max(1, options.activeWriterRetryMs) : DEFAULT_ACTIVE_WRITER_RETRY_MS;
+      ? Math.max(1, Number(options.activeWriterRetryMs)) : DEFAULT_ACTIVE_WRITER_RETRY_MS;
     this.child = null;
     this.readyPromise = null;
     this.nextId = 0;
@@ -38,14 +85,14 @@ export class CodexAppServer extends EventEmitter {
     this.sessionMetadata = new Map();
   }
 
-  async ensureStarted() {
+  async ensureStarted(): Promise<void> {
     if (this.readyPromise) return this.readyPromise;
     if (this.child?.stdin?.writable) return;
     this.readyPromise = this.startProcess();
     try { await this.readyPromise; } finally { this.readyPromise = null; }
   }
 
-  async startProcess() {
+  async startProcess(): Promise<void> {
     const child = spawn(this.bin, ['app-server', '--listen', 'stdio://'], {
       cwd: this.workspace,
       env: { ...process.env, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'Codex Desktop' },
@@ -66,7 +113,7 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  async listSessions(options = {}) {
+  async listSessions(options: { cwd?: string } = {}) {
     await this.ensureStarted();
     const cwd = options.cwd ? resolveAllowedWorkspace(this.allowedRoots, options.cwd) : '';
     const result = await this.rpcRaw('thread/list', {
@@ -78,8 +125,8 @@ export class CodexAppServer extends EventEmitter {
       sourceKinds: ['cli', 'vscode', 'appServer', 'exec'],
       ...(cwd ? { cwd: process.platform === 'win32' ? [cwd, cwd.toLowerCase()] : cwd } : {}),
     });
-    const rows = Array.isArray(result?.data) ? result.data : [];
-    return rows.map((thread) => {
+    const rows: JsonObject[] = Array.isArray(result?.data) ? result.data : [];
+    return rows.map((thread: JsonObject) => {
       const threadCwd = thread.cwd || cwd;
       if (thread.id) this.sessionMetadata.set(thread.id, {
         cwd: threadCwd,
@@ -96,10 +143,10 @@ export class CodexAppServer extends EventEmitter {
         canAcceptDirectInput: thread.canAcceptDirectInput !== false,
         canStartNewSession: Boolean(threadCwd) && isAllowedWorkspace(this.allowedRoots, threadCwd),
       };
-    }).filter((thread) => thread.id);
+    }).filter((thread: JsonObject) => thread.id);
   }
 
-  async readSession(threadId) {
+  async readSession(threadId: string) {
     await this.ensureStarted();
     const result = await this.rpcRaw('thread/read', { threadId, includeTurns: false });
     const cwd = resolveAllowedWorkspace(this.allowedRoots, result?.thread?.cwd || this.workspace);
@@ -118,7 +165,7 @@ export class CodexAppServer extends EventEmitter {
     };
   }
 
-  async listSessionTurns(threadId, options = {}) {
+  async listSessionTurns(threadId: unknown, options: { mode?: string; limit?: unknown; cursor?: unknown } = {}) {
     await this.ensureStarted();
     const resolvedThreadId = String(threadId || '').trim();
     if (!resolvedThreadId) throw new Error('thread_id_required');
@@ -156,32 +203,33 @@ export class CodexAppServer extends EventEmitter {
         source: 'appServer',
       };
     } catch (error) {
-      if (!cursor && metadata?.path && /RPC timeout: thread\/turns\/list/i.test(String(error?.message || error))) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!cursor && metadata?.path && /RPC timeout: thread\/turns\/list/i.test(message)) {
         return this.readSessionTail(resolvedThreadId, metadata.path);
       }
       throw error;
     }
   }
 
-  async isLargeSession(threadId) {
+  async isLargeSession(threadId: unknown) {
     const filePath = this.sessionMetadata.get(String(threadId || '').trim())?.path;
     if (!filePath) return false;
     try { return (await stat(filePath)).size >= LARGE_ROLLOUT_BYTES; } catch { return false; }
   }
 
-  getControllerThreadId(targetThreadId) {
+  getControllerThreadId(targetThreadId: unknown) {
     const target = String(targetThreadId || '').trim();
     // Desktop requires a valid caller task for app tool requests. Prefer a
     // different known task so the destination stays writable and explicit.
     return [...this.sessionMetadata.keys()].find((threadId) => threadId !== target) || target;
   }
 
-  async readSessionTail(threadId, filePath) {
+  async readSessionTail(threadId: string, filePath?: string) {
     if (!filePath) throw new Error('session_history_unavailable');
     return readRolloutTail({ filePath, threadId });
   }
 
-  async startTurn({ text, threadId, cwd, clientId, requestId }) {
+  async startTurn({ text, threadId, cwd, clientId, requestId }: StartTurnOptions) {
     if (this.activeTurn) throw new Error('another_turn_is_active');
     let resolvedThreadId = String(threadId || '').trim();
     let workspace = this.workspace;
@@ -239,7 +287,7 @@ export class CodexAppServer extends EventEmitter {
     }
   }
 
-  async resumeWhenWritable(threadId, threadParams, turnContext) {
+  async resumeWhenWritable(threadId: string, threadParams: JsonObject, turnContext: TurnContext) {
     const deadline = Date.now() + this.activeWriterWaitMs;
     let waitingNotified = false;
     while (this.activeTurn === turnContext) {
@@ -264,7 +312,7 @@ export class CodexAppServer extends EventEmitter {
     throw new Error('turn_cancelled');
   }
 
-  async respondApproval(approvalId, approved) {
+  async respondApproval(approvalId: unknown, approved: boolean) {
     const pending = this.approvals.get(String(approvalId));
     if (!pending) throw new Error('approval_not_found');
     this.approvals.delete(String(approvalId));
@@ -293,9 +341,9 @@ export class CodexAppServer extends EventEmitter {
     this.child = null;
   }
 
-  async rpcRaw(method, params = {}, timeoutMs = RPC_TIMEOUT_MS) {
+  async rpcRaw<T = any>(method: string, params: JsonObject = {}, timeoutMs = RPC_TIMEOUT_MS): Promise<T> {
     const id = ++this.nextId;
-    const promise = new Promise((resolve, reject) => {
+    const promise = new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`Codex RPC timeout: ${method}`));
@@ -307,20 +355,21 @@ export class CodexAppServer extends EventEmitter {
     return promise;
   }
 
-  sendRpcNotification(method, params, includeId = false) {
+  sendRpcNotification(method: string, params: JsonObject, includeId = false) {
     this.writeRpc({ jsonrpc: '2.0', ...(includeId ? { id: ++this.nextId } : {}), method, params });
   }
 
-  writeRpc(message) {
+  writeRpc(message: JsonObject) {
     if (!this.child?.stdin?.writable) throw new Error('codex_app_server_offline');
     this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
-  handleLine(line) {
-    let message;
+  handleLine(line: string) {
+    let message: JsonObject;
     try { message = JSON.parse(line); } catch { return; }
     if (message.id != null && this.pending.has(message.id)) {
       const pending = this.pending.get(message.id);
+      if (!pending) return;
       this.pending.delete(message.id);
       clearTimeout(pending.timer);
       if (message.error) pending.reject(new Error(message.error.message || JSON.stringify(message.error)));
@@ -334,7 +383,7 @@ export class CodexAppServer extends EventEmitter {
     this.handleNotification(message.method || '', message.params || {});
   }
 
-  handleServerRequest(message) {
+  handleServerRequest(message: JsonObject) {
     const method = message.method || '';
     const approvalId = String(message.id);
     this.approvals.set(approvalId, { id: message.id, method, params: message.params || {} });
@@ -345,7 +394,7 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  handleNotification(method, params) {
+  handleNotification(method: string, params: JsonObject) {
     if (isReasoningMethod(method)) {
       const text = extractText(params);
       if (text) this.emitTurn('turn.reasoning', { text });
@@ -387,7 +436,7 @@ export class CodexAppServer extends EventEmitter {
     }
   }
 
-  emitTurn(event, payload) {
+  emitTurn(event: string, payload: JsonObject) {
     if (!this.activeTurn) return;
     this.emit('turn-event', {
       clientId: this.activeTurn.clientId,
@@ -397,7 +446,7 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  handleExit(error) {
+  handleExit(error: Error) {
     if (!this.child) return;
     this.child = null;
     for (const pending of this.pending.values()) {
@@ -413,7 +462,7 @@ export class CodexAppServer extends EventEmitter {
   }
 }
 
-function approvalKind(method) {
+function approvalKind(method: string) {
   if (/commandExecution|execCommand/i.test(method)) return 'command';
   if (/fileChange|applyPatch/i.test(method)) return 'file-change';
   if (/permissions/i.test(method)) return 'permission';
@@ -421,13 +470,13 @@ function approvalKind(method) {
   return 'action';
 }
 
-function approvalSummary(method, params) {
+function approvalSummary(method: string, params: JsonObject) {
   const value = params.command || params.tool || params.reason || params.path || params.input || params.questions || method;
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   return text.slice(0, SUMMARY_LIMIT);
 }
 
-function approvalResult(method, approved, workspace) {
+function approvalResult(method: string, approved: boolean, workspace: string) {
   if (/permissions\/requestApproval/i.test(method)) {
     return approved ? {
       permissions: {
@@ -448,7 +497,7 @@ function approvalResult(method, approved, workspace) {
   return { decision: approved ? 'accept' : 'reject' };
 }
 
-function summarizeItem(item) {
+function summarizeItem(item: JsonObject) {
   const input = item.command || item.query || item.input || item.arguments || item.changes || item.path || '';
   const output = item.output || item.aggregatedOutput || item.result || '';
   return {
@@ -460,11 +509,11 @@ function summarizeItem(item) {
   };
 }
 
-function isReasoningMethod(method) {
+function isReasoningMethod(method: string) {
   return /reasoning/i.test(method) && /delta|summary|completed/i.test(method);
 }
 
-function extractText(value) {
+function extractText(value: any): string {
   if (!value) return '';
   if (typeof value === 'string') return value;
   if (typeof value.text === 'string') return value.text;
@@ -478,38 +527,38 @@ function extractText(value) {
   return '';
 }
 
-function mapTurns(turns) {
-  return (Array.isArray(turns) ? turns : []).map((turn) => ({
+function mapTurns(turns: unknown) {
+  return (Array.isArray(turns) ? turns : []).map((turn: JsonObject) => ({
     id: turn.id,
     status: turn.status?.type || turn.status || '',
     startedAt: turn.startedAt || null,
     completedAt: turn.completedAt || null,
     items: (Array.isArray(turn.items) ? turn.items : [])
-      .filter((item) => {
+      .filter((item: JsonObject) => {
         const type = String(item.type || '');
         return !/reasoning|command|tool|webSearch|fileChange|system|developer/i.test(type)
           && /user|agent|assistant|message/i.test(type);
       })
-      .map((item) => ({
+      .map((item: JsonObject) => ({
         type: item.type,
         phase: item.phase || '',
         status: item.status || '',
         text: /user/i.test(String(item.type || ''))
           ? displayUserMessage(extractText(item)) : displayAssistantMessage(extractText(item)),
       }))
-      .filter((item) => item.text),
+      .filter((item: JsonObject) => item.text),
   }));
 }
 
-function isActiveWriterError(error) {
-  return /already has an active writer/i.test(String(error?.message || error || ''));
+function isActiveWriterError(error: unknown) {
+  return /already has an active writer/i.test(String(error instanceof Error ? error.message : error || ''));
 }
 
-function wait(milliseconds) {
-  return new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
+function wait(milliseconds: number) {
+  return new Promise<void>((resolveWait) => setTimeout(resolveWait, milliseconds));
 }
 
-function resolveAllowedWorkspace(roots, candidate) {
+function resolveAllowedWorkspace(roots: string[] | string, candidate: unknown) {
   const allowedRoots = (Array.isArray(roots) ? roots : [roots])
     .map((root) => resolve(String(root || process.cwd())));
   const requested = resolve(String(candidate || allowedRoots[0]));
@@ -522,7 +571,7 @@ function resolveAllowedWorkspace(roots, candidate) {
   throw new Error('workspace_outside_allowed_root');
 }
 
-function isAllowedWorkspace(roots, candidate) {
+function isAllowedWorkspace(roots: string[] | string, candidate: unknown) {
   try {
     resolveAllowedWorkspace(roots, candidate);
     return true;

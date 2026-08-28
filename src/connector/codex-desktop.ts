@@ -6,19 +6,34 @@ const PIPE_PREFIX = 'codex-browser-use-';
 const MAX_FRAME_BYTES = 4 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+type JsonObject = Record<string, any>;
+type DesktopClientOptions = { timeoutMs?: number };
+type DesktopMessage = { threadId: unknown; text: unknown; requestId: unknown; callerThreadId?: unknown };
+type DesktopThread = { id: string; status: string };
+type ToolCall = { tool: string; arguments: JsonObject; callerThreadId: string; callId: string };
+type PendingNativeRequest = {
+  resolve: (value: any) => void;
+  reject: (reason: Error) => void;
+  timer: NodeJS.Timeout;
+};
+type DesktopHostError = Error & { code?: string };
+
 export class CodexDesktopClient {
-  constructor(options = {}) {
+  timeoutMs: number;
+  client: NativePipeClient | null;
+
+  constructor(options: DesktopClientOptions = {}) {
     this.timeoutMs = Number.isFinite(options.timeoutMs)
-      ? Math.max(1_000, options.timeoutMs) : DEFAULT_TIMEOUT_MS;
+      ? Math.max(1_000, Number(options.timeoutMs)) : DEFAULT_TIMEOUT_MS;
     this.client = null;
   }
 
-  async sendMessage({ threadId, text, requestId, callerThreadId }) {
+  async sendMessage({ threadId, text, requestId, callerThreadId }: DesktopMessage) {
     const targetThreadId = String(threadId || '').trim();
     const prompt = String(text || '').trim();
     if (!targetThreadId) throw new Error('thread_id_required');
     if (!prompt) throw new Error('message_required');
-    let result;
+    let result: JsonObject;
     try {
       result = await this.callTool({
         tool: 'send_message_to_thread',
@@ -27,20 +42,21 @@ export class CodexDesktopClient {
         callId: `bridge-${requestId}`,
       });
     } catch (error) {
-      if (/timeout/i.test(String(error?.message || error))) throw new Error('desktop_delivery_timeout');
-      if (error?.code === 'desktop_host_error') {
-        throw new Error(`desktop_delivery_failed:${error.message || 'unknown error'}`);
+      const desktopError = error as DesktopHostError;
+      if (/timeout/i.test(String(desktopError?.message || error))) throw new Error('desktop_delivery_timeout');
+      if (desktopError?.code === 'desktop_host_error') {
+        throw new Error(`desktop_delivery_failed:${desktopError.message || 'unknown error'}`);
       }
       throw new Error('desktop_app_unavailable');
     }
     if (result?.success !== true) {
-      const message = result?.contentItems?.map((item) => item?.text).filter(Boolean).join('\n');
+      const message = result?.contentItems?.map((item: JsonObject) => item?.text).filter(Boolean).join('\n');
       throw new Error(`desktop_delivery_failed:${message || 'unknown error'}`);
     }
     return { threadId: targetThreadId, delivery: 'desktop' };
   }
 
-  async listThreads({ callerThreadId, limit = 50 } = {}) {
+  async listThreads({ callerThreadId, limit = 50 }: { callerThreadId?: unknown; limit?: number } = {}) {
     const caller = String(callerThreadId || '').trim();
     if (!caller) return [];
     const result = await this.callTool({
@@ -55,13 +71,13 @@ export class CodexDesktopClient {
       ...(Array.isArray(payload?.pinnedThreads) ? payload.pinnedThreads : []),
       ...(Array.isArray(payload?.threads) ? payload.threads : []),
     ];
-    return rows.filter((thread) => thread?.kind === 'codex' && thread?.id).map((thread) => ({
+    return rows.filter((thread: JsonObject) => thread?.kind === 'codex' && thread?.id).map((thread: JsonObject) => ({
       id: String(thread.id),
       status: String(thread.status || 'unknown'),
     }));
   }
 
-  async callTool({ tool, arguments: toolArguments, callerThreadId, callId }) {
+  async callTool({ tool, arguments: toolArguments, callerThreadId, callId }: ToolCall): Promise<JsonObject> {
     const client = await this.getClient();
     try {
       return await client.request('tools/call', {
@@ -79,7 +95,7 @@ export class CodexDesktopClient {
     }
   }
 
-  async getClient() {
+  async getClient(): Promise<NativePipeClient> {
     if (this.client?.connected) return this.client;
     if (process.platform !== 'win32') throw new Error('desktop_app_unavailable');
     let names;
@@ -106,11 +122,11 @@ export class CodexDesktopClient {
   }
 }
 
-async function probePipe(pipePath, timeoutMs) {
+async function probePipe(pipePath: string, timeoutMs: number): Promise<NativePipeClient | null> {
   const client = new NativePipeClient(pipePath);
   try {
     const result = await client.request('tools/list', { threadStartKind: 'all' }, timeoutMs);
-    if (!result?.tools?.some((tool) => tool.name === 'send_message_to_thread')) {
+    if (!result?.tools?.some((tool: JsonObject) => tool.name === 'send_message_to_thread')) {
       client.close();
       return null;
     }
@@ -122,7 +138,15 @@ async function probePipe(pipePath, timeoutMs) {
 }
 
 class NativePipeClient {
-  constructor(pipePath) {
+  pipePath: string;
+  socket: net.Socket | null;
+  connected: boolean;
+  connecting: Promise<void> | null;
+  nextId: number;
+  pending: Map<number, PendingNativeRequest>;
+  pendingData: Buffer;
+
+  constructor(pipePath: string) {
     this.pipePath = pipePath;
     this.socket = null;
     this.connected = false;
@@ -132,31 +156,31 @@ class NativePipeClient {
     this.pendingData = Buffer.alloc(0);
   }
 
-  async request(method, params, timeoutMs) {
+  async request(method: string, params: JsonObject, timeoutMs: number): Promise<any> {
     await this.connect(timeoutMs);
     const id = ++this.nextId;
-    return new Promise((resolve, reject) => {
+    return new Promise<any>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`${method} timeout`));
       }, timeoutMs);
       timer.unref?.();
       this.pending.set(id, { resolve, reject, timer });
-      this.socket.write(encodeNativeFrame({ jsonrpc: '2.0', id, method, params }));
+      this.socket!.write(encodeNativeFrame({ jsonrpc: '2.0', id, method, params }));
     });
   }
 
-  connect(timeoutMs) {
+  connect(timeoutMs: number): Promise<void> {
     if (this.connected && this.socket && !this.socket.destroyed) return Promise.resolve();
     if (this.connecting) return this.connecting;
-    this.connecting = new Promise((resolveConnect, rejectConnect) => {
+    this.connecting = new Promise<void>((resolveConnect, rejectConnect) => {
       const socket = net.createConnection(this.pipePath);
       const timer = setTimeout(() => {
         socket.destroy();
         rejectConnect(new Error('desktop pipe connect timeout'));
       }, timeoutMs);
       timer.unref?.();
-      const fail = (error) => {
+      const fail = (error: Error) => {
         clearTimeout(timer);
         socket.destroy();
         rejectConnect(error);
@@ -167,7 +191,7 @@ class NativePipeClient {
         socket.off('error', fail);
         this.socket = socket;
         this.connected = true;
-        socket.on('data', (chunk) => this.onData(socket, chunk));
+        socket.on('data', (chunk) => this.onData(socket, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
         socket.on('error', (error) => this.onDisconnect(socket, error));
         socket.on('close', () => this.onDisconnect(socket, new Error('desktop pipe closed')));
         resolveConnect();
@@ -176,7 +200,7 @@ class NativePipeClient {
     return this.connecting;
   }
 
-  onData(socket, chunk) {
+  onData(socket: net.Socket, chunk: Buffer) {
     if (socket !== this.socket) return;
     this.pendingData = Buffer.concat([this.pendingData, chunk]);
     while (this.pendingData.length >= 4) {
@@ -189,21 +213,21 @@ class NativePipeClient {
       if (this.pendingData.length < length + 4) return;
       const payload = this.pendingData.subarray(4, length + 4);
       this.pendingData = this.pendingData.subarray(length + 4);
-      let response;
+      let response: JsonObject;
       try { response = JSON.parse(payload.toString('utf8')); } catch { continue; }
       const pending = this.pending.get(Number(response.id));
       if (!pending) continue;
       this.pending.delete(Number(response.id));
       clearTimeout(pending.timer);
       if (response.error) {
-        const error = new Error(response.error.message || 'desktop request failed');
+        const error = new Error(response.error.message || 'desktop request failed') as DesktopHostError;
         error.code = 'desktop_host_error';
         pending.reject(error);
       } else pending.resolve(response.result);
     }
   }
 
-  onDisconnect(socket, error) {
+  onDisconnect(socket: net.Socket, error: Error) {
     if (socket !== this.socket) return;
     this.socket = null;
     this.connected = false;
@@ -222,7 +246,7 @@ class NativePipeClient {
   }
 }
 
-function encodeNativeFrame(message) {
+function encodeNativeFrame(message: JsonObject) {
   const payload = Buffer.from(JSON.stringify(message), 'utf8');
   const frame = Buffer.alloc(payload.length + 4);
   frame.writeUInt32LE(payload.length, 0);
@@ -230,7 +254,7 @@ function encodeNativeFrame(message) {
   return frame;
 }
 
-function parseToolPayload(result) {
+function parseToolPayload(result: JsonObject): JsonObject {
   for (const candidate of [result?.structuredContent, result?.data, result?.output]) {
     if (candidate && typeof candidate === 'object') return candidate;
   }
@@ -245,7 +269,9 @@ function parseToolPayload(result) {
   throw new Error('desktop_thread_list_invalid');
 }
 
-export function mergeDesktopSessionStatuses(sessions, desktopThreads) {
+export function mergeDesktopSessionStatuses<T extends { id: string; status?: string }>(
+  sessions: T[], desktopThreads: DesktopThread[],
+) {
   const statuses = new Map((desktopThreads || []).map((thread) => [thread.id, thread.status]));
   return (sessions || []).map((session) => statuses.has(session.id)
     ? { ...session, status: statuses.get(session.id) }

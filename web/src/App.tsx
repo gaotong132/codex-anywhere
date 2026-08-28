@@ -8,8 +8,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import {
   attachmentRegistryKey,
   displayAssistantMessage,
@@ -23,7 +21,6 @@ import {
   type KnownAttachment,
   type TimelineItem,
   type TimelineKind,
-  type Turn,
 } from './history-utils';
 import {
   buildImageMessage,
@@ -36,10 +33,39 @@ import {
 import {
   decodeBase64Chunk,
   localFileName,
-  localFilePathFromHref,
   safeDownloadName,
 } from './file-utils';
-import { dateLocale, t } from './i18n';
+import { t } from './i18n';
+import {
+  followLabel,
+  formatDate,
+  friendlyError,
+  isSessionRunning,
+  isTemporaryProjectPath,
+  makeId,
+  presenceLabel,
+  projectLabel,
+  sessionProjectName,
+  sessionUpdatedAt,
+  shortId,
+} from './app-utils';
+import { DownloadIndicator, MessageBubble, SidebarIcon } from './ui-components';
+import type {
+  Approval,
+  AwaitingDesktopTurn,
+  BridgeMessage,
+  DownloadedImage,
+  DownloadFileChunk,
+  ExecutionState,
+  FileDownloadState,
+  FollowState,
+  HistoryPage,
+  OpenedDownload,
+  PendingImage,
+  PendingRequest,
+  Session,
+  TurnStartResult,
+} from './app-types';
 
 const DEVICE_ID = 'personal-pc';
 const HISTORY_PAGE_SIZE = 6;
@@ -49,59 +75,6 @@ const RECONNECT_MAX_DELAY_MS = 30_000;
 const CLIENT_HEARTBEAT_MS = 20_000;
 const CLIENT_STALE_AFTER_MS = 55_000;
 const SESSION_STATUS_REFRESH_MS = 6_000;
-
-type Session = {
-  id: string;
-  title: string;
-  preview?: string;
-  cwd?: string;
-  updatedAt?: number | string | null;
-  status?: string;
-  canStartNewSession?: boolean;
-};
-
-type FollowState = 'idle' | 'checking' | 'following' | 'synced' | 'error';
-type ExecutionState = 'idle' | 'waiting' | 'running' | 'completed' | 'failed';
-type AwaitingDesktopTurn = {
-  text: string;
-  previousActivityId: string;
-  activityId: string;
-  seen: boolean;
-};
-type Approval = { approvalId: string; kind?: string; summary?: string };
-type PendingRequest = {
-  resolve: (value: unknown) => void;
-  reject: (reason: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
-};
-
-type BridgeMessage = {
-  type: string;
-  requestId?: string;
-  ok?: boolean;
-  error?: string;
-  data?: unknown;
-  devices?: string[];
-  event?: string;
-  payload?: Record<string, unknown>;
-};
-
-type HistoryPage = {
-  threadId: string;
-  turns: Turn[];
-  nextCursor: string | null;
-  truncated?: boolean;
-  source?: string;
-  activityId?: string;
-};
-type TurnStartResult = { threadId: string; delivery?: 'desktop' | 'appServer' };
-type PendingImage = { file: File; transferPreview?: File; previewUrl: string };
-type DownloadedImage = { path: string; mimeType: string; size: number; data: string };
-type OpenedDownload = { downloadId: string; downloadToken: string; name: string; size: number };
-type DownloadFileChunk = { offset: number; nextOffset: number; done: boolean; data: string };
-type FileDownloadState = { name: string; size: number; received: number };
-
-const makeId = () => crypto.randomUUID();
 
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem('bridge.token') || '');
@@ -289,7 +262,13 @@ export default function App() {
       pendingRef.current.set(requestId, {
         resolve: (value) => resolve(value as T), reject, timer,
       });
-      socket.send(JSON.stringify({ type: 'request', requestId, action, payload, deviceId: DEVICE_ID }));
+      try {
+        socket.send(JSON.stringify({ type: 'request', requestId, action, payload, deviceId: DEVICE_ID }));
+      } catch {
+        clearTimeout(timer);
+        pendingRef.current.delete(requestId);
+        reject(new Error(t('连接已断开', 'Connection closed')));
+      }
     });
   }, []);
 
@@ -1398,188 +1377,4 @@ export default function App() {
       </section>
     </main>
   );
-}
-
-type SidebarIconName = 'plus' | 'search' | 'panel-open' | 'panel-close';
-
-function SidebarIcon({ name }: { name: SidebarIconName }) {
-  if (name === 'plus') {
-    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
-  }
-  if (name === 'search') {
-    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5" /><path d="m14.7 14.7 4.8 4.8" /></svg>;
-  }
-  if (name === 'panel-open') {
-    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M9 4.5v15m4-10 3 2.5-3 2.5" /></svg>;
-  }
-  return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M9 4.5v15m7-10-3 2.5 3 2.5" /></svg>;
-}
-
-function presenceLabel(online: boolean, state: ExecutionState, fallback: string) {
-  if (!online) return fallback || t('本机连接器离线', 'Local connector offline');
-  if (state === 'waiting') return t('正在等待桌面会话空闲', 'Waiting for the desktop session');
-  if (state === 'running') return t('Codex 正在执行', 'Codex is running');
-  if (state === 'failed') return t('本轮执行失败', 'Run failed');
-  if (state === 'completed') return t('本轮执行完成', 'Run completed');
-  return fallback || t('已连接', 'Connected');
-}
-
-function DownloadIndicator({
-  download,
-  onCancel,
-}: {
-  download: FileDownloadState | null;
-  onCancel: () => void;
-}) {
-  if (!download) return null;
-  const progress = download.size > 0 ? Math.min(100, Math.round(download.received / download.size * 100)) : 0;
-  return (
-    <div className="download-status" role="status" aria-live="polite">
-      <span>{t(`正在下载 ${download.name}`, `Downloading ${download.name}`)}</span>
-      <strong>{download.size > 0 ? `${progress}%` : t('准备中', 'Preparing')}</strong>
-      <progress value={download.received} max={Math.max(1, download.size)} />
-      <button type="button" onClick={onCancel}>{t('取消下载', 'Cancel download')}</button>
-    </div>
-  );
-}
-
-function MessageBubble({
-  item,
-  imageSource,
-  onDownloadFile,
-}: {
-  item: TimelineItem;
-  imageSource?: string;
-  onDownloadFile: (path: string) => void;
-}) {
-  if (item.kind === 'progress') {
-    return (
-      <details className="progress-card" open>
-        <summary>{t('进度更新', 'Progress update')}</summary>
-        <pre>{item.text}</pre>
-      </details>
-    );
-  }
-  return (
-    <div className={`message ${item.kind}`}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ node: _node, href, children, ...props }) => {
-            const localPath = localFilePathFromHref(href);
-            return localPath
-              ? <a {...props} href={href} onClick={(event) => {
-                  event.preventDefault();
-                  onDownloadFile(localPath);
-                }}>{children}</a>
-              : <a {...props} href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
-          },
-        }}
-      >
-        {item.text}
-      </ReactMarkdown>
-      {item.attachment && imageSource !== '' && (
-        <figure className="message-image">
-          {imageSource === undefined && <div className="message-image-state">{t('正在加载图片…', 'Loading image…')}</div>}
-          {imageSource === '' && <div className="message-image-state">{t('图片已过期或无法读取', 'Image expired or unavailable')}</div>}
-          {imageSource && (
-            <a href={imageSource} target="_blank" rel="noreferrer noopener" aria-label={t('查看原图', 'View full image')}>
-              <img src={imageSource} alt={item.attachment.name} loading="lazy" />
-            </a>
-          )}
-          <figcaption>{item.attachment.name}</figcaption>
-        </figure>
-      )}
-    </div>
-  );
-}
-
-function followLabel(state: FollowState) {
-  if (state === 'following') return t('实时跟随', 'Following live');
-  if (state === 'checking') return t('检查进度', 'Checking progress');
-  if (state === 'error') return t('跟随重试中', 'Retrying follow');
-  return t('已同步', 'Synced');
-}
-
-function friendlyError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || t('请求失败', 'Request failed'));
-  if (message === 'connector_offline') return t('本机连接器离线，请确认电脑已开机且连接器正在运行。', 'The local connector is offline. Make sure the computer and connector are running.');
-  if (message === 'another_turn_is_active') return t('当前已有一个任务在运行，请等待完成或先停止。', 'Another task is running. Wait for it to finish or stop it first.');
-  if (message === 'workspace_outside_allowed_root') return t('该目录不在连接器允许访问的范围内。', 'This directory is outside the connector allowed roots.');
-  if (message === 'request_timeout') return t('请求超过 30 秒没有响应，消息未确认发送，已恢复到输入框。', 'The request timed out after 30 seconds. Delivery was not confirmed and the message was restored.');
-  if (message === 'turn_start_timeout') return t('等待原会话可写超时，消息没有发送，已恢复到输入框。', 'Timed out waiting for the session to become writable. The message was not sent and has been restored.');
-  if (message === 'desktop_app_unavailable') return t('桌面 Codex 当前不可用，请打开桌面应用后重试。', 'Codex Desktop is unavailable. Open it and try again.');
-  if (message === 'desktop_delivery_timeout') return t('桌面 Codex 没有及时确认接收，消息已恢复到输入框，请确认后再重试。', 'Codex Desktop did not confirm receipt in time. The message was restored; verify the desktop app before retrying.');
-  if (message === 'desktop_required_for_large_session') return t('这是一个超大会话，需要桌面 Codex 打开后才能安全发送到原会话。', 'This large session requires Codex Desktop to be open before a message can be delivered safely.');
-  if (message === 'attachment_type_not_allowed') return t('只支持 JPG、PNG 和 WebP 图片。', 'Only JPG, PNG, and WebP images are supported.');
-  if (message === 'attachment_too_large') return t('图片处理后仍超过 4 MB，请换一张更小的图片。', 'The processed image is still larger than 4 MB. Choose a smaller image.');
-  if (message === 'attachment_invalid_base64' || message === 'attachment_size_mismatch' || message === 'attachment_content_mismatch') {
-    return t('图片内容校验失败，请重新选择后再试。', 'Image validation failed. Select the image again and retry.');
-  }
-  if (message === 'download_file_not_found') return t('本机文件不存在，可能已被移动或删除。', 'The local file does not exist; it may have been moved or deleted.');
-  if (message === 'download_not_a_file') return t('该链接不是可下载的普通文件。', 'This link does not point to a downloadable regular file.');
-  if (message === 'download_path_not_allowed') return t('该文件不在连接器允许下载的目录中。', 'The file is outside the connector download roots.');
-  if (message === 'download_file_changed') return t('文件在下载过程中发生变化，请重新点击下载。', 'The file changed during download. Click the link again.');
-  if (message === 'download_capability_invalid') return t('下载授权已失效或不属于当前页面，请重新点击文件链接。', 'The download permission expired or belongs to another page. Click the file link again.');
-  if (message === 'download_rate_limited') return t('下载请求过快，请稍后重新点击文件链接。', 'Download requests are too frequent. Wait and click the file link again.');
-  if (message === 'download_confirmation_required') return t('需要在当前页面确认后才能下载本机文件。', 'Confirm the download on this page first.');
-  if (message.startsWith('download_')) return t('本机文件下载失败，请检查电脑连接后重试。', 'Local file download failed. Check the computer connection and retry.');
-  if (message.startsWith('desktop_delivery_failed:')) {
-    const detail = message.slice('desktop_delivery_failed:'.length);
-    return t(`桌面 Codex 未接收这条消息：${detail}`, `Codex Desktop did not receive this message: ${detail}`);
-  }
-  if (message === 'thread_active_writer_timeout') {
-    return t('等待原会话可写已超时，消息没有发送，也没有创建 fork。请确认桌面任务已经结束后重试。', 'Timed out waiting for the original session. The message was not sent and no fork was created. Ensure the desktop task has ended, then retry.');
-  }
-  if (/already has an active writer/i.test(message)) {
-    return t('这个会话当前正由桌面 Codex 占用，不能同时从手机写入。请先让桌面任务结束并关闭该会话，再重试；系统不会自动创建 fork。', 'Codex Desktop is currently writing to this session, so the phone cannot write at the same time. Finish and close the desktop task before retrying; no fork will be created automatically.');
-  }
-  return message;
-}
-
-function shortId(value: string) {
-  return value.length > 20 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value;
-}
-
-function isSessionRunning(status?: string) {
-  return /^(?:active|running|inProgress|waiting)$/i.test(String(status || ''));
-}
-
-function sessionUpdatedAt(value: Session['updatedAt']) {
-  if (!value) return 0;
-  const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1000 : value;
-  const timestamp = new Date(numeric).getTime();
-  return Number.isFinite(timestamp) ? timestamp : 0;
-}
-
-function projectLabel(path: string) {
-  const normalized = path.replace(/[\\/]+$/, '');
-  const name = normalized.split(/[\\/]/).at(-1) || normalized;
-  return name && name !== path ? `${name} — ${path}` : path;
-}
-
-function sessionProjectName(path?: string) {
-  const value = String(path || '').trim();
-  if (!value || isTemporaryProjectPath(value)) return '';
-  const normalized = value.replace(/[\\/]+$/, '');
-  return normalized.split(/[\\/]/).at(-1) || normalized;
-}
-
-function isTemporaryProjectPath(path: string) {
-  const normalized = String(path || '').trim().replace(/\\/g, '/').replace(/\/+$/, '').toLocaleLowerCase();
-  if (!normalized) return false;
-  return /\/documents\/codex\/\d{4}-\d{2}-\d{2}(?:\/|$)/.test(normalized)
-    || /\/\.codex\/(?:tmp|temp|worktrees|visualizations)(?:\/|$)/.test(normalized)
-    || /\/appdata\/local\/temp(?:\/|$)/.test(normalized)
-    || /\/(?:windows\/)?temp(?:\/|$)/.test(normalized);
-}
-
-function formatDate(value: Session['updatedAt']) {
-  if (!value) return t('未知时间', 'Unknown time');
-  const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1000 : value;
-  const date = new Date(numeric);
-  if (Number.isNaN(date.getTime())) return t('最近更新', 'Recently updated');
-  return new Intl.DateTimeFormat(dateLocale, {
-    month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  }).format(date);
 }

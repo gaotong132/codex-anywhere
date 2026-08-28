@@ -170,7 +170,9 @@ npm run check
 npm run build
 ```
 
-React 入口组件将会话与历史记录解析交给 `history-utils.ts`，图片处理交给 `image-utils.ts`，本机链接解析交给 `file-utils.ts`。协议相关逻辑位于 `src/server` 和 `src/connector`。
+应用源码和测试现已统一使用 TypeScript。Node 转发服务与连接器通过 `tsconfig.node.json` 编译；Windows 启动器仅在 TypeScript 源码更新时重新编译，随后以单个 Node 进程运行编译后的连接器，`tsx` 只用于测试。浏览器运行时配置由转发服务在 `/config.js` 动态生成，因此仓库不再需要保留 JavaScript 源文件。
+
+React 入口组件将会话与历史记录解析交给 `history-utils.ts`，图片处理交给 `image-utils.ts`，本机链接解析交给 `file-utils.ts`，共享展示组件交给 `ui-components.tsx`，纯展示辅助逻辑交给 `app-utils.ts`。协议相关逻辑位于 `src/server` 和 `src/connector`。
 
 ## 许可证
 

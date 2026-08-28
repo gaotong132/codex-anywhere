@@ -110,6 +110,38 @@ if (-not $nodePath) {
 if (-not (Test-Path -LiteralPath $nodePath -PathType Leaf)) {
     throw 'Node.js executable was not found.'
 }
+$compiledConnectorPath = Join-Path $projectRoot 'build\connector\index.js'
+$compiledConnector = Get-Item -LiteralPath $compiledConnectorPath -ErrorAction SilentlyContinue
+$buildInputs = @(
+    Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.ts' -Recurse -File
+    Get-Item -LiteralPath (Join-Path $projectRoot 'package.json')
+    Get-Item -LiteralPath (Join-Path $projectRoot 'tsconfig.json')
+    Get-Item -LiteralPath (Join-Path $projectRoot 'tsconfig.node.json')
+)
+$newestBuildInput = $buildInputs |
+    Sort-Object LastWriteTimeUtc -Descending |
+    Select-Object -First 1
+$needsBuild = -not $compiledConnector -or $newestBuildInput.LastWriteTimeUtc -gt $compiledConnector.LastWriteTimeUtc
+if ($needsBuild) {
+    $npmPath = (Get-Command npm.cmd -ErrorAction SilentlyContinue | Select-Object -First 1).Source
+    if (-not $npmPath) { throw 'npm was not found. Install dependencies and run npm run build:node.' }
+    $buildProcess = Start-Process -FilePath $npmPath `
+        -ArgumentList @('run', 'build:node', '--silent') `
+        -WorkingDirectory $projectRoot `
+        -WindowStyle Hidden `
+        -Wait `
+        -PassThru
+    try {
+        if ($buildProcess.ExitCode -ne 0) { throw "Connector build failed with code $($buildProcess.ExitCode)." }
+    }
+    finally {
+        $buildProcess.Dispose()
+    }
+    $compiledConnector = Get-Item -LiteralPath $compiledConnectorPath -ErrorAction SilentlyContinue
+}
+if (-not $compiledConnector) {
+    throw 'Compiled connector is missing. Run npm run build:node.'
+}
 
 $codexPath = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin') -Filter codex.exe -Recurse -File -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending |
@@ -137,7 +169,7 @@ try {
 
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $nodePath
-    $startInfo.Arguments = 'src\connector\index.js'
+    $startInfo.Arguments = "`"$compiledConnectorPath`""
     $startInfo.WorkingDirectory = $projectRoot
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true

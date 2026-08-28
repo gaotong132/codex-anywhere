@@ -7,7 +7,7 @@ const HEARTBEAT_ENVELOPE = /^\s*<heartbeat\b[^>]*>([\s\S]*?)<\/heartbeat>\s*$/i;
 const HEARTBEAT_MESSAGE = /<message\b[^>]*>([\s\S]*?)<\/message>/i;
 const BARE_URL_BEFORE_CJK_PUNCTUATION = /(?<![<(])(https?:\/\/[^\s<>()]+?)(?=[，。；：！？、）》】])/gu;
 
-export function displayUserMessage(value) {
+export function displayUserMessage(value: unknown) {
   let text = String(value || '');
   const delegation = DELEGATION_ENVELOPE.exec(text);
   if (delegation) text = delegation[1];
@@ -17,13 +17,13 @@ export function displayUserMessage(value) {
   return normalizeBareLinks(text.replace(IMAGE_ATTACHMENT, '').replace(ESCAPED_IMAGE_ATTACHMENT, '').trim());
 }
 
-export function displayAssistantMessage(value) {
+export function displayAssistantMessage(value: unknown) {
   const text = String(value || '').trim();
   const heartbeat = HEARTBEAT_ENVELOPE.exec(text);
   const visibleText = heartbeat ? HEARTBEAT_MESSAGE.exec(heartbeat[1])?.[1]?.trim() || '' : text;
   return normalizeBareLinks(visibleText);
 }
 
-function normalizeBareLinks(text) {
+function normalizeBareLinks(text: string) {
   return text.replace(BARE_URL_BEFORE_CJK_PUNCTUATION, '<$1>');
 }

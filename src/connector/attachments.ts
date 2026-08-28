@@ -14,7 +14,19 @@ const IMAGE_TYPES = new Map([
   ['image/webp', { extension: '.webp', matches: isWebp }],
 ]);
 
-export async function saveImageAttachment(payload, options = {}) {
+type ImagePayload = {
+  name?: unknown;
+  mimeType?: unknown;
+  size?: unknown;
+  data?: unknown;
+  path?: unknown;
+  preview?: ImagePayload;
+};
+
+type AttachmentOptions = { directory?: string; now?: number; maxAgeMs?: number };
+type ImageType = { extension: string; matches: (bytes: Buffer) => boolean };
+
+export async function saveImageAttachment(payload: ImagePayload, options: AttachmentOptions = {}) {
   const original = decodeImagePayload(payload, MAX_IMAGE_BYTES);
   const preview = payload?.preview ? decodeImagePayload(payload.preview, MAX_PREVIEW_BYTES) : null;
 
@@ -42,7 +54,7 @@ export async function saveImageAttachment(payload, options = {}) {
   };
 }
 
-export async function readImageAttachment(payload, options = {}) {
+export async function readImageAttachment(payload: ImagePayload, options: AttachmentOptions = {}) {
   const directory = resolve(options.directory || DEFAULT_ATTACHMENT_DIRECTORY);
   await ensureSafeDirectory(directory);
   const path = resolve(String(payload?.path || ''));
@@ -51,7 +63,7 @@ export async function readImageAttachment(payload, options = {}) {
   const candidate = await readablePreviewPath(path);
   if (!candidate) throw new Error('attachment_preview_not_found');
   const stats = await lstat(candidate).catch((error) => {
-    if (error?.code === 'ENOENT') throw new Error('attachment_not_found');
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('attachment_not_found');
     throw error;
   });
   if (!stats.isFile() || stats.isSymbolicLink() || stats.size <= 0 || stats.size > MAX_IMAGE_BYTES) {
@@ -68,9 +80,9 @@ export async function readImageAttachment(payload, options = {}) {
   };
 }
 
-function decodeImagePayload(payload, maxBytes) {
+function decodeImagePayload(payload: ImagePayload, maxBytes: number) {
   const mimeType = String(payload?.mimeType || '').trim().toLocaleLowerCase();
-  const imageType = IMAGE_TYPES.get(mimeType);
+  const imageType = IMAGE_TYPES.get(mimeType) as ImageType | undefined;
   if (!imageType) throw new Error('attachment_type_not_allowed');
 
   const encoded = String(payload?.data || '').trim();
@@ -88,14 +100,14 @@ function decodeImagePayload(payload, maxBytes) {
   return { bytes, imageType, mimeType };
 }
 
-function previewPath(path) {
+function previewPath(path: string) {
   return `${path}.preview`;
 }
 
-async function readablePreviewPath(path) {
+async function readablePreviewPath(path: string) {
   const candidate = previewPath(path);
   const stats = await lstat(candidate).catch((error) => {
-    if (error?.code === 'ENOENT') return null;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   });
   if (!stats || !stats.isFile() || stats.isSymbolicLink() || stats.size <= 0 || stats.size > MAX_PREVIEW_BYTES) {
@@ -104,7 +116,7 @@ async function readablePreviewPath(path) {
   return candidate;
 }
 
-export async function cleanupAttachments(directory, now = Date.now(), maxAgeMs = ATTACHMENT_MAX_AGE_MS) {
+export async function cleanupAttachments(directory: string, now = Date.now(), maxAgeMs = ATTACHMENT_MAX_AGE_MS) {
   const root = resolve(directory);
   const entries = await readdir(root, { withFileTypes: true });
   for (const entry of entries) {
@@ -117,13 +129,13 @@ export async function cleanupAttachments(directory, now = Date.now(), maxAgeMs =
   }
 }
 
-async function ensureSafeDirectory(directory) {
+async function ensureSafeDirectory(directory: string) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const stats = await lstat(directory);
   if (!stats.isDirectory() || stats.isSymbolicLink()) throw new Error('attachment_directory_invalid');
 }
 
-function safeDisplayName(value, extension) {
+function safeDisplayName(value: unknown, extension: string) {
   const cleaned = String(value || '')
     .replace(/[\u0000-\u001f\u007f]/g, '')
     .replace(/[\\/]/g, '_')
@@ -132,22 +144,22 @@ function safeDisplayName(value, extension) {
   return cleaned || `image${extension}`;
 }
 
-function detectImageType(bytes) {
+function detectImageType(bytes: Buffer) {
   for (const [mimeType, imageType] of IMAGE_TYPES) {
     if (imageType.matches(bytes)) return { mimeType, ...imageType };
   }
   return null;
 }
 
-function isJpeg(bytes) {
+function isJpeg(bytes: Buffer) {
   return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
 }
 
-function isPng(bytes) {
+function isPng(bytes: Buffer) {
   return bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
 }
 
-function isWebp(bytes) {
+function isWebp(bytes: Buffer) {
   return bytes.length >= 12
     && bytes.subarray(0, 4).toString('ascii') === 'RIFF'
     && bytes.subarray(8, 12).toString('ascii') === 'WEBP';

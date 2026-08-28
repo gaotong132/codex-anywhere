@@ -6,16 +6,23 @@
   "license": "MIT",
   "repository": "github:gaotong132/codex-anywhere",
   "type": "module",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "build": "vite build",
+    "build": "npm run build:web && npm run build:node",
+    "build:web": "vite build",
+    "build:node": "tsc -p tsconfig.node.json",
     "dev": "vite --host 127.0.0.1",
-    "server": "npm run build && node src/server/index.js",
-    "serve": "node src/server/index.js",
-    "connector": "node src/connector/index.js",
-    "typecheck": "tsc --noEmit",
-    "test": "node --test",
-    "check": "npm run typecheck && node --check src/server/index.js && node --check src/server/server.js && node --check src/connector/index.js && node --check src/connector/codex-app-server.js && node --check src/connector/attachments.js && node --check src/connector/file-downloads.js && node --check src/connector/instance-lock.js && node --test"
+    "server": "npm run build && node build/server/index.js",
+    "serve": "node build/server/index.js",
+    "connector": "npm run build:node && node build/connector/index.js",
+    "typecheck": "npm run typecheck:web && npm run typecheck:node && npm run typecheck:test",
+    "typecheck:web": "tsc -p tsconfig.json --noEmit",
+    "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "check": "npm run typecheck && npm test"
   },
   "dependencies": {
     "react": "19.2.8",
@@ -25,9 +32,12 @@
     "ws": "8.21.3"
   },
   "devDependencies": {
+    "@types/node": "^22.20.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "6.1.0",
+    "tsx": "^4.23.12",
     "typescript": "7.0.2",
     "vite": "8.2.2"
   }
