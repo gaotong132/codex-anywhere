@@ -6,7 +6,10 @@ import test from 'node:test';
 import { parseFrame, tokenMatches } from '../src/shared/protocol.js';
 import { displayAssistantMessage, displayUserMessage } from '../src/shared/message-content.js';
 import { CodexAppServer, internals } from '../src/connector/codex-app-server.js';
-import { internals as desktopInternals } from '../src/connector/codex-desktop.js';
+import {
+  internals as desktopInternals,
+  mergeDesktopSessionStatuses,
+} from '../src/connector/codex-desktop.js';
 import { internals as rolloutInternals, readRolloutTail } from '../src/connector/rollout-tail.js';
 
 test('token comparison requires an exact non-empty match', () => {
@@ -25,6 +28,27 @@ test('desktop native pipe frames use a little-endian length prefix', () => {
   const frame = desktopInternals.encodeNativeFrame(message);
   assert.equal(frame.readUInt32LE(0), frame.length - 4);
   assert.deepEqual(JSON.parse(frame.subarray(4).toString('utf8')), message);
+});
+
+test('desktop task list status overrides stale app-server session status', () => {
+  const payload = desktopInternals.parseToolPayload({
+    success: true,
+    contentItems: [{
+      type: 'text',
+      text: JSON.stringify({
+        pinnedThreads: [{ id: 'thread-pinned', kind: 'codex', status: 'active' }],
+        threads: [{ id: 'thread-running', kind: 'codex', status: 'active' }],
+      }),
+    }],
+  });
+  const desktopThreads = [...payload.pinnedThreads, ...payload.threads];
+  assert.deepEqual(mergeDesktopSessionStatuses([
+    { id: 'thread-running', status: 'notLoaded' },
+    { id: 'thread-idle', status: 'notLoaded' },
+  ], desktopThreads), [
+    { id: 'thread-running', status: 'active' },
+    { id: 'thread-idle', status: 'notLoaded' },
+  ]);
 });
 
 test('delegated desktop messages display only their user input', () => {

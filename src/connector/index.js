@@ -1,7 +1,7 @@
 import { WebSocket } from 'ws';
 import { delimiter } from 'node:path';
 import { CodexAppServer } from './codex-app-server.js';
-import { CodexDesktopClient } from './codex-desktop.js';
+import { CodexDesktopClient, mergeDesktopSessionStatuses } from './codex-desktop.js';
 import { readImageAttachment, saveImageAttachment } from './attachments.js';
 import { DownloadManager } from './file-downloads.js';
 import { acquireConnectorInstanceLock } from './instance-lock.js';
@@ -55,7 +55,14 @@ async function handleRequest(message) {
   try {
     let data;
     if (action === 'connector.status') data = { deviceId, workspace, codexOnline: Boolean(codex.child), activeTurn: Boolean(codex.activeTurn) };
-    else if (action === 'sessions.list') data = { sessions: await codex.listSessions({ cwd: payload.cwd }) };
+    else if (action === 'sessions.list') {
+      const sessions = await codex.listSessions({ cwd: payload.cwd });
+      let desktopThreads = [];
+      try {
+        desktopThreads = await desktop.listThreads({ callerThreadId: sessions[0]?.id, limit: 50 });
+      } catch { /* app-server status remains the fallback when Desktop is unavailable */ }
+      data = { sessions: mergeDesktopSessionStatuses(sessions, desktopThreads) };
+    }
     else if (action === 'session.read') data = await codex.readSession(String(payload.threadId || ''));
     else if (action === 'session.turns.list') data = await codex.listSessionTurns(String(payload.threadId || ''), {
       cursor: payload.cursor, limit: payload.limit, mode: payload.mode,

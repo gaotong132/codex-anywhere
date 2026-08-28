@@ -1,4 +1,5 @@
 import { readdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 
 const PIPE_PREFIX = 'codex-browser-use-';
@@ -17,20 +18,15 @@ export class CodexDesktopClient {
     const prompt = String(text || '').trim();
     if (!targetThreadId) throw new Error('thread_id_required');
     if (!prompt) throw new Error('message_required');
-    const client = await this.getClient();
     let result;
     try {
-      result = await client.request('tools/call', {
-        arguments: { threadId: targetThreadId, prompt },
-        callId: `bridge-${requestId}`,
-        namespace: 'codex_app',
-        threadId: String(callerThreadId || targetThreadId),
+      result = await this.callTool({
         tool: 'send_message_to_thread',
-        turnId: `bridge-${requestId}`,
-      }, this.timeoutMs);
+        arguments: { threadId: targetThreadId, prompt },
+        callerThreadId: String(callerThreadId || targetThreadId),
+        callId: `bridge-${requestId}`,
+      });
     } catch (error) {
-      client.close();
-      if (this.client === client) this.client = null;
       if (/timeout/i.test(String(error?.message || error))) throw new Error('desktop_delivery_timeout');
       if (error?.code === 'desktop_host_error') {
         throw new Error(`desktop_delivery_failed:${error.message || 'unknown error'}`);
@@ -42,6 +38,45 @@ export class CodexDesktopClient {
       throw new Error(`desktop_delivery_failed:${message || 'unknown error'}`);
     }
     return { threadId: targetThreadId, delivery: 'desktop' };
+  }
+
+  async listThreads({ callerThreadId, limit = 50 } = {}) {
+    const caller = String(callerThreadId || '').trim();
+    if (!caller) return [];
+    const result = await this.callTool({
+      tool: 'list_threads',
+      arguments: { limit: Math.min(50, Math.max(1, Number(limit) || 50)) },
+      callerThreadId: caller,
+      callId: `bridge-list-${randomUUID()}`,
+    });
+    if (result?.success !== true) throw new Error('desktop_thread_list_failed');
+    const payload = parseToolPayload(result);
+    const rows = [
+      ...(Array.isArray(payload?.pinnedThreads) ? payload.pinnedThreads : []),
+      ...(Array.isArray(payload?.threads) ? payload.threads : []),
+    ];
+    return rows.filter((thread) => thread?.kind === 'codex' && thread?.id).map((thread) => ({
+      id: String(thread.id),
+      status: String(thread.status || 'unknown'),
+    }));
+  }
+
+  async callTool({ tool, arguments: toolArguments, callerThreadId, callId }) {
+    const client = await this.getClient();
+    try {
+      return await client.request('tools/call', {
+        arguments: toolArguments,
+        callId,
+        namespace: 'codex_app',
+        threadId: callerThreadId,
+        tool,
+        turnId: callId,
+      }, this.timeoutMs);
+    } catch (error) {
+      client.close();
+      if (this.client === client) this.client = null;
+      throw error;
+    }
   }
 
   async getClient() {
@@ -195,4 +230,26 @@ function encodeNativeFrame(message) {
   return frame;
 }
 
-export const internals = { encodeNativeFrame };
+function parseToolPayload(result) {
+  for (const candidate of [result?.structuredContent, result?.data, result?.output]) {
+    if (candidate && typeof candidate === 'object') return candidate;
+  }
+  for (const item of Array.isArray(result?.contentItems) ? result.contentItems : []) {
+    if (item?.json && typeof item.json === 'object') return item.json;
+    if (typeof item?.text !== 'string') continue;
+    try {
+      const parsed = JSON.parse(item.text);
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch { /* try the next content item */ }
+  }
+  throw new Error('desktop_thread_list_invalid');
+}
+
+export function mergeDesktopSessionStatuses(sessions, desktopThreads) {
+  const statuses = new Map((desktopThreads || []).map((thread) => [thread.id, thread.status]));
+  return (sessions || []).map((session) => statuses.has(session.id)
+    ? { ...session, status: statuses.get(session.id) }
+    : session);
+}
+
+export const internals = { encodeNativeFrame, parseToolPayload };

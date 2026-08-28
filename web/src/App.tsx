@@ -47,6 +47,7 @@ const TURN_START_REQUEST_TIMEOUT_MS = 11 * 60_000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
 const CLIENT_HEARTBEAT_MS = 20_000;
 const CLIENT_STALE_AFTER_MS = 55_000;
+const SESSION_STATUS_REFRESH_MS = 6_000;
 
 type Session = {
   id: string;
@@ -159,6 +160,7 @@ export default function App() {
   const attachmentLoadsRef = useRef(new Set<string>());
   const fileDownloadRef = useRef(false);
   const fileDownloadCancelRef = useRef(false);
+  const sessionRefreshInFlightRef = useRef(false);
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
   useEffect(() => { tokenRef.current = token; }, [token]);
@@ -293,7 +295,9 @@ export default function App() {
     }
   }, [attachmentUrls, knownAttachments, online, request, threadId, timeline]);
 
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (sessionRefreshInFlightRef.current) return [];
+    sessionRefreshInFlightRef.current = true;
     try {
       const data = await request<{ sessions: Session[] }>('sessions.list', {});
       const nextSessions = data.sessions || [];
@@ -305,8 +309,10 @@ export default function App() {
       }
       return nextSessions;
     } catch (error) {
-      addTimeline('error', friendlyError(error));
+      if (!options.silent) addTimeline('error', friendlyError(error));
       return [];
+    } finally {
+      sessionRefreshInFlightRef.current = false;
     }
   }, [addTimeline, request]);
 
@@ -553,6 +559,19 @@ export default function App() {
   useEffect(() => {
     if (authenticated && connectionEpoch) void refreshSessions();
   }, [authenticated, connectionEpoch, refreshSessions]);
+
+  useEffect(() => {
+    if (!authenticated || !online) return;
+    const refreshVisibleSessions = () => {
+      if (document.visibilityState === 'visible') void refreshSessions({ silent: true });
+    };
+    const timer = setInterval(refreshVisibleSessions, SESSION_STATUS_REFRESH_MS);
+    document.addEventListener('visibilitychange', refreshVisibleSessions);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshVisibleSessions);
+    };
+  }, [authenticated, online, refreshSessions]);
 
   const loadHistory = useCallback(async (targetThreadId: string, cursor: string | null, requestVersion: number) => {
     setHistoryLoading(true);
@@ -924,6 +943,10 @@ export default function App() {
     return sessions.filter((session) => `${session.title} ${session.cwd || ''} ${session.preview || ''}`
       .toLocaleLowerCase().includes(query));
   }, [sessionSearch, sessions]);
+  const runningSessionCount = filteredSessions.filter((session) => (
+    isSessionRunning(session.status)
+    || (session.id === threadId && (executionState === 'running' || executionState === 'waiting'))
+  )).length;
 
   const existingProjects = useMemo(() => {
     const seen = new Set<string>();
@@ -986,22 +1009,29 @@ export default function App() {
           </label>
           <button className="refresh-button" onClick={() => void refreshSessions()} aria-label="刷新会话">↻</button>
         </div>
-        <div className="session-count">{filteredSessions.length} 个会话</div>
+        <div className="session-count">
+          {filteredSessions.length} 个会话
+          {runningSessionCount > 0 && <strong> · {runningSessionCount} 个运行中</strong>}
+        </div>
         <nav className="session-list">
-          {filteredSessions.map((session) => (
-            <button
-              key={session.id}
-              className={`session-card ${threadId === session.id ? 'active' : ''}`}
-              onClick={() => selectSession(session)}
-            >
-              <span className="session-title">{session.title || session.id}</span>
-              <span className="session-preview">{session.cwd || session.preview || session.id}</span>
-              <span className="session-meta">
-                <i className={session.status === 'active' ? 'active' : ''} />
-                {formatDate(session.updatedAt)}
-              </span>
-            </button>
-          ))}
+          {filteredSessions.map((session) => {
+            const sessionRunning = isSessionRunning(session.status)
+              || (session.id === threadId && (executionState === 'running' || executionState === 'waiting'));
+            return (
+              <button
+                key={session.id}
+                className={`session-card ${threadId === session.id ? 'active' : ''} ${sessionRunning ? 'running' : ''}`}
+                onClick={() => selectSession(session)}
+              >
+                <span className="session-title-line">
+                  <span className="session-title">{session.title || session.id}</span>
+                  {sessionRunning && <span className="session-running-badge"><i />运行中</span>}
+                </span>
+                <span className="session-preview">{session.cwd || session.preview || session.id}</span>
+                <span className="session-meta">{formatDate(session.updatedAt)}</span>
+              </button>
+            );
+          })}
           {!filteredSessions.length && <p className="empty-list">没有匹配的会话</p>}
         </nav>
       </aside>
@@ -1286,6 +1316,10 @@ function friendlyError(error: unknown) {
 
 function shortId(value: string) {
   return value.length > 20 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value;
+}
+
+function isSessionRunning(status?: string) {
+  return /^(?:active|running|inProgress|waiting)$/i.test(String(status || ''));
 }
 
 function projectLabel(path: string) {
