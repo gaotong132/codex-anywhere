@@ -10,7 +10,7 @@ import {
 } from 'react';
 import {
   attachmentRegistryKey,
-  displayAssistantMessage,
+  parseAssistantMessage,
   historyFingerprint,
   historyItems,
   loadKnownAttachments,
@@ -236,16 +236,21 @@ export default function App() {
   }, []);
 
   const finishAssistant = useCallback((text: string) => {
-    const visibleText = displayAssistantMessage(text);
+    const content = parseAssistantMessage(text);
+    const visibleText = content.text;
     if (!visibleText) return;
     if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
     const current = streamItemRef.current;
     streamItemRef.current = null;
     setTimeline((items) => {
       if (current?.kind === 'assistant' && items.some((item) => item.id === current.id)) {
-        return items.map((item) => item.id === current.id ? { ...item, text: visibleText } : item);
+        return items.map((item) => item.id === current.id
+          ? { ...item, text: visibleText, contexts: content.contexts }
+          : item);
       }
-      return [...items, { id: makeId(), kind: 'assistant', text: visibleText, transient: true }];
+      return [...items, {
+        id: makeId(), kind: 'assistant', text: visibleText, contexts: content.contexts, transient: true,
+      }];
     });
   }, []);
 

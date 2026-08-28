@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { normalizeBridgeUrl, parseFrame, tokenMatches } from '../src/shared/protocol.js';
-import { displayAssistantMessage, displayUserMessage } from '../src/shared/message-content.js';
+import {
+  displayAssistantMessage,
+  displayUserMessage,
+  parseAssistantMessage,
+  parseUserMessage,
+} from '../src/shared/message-content.js';
 import { CodexAppServer, internals } from '../src/connector/codex-app-server.js';
 import {
   CodexDesktopClient,
@@ -86,6 +91,9 @@ test('delegated desktop messages display only their user input', () => {
   <input>可以了，这个是测试消息</input>
 </codex_delegation>`;
   assert.equal(displayUserMessage(envelope), '可以了，这个是测试消息');
+  assert.deepEqual(parseUserMessage(envelope).contexts, [{
+    kind: 'delegation', sourceThreadId: '01a04137-5de7-7071-8395-a5b91ee5aa18',
+  }]);
   assert.equal(displayUserMessage('普通 <input> 消息'), '普通 <input> 消息');
 });
 
@@ -124,10 +132,35 @@ test('automation heartbeat displays only its notification message', () => {
   assert.equal(displayAssistantMessage(heartbeat), '现网发布完成，详见 **发布记录**。');
   const escapedHeartbeat = String.raw`\<heartbeat> \<automation\_id>automation\</automation\_id> \<current\_time\_iso>2026-08-28T10:11:13.241Z\</current\_time\_iso> \<instructions>执行现网升级\</instructions> \</heartbeat>`;
   assert.equal(displayAssistantMessage(escapedHeartbeat), '');
+  assert.deepEqual(parseUserMessage(escapedHeartbeat), {
+    text: '执行现网升级',
+    contexts: [{
+      kind: 'automation',
+      automationId: 'automation',
+      currentTimeIso: '2026-08-28T10:11:13.241Z',
+      decision: undefined,
+    }],
+  });
   const escapedNotification = String.raw`\<heartbeat>\<decision>NOTIFY\</decision>\<message>发布完成\</message>\</heartbeat>`;
   assert.equal(displayAssistantMessage(escapedNotification), '发布完成');
   assert.equal(displayAssistantMessage('&lt;heartbeat&gt;&lt;message&gt;检查完成&lt;/message&gt;&lt;/heartbeat&gt;'), '检查完成');
+  assert.deepEqual(parseAssistantMessage(heartbeat).contexts, [{
+    kind: 'automation', automationId: 'automation', currentTimeIso: undefined, decision: 'NOTIFY',
+  }]);
   assert.equal(displayAssistantMessage('解释 <heartbeat> 标签的含义'), '解释 <heartbeat> 标签的含义');
+});
+
+test('nested control envelopes keep presentation metadata without showing XML', () => {
+  const nested = String.raw`<codex_delegation><source_thread_id>01a04137-5de7-7071-8395-a5b91ee5aa18</source_thread_id><input>\<heartbeat>\<automation\_id>daily-release\</automation\_id>\<instructions>升级现网\</instructions>\</heartbeat></input></codex_delegation>`;
+  assert.deepEqual(parseUserMessage(nested), {
+    text: '升级现网',
+    contexts: [
+      { kind: 'delegation', sourceThreadId: '01a04137-5de7-7071-8395-a5b91ee5aa18' },
+      {
+        kind: 'automation', automationId: 'daily-release', currentTimeIso: undefined, decision: undefined,
+      },
+    ],
+  });
 });
 
 test('bare links stop before adjacent Chinese punctuation', () => {
@@ -223,7 +256,9 @@ test('both history readers hide the desktop delegation envelope', () => {
     { type: 'userMessage', content: [{ type: 'text', text: envelope }] },
   ] }]);
   assert.equal(tailItems[0].text, 'plain prompt');
+  assert.equal(tailItems[0].contexts[0].kind, 'delegation');
   assert.equal(turns[0].items[0].text, 'plain prompt');
+  assert.equal(turns[0].items[0].contexts[0].kind, 'delegation');
 });
 
 test('approval results stay inside workspace and keep network disabled', () => {

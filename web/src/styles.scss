@@ -405,6 +405,15 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
     svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   }
 
+  .message-contexts { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 8px; }
+  .message-context {
+    max-width: 100%; display: inline-flex; align-items: center; gap: 5px; padding: 3px 7px; border: 1px solid rgba(156, 180, 219, .2); border-radius: 999px; color: #a9b9d0; background: rgba(8, 13, 22, .24); font-size: 10px; line-height: 1.25;
+    svg { width: 12px; height: 12px; flex: 0 0 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    span { @include truncate; }
+    time { flex: 0 0 auto; color: #8291a8; font-variant-numeric: tabular-nums; }
+    &.automation { color: #bbcae0; border-color: rgba(121, 157, 214, .25); }
+  }
+
   > :first-child:not(.message-copy), > .message-copy + * { margin-top: 0; }
   > :last-child { margin-bottom: 0; }
   p { margin: .45em 0; }

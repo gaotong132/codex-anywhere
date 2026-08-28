@@ -1,6 +1,7 @@
 import { open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { displayAssistantMessage, displayUserMessage } from '../shared/message-content.js';
+import { parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
+import type { MessageContext } from '../shared/message-content.js';
 
 const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_ITEMS = 80;
@@ -15,6 +16,7 @@ type RolloutItem = {
   type: string;
   phase?: string;
   text: string;
+  contexts?: MessageContext[];
   status?: string;
   name?: string;
   input?: string;
@@ -207,18 +209,20 @@ function mapRolloutRows(rows: RolloutRow[]): RolloutItem[] {
     const payload = row?.payload || {};
     const payloadType = String(payload.type || '');
     if (row?.type === 'event_msg' && payloadType === 'agent_message') {
+      const content = parseAssistantMessage(payload.message);
       pushText(items, {
-        type: 'agentMessage', phase: payload.phase || 'commentary', text: displayAssistantMessage(payload.message),
+        type: 'agentMessage', phase: payload.phase || 'commentary', ...content,
       });
     } else if (row?.type === 'event_msg' && payloadType === 'user_message') {
-      pushText(items, { type: 'userMessage', text: displayUserMessage(payload.message || payload.text) });
+      pushText(items, { type: 'userMessage', ...parseUserMessage(payload.message || payload.text) });
     } else if (row?.type === 'response_item' && payloadType === 'message') {
       if (payload.role === 'user') {
-        pushText(items, { type: 'userMessage', text: displayUserMessage(extractContent(payload.content)) });
+        pushText(items, { type: 'userMessage', ...parseUserMessage(extractContent(payload.content)) });
       } else if (payload.role === 'assistant') {
+        const content = parseAssistantMessage(extractContent(payload.content));
         pushText(items, {
           type: 'agentMessage', phase: payload.phase || 'commentary',
-          text: displayAssistantMessage(extractContent(payload.content)),
+          ...content,
         });
       }
     }
@@ -230,7 +234,10 @@ function pushText(items: RolloutItem[], item: RolloutItem) {
   const text = capText(item.text);
   if (!text) return;
   const previous = items.at(-1);
-  if (previous?.type === item.type && previous.phase === item.phase && previous.text === text) return;
+  if (previous?.type === item.type
+    && previous.phase === item.phase
+    && previous.text === text
+    && JSON.stringify(previous.contexts || []) === JSON.stringify(item.contexts || [])) return;
   items.push({ ...item, text, status: '', name: '', input: '', output: '' });
 }
 

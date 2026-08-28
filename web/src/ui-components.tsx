@@ -101,6 +101,33 @@ export function MessageBubble({
             : <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>}
         </button>
       )}
+      {item.contexts?.length ? (
+        <div className="message-contexts" aria-label={t('消息来源', 'Message context')}>
+          {item.contexts.map((context, index) => {
+            const isAutomation = context.kind === 'automation';
+            const label = isAutomation
+              ? item.kind === 'user' ? t('定时任务', 'Scheduled task') : t('自动任务通知', 'Automation update')
+              : t('来自另一个 Codex 会话', 'From another Codex task');
+            const parsedTime = context.currentTimeIso ? new Date(context.currentTimeIso) : null;
+            const time = parsedTime && Number.isFinite(parsedTime.getTime())
+              ? parsedTime.toLocaleString([], { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+              : '';
+            return (
+              <span
+                className={`message-context ${context.kind}`}
+                key={`${context.kind}:${context.sourceThreadId || context.automationId || index}`}
+                title={context.sourceThreadId || context.automationId || label}
+              >
+                {isAutomation
+                  ? <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></svg>
+                  : <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="7" r="2" /><circle cx="17" cy="17" r="2" /><path d="M9 7h3a5 5 0 0 1 5 5v3M7 9v8h8" /></svg>}
+                <span>{label}</span>
+                {time && <time dateTime={context.currentTimeIso}>{time}</time>}
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

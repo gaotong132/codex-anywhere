@@ -1,11 +1,12 @@
 import { t } from './i18n';
 import {
-  displayAssistantMessage,
-  displayUserMessage,
+  parseAssistantMessage,
+  parseUserMessage,
   stripImageAttachments,
 } from '../../src/shared/message-content';
+import type { MessageContext } from '../../src/shared/message-content';
 
-export { displayAssistantMessage } from '../../src/shared/message-content';
+export { parseAssistantMessage } from '../../src/shared/message-content';
 
 const ATTACHMENT_STORAGE_KEY = 'bridge.knownAttachments.v2';
 
@@ -17,6 +18,7 @@ type TurnItem = {
   name?: string;
   input?: string;
   output?: string;
+  contexts?: MessageContext[];
 };
 
 export type Turn = {
@@ -35,6 +37,7 @@ export type TimelineItem = {
   historyTurnId?: string;
   transient?: boolean;
   attachment?: ImageAttachment;
+  contexts?: MessageContext[];
 };
 export type KnownAttachment = ImageAttachment & { savedAt: number };
 
@@ -45,9 +48,10 @@ export function historyItems(turns: Turn[]) {
       const type = item.type || '';
       const rawText = item.text?.trim();
       const attachment = /user/i.test(type) ? extractImageAttachment(rawText || '') : undefined;
-      const text = /user/i.test(type)
-        ? displayUserMessage(rawText || '')
-        : displayAssistantMessage(rawText || '');
+      const content = /user/i.test(type)
+        ? parseUserMessage(rawText || '')
+        : parseAssistantMessage(rawText || '');
+      const text = content.text;
       let kind: TimelineKind | null = null;
       const displayText = text || '';
       if (/user/i.test(type) && text) kind = 'user';
@@ -66,6 +70,7 @@ export function historyItems(turns: Turn[]) {
         text: displayText,
         historyTurnId: turn.id,
         attachment,
+        contexts: item.contexts?.length ? item.contexts : content.contexts,
       });
     }
   }
@@ -98,6 +103,7 @@ export function historyFingerprint(turns: Turn[]) {
       text: item.text,
       input: item.input,
       output: item.output,
+      contexts: item.contexts,
     })),
   })));
 }

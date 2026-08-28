@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
-import { displayAssistantMessage, displayUserMessage } from '../shared/message-content.js';
+import { parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
 import { readRolloutTail } from './rollout-tail.js';
 
 const RPC_TIMEOUT_MS = 20_000;
@@ -544,13 +544,16 @@ function mapTurns(turns: unknown) {
         return !/reasoning|command|tool|webSearch|fileChange|system|developer/i.test(type)
           && /user|agent|assistant|message/i.test(type);
       })
-      .map((item: JsonObject) => ({
-        type: item.type,
-        phase: item.phase || '',
-        status: item.status || '',
-        text: /user/i.test(String(item.type || ''))
-          ? displayUserMessage(extractText(item)) : displayAssistantMessage(extractText(item)),
-      }))
+      .map((item: JsonObject) => {
+        const content = /user/i.test(String(item.type || ''))
+          ? parseUserMessage(extractText(item)) : parseAssistantMessage(extractText(item));
+        return {
+          type: item.type,
+          phase: item.phase || '',
+          status: item.status || '',
+          ...content,
+        };
+      })
       .filter((item: JsonObject) => item.text),
   }));
 }
