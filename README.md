@@ -89,8 +89,7 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
    $token = Read-Host 'Bridge token' -AsSecureString
    .\scripts\install-connector.ps1 `
      -Token $token `
-     -BridgeUrl 'wss://codex.example.com/ws' `
-     -Workspace 'C:\workspace'
+     -BridgeUrl 'wss://codex.example.com/ws'
    ```
 
 4. Open the relay URL in the phone browser and enter the same token.
@@ -106,10 +105,10 @@ project files onto the ECS/VPS.
 | `BRIDGE_URL` | Connector | Relay WebSocket URL; supports `ws://` and `wss://` |
 | `CODEX_UI_LANGUAGE` | Relay | Web UI language: `zh-CN` or `en` |
 
-The connector defaults to its current directory. `-Workspace` changes the default directory for new
-sessions; its value also becomes the allowed root automatically. Use `-AllowedRoots` only when several
-separate local roots must be available. The installer stores these optional settings outside the
-repository, so they do not belong in the relay `.env` file.
+New sessions always require an explicit project directory selected in the web UI; the connector has no
+configurable default workspace. `-AllowedRoots` is optional and limits which local directories may be
+selected. When omitted, the connector checkout is the only allowed root. The installer stores this
+optional setting outside the repository, so it does not belong in the relay `.env` file.
 
 See [.env.example](.env.example) and [docs/deployment.md](docs/deployment.md) for all options, including
 proxy trust, network access, and unrestricted file-download settings.

@@ -796,9 +796,9 @@ export default function App() {
   }, []);
 
   const submitNewSession = useCallback(() => {
-    const workspace = newSessionCwd.trim();
+    const projectCwd = newSessionCwd.trim();
     const text = newSessionPrompt.trim();
-    if (!workspace) {
+    if (!projectCwd) {
       setNewSessionError(t('请选择或填写项目目录。', 'Choose or enter a project directory.'));
       return;
     }
@@ -827,12 +827,12 @@ export default function App() {
     const image = pendingImage;
     if ((!text && !image) || running || uploading || sendingRef.current) return;
     const isExistingSession = Boolean(threadIdRef.current);
-    const workspace = newSessionCwd.trim();
-    if (!isExistingSession && !workspace) {
+    const projectCwd = newSessionCwd.trim();
+    if (!isExistingSession && !projectCwd) {
       addTimeline('error', t('请先填写新会话的项目目录。', 'Enter a project directory for the new session.'));
       return;
     }
-    if (!isExistingSession) localStorage.setItem('bridge.newSessionCwd', workspace);
+    if (!isExistingSession) localStorage.setItem('bridge.newSessionCwd', projectCwd);
     sendingRef.current = true;
     let turnText = text;
     let visibleText = text;
@@ -878,7 +878,7 @@ export default function App() {
       const data = await request<TurnStartResult>('turn.start', {
         text: turnText,
         threadId: threadIdRef.current,
-        cwd: isExistingSession ? '' : workspace,
+        cwd: isExistingSession ? '' : projectCwd,
       });
       if (data.threadId) {
         setThreadId(data.threadId);
@@ -889,7 +889,7 @@ export default function App() {
           setActiveSession({
             id: data.threadId,
             title: visibleText.split(/\r?\n/, 1)[0]?.slice(0, 80) || t('新会话', 'New session'),
-            cwd: workspace,
+            cwd: projectCwd,
             updatedAt: Date.now(),
             status: 'inProgress',
           });

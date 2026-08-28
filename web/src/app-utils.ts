@@ -23,6 +23,8 @@ export function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || t('请求失败', 'Request failed'));
   if (message === 'connector_offline') return t('本机连接器离线，请确认电脑已开机且连接器正在运行。', 'The local connector is offline. Make sure the computer and connector are running.');
   if (message === 'another_turn_is_active') return t('当前已有一个任务在运行，请等待完成或先停止。', 'Another task is running. Wait for it to finish or stop it first.');
+  if (message === 'project_directory_required') return t('新会话必须选择或填写项目目录。', 'Choose or enter a project directory for the new session.');
+  if (message === 'session_project_directory_unavailable') return t('该会话没有可用的项目目录，无法通过连接器继续。', 'This session has no project directory available to the connector.');
   if (message === 'workspace_outside_allowed_root') return t('该目录不在连接器允许访问的范围内。', 'This directory is outside the connector allowed roots.');
   if (message === 'request_timeout') return t('请求超过 30 秒没有响应，消息未确认发送，已恢复到输入框。', 'The request timed out after 30 seconds. Delivery was not confirmed and the message was restored.');
   if (message === 'turn_start_timeout') return t('等待原会话可写超时，消息没有发送，已恢复到输入框。', 'Timed out waiting for the session to become writable. The message was not sent and has been restored.');

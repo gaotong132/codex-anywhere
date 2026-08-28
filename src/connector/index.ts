@@ -14,9 +14,9 @@ const token = String(process.env.BRIDGE_TOKEN || '');
 if (token.length < 32) throw new Error('BRIDGE_TOKEN must contain at least 32 characters');
 const url = normalizeBridgeUrl(process.env.BRIDGE_URL || 'ws://127.0.0.1:3300/ws');
 const deviceId = process.env.BRIDGE_DEVICE_ID || 'personal-pc';
-const workspace = process.env.CODEX_WORKSPACE || process.cwd();
-const allowedRoots = String(process.env.CODEX_ALLOWED_ROOTS || workspace)
+const configuredAllowedRoots = String(process.env.CODEX_ALLOWED_ROOTS || '')
   .split(delimiter).map((value) => value.trim()).filter(Boolean);
+const allowedRoots = configuredAllowedRoots.length ? configuredAllowedRoots : [process.cwd()];
 const instanceLock = await acquireConnectorInstanceLock();
 if (!instanceLock) {
   console.log('Codex Anywhere connector is already running.');
@@ -24,7 +24,7 @@ if (!instanceLock) {
 }
 const connectorLock = instanceLock;
 const codex = new CodexAppServer({
-  bin: process.env.CODEX_BIN || 'codex', workspace, allowedRoots,
+  bin: process.env.CODEX_BIN || 'codex', allowedRoots,
   networkAccess: process.env.CODEX_NETWORK_ACCESS === '1',
 });
 const desktop = new CodexDesktopClient();
@@ -38,7 +38,6 @@ const handleRequest = createRequestHandler({
   attachments: { save: saveImageAttachment, read: readImageAttachment },
   downloads,
   deviceId,
-  workspace,
 });
 
 let socket: WebSocket | undefined;
@@ -83,5 +82,5 @@ async function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-console.log(`Connecting device ${deviceId} to ${new URL(url).origin}; workspace=${workspace}`);
+console.log(`Connecting device ${deviceId} to ${new URL(url).origin}`);
 connect();

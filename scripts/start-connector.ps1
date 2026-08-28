@@ -53,7 +53,6 @@ function Resolve-TextSetting {
 
 $bridgeUrl = Resolve-TextSetting 'BRIDGE_URL' 'bridgeUrl' 'ws://127.0.0.1:3300/ws'
 $deviceId = Resolve-TextSetting 'BRIDGE_DEVICE_ID' 'deviceId' 'personal-pc'
-$workspace = [IO.Path]::GetFullPath((Resolve-TextSetting 'CODEX_WORKSPACE' 'workspace' $projectRoot))
 $allowedRootsFromEnvironment = [Environment]::GetEnvironmentVariable('CODEX_ALLOWED_ROOTS', 'Process')
 if (-not [string]::IsNullOrWhiteSpace($allowedRootsFromEnvironment)) {
     $allowedRoots = $allowedRootsFromEnvironment.Trim()
@@ -67,7 +66,7 @@ else {
         $allowedRoots = [string]::Join([IO.Path]::PathSeparator, @($configuredRoots | ForEach-Object { [IO.Path]::GetFullPath([string] $_) }))
     }
     else {
-        $allowedRoots = $workspace
+        $allowedRoots = $projectRoot
     }
 }
 $networkAccessFromEnvironment = [Environment]::GetEnvironmentVariable('CODEX_NETWORK_ACCESS', 'Process')
@@ -161,7 +160,6 @@ try {
     $env:BRIDGE_TOKEN = $plainToken
     $env:BRIDGE_URL = $bridgeUrl
     $env:BRIDGE_DEVICE_ID = $deviceId
-    $env:CODEX_WORKSPACE = $workspace
     $env:CODEX_ALLOWED_ROOTS = $allowedRoots
     $env:CODEX_ALLOW_ANY_FILE_DOWNLOAD = $allowAnyFileDownload
     $env:CODEX_NETWORK_ACCESS = $networkAccess
@@ -194,7 +192,6 @@ finally {
     Remove-Item Env:BRIDGE_TOKEN -ErrorAction SilentlyContinue
     Remove-Item Env:BRIDGE_URL -ErrorAction SilentlyContinue
     Remove-Item Env:BRIDGE_DEVICE_ID -ErrorAction SilentlyContinue
-    Remove-Item Env:CODEX_WORKSPACE -ErrorAction SilentlyContinue
     Remove-Item Env:CODEX_ALLOWED_ROOTS -ErrorAction SilentlyContinue
     Remove-Item Env:CODEX_ALLOW_ANY_FILE_DOWNLOAD -ErrorAction SilentlyContinue
     Remove-Item Env:CODEX_NETWORK_ACCESS -ErrorAction SilentlyContinue

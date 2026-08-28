@@ -34,7 +34,6 @@ type Dependencies = {
     close(payload: Payload, clientId?: string): Promise<any>;
   };
   deviceId: string;
-  workspace: string;
 };
 type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & {
   payload: Payload;
@@ -42,13 +41,13 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
   clientId?: string;
 };
 
-export function createRequestHandler({ codex, desktop, attachments, downloads, deviceId, workspace }: Dependencies) {
+export function createRequestHandler({ codex, desktop, attachments, downloads, deviceId }: Dependencies) {
   return async function handleRequest(message: BridgeRequest) {
     const { action, payload = {}, requestId, clientId } = message;
     try {
       const data = await dispatchAction({
         action, payload, requestId, clientId,
-        codex, desktop, attachments, downloads, deviceId, workspace,
+        codex, desktop, attachments, downloads, deviceId,
       });
       return { type: 'response', clientId, requestId, ok: true, data };
     } catch (error) {
@@ -59,12 +58,11 @@ export function createRequestHandler({ codex, desktop, attachments, downloads, d
 
 async function dispatchAction({
   action, payload, requestId, clientId,
-  codex, desktop, attachments, downloads, deviceId, workspace,
+  codex, desktop, attachments, downloads, deviceId,
 }: DispatchContext) {
   if (action === 'connector.status') {
     return {
       deviceId,
-      workspace,
       codexOnline: Boolean(codex.child),
       activeTurn: Boolean(codex.activeTurn),
     };

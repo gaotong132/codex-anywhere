@@ -19,7 +19,7 @@ const DEFAULT_ACTIVE_WRITER_RETRY_MS = 2_000;
 type JsonObject = Record<string, any>;
 type CodexAppServerOptions = {
   bin?: string;
-  workspace?: string;
+  runtimeCwd?: string;
   allowedRoots?: string[];
   networkAccess?: boolean;
   activeWriterWaitMs?: number;
@@ -37,7 +37,7 @@ type TurnContext = {
   clientId?: string;
   requestId?: string;
   threadId: string;
-  workspace: string;
+  cwd: string;
   state: string;
 };
 type StartTurnOptions = {
@@ -50,7 +50,7 @@ type StartTurnOptions = {
 
 export class CodexAppServer extends EventEmitter {
   bin: string;
-  workspace: string;
+  runtimeCwd: string;
   allowedRoots: string[];
   networkAccess: boolean;
   activeWriterWaitMs: number;
@@ -66,11 +66,11 @@ export class CodexAppServer extends EventEmitter {
   constructor(options: CodexAppServerOptions = {}) {
     super();
     this.bin = options.bin || 'codex';
-    this.workspace = options.workspace || process.cwd();
-    this.allowedRoots = Array.isArray(options.allowedRoots) && options.allowedRoots.length
-      ? options.allowedRoots.map((root) => resolve(String(root)))
-      : [resolve(this.workspace)];
-    resolveAllowedWorkspace(this.allowedRoots, this.workspace);
+    this.runtimeCwd = resolve(options.runtimeCwd || process.cwd());
+    const configuredRoots = Array.isArray(options.allowedRoots)
+      ? options.allowedRoots.map((root) => String(root).trim()).filter(Boolean).map((root) => resolve(root))
+      : [];
+    this.allowedRoots = configuredRoots.length ? configuredRoots : [this.runtimeCwd];
     this.networkAccess = options.networkAccess === true;
     this.activeWriterWaitMs = Number.isFinite(options.activeWriterWaitMs)
       ? Math.max(0, Number(options.activeWriterWaitMs)) : DEFAULT_ACTIVE_WRITER_WAIT_MS;
@@ -94,7 +94,7 @@ export class CodexAppServer extends EventEmitter {
 
   async startProcess(): Promise<void> {
     const child = spawn(this.bin, ['app-server', '--listen', 'stdio://'], {
-      cwd: this.workspace,
+      cwd: this.runtimeCwd,
       env: { ...process.env, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'Codex Desktop' },
       shell: false,
       windowsHide: true,
@@ -149,7 +149,9 @@ export class CodexAppServer extends EventEmitter {
   async readSession(threadId: string) {
     await this.ensureStarted();
     const result = await this.rpcRaw('thread/read', { threadId, includeTurns: false });
-    const cwd = resolveAllowedWorkspace(this.allowedRoots, result?.thread?.cwd || this.workspace);
+    const recordedCwd = result?.thread?.cwd || this.sessionMetadata.get(threadId)?.cwd;
+    if (!recordedCwd) throw new Error('session_project_directory_unavailable');
+    const cwd = resolveAllowedWorkspace(this.allowedRoots, recordedCwd);
     this.sessionMetadata.set(threadId, {
       cwd,
       path: result?.thread?.path || this.sessionMetadata.get(threadId)?.path || '',
@@ -232,31 +234,33 @@ export class CodexAppServer extends EventEmitter {
   async startTurn({ text, threadId, cwd, clientId, requestId }: StartTurnOptions) {
     if (this.activeTurn) throw new Error('another_turn_is_active');
     let resolvedThreadId = String(threadId || '').trim();
-    let workspace = this.workspace;
-    const turnContext = { clientId, requestId, threadId: resolvedThreadId, workspace, state: 'starting' };
+    if (!resolvedThreadId && !String(cwd || '').trim()) throw new Error('project_directory_required');
+    let turnCwd = '';
+    const turnContext = { clientId, requestId, threadId: resolvedThreadId, cwd: turnCwd, state: 'starting' };
     this.activeTurn = turnContext;
     try {
       await this.ensureStarted();
       if (resolvedThreadId) {
         const cachedMetadata = this.sessionMetadata.get(resolvedThreadId);
         if (cachedMetadata?.cwd) {
-          workspace = resolveAllowedWorkspace(this.allowedRoots, cachedMetadata.cwd);
+          turnCwd = resolveAllowedWorkspace(this.allowedRoots, cachedMetadata.cwd);
         } else {
           const metadata = await this.rpcRaw('thread/read', { threadId: resolvedThreadId, includeTurns: false });
-          workspace = resolveAllowedWorkspace(this.allowedRoots, metadata?.thread?.cwd || this.workspace);
+          if (!metadata?.thread?.cwd) throw new Error('session_project_directory_unavailable');
+          turnCwd = resolveAllowedWorkspace(this.allowedRoots, metadata.thread.cwd);
         }
       } else {
-        workspace = resolveAllowedWorkspace(this.allowedRoots, cwd || this.workspace);
+        turnCwd = resolveAllowedWorkspace(this.allowedRoots, cwd);
       }
-      turnContext.workspace = workspace;
+      turnContext.cwd = turnCwd;
       const threadParams = {
-        cwd: workspace,
+        cwd: turnCwd,
         approvalPolicy: 'untrusted',
         sandbox: 'workspace-write',
         config: {
           sandbox_mode: 'workspace-write',
           sandbox_workspace_write: {
-            writable_roots: [workspace],
+            writable_roots: [turnCwd],
             network_access: this.networkAccess,
             exclude_tmpdir_env_var: false,
             exclude_slash_tmp: false,
@@ -278,7 +282,7 @@ export class CodexAppServer extends EventEmitter {
       this.sendRpcNotification('turn/start', {
         threadId: resolvedThreadId,
         input: [{ type: 'text', text: String(text || '') }],
-        cwd: workspace,
+        cwd: turnCwd,
       }, true);
       return { threadId: resolvedThreadId };
     } catch (error) {
@@ -316,8 +320,9 @@ export class CodexAppServer extends EventEmitter {
     const pending = this.approvals.get(String(approvalId));
     if (!pending) throw new Error('approval_not_found');
     this.approvals.delete(String(approvalId));
-    const workspace = this.activeTurn?.workspace || this.workspace;
-    this.writeRpc({ jsonrpc: '2.0', id: pending.id, result: approvalResult(pending.method, approved, workspace) });
+    const turnCwd = this.activeTurn?.cwd;
+    if (!turnCwd) throw new Error('turn_project_directory_unavailable');
+    this.writeRpc({ jsonrpc: '2.0', id: pending.id, result: approvalResult(pending.method, approved, turnCwd) });
     return { approvalId: String(approvalId), approved: approved === true };
   }
 
@@ -476,15 +481,15 @@ function approvalSummary(method: string, params: JsonObject) {
   return text.slice(0, SUMMARY_LIMIT);
 }
 
-function approvalResult(method: string, approved: boolean, workspace: string) {
+function approvalResult(method: string, approved: boolean, cwd: string) {
   if (/permissions\/requestApproval/i.test(method)) {
     return approved ? {
       permissions: {
         fileSystem: {
-          read: [workspace], write: [workspace],
+          read: [cwd], write: [cwd],
           entries: [
-            { path: { type: 'path', path: workspace }, access: 'read' },
-            { path: { type: 'path', path: workspace }, access: 'write' },
+            { path: { type: 'path', path: cwd }, access: 'read' },
+            { path: { type: 'path', path: cwd }, access: 'write' },
           ],
         },
         network: { enabled: false },
@@ -559,9 +564,13 @@ function wait(milliseconds: number) {
 }
 
 function resolveAllowedWorkspace(roots: string[] | string, candidate: unknown) {
+  const rawCandidate = String(candidate || '').trim();
+  if (!rawCandidate) throw new Error('project_directory_required');
+  const requested = resolve(rawCandidate);
   const allowedRoots = (Array.isArray(roots) ? roots : [roots])
-    .map((root) => resolve(String(root || process.cwd())));
-  const requested = resolve(String(candidate || allowedRoots[0]));
+    .map((root) => String(root || '').trim())
+    .filter(Boolean)
+    .map((root) => resolve(root));
   for (const allowedRoot of allowedRoots) {
     const pathFromRoot = relative(allowedRoot, requested);
     if (!pathFromRoot || (!pathFromRoot.startsWith('..') && !isAbsolute(pathFromRoot))) {

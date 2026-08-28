@@ -34,7 +34,6 @@ function createDependencies(overrides = {}) {
       ...overrides.downloads,
     },
     deviceId: 'personal-pc',
-    workspace: 'D:\\project',
   };
 }
 
@@ -50,7 +49,7 @@ test('request handler keeps connector routing independent from process startup',
     requestId: 'request-1',
     ok: true,
     data: {
-      deviceId: 'personal-pc', workspace: 'D:\\project', codexOnline: true, activeTurn: false,
+      deviceId: 'personal-pc', codexOnline: true, activeTurn: false,
     },
   });
 });

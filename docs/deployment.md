@@ -124,7 +124,6 @@ For a foreground test:
 ```powershell
 $env:BRIDGE_TOKEN = Read-Host 'Bridge token'
 $env:BRIDGE_URL = 'wss://codex.example.com/ws'
-$env:CODEX_WORKSPACE = 'C:\workspace'
 $env:CODEX_NETWORK_ACCESS = '0'
 npm run connector
 ```
@@ -136,14 +135,14 @@ repository or a plaintext script:
 $token = Read-Host 'Bridge token' -AsSecureString
 .\scripts\install-connector.ps1 `
   -Token $token `
-  -BridgeUrl 'wss://codex.example.com/ws' `
-  -Workspace 'C:\workspace'
+  -BridgeUrl 'wss://codex.example.com/ws'
 ```
 
-The workspace automatically becomes the single allowed root. Specify `-AllowedRoots` only when the
-connector must expose several separate local roots. Downloads are limited to those roots by default.
-Add `-AllowAnyFileDownload` only when this is a trusted single-user computer and unrestricted local
-download is intentional. Leave network access disabled unless the Codex task actually needs it.
+New sessions require a project directory selected in the web UI; there is no default-workspace setting.
+`-AllowedRoots` is optional and defaults to the connector checkout. Set it only when additional local
+roots should be selectable. Downloads are limited to those roots by default. Add
+`-AllowAnyFileDownload` only when this is a trusted single-user computer and unrestricted local download
+is intentional. Leave network access disabled unless the Codex task actually needs it.
 
 The encrypted credential and non-secret settings are stored outside the checkout under
 `%LOCALAPPDATA%\PersonalCodexBridge`. Re-run the installer without `-Token` to update settings while

@@ -3,7 +3,6 @@ param(
     [Security.SecureString] $Token,
     [string] $BridgeUrl = 'ws://127.0.0.1:3300/ws',
     [string] $DeviceId = 'personal-pc',
-    [string] $Workspace,
     [string[]] $AllowedRoots,
     [switch] $AllowAnyFileDownload,
     [switch] $EnableNetworkAccess,
@@ -56,17 +55,15 @@ elseif (-not (Test-Path -LiteralPath $secretPath -PathType Leaf)) {
     throw 'Token is required for the first installation.'
 }
 
-$resolvedWorkspace = [IO.Path]::GetFullPath($(if ($Workspace) { $Workspace } else { $projectRoot }))
 $resolvedAllowedRoots = if ($AllowedRoots -and $AllowedRoots.Count -gt 0) {
     @($AllowedRoots | ForEach-Object { [IO.Path]::GetFullPath($_) })
 }
 else {
-    @($resolvedWorkspace)
+    @($projectRoot)
 }
 $connectorConfig = [ordered]@{
     bridgeUrl = $bridgeUri.AbsoluteUri
     deviceId = $DeviceId
-    workspace = $resolvedWorkspace
     allowedRoots = $resolvedAllowedRoots
     allowAnyFileDownload = [bool] $AllowAnyFileDownload
     networkAccess = [bool] $EnableNetworkAccess

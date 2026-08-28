@@ -243,7 +243,7 @@ test('history mapping keeps user-visible messages and hides internal work', () =
 });
 
 test('conversation history uses a lightweight bounded descending cursor page', async () => {
-  const codex = new CodexAppServer({ workspace: process.cwd() });
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
   codex.rpcRaw = async (method, params) => {
     assert.equal(method, 'thread/turns/list');
@@ -258,7 +258,7 @@ test('conversation history uses a lightweight bounded descending cursor page', a
 });
 
 test('live history keeps visible updates but never requests more than two turns', async () => {
-  const codex = new CodexAppServer({ workspace: process.cwd() });
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
   codex.listSessions = async () => [];
   codex.rpcRaw = async (method, params) => {
@@ -277,7 +277,7 @@ test('live history keeps visible updates but never requests more than two turns'
 });
 
 test('live history follows the rollout instead of a stale app-server snapshot', async () => {
-  const codex = new CodexAppServer({ workspace: process.cwd() });
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
   codex.sessionMetadata.set('thread-1', { path: 'rollout.jsonl' });
   codex.rpcRaw = async () => { throw new Error('app server should not be queried'); };
@@ -291,7 +291,7 @@ test('live history follows the rollout instead of a stale app-server snapshot', 
 });
 
 test('live history restores rollout metadata after a connector restart', async () => {
-  const codex = new CodexAppServer({ workspace: process.cwd() });
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
   codex.listSessions = async () => {
     codex.sessionMetadata.set('thread-1', { path: 'restored-rollout.jsonl' });
@@ -304,7 +304,7 @@ test('live history restores rollout metadata after a connector restart', async (
 
 test('active desktop writer waits and resumes the original thread without forking', async () => {
   const codex = new CodexAppServer({
-    workspace: process.cwd(), activeWriterWaitMs: 100, activeWriterRetryMs: 1,
+    runtimeCwd: process.cwd(), activeWriterWaitMs: 100, activeWriterRetryMs: 1,
   });
   codex.ensureStarted = async () => {};
   const calls = [];
@@ -333,7 +333,7 @@ test('active desktop writer waits and resumes the original thread without forkin
 });
 
 test('active desktop writer wait has a bounded timeout', async () => {
-  const codex = new CodexAppServer({ workspace: process.cwd(), activeWriterWaitMs: 0 });
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd(), activeWriterWaitMs: 0 });
   codex.ensureStarted = async () => {};
   codex.rpcRaw = async (method) => {
     if (method === 'thread/read') return { thread: { id: 'original', cwd: process.cwd() } };
@@ -345,7 +345,7 @@ test('active desktop writer wait has a bounded timeout', async () => {
 });
 
 test('non-writer resume errors are returned unchanged', async () => {
-  const codex = new CodexAppServer({ workspace: process.cwd() });
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
   codex.rpcRaw = async (method) => {
     if (method === 'thread/read') return { thread: { id: 'missing', cwd: process.cwd() } };
@@ -372,4 +372,13 @@ test('workspace selection cannot escape the configured root', () => {
     () => internals.resolveAllowedWorkspace([root, secondRoot], resolve('outside-root')),
     /workspace_outside_allowed_root/,
   );
+});
+
+test('new sessions require an explicit project directory', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  await assert.rejects(
+    () => codex.startTurn({ text: 'hello' }),
+    /project_directory_required/,
+  );
+  assert.equal(codex.activeTurn, null);
 });
