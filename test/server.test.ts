@@ -217,7 +217,7 @@ test('server temporarily locks repeated authentication failures per real client 
   otherAddress.socket.close();
 });
 
-test('server never accepts a raw token and rejects a captured proof on a fresh challenge', async (t) => {
+test('server rejects legacy raw tokens without locking upgrades and rejects captured proof replay', async (t) => {
   const server = createBridgeServer({ token: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
@@ -226,7 +226,7 @@ test('server never accepts a raw token and rejects a captured proof on a fresh c
   const raw = await openSocket(url);
   const rawClose = once(raw.socket, 'close');
   raw.socket.send(JSON.stringify({ type: 'auth', role: 'client', token: TOKEN }));
-  assert.equal((await rawClose)[0], 4003);
+  assert.equal((await rawClose)[0], 4406);
 
   const first = await openSocket(url);
   const capturedProof = createAuthProof(TOKEN, first.challenge, 'client');

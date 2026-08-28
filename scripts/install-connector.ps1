@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [Security.SecureString] $Token,
+    [Security.SecureString] $ClientToken,
     [string] $BridgeUrl = 'ws://127.0.0.1:3300/ws',
     [string] $DeviceId = 'personal-pc',
     [string[]] $AllowedRoots,
@@ -17,6 +18,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $launcherPath = Join-Path $PSScriptRoot 'start-connector.ps1'
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PersonalCodexBridge'
 $secretPath = Join-Path $stateDirectory 'bridge-token.dpapi'
+$clientSecretPath = Join-Path $stateDirectory 'bridge-client-token.dpapi'
 $configPath = Join-Path $stateDirectory 'connector.json'
 $startupDirectory = [Environment]::GetFolderPath('Startup')
 $shortcutPath = Join-Path $startupDirectory 'Codex Anywhere Connector.lnk'
@@ -30,19 +32,27 @@ if (-not [string]::IsNullOrEmpty($bridgeUri.UserInfo) -or -not [string]::IsNullO
     throw 'BridgeUrl must not contain credentials, query parameters, or a fragment.'
 }
 New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
-if ($Token) {
-    $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Token)
+
+function Save-ProtectedCredential {
+    param(
+        [Parameter(Mandatory)] [Security.SecureString] $Value,
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Name
+    )
+
+    $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
     $plainBytes = $null
     $protectedToken = $null
     try {
         $plainToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($tokenPointer)
+        if ($plainToken.Length -lt 32) { throw "$Name must contain at least 32 characters." }
         $plainBytes = [Text.Encoding]::UTF8.GetBytes($plainToken)
         $protectedToken = [Security.Cryptography.ProtectedData]::Protect(
             $plainBytes,
             $null,
             [Security.Cryptography.DataProtectionScope]::CurrentUser
         )
-        [IO.File]::WriteAllText($secretPath, [Convert]::ToBase64String($protectedToken), [Text.UTF8Encoding]::new($false))
+        [IO.File]::WriteAllText($Path, [Convert]::ToBase64String($protectedToken), [Text.UTF8Encoding]::new($false))
     }
     finally {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($tokenPointer)
@@ -51,8 +61,15 @@ if ($Token) {
         if ($protectedToken) { [Array]::Clear($protectedToken, 0, $protectedToken.Length) }
     }
 }
+
+if ($Token) {
+    Save-ProtectedCredential -Value $Token -Path $secretPath -Name 'Connector token'
+}
 elseif (-not (Test-Path -LiteralPath $secretPath -PathType Leaf)) {
     throw 'Token is required for the first installation.'
+}
+if ($ClientToken) {
+    Save-ProtectedCredential -Value $ClientToken -Path $clientSecretPath -Name 'Browser client token'
 }
 
 $resolvedAllowedRoots = if ($AllowedRoots -and $AllowedRoots.Count -gt 0) {
@@ -100,5 +117,8 @@ if (-not $NoStart) {
 }
 
 Write-Output "Installed login shortcut: $shortcutPath"
-Write-Output "Credential stored with Windows DPAPI: $secretPath"
+Write-Output "Connector credential stored with Windows DPAPI: $secretPath"
+if (Test-Path -LiteralPath $clientSecretPath -PathType Leaf) {
+    Write-Output "Browser credential stored with Windows DPAPI: $clientSecretPath"
+}
 Write-Output "Connector settings stored outside the repository: $configPath"

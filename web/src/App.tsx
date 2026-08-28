@@ -531,6 +531,12 @@ export default function App() {
         setStatusText(t('Token 验证失败', 'Token verification failed'));
         return;
       }
+      if (event.code === 4406) {
+        reconnectWantedRef.current = false;
+        setAuthenticated(false);
+        setStatusText(t('连接协议已更新，请刷新页面', 'Connection protocol updated. Refresh the page.'));
+        return;
+      }
       if (event.code === 4429) {
         reconnectWantedRef.current = false;
         setAuthenticated(false);

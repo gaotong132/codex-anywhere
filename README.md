@@ -86,9 +86,11 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
    startup with:
 
    ```powershell
-   $token = Read-Host 'Bridge token' -AsSecureString
+   $connectorToken = Read-Host 'Connector token' -AsSecureString
+   $clientToken = Read-Host 'Browser client token' -AsSecureString
    .\scripts\install-connector.ps1 `
-     -Token $token `
+     -Token $connectorToken `
+     -ClientToken $clientToken `
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
 

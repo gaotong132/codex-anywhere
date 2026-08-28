@@ -6,9 +6,9 @@ Set-StrictMode -Version Latest
 [void][Reflection.Assembly]::LoadWithPartialName('System.Security')
 
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PersonalCodexBridge'
-$secretPath = Join-Path $stateDirectory 'bridge-token.dpapi'
+$secretPath = Join-Path $stateDirectory 'bridge-client-token.dpapi'
 if (-not (Test-Path -LiteralPath $secretPath -PathType Leaf)) {
-    throw "Bridge credential is missing: $secretPath"
+    throw 'Browser credential is missing. Store it with install-connector.ps1 -ClientToken before using this script.'
 }
 
 $protectedToken = [Convert]::FromBase64String((Get-Content -LiteralPath $secretPath -Raw).Trim())
@@ -20,7 +20,7 @@ $plainBytes = [Security.Cryptography.ProtectedData]::Unprotect(
 try {
     $plainToken = [Text.Encoding]::UTF8.GetString($plainBytes)
     Set-Clipboard -Value $plainToken
-    Write-Output 'Bridge token copied to the clipboard.'
+    Write-Output 'Browser client token copied to the clipboard.'
 }
 finally {
     $plainToken = $null

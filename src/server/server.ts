@@ -269,6 +269,10 @@ function authenticateSocket({
   authLimiter: AuthFailureLimiter;
   clientAddress: string;
 }) {
+  if (message.type === 'auth') {
+    socket.close(4406, 'client upgrade required');
+    return false;
+  }
   const role = message.role === 'connector' ? 'connector' : message.role === 'client' ? 'client' : '';
   const deviceId = normalizeAuthDeviceId(message.deviceId);
   const roleToken = role === 'connector' ? connectorToken : clientToken;

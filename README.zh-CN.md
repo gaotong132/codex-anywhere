@@ -76,9 +76,11 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
 3. 在运行 Codex 的电脑上安装连接器。Windows 可以将其注册为登录后自动启动：
 
    ```powershell
-   $token = Read-Host 'Bridge token' -AsSecureString
+   $connectorToken = Read-Host 'Connector token' -AsSecureString
+   $clientToken = Read-Host 'Browser client token' -AsSecureString
    .\scripts\install-connector.ps1 `
-     -Token $token `
+     -Token $connectorToken `
+     -ClientToken $clientToken `
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
 

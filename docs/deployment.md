@@ -142,9 +142,11 @@ On Windows, the login-startup installer stores the token with user-scoped DPAPI 
 repository or a plaintext script:
 
 ```powershell
-$token = Read-Host 'Connector token' -AsSecureString
+$connectorToken = Read-Host 'Connector token' -AsSecureString
+$clientToken = Read-Host 'Browser client token' -AsSecureString
 .\scripts\install-connector.ps1 `
-  -Token $token `
+  -Token $connectorToken `
+  -ClientToken $clientToken `
   -BridgeUrl 'wss://codex.example.com/ws'
 ```
 
@@ -155,10 +157,9 @@ roots should be selectable. Downloads are limited to those roots by default. Add
 is intentional. Leave network access disabled unless the Codex task actually needs it.
 
 The encrypted credential and non-secret settings are stored outside the checkout under
-`%LOCALAPPDATA%\PersonalCodexBridge`. Re-run the installer without `-Token` to update settings while
-retaining the credential. `scripts/copy-token.ps1` copies this connector credential only for connector
-recovery or migration; do not use it as the browser token in a role-separated deployment, and clear
-clipboard history afterward on shared computers.
+`%LOCALAPPDATA%\PersonalCodexBridge`. Re-run the installer without either token to update settings while
+retaining the credentials. `scripts/copy-token.ps1` copies only the separately stored browser token;
+it never exposes the connector credential. Clear clipboard history afterward on shared computers.
 
 ## 5. End-to-end validation
 
