@@ -1,0 +1,16 @@
+services:
+  bridge:
+    build: .
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3300
+      BRIDGE_TRUST_PROXY: "1"
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?set BRIDGE_TOKEN in .env}
+    ports:
+      - "127.0.0.1:3300:3300"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL

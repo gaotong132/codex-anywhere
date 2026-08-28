@@ -1,0 +1,104 @@
+[CmdletBinding()]
+param(
+    [Security.SecureString] $Token,
+    [string] $BridgeUrl = 'ws://127.0.0.1:3300/ws',
+    [string] $DeviceId = 'personal-pc',
+    [string] $Workspace,
+    [string[]] $AllowedRoots,
+    [switch] $AllowAnyFileDownload,
+    [switch] $EnableNetworkAccess,
+    [switch] $NoStart
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+[void][Reflection.Assembly]::LoadWithPartialName('System.Security')
+
+$projectRoot = Split-Path -Parent $PSScriptRoot
+$launcherPath = Join-Path $PSScriptRoot 'start-connector.ps1'
+$stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PersonalCodexBridge'
+$secretPath = Join-Path $stateDirectory 'bridge-token.dpapi'
+$configPath = Join-Path $stateDirectory 'connector.json'
+$startupDirectory = [Environment]::GetFolderPath('Startup')
+$shortcutPath = Join-Path $startupDirectory 'Codex Anywhere Connector.lnk'
+$legacyShortcutPath = Join-Path $startupDirectory 'Personal Codex Bridge Connector.lnk'
+
+New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+if ($Token) {
+    $tokenPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Token)
+    $plainBytes = $null
+    $protectedToken = $null
+    try {
+        $plainToken = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($tokenPointer)
+        $plainBytes = [Text.Encoding]::UTF8.GetBytes($plainToken)
+        $protectedToken = [Security.Cryptography.ProtectedData]::Protect(
+            $plainBytes,
+            $null,
+            [Security.Cryptography.DataProtectionScope]::CurrentUser
+        )
+        [IO.File]::WriteAllText($secretPath, [Convert]::ToBase64String($protectedToken), [Text.UTF8Encoding]::new($false))
+    }
+    finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($tokenPointer)
+        $plainToken = $null
+        if ($plainBytes) { [Array]::Clear($plainBytes, 0, $plainBytes.Length) }
+        if ($protectedToken) { [Array]::Clear($protectedToken, 0, $protectedToken.Length) }
+    }
+}
+elseif (-not (Test-Path -LiteralPath $secretPath -PathType Leaf)) {
+    throw 'Token is required for the first installation.'
+}
+
+$bridgeUri = $null
+if (-not [Uri]::TryCreate($BridgeUrl, [UriKind]::Absolute, [ref] $bridgeUri) -or $bridgeUri.Scheme -notin @('ws', 'wss')) {
+    throw 'BridgeUrl must use ws:// or wss://.'
+}
+$resolvedWorkspace = [IO.Path]::GetFullPath($(if ($Workspace) { $Workspace } else { $projectRoot }))
+$resolvedAllowedRoots = if ($AllowedRoots -and $AllowedRoots.Count -gt 0) {
+    @($AllowedRoots | ForEach-Object { [IO.Path]::GetFullPath($_) })
+}
+else {
+    @($resolvedWorkspace)
+}
+$connectorConfig = [ordered]@{
+    bridgeUrl = $bridgeUri.AbsoluteUri
+    deviceId = $DeviceId
+    workspace = $resolvedWorkspace
+    allowedRoots = $resolvedAllowedRoots
+    allowAnyFileDownload = [bool] $AllowAnyFileDownload
+    networkAccess = [bool] $EnableNetworkAccess
+}
+[IO.File]::WriteAllText(
+    $configPath,
+    ($connectorConfig | ConvertTo-Json -Depth 3),
+    [Text.UTF8Encoding]::new($false)
+)
+
+$powerShellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
+$arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcherPath`""
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $null
+try {
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = $powerShellPath
+    $shortcut.Arguments = $arguments
+    $shortcut.WorkingDirectory = $projectRoot
+    $shortcut.WindowStyle = 7
+    $shortcut.Description = 'Connect this PC to Codex Anywhere.'
+    $shortcut.Save()
+    if ($legacyShortcutPath -ne $shortcutPath -and (Test-Path -LiteralPath $legacyShortcutPath -PathType Leaf)) {
+        Remove-Item -LiteralPath $legacyShortcutPath -Force
+    }
+}
+finally {
+    if ($shortcut) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut) }
+    [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
+}
+
+if (-not $NoStart) {
+    Start-Process -FilePath $powerShellPath -ArgumentList $arguments -WindowStyle Hidden
+}
+
+Write-Output "Installed login shortcut: $shortcutPath"
+Write-Output "Credential stored with Windows DPAPI: $secretPath"
+Write-Output "Connector settings stored outside the repository: $configPath"

@@ -1,0 +1,34 @@
+{
+  "name": "codex-anywhere",
+  "version": "0.1.0",
+  "description": "A self-hosted mobile web bridge for your local Codex sessions.",
+  "private": true,
+  "license": "MIT",
+  "repository": "github:gaotong132/codex-anywhere",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite --host 127.0.0.1",
+    "server": "npm run build && node src/server/index.js",
+    "serve": "node src/server/index.js",
+    "connector": "node src/connector/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test",
+    "check": "npm run typecheck && node --check src/server/index.js && node --check src/server/server.js && node --check src/connector/index.js && node --check src/connector/codex-app-server.js && node --check src/connector/attachments.js && node --check src/connector/file-downloads.js && node --check src/connector/instance-lock.js && node --test"
+  },
+  "dependencies": {
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitejs/plugin-react": "6.1.0",
+    "typescript": "7.0.2",
+    "vite": "8.2.2"
+  }
+}

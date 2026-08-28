@@ -1,0 +1,35 @@
+name: Bug report
+description: Report a reproducible Codex Anywhere problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Never include bridge tokens, private hosts, IP addresses, conversation text, or local paths.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the expected and actual behavior without private data.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: Windows version, Node.js version, browser
+    validations:
+      required: true
+  - type: checkboxes
+    id: safe
+    attributes:
+      label: Sensitive data check
+      options:
+        - label: I removed tokens, private hosts, IP addresses, conversation content, and local paths.
+          required: true
