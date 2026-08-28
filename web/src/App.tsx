@@ -1001,14 +1001,15 @@ export default function App() {
   return (
     <main className="app-shell">
       {drawerOpen && <button className="drawer-backdrop" aria-label={t('关闭会话列表', 'Close session list')} onClick={() => setDrawerOpen(false)} />}
-      <aside className={`sidebar ${drawerOpen ? 'open' : ''}`}>
+      <aside className={`sidebar ${drawerOpen ? 'open' : ''}`} aria-label={t('会话列表', 'Session list')}>
         <div className="sidebar-head">
           <div>
-            <p className="eyebrow">PERSONAL CODEX</p>
-            <h1>{t('会话', 'Sessions')}</h1>
+            <p className="eyebrow">CODEX ANYWHERE</p>
           </div>
           <div className="sidebar-actions">
-            <button className="sidebar-tool primary-tool" onClick={beginNewSession} aria-label={t('新会话', 'New session')} title={t('新会话', 'New session')}>＋</button>
+            <button className="sidebar-tool primary-tool" onClick={beginNewSession} aria-label={t('新会话', 'New session')} title={t('新会话', 'New session')}>
+              <SidebarIcon name="plus" />
+            </button>
             <button
               className={`sidebar-tool ${searchOpen ? 'active' : ''}`}
               onClick={() => {
@@ -1017,14 +1018,20 @@ export default function App() {
               }}
               aria-label={searchOpen ? t('关闭搜索', 'Close search') : t('搜索会话', 'Search sessions')}
               title={searchOpen ? t('关闭搜索', 'Close search') : t('搜索会话', 'Search sessions')}
-            >⌕</button>
-            <button className="sidebar-tool" onClick={() => void refreshSessions()} aria-label={t('刷新会话', 'Refresh sessions')} title={t('刷新会话', 'Refresh sessions')}>↻</button>
-            <button className="sidebar-tool mobile-only" onClick={() => setDrawerOpen(false)} aria-label={t('关闭', 'Close')} title={t('关闭', 'Close')}>×</button>
+            >
+              <SidebarIcon name="search" />
+            </button>
+            <button className="sidebar-tool" onClick={() => void refreshSessions()} aria-label={t('刷新会话', 'Refresh sessions')} title={t('刷新会话', 'Refresh sessions')}>
+              <SidebarIcon name="refresh" />
+            </button>
+            <button className="sidebar-tool mobile-only" onClick={() => setDrawerOpen(false)} aria-label={t('关闭', 'Close')} title={t('关闭', 'Close')}>
+              <SidebarIcon name="close" />
+            </button>
           </div>
         </div>
         {searchOpen && (
           <label className="compact-search session-search-panel">
-            <span>⌕</span>
+            <span className="compact-search-icon"><SidebarIcon name="search" /></span>
             <input
               autoFocus
               value={sessionSearch}
@@ -1065,7 +1072,9 @@ export default function App() {
 
       <section className="conversation">
         <header className="topbar">
-          <button className="icon-button mobile-only" onClick={() => setDrawerOpen(true)} aria-label={t('打开会话列表', 'Open session list')}>☰</button>
+          <button className="icon-button mobile-only" onClick={() => setDrawerOpen(true)} aria-label={t('打开会话列表', 'Open session list')}>
+            <SidebarIcon name="menu" />
+          </button>
           <div className="conversation-heading">
             <strong>{activeSession?.title || (threadId ? t('Codex 会话', 'Codex session') : creatingNewSession ? t('新会话', 'New session') : t('最近会话', 'Recent session'))}</strong>
             <span>{threadId
@@ -1213,6 +1222,29 @@ export default function App() {
       </section>
     </main>
   );
+}
+
+type SidebarIconName = 'plus' | 'search' | 'refresh' | 'close' | 'menu';
+
+function SidebarIcon({ name }: { name: SidebarIconName }) {
+  if (name === 'plus') {
+    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
+  }
+  if (name === 'search') {
+    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5" /><path d="m14.7 14.7 4.8 4.8" /></svg>;
+  }
+  if (name === 'refresh') {
+    return (
+      <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M19 7v5h-5" />
+        <path d="M18.1 12a6.5 6.5 0 1 0-1.3 4.1" />
+      </svg>
+    );
+  }
+  if (name === 'menu') {
+    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>;
+  }
+  return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m6.5 6.5 11 11m0-11-11 11" /></svg>;
 }
 
 function ExecutionIndicator({ state }: { state: ExecutionState }) {

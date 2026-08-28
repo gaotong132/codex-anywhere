@@ -80,8 +80,7 @@
     <rect x="139" y="12" width="112" height="24" rx="12" fill="#050914"/>
 
     <g transform="translate(38 62)" font-family="Inter,Segoe UI,Arial,sans-serif">
-      <text x="0" y="21" fill="#f1f5fc" font-size="19" font-weight="750">Sessions</text>
-      <text x="0" y="40" fill="#71839d" font-size="10">Recent activity</text>
+      <text x="0" y="20" fill="#8fb2ff" font-size="10" font-weight="800" letter-spacing="1.4">CODEX ANYWHERE</text>
       <g transform="translate(156)">
         <rect width="32" height="32" rx="9" fill="url(#brand)"/>
         <path d="M10 16h12M16 10v12" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
@@ -101,22 +100,23 @@
       </g>
     </g>
 
+    <path d="M38 112h300" stroke="#263650" stroke-width="1"/>
+
     <g transform="translate(34 128)" font-family="Inter,Segoe UI,Arial,sans-serif">
-      <text x="2" y="14" fill="#64758f" font-size="11" font-weight="700" letter-spacing="1.5">RECENT SESSIONS</text>
-      <g transform="translate(0 30)">
+      <g>
         <rect width="322" height="72" rx="15" fill="#17243a" stroke="#3563ad"/>
         <text x="16" y="27" fill="#eef4ff" font-size="14" font-weight="700">Deploy the latest release</text>
         <circle cx="16" cy="47" r="5" fill="#4be19c"/>
         <text x="30" y="50" fill="#788ca8" font-size="11">EchoAgent</text>
         <text x="304" y="52" text-anchor="end" fill="#62738b" font-size="10">now</text>
       </g>
-      <g transform="translate(0 111)">
+      <g transform="translate(0 81)">
         <rect width="322" height="72" rx="15" fill="#0e1727" stroke="#1e2c43"/>
         <text x="16" y="27" fill="#dce5f3" font-size="14" font-weight="650">Review account deletion PR</text>
         <text x="16" y="50" fill="#788ca8" font-size="11">EchoAgent</text>
         <text x="304" y="52" text-anchor="end" fill="#62738b" font-size="10">8 min</text>
       </g>
-      <g transform="translate(0 192)">
+      <g transform="translate(0 162)">
         <rect width="322" height="72" rx="15" fill="#0e1727" stroke="#1e2c43"/>
         <text x="16" y="27" fill="#dce5f3" font-size="14" font-weight="650">Improve the mobile session list</text>
         <text x="16" y="50" fill="#788ca8" font-size="11">codex-anywhere</text>
