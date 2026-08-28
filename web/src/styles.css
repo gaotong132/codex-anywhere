@@ -136,7 +136,8 @@ input:focus, textarea:focus, select:focus { border-color: #4f82ec !important; bo
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
   transition: color .15s ease, border-color .15s ease, background .15s ease, transform .15s ease;
 }
-.sidebar-tool:hover, .sidebar-tool.active { color: #e1e9f5; border-color: #40516d; background: #1a2434; }
+.sidebar-tool:hover { color: #e1e9f5; border-color: #40516d; background: #1a2434; }
+.sidebar-tool.active { color: #fff; border-color: #5687ec; background: #223a67; box-shadow: 0 0 0 2px rgba(73, 126, 234, .14), inset 0 1px 0 rgba(255, 255, 255, .08); }
 .sidebar-tool:active { transform: translateY(1px); }
 .sidebar-tool:focus-visible { outline: 2px solid #6798ff; outline-offset: 2px; }
 .sidebar-tool.primary-tool {

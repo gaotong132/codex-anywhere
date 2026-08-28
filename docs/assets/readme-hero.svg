@@ -92,10 +92,6 @@
       </g>
       <g transform="translate(230)">
         <rect width="32" height="32" rx="9" fill="#151f32" stroke="#33435e"/>
-        <path d="M22 12a8 8 0 1 0 1 7M22 12v-6m0 6h-6" fill="none" stroke="#b0bfd4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-      </g>
-      <g transform="translate(267)">
-        <rect width="32" height="32" rx="9" fill="#151f32" stroke="#33435e"/>
         <path d="M11 11l10 10m0-10L11 21" stroke="#b0bfd4" stroke-width="1.8" stroke-linecap="round"/>
       </g>
     </g>

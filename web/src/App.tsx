@@ -1043,10 +1043,7 @@ export default function App() {
               aria-label={searchOpen ? t('关闭搜索', 'Close search') : t('搜索会话', 'Search sessions')}
               title={searchOpen ? t('关闭搜索', 'Close search') : t('搜索会话', 'Search sessions')}
             >
-              <SidebarIcon name="search" />
-            </button>
-            <button className="sidebar-tool" onClick={() => void refreshSessions()} aria-label={t('刷新会话', 'Refresh sessions')} title={t('刷新会话', 'Refresh sessions')}>
-              <SidebarIcon name="refresh" />
+              <SidebarIcon name={searchOpen ? 'search-close' : 'search'} />
             </button>
             <button className="sidebar-tool mobile-only" onClick={() => setDrawerOpen(false)} aria-label={t('关闭', 'Close')} title={t('关闭', 'Close')}>
               <SidebarIcon name="close" />
@@ -1248,7 +1245,7 @@ export default function App() {
   );
 }
 
-type SidebarIconName = 'plus' | 'search' | 'refresh' | 'close' | 'menu';
+type SidebarIconName = 'plus' | 'search' | 'search-close' | 'close' | 'menu';
 
 function SidebarIcon({ name }: { name: SidebarIconName }) {
   if (name === 'plus') {
@@ -1257,13 +1254,8 @@ function SidebarIcon({ name }: { name: SidebarIconName }) {
   if (name === 'search') {
     return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5" /><path d="m14.7 14.7 4.8 4.8" /></svg>;
   }
-  if (name === 'refresh') {
-    return (
-      <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M19 7v5h-5" />
-        <path d="M18.1 12a6.5 6.5 0 1 0-1.3 4.1" />
-      </svg>
-    );
+  if (name === 'search-close') {
+    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.8" /><path d="m14.9 14.9 4.6 4.6M8.3 8.3l4.4 4.4m0-4.4-4.4 4.4" /></svg>;
   }
   if (name === 'menu') {
     return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" /></svg>;
