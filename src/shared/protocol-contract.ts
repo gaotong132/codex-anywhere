@@ -1,6 +1,6 @@
 export const BRIDGE_PROTOCOL_VERSION = 4;
 
-export const BRIDGE_PROTOCOL_CAPABILITIES = Object.freeze([
+const BRIDGE_PROTOCOL_CAPABILITIES = Object.freeze([
   'strict-protocol.v1',
   'device-auth.v1',
   'device-key-auth.v1',

@@ -1,8 +1,9 @@
 import { open, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import {
-  basename, dirname, extname, isAbsolute, join, relative, resolve,
+  basename, dirname, extname, isAbsolute, join, resolve,
 } from 'node:path';
+import { isPathWithinRoot } from './path-policy.js';
 
 export const MAX_VISUALIZATION_BYTES = 2 * 1024 * 1024;
 
@@ -28,8 +29,7 @@ export async function readVisualization(
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('visualization_not_found');
     throw error;
   });
-  const pathFromRoot = relative(root, path);
-  if (pathFromRoot.startsWith('..') || isAbsolute(pathFromRoot)) {
+  if (!isPathWithinRoot(path, root)) {
     throw new Error('visualization_path_not_allowed');
   }
 
@@ -44,8 +44,7 @@ export async function readVisualization(
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
       throw error;
     });
-    const previewFromRoot = previewPath ? relative(root, previewPath) : '..';
-    if (previewPath && !previewFromRoot.startsWith('..') && !isAbsolute(previewFromRoot)) {
+    if (previewPath && isPathWithinRoot(previewPath, root)) {
       const preview = await readVisualizationFile(previewPath, maxBytes, true);
       if (preview) return { name: basename(path), ...preview };
     }

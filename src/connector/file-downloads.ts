@@ -4,9 +4,10 @@ import type { FileHandle } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
-  basename, dirname, isAbsolute, join, posix, resolve, win32,
+  basename, dirname, isAbsolute, join, resolve, win32,
 } from 'node:path';
 import { secretMatches } from '../shared/protocol.js';
+import { isPathWithinRoot } from './path-policy.js';
 
 export const DOWNLOAD_CHUNK_BYTES = 384 * 1024;
 const DOWNLOAD_SESSION_TTL_MS = 2 * 60_000;
@@ -269,16 +270,9 @@ async function canonicalDownloadPath(path: string) {
 async function pathAllowedByRoots(path: string, roots: string[]) {
   for (const root of roots) {
     const canonicalRoot = await realpath(root).catch(() => root);
-    if (pathWithinRoot(path, canonicalRoot)) return true;
+    if (isPathWithinRoot(path, canonicalRoot)) return true;
   }
   return false;
-}
-
-function pathWithinRoot(path: string, root: string) {
-  const api = win32.isAbsolute(path) || win32.isAbsolute(root) ? win32 : posix;
-  const difference = api.relative(api.resolve(root), api.resolve(path));
-  return difference === ''
-    || (difference !== '..' && !difference.startsWith(`..${api.sep}`) && !api.isAbsolute(difference));
 }
 
 function fileName(path: string) {

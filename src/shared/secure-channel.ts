@@ -15,12 +15,12 @@ import {
   type DevicePublicIdentity,
 } from './device-auth.js';
 
-export const SECURE_CHANNEL_PROTOCOL = 'codex-anywhere-e2ee-v1';
-export const SECURE_CHANNEL_NONCE_BYTES = 24;
-export const SECURE_CHANNEL_KEY_BYTES = 32;
-export const SECURE_CHANNEL_MAX_PLAINTEXT_BYTES = 5 * 1024 * 1024;
-export const SECURE_CHANNEL_ID_PATTERN = /^[A-Za-z0-9_-]{22,86}$/;
-export const SECURE_CHANNEL_EPHEMERAL_KEY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const SECURE_CHANNEL_PROTOCOL = 'codex-anywhere-e2ee-v1';
+const SECURE_CHANNEL_NONCE_BYTES = 24;
+const SECURE_CHANNEL_KEY_BYTES = 32;
+const SECURE_CHANNEL_MAX_PLAINTEXT_BYTES = 5 * 1024 * 1024;
+const SECURE_CHANNEL_ID_PATTERN = /^[A-Za-z0-9_-]{22,86}$/;
+const SECURE_CHANNEL_EPHEMERAL_KEY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const SECURE_CHANNEL_NONCE_PATTERN = /^[A-Za-z0-9_-]{32}$/;
 const SECURE_CHANNEL_CIPHERTEXT_PATTERN = /^[A-Za-z0-9_-]+$/;
 
@@ -176,7 +176,7 @@ export function verifySecureChannelAcceptance(
   }
 }
 
-export function encodeSecureChannelTranscript(transcript: SecureChannelTranscript) {
+function encodeSecureChannelTranscript(transcript: SecureChannelTranscript) {
   assertSecureChannelTranscript(transcript);
   return [
     transcript.protocol,

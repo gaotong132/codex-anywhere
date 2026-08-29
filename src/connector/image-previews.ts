@@ -1,10 +1,9 @@
 import { lstat, readFile, realpath } from 'node:fs/promises';
-import {
-  posix, resolve, win32,
-} from 'node:path';
+import { resolve } from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import { LRUCache } from 'lru-cache';
 import sharp from 'sharp';
+import { isPathWithinRoot } from './path-policy.js';
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 512 * 1024;
@@ -40,7 +39,7 @@ export async function readRasterImagePreview({
 
   const path = await realpath(requestedPath);
   const roots = await Promise.all(allowedRoots.map(async (root) => realpath(resolve(root)).catch(() => resolve(root))));
-  if (!roots.some((root) => pathWithinRoot(path, root))) {
+  if (!roots.some((root) => isPathWithinRoot(path, root))) {
     throw new Error(`${errorPrefix}_path_not_allowed`);
   }
 
@@ -71,12 +70,3 @@ function makePreview(bytes: Buffer, maxDimension: number, quality: number) {
     .webp({ quality })
     .toBuffer();
 }
-
-function pathWithinRoot(path: string, root: string) {
-  const api = win32.isAbsolute(path) || win32.isAbsolute(root) ? win32 : posix;
-  const difference = api.relative(api.resolve(root), api.resolve(path));
-  return difference === ''
-    || (difference !== '..' && !difference.startsWith(`..${api.sep}`) && !api.isAbsolute(difference));
-}
-
-export const internals = { pathWithinRoot, previewCache };

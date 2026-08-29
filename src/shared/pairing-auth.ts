@@ -5,10 +5,10 @@ import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import { base64urlnopad } from '@scure/base';
 import { DEVICE_ID_PATTERN, DEVICE_PUBLIC_KEY_PATTERN } from './device-auth.js';
 
-export const BROWSER_PAIRING_PROTOCOL = 'codex-anywhere-browser-pairing-v1';
+const BROWSER_PAIRING_PROTOCOL = 'codex-anywhere-browser-pairing-v1';
 export const DEVICE_KEY_AUTH_CONTEXT = 'codex-anywhere-approved-device-v1';
 export const BROWSER_PAIRING_ID_PATTERN = /^[A-Za-z0-9_-]{16}$/;
-export const BROWSER_PAIRING_SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const BROWSER_PAIRING_SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 export const BROWSER_PAIRING_VERIFIER_PATTERN = /^[a-f0-9]{64}$/;
 
 export type BrowserPairingCredential = {

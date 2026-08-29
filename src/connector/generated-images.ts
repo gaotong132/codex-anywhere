@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { basename, join, resolve, win32 } from 'node:path';
-import { internals as imagePreviewInternals, readRasterImagePreview } from './image-previews.js';
+import { readRasterImagePreview } from './image-previews.js';
 
 export type GeneratedImageAttachment = {
   path: string;
@@ -46,5 +46,3 @@ function imageFileName(path: string) {
   return (/^[A-Za-z]:[\\/]/.test(path) || path.includes('\\') ? win32.basename(path) : basename(path))
     || 'generated-image.png';
 }
-
-export const internals = imagePreviewInternals;

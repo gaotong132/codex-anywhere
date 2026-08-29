@@ -39,7 +39,6 @@ export type PendingRequest = {
 export type BridgeMessage = {
   type: string;
   protocol?: ProtocolOffer | CurrentProtocol;
-  authMode?: 'connector-token' | 'device' | 'pairing';
   challenge?: string;
   requestId?: string;
   ok?: boolean;

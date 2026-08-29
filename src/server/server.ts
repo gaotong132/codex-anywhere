@@ -319,7 +319,7 @@ function authenticateSocket({
     return false;
   }
   let deviceAuthContext = '';
-  let browserPairingVerifier: string | null = null;
+  let browserPairing: { id: string; verifier: string } | null = null;
   let authMode: 'connector-token' | 'device' | 'pairing';
   if (authType === 'auth.connector' && role === 'connector') {
     let expectedProof = '';
@@ -330,6 +330,10 @@ function authenticateSocket({
     }
     if (!secretMatches(message.proof, expectedProof)) {
       return rejectAuthentication(socket, authLimiter, clientAddress);
+    }
+    if (!device) {
+      socket.close(4406, 'device authentication required');
+      return false;
     }
     deviceAuthContext = String(message.proof || '');
     authMode = 'connector-token';
@@ -344,12 +348,12 @@ function authenticateSocket({
     if (!BROWSER_PAIRING_ID_PATTERN.test(pairingId)) {
       return rejectAuthentication(socket, authLimiter, clientAddress);
     }
-    browserPairingVerifier = deviceRegistry.getBrowserPairingVerifier(pairingId);
-    if (!browserPairingVerifier) return rejectAuthentication(socket, authLimiter, clientAddress);
+    const verifier = deviceRegistry.getBrowserPairingVerifier(pairingId);
+    if (!verifier) return rejectAuthentication(socket, authLimiter, clientAddress);
     let expectedProof = '';
     try {
       expectedProof = createBrowserPairingProof({
-        verifier: browserPairingVerifier,
+        verifier,
         challenge: authChallenge,
         pairingId,
         deviceId: device.id,
@@ -362,13 +366,10 @@ function authenticateSocket({
       return rejectAuthentication(socket, authLimiter, clientAddress);
     }
     deviceAuthContext = String(message.proof || '');
+    browserPairing = { id: pairingId, verifier };
     authMode = 'pairing';
   } else {
     socket.close(4406, 'authentication method unsupported');
-    return false;
-  }
-  if (!device) {
-    socket.close(4406, 'device authentication required');
     return false;
   }
   let deviceProofValid = false;
@@ -386,10 +387,10 @@ function authenticateSocket({
     return rejectAuthentication(socket, authLimiter, clientAddress, 4407, 'device authentication failed');
   }
   authLimiter.recordSuccess(clientAddress);
-  if (authMode === 'pairing') {
+  if (browserPairing) {
     const approved = deviceRegistry.approveBrowserPairing({
-      pairingId: String(message.pairingId),
-      verifier: browserPairingVerifier!,
+      pairingId: browserPairing.id,
+      verifier: browserPairing.verifier,
       device,
       label: device.label,
     });

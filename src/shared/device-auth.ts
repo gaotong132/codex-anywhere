@@ -11,7 +11,7 @@ import type { AuthRole } from './auth.js';
 
 ed25519Hashes.sha512 = sha512;
 
-export const DEVICE_AUTH_PROTOCOL = 'codex-anywhere-device-v1';
+const DEVICE_AUTH_PROTOCOL = 'codex-anywhere-device-v1';
 export const DEVICE_ID_PATTERN = /^[a-f0-9]{64}$/;
 export const DEVICE_PUBLIC_KEY_PATTERN = /^[a-f0-9]{64}$/;
 export const DEVICE_SIGNATURE_PATTERN = /^[a-f0-9]{128}$/;
@@ -31,7 +31,7 @@ export type DeviceAuthProof = {
 
 export type DevicePublicIdentity = Pick<DeviceIdentity, 'id' | 'publicKey'>;
 
-export function deviceIdFromPublicKey(publicKey: string) {
+function deviceIdFromPublicKey(publicKey: string) {
   if (!DEVICE_PUBLIC_KEY_PATTERN.test(publicKey)) throw new Error('invalid_device_public_key');
   return bytesToHex(sha256(hexToBytes(publicKey)));
 }
