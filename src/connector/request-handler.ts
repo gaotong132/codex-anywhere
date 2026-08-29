@@ -32,6 +32,7 @@ type Dependencies = {
   codex: CodexGateway;
   desktop: DesktopGateway;
   attachments: { save(payload: Payload): Promise<any>; read(payload: Payload): Promise<any> };
+  visualizations: { read(payload: Payload): Promise<any> };
   downloads: {
     open(payload: Payload, clientId?: string): Promise<any>;
     read(payload: Payload, clientId?: string): Promise<any>;
@@ -45,13 +46,15 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
   clientId?: string;
 };
 
-export function createRequestHandler({ codex, desktop, attachments, downloads, deviceId }: Dependencies) {
+export function createRequestHandler({
+  codex, desktop, attachments, visualizations, downloads, deviceId,
+}: Dependencies) {
   return async function handleRequest(message: BridgeRequest) {
     const { action, payload = {}, requestId, clientId } = message;
     try {
       const data = await dispatchAction({
         action, payload, requestId, clientId,
-        codex, desktop, attachments, downloads, deviceId,
+        codex, desktop, attachments, visualizations, downloads, deviceId,
       });
       return { type: 'response', clientId, requestId, ok: true, data };
     } catch (error) {
@@ -62,7 +65,7 @@ export function createRequestHandler({ codex, desktop, attachments, downloads, d
 
 async function dispatchAction({
   action, payload, requestId, clientId,
-  codex, desktop, attachments, downloads, deviceId,
+  codex, desktop, attachments, visualizations, downloads, deviceId,
 }: DispatchContext) {
   if (action === 'connector.status') {
     return {
@@ -89,6 +92,7 @@ async function dispatchAction({
   }
   if (action === 'attachment.upload') return attachments.save(payload);
   if (action === 'attachment.read') return attachments.read(payload);
+  if (action === 'visualization.read') return visualizations.read(payload);
   if (action === 'file.download.open') return downloads.open(payload, clientId);
   if (action === 'file.download.chunk') return downloads.read(payload, clientId);
   if (action === 'file.download.close') return downloads.close(payload, clientId);

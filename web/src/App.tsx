@@ -78,6 +78,7 @@ import type {
   PendingRequest,
   Session,
   TurnStartResult,
+  VisualizationDocument,
 } from './app-types';
 
 const DEVICE_ID = 'personal-pc';
@@ -1363,6 +1364,14 @@ export default function App() {
     }
   }, [reportTimelineError, request]);
 
+  const readVisualization = useCallback(async (path: string) => {
+    const result = await request<VisualizationDocument>('visualization.read', { path });
+    if (!result || typeof result.content !== 'string' || result.content.length > 2 * 1024 * 1024) {
+      throw new Error('visualization_content_invalid');
+    }
+    return result.content;
+  }, [request]);
+
   const cancelFileDownload = useCallback(() => {
     fileDownloadCancelRef.current = true;
   }, []);
@@ -1648,6 +1657,7 @@ export default function App() {
                   item={attachment && !item.attachment ? { ...item, attachment } : item}
                   imageSource={attachment ? attachmentUrls[attachment.path] : undefined}
                   onDownloadFile={downloadLocalFile}
+                  onReadVisualization={readVisualization}
                 />
               );
             })}

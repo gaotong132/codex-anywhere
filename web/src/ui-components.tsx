@@ -16,6 +16,17 @@ function dateTimeValue(value: TimelineItem['completedAt']) {
   return Number.isFinite(date.getTime()) ? date.toISOString() : '';
 }
 
+function sandboxedVisualizationUrl(content: string) {
+  const policy = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:; connect-src 'none'; media-src data: blob:; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
+  const document = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${policy}"><style>html,body{margin:0;min-height:100%;background:#fff}</style></head><body>${content}</body></html>`;
+  const bytes = new TextEncoder().encode(document);
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return `data:text/html;charset=utf-8;base64,${btoa(binary)}`;
+}
+
 export function SidebarIcon({ name }: { name: SidebarIconName }) {
   if (name === 'plus') {
     return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
@@ -52,13 +63,18 @@ export function MessageBubble({
   item,
   imageSource,
   onDownloadFile,
+  onReadVisualization,
 }: {
   item: TimelineItem;
   imageSource?: string;
   onDownloadFile: (path: string) => void;
+  onReadVisualization: (path: string) => Promise<string>;
 }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [imageExpanded, setImageExpanded] = useState(false);
+  const [visualizationOpen, setVisualizationOpen] = useState(false);
+  const [visualizationSource, setVisualizationSource] = useState('');
+  const [visualizationStatus, setVisualizationStatus] = useState<'idle' | 'loading' | 'failed'>('idle');
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyable = item.kind === 'user' || item.kind === 'assistant';
 
@@ -74,13 +90,39 @@ export function MessageBubble({
   }, [item.attachment?.path]);
 
   useEffect(() => {
-    if (!imageExpanded) return undefined;
+    setVisualizationOpen(false);
+    setVisualizationSource('');
+    setVisualizationStatus('idle');
+  }, [item.visualization?.path]);
+
+  useEffect(() => {
+    if (!imageExpanded && !visualizationOpen) return undefined;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setImageExpanded(false);
+      if (event.key === 'Escape') {
+        setImageExpanded(false);
+        setVisualizationOpen(false);
+      }
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [imageExpanded]);
+  }, [imageExpanded, visualizationOpen]);
+
+  async function openVisualization() {
+    if (!item.visualization || visualizationStatus === 'loading') return;
+    if (visualizationSource) {
+      setVisualizationOpen(true);
+      return;
+    }
+    setVisualizationStatus('loading');
+    try {
+      const content = await onReadVisualization(item.visualization.path);
+      setVisualizationSource(sandboxedVisualizationUrl(content));
+      setVisualizationStatus('idle');
+      setVisualizationOpen(true);
+    } catch {
+      setVisualizationStatus('failed');
+    }
+  }
 
   async function copyMessage() {
     try {
@@ -190,6 +232,25 @@ export function MessageBubble({
           </figcaption>
         </figure>
       )}
+      {item.visualization && (
+        <section className="visualization-card" aria-label={t('交互可视化', 'Interactive visualization')}>
+          <div className="visualization-card-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M4 5h16v12H4zM8 21h8M12 17v4M8 13l3-3 2 2 3-4" /></svg>
+          </div>
+          <div className="visualization-card-copy">
+            <strong>{item.visualization.name}</strong>
+            <span>{visualizationStatus === 'failed'
+              ? t('预览失败，仍可下载文件', 'Preview failed; the file can still be downloaded')
+              : t('Codex 交互可视化', 'Codex interactive visualization')}</span>
+          </div>
+          <div className="visualization-card-actions">
+            <button type="button" disabled={visualizationStatus === 'loading'} onClick={() => void openVisualization()}>
+              {visualizationStatus === 'loading' ? t('加载中…', 'Loading…') : t('预览', 'Preview')}
+            </button>
+            <button type="button" onClick={() => onDownloadFile(item.visualization!.path)}>{t('下载', 'Download')}</button>
+          </div>
+        </section>
+      )}
       {imageExpanded && imageSource && item.attachment && (
         <div
           className="image-lightbox"
@@ -210,6 +271,27 @@ export function MessageBubble({
             src={imageSource}
             alt={item.attachment.name}
             onClick={(event) => event.stopPropagation()}
+          />
+        </div>
+      )}
+      {visualizationOpen && visualizationSource && item.visualization && (
+        <div
+          className="visualization-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('交互可视化预览', 'Interactive visualization preview')}
+        >
+          <header>
+            <span>{item.visualization.name}</span>
+            <button type="button" onClick={() => setVisualizationOpen(false)} aria-label={t('关闭预览', 'Close preview')}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+            </button>
+          </header>
+          <iframe
+            src={visualizationSource}
+            title={item.visualization.name}
+            sandbox="allow-scripts"
+            referrerPolicy="no-referrer"
           />
         </div>
       )}

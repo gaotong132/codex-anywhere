@@ -170,6 +170,7 @@ test('content security policy limits WebSocket connections to the current host',
     .trim().split(/\s+/).slice(1);
   assert.equal(connectSources.includes('ws:'), false);
   assert.equal(connectSources.includes('wss:'), false);
+  assert.match(policy, /frame-src data:;/);
   await response.arrayBuffer();
 });
 

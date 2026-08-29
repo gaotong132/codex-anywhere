@@ -31,6 +31,10 @@ function createDependencies(overrides = {}) {
       read: async () => ({}),
       ...overrides.attachments,
     },
+    visualizations: {
+      read: async () => ({}),
+      ...overrides.visualizations,
+    },
     downloads: {
       open: async () => ({}),
       read: async () => ({}),
@@ -56,6 +60,19 @@ test('request handler keeps connector routing independent from process startup',
       deviceId: 'personal-pc', codexOnline: true, activeTurn: false,
     },
   });
+});
+
+test('visualization reads stay on the dedicated bounded connector path', async () => {
+  let payload;
+  const handle = createRequestHandler(createDependencies({
+    visualizations: { read: async (value) => {
+      payload = value;
+      return { name: 'concept.html', size: 20, content: '<main>concept</main>' };
+    } },
+  }));
+  const response = await handle(request('visualization.read', { path: 'C:\\artifact.html' }));
+  assert.deepEqual(payload, { path: 'C:\\artifact.html' });
+  assert.equal(response.data.name, 'concept.html');
 });
 
 test('session listing merges live Desktop status and tolerates Desktop absence', async () => {

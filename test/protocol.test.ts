@@ -385,6 +385,23 @@ test('assistant Markdown images become safe local preview references', () => {
   assert.equal(svgOnly[0].attachment, undefined);
 });
 
+test('visualize HTML markers become isolated artifact references', () => {
+  const items = historyItems([{
+    id: 'turn-visualization',
+    items: [{
+      type: 'assistant',
+      text: '这里是交互稿。\n\nvisualize {"path":"C:/Users/example/.codex/visualizations/thread/concept.html"}\n\n请查看设计。',
+    }],
+  }]);
+
+  assert.equal(items[0].text, '这里是交互稿。\n\n请查看设计。');
+  assert.deepEqual(items[0].visualization, {
+    path: 'C:\\Users\\example\\.codex\\visualizations\\thread\\concept.html',
+    name: 'concept.html',
+    source: 'visualize',
+  });
+});
+
 test('history merge replaces an optimistic image message without duplicating it', () => {
   const attachment = {
     path: 'C:\\Users\\example\\AppData\\Local\\Temp\\bridge\\photo.jpg',
@@ -410,6 +427,7 @@ test('image previews open in the page instead of navigating to a data URL', () =
     },
     imageSource: 'data:image/webp;base64,UklGRg==',
     onDownloadFile: () => undefined,
+    onReadVisualization: async () => '',
   }));
 
   assert.match(markup, /class="message-image-preview"/);

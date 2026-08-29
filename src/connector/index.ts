@@ -5,6 +5,7 @@ import { readImageAttachment, saveImageAttachment } from './attachments.js';
 import { loadConnectorConfig } from './config.js';
 import { DownloadManager } from './file-downloads.js';
 import { generatedImagesDirectory } from './generated-images.js';
+import { readVisualization, visualizationsDirectory } from './visualizations.js';
 import { acquireConnectorInstanceLock } from './instance-lock.js';
 import { loadOrCreateConnectorDeviceIdentity } from './device-identity.js';
 import { createRequestHandler } from './request-handler.js';
@@ -36,7 +37,7 @@ const codex = new CodexAppServer({
 });
 const desktop = new CodexDesktopClient();
 const downloads = new DownloadManager({
-  allowedRoots: [...allowedRoots, generatedImagesDirectory()],
+  allowedRoots: [...allowedRoots, generatedImagesDirectory(), visualizationsDirectory()],
   allowAnyFileDownload,
 });
 const handleRequest = createRequestHandler({
@@ -46,6 +47,7 @@ const handleRequest = createRequestHandler({
     save: saveImageAttachment,
     read: (payload) => readImageAttachment(payload, { localAllowedRoots: allowedRoots }),
   },
+  visualizations: { read: readVisualization },
   downloads,
   deviceId,
 });

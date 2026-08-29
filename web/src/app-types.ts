@@ -59,6 +59,7 @@ export type HistoryPage = {
 export type TurnStartResult = { threadId: string; delivery?: 'desktop' | 'appServer' };
 export type PendingImage = { file: File; transferPreview?: File; previewUrl: string };
 export type DownloadedImage = { path: string; mimeType: string; size: number; data: string };
+export type VisualizationDocument = { name: string; size: number; content: string };
 export type OpenedDownload = { downloadId: string; downloadToken: string; name: string; size: number };
 export type DownloadFileChunk = { offset: number; nextOffset: number; done: boolean; data: string };
 export type FileDownloadState = { name: string; size: number; received: number };

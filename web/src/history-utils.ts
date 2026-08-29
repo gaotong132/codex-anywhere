@@ -11,6 +11,7 @@ export { parseAssistantMessage } from '../../src/shared/message-content';
 
 const ATTACHMENT_STORAGE_KEY = 'bridge.knownAttachments.v2';
 const LOCAL_MARKDOWN_IMAGE_PATTERN = /!\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|((?:file:\/\/\/|[A-Za-z]:[\\/])[^)\r\n]+))\s*\)/i;
+const VISUALIZATION_MARKER_PATTERN = /(?:^|\r?\n)[ \t]*visualize[ \t]+\{[^\r\n{}]*"path"\s*:\s*("(?:\\.|[^"\\])*")[^\r\n{}]*\}[ \t]*(?=\r?\n|$)/i;
 
 type TurnItem = {
   type?: string;
@@ -38,6 +39,7 @@ export type Turn = {
 
 export type TimelineKind = 'user' | 'assistant' | 'progress' | 'error';
 export type ImageAttachment = { path: string; name: string; source?: 'generated' | 'local' };
+export type VisualizationArtifact = { path: string; name: string; source: 'visualize' };
 export type TimelineItem = {
   id: string;
   kind: TimelineKind;
@@ -45,6 +47,7 @@ export type TimelineItem = {
   historyTurnId?: string;
   transient?: boolean;
   attachment?: ImageAttachment;
+  visualization?: VisualizationArtifact;
   contexts?: MessageContext[];
   completedAt?: number | string | null;
 };
@@ -58,13 +61,16 @@ export function historyItems(turns: Turn[]) {
       const rawText = item.text?.trim();
       const userItem = /user/i.test(type);
       const localMarkdownImage = userItem ? undefined : extractLocalMarkdownImage(rawText || '');
+      const visualization = userItem ? undefined : extractVisualizationArtifact(rawText || '');
       const attachment = item.attachment
         || (userItem
           ? extractImageAttachment(rawText || '')
           : localMarkdownImage);
-      const presentationText = localMarkdownImage && attachment === localMarkdownImage
-        ? stripLocalMarkdownImage(rawText || '')
-        : rawText || '';
+      let presentationText = rawText || '';
+      if (localMarkdownImage && attachment === localMarkdownImage) {
+        presentationText = stripLocalMarkdownImage(presentationText);
+      }
+      if (visualization) presentationText = stripVisualizationMarker(presentationText);
       const content = userItem
         ? parseUserMessage(rawText || '')
         : parseAssistantMessage(presentationText);
@@ -72,12 +78,13 @@ export function historyItems(turns: Turn[]) {
       let kind: TimelineKind | null = null;
       const displayText = text || '';
       if (/user/i.test(type) && (text || attachment)) kind = 'user';
-      else if (/agent|assistant|message/i.test(type) && (text || attachment)) {
+      else if (/agent|assistant|message/i.test(type) && (text || attachment || visualization)) {
         kind = !item.phase || item.phase === 'final_answer' ? 'assistant' : 'progress';
       }
-      if (!kind || (!displayText && !attachment)) continue;
+      if (!kind || (!displayText && !attachment && !visualization)) continue;
       const previous = items.at(-1);
-      if (kind === 'progress' && previous?.kind === 'progress' && previous.historyTurnId === turn.id) {
+      if (kind === 'progress' && !visualization
+        && previous?.kind === 'progress' && previous.historyTurnId === turn.id) {
         previous.text = `${previous.text}\n\n${displayText}`;
         previous.completedAt = messageTime(item, turn, kind) || previous.completedAt;
         continue;
@@ -89,6 +96,7 @@ export function historyItems(turns: Turn[]) {
         text: displayText,
         historyTurnId: turn.id,
         attachment,
+        ...(visualization ? { visualization } : {}),
         contexts: item.contexts?.length ? item.contexts : content.contexts,
         ...(completedAt ? { completedAt } : {}),
       });
@@ -114,6 +122,23 @@ function extractLocalMarkdownImage(text: string): ImageAttachment | undefined {
 function stripLocalMarkdownImage(text: string) {
   return text
     .replace(LOCAL_MARKDOWN_IMAGE_PATTERN, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function extractVisualizationArtifact(text: string): VisualizationArtifact | undefined {
+  const marker = VISUALIZATION_MARKER_PATTERN.exec(text);
+  if (!marker?.[1]) return undefined;
+  let href = '';
+  try { href = JSON.parse(marker[1]); } catch { return undefined; }
+  const path = localFilePathFromHref(href);
+  if (!path || !/\.html?$/i.test(path)) return undefined;
+  return { path, name: localFileName(path), source: 'visualize' };
+}
+
+function stripVisualizationMarker(text: string) {
+  return text
+    .replace(VISUALIZATION_MARKER_PATTERN, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
@@ -192,7 +217,7 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
 }
 
 function messageIdentity(item: TimelineItem) {
-  return `${messageContentIdentity(item)}\0${item.attachment?.path || ''}`;
+  return `${messageContentIdentity(item)}\0${item.attachment?.path || ''}\0${item.visualization?.path || ''}`;
 }
 
 function messageContentIdentity(item: TimelineItem) {

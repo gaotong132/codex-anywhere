@@ -5,6 +5,7 @@ export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 export const CLIENT_ACTIONS = new Set([
   'connector.status', 'sessions.list', 'session.read', 'session.turns.list',
   'attachment.upload', 'attachment.read',
+  'visualization.read',
   'file.download.open', 'file.download.chunk', 'file.download.close',
   'turn.start', 'turn.stop', 'approval.pending', 'approval.respond',
 ]);

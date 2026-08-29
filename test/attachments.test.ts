@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { cleanupAttachments, readImageAttachment, saveImageAttachment } from '../src/connector/attachments.js';
+import { MAX_VISUALIZATION_BYTES, readVisualization } from '../src/connector/visualizations.js';
 
 const ONE_PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -151,6 +152,30 @@ test('local Markdown images render only from configured project roots', async (t
     () => readImageAttachment({ path: fakeImage, source: 'local' }, { localAllowedRoots: [directory] }),
     /local_image_content_mismatch/,
   );
+});
+
+test('interactive visualizations load only bounded HTML from the Codex visualization directory', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-visualization-test-'));
+  const outsideDirectory = await mkdtemp(join(tmpdir(), 'bridge-visualization-outside-'));
+  const visualization = join(directory, 'concept.html');
+  const wrongType = join(directory, 'concept.svg');
+  const tooLarge = join(directory, 'too-large.html');
+  const outside = join(outsideDirectory, 'outside.html');
+  await writeFile(visualization, '<main>Safe concept</main><script>document.body.dataset.ready="1"</script>');
+  await writeFile(wrongType, '<svg />');
+  await writeFile(tooLarge, Buffer.alloc(MAX_VISUALIZATION_BYTES + 1));
+  await writeFile(outside, '<main>outside</main>');
+  t.after(async () => {
+    await rm(directory, { recursive: true, force: true });
+    await rm(outsideDirectory, { recursive: true, force: true });
+  });
+
+  const result = await readVisualization({ path: visualization }, { directory });
+  assert.equal(result.name, 'concept.html');
+  assert.match(result.content, /Safe concept/);
+  await assert.rejects(() => readVisualization({ path: wrongType }, { directory }), /visualization_path_invalid/);
+  await assert.rejects(() => readVisualization({ path: tooLarge }, { directory }), /visualization_too_large/);
+  await assert.rejects(() => readVisualization({ path: outside }, { directory }), /visualization_path_not_allowed/);
 });
 
 test('attachment cleanup deletes only expired regular files', async (t) => {

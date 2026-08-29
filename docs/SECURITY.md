@@ -78,6 +78,12 @@ rejects directories and path escapes, holds a stable file handle, detects change
 rate-limits chunks, and records only hashed local audit identifiers. Enabling unrestricted downloads
 intentionally expands the download boundary, not the automatic preview roots.
 
+Codex-generated `.html` files are previewed only from the canonical `.codex/visualizations` directory
+and are capped at 2 MiB. The browser runs them in a sandboxed, opaque-origin frame without access to
+the parent page, storage, forms, popups, top navigation, or network connections. Inline script is
+allowed inside that isolated frame so the artifact remains interactive. The original file still uses
+the confirmed, short-lived download capability.
+
 Device administration is deliberately available only from the relay host. The default command lists
 pending requests and asks before approval. These variants list or revoke approved devices without
 printing device IDs, request IDs, or public keys:
