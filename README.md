@@ -21,6 +21,8 @@ computer; a lightweight relay on your own ECS/VPS provides the remote entry poin
 
 - **Continue existing sessions** — browse recent work, read Markdown history, and send new text or image
   messages from a phone.
+- **Guide the next step** — steer a Web-owned run while it is active, or queue one text instruction
+  behind a Desktop-owned run without creating another session.
 - **Follow work in progress** — see which sessions are running and follow useful progress as it happens.
 - **Know when to come back** — opt in to generic completion and approval notifications, including Web
   Push after the page disconnects when the browser and mobile OS support it.
@@ -66,8 +68,10 @@ advertise end-to-end encryption.
 New sessions and eligible idle sessions are owned by the connector through the Codex app-server
 JSON-RPC protocol, enabling native deltas and browser approval prompts. Sessions that are already
 active in Codex Desktop remain Desktop-owned and use task tools for delivery plus adaptive history-tail
-polling over the same WebSocket; an approval already pending there must still be handled in Desktop.
-Codex Anywhere does not implement ACP.
+polling over the same WebSocket. While Desktop still owns the writer, the connector can hold one
+text-only next-turn instruction in memory and start it after the writer is released; restarting the
+connector cancels that pending instruction. An approval already pending in Desktop must still be
+handled there. Codex Anywhere does not implement ACP.
 
 Notifications are deliberately separate from the encrypted conversation channel. An online background
 page creates its own local notification. If the page is disconnected, the connector sends only a
