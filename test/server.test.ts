@@ -109,6 +109,53 @@ test('server negotiates protocol capabilities while retaining legacy rolling-upg
   legacy.socket.close();
 });
 
+test('authenticated devices register Web Push and connectors emit only generic notification kinds', async (t) => {
+  const registrations: Array<{ id: string; subscription: unknown }> = [];
+  let notification: { kind: string; online: ReadonlySet<string> } | undefined;
+  let notified!: () => void;
+  const notificationReceived = new Promise<void>((resolve) => { notified = resolve; });
+  const server = createBridgeServer({
+    clientToken: CLIENT_TOKEN,
+    connectorToken: CONNECTOR_TOKEN,
+    pushNotifications: {
+      publicKey: 'push-public-key',
+      subscribe: (device, subscription) => {
+        registrations.push({ id: device.id, subscription });
+        return true;
+      },
+      unsubscribe: () => true,
+      notify: async (kind, online) => {
+        notification = { kind, online: online || new Set() };
+        notified();
+      },
+    },
+  });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+  const client = await authenticateSocket({
+    url, role: 'client', token: CLIENT_TOKEN, registry: server.deviceRegistry,
+  });
+  client.socket.send(JSON.stringify({
+    type: 'push.subscribe',
+    subscription: { endpoint: 'https://push.example.test/one' },
+  }));
+  assert.deepEqual(await nextJson(client.socket), { type: 'push.registered', enabled: true, version: 2 });
+  assert.equal(registrations[0].id, client.identity.id);
+
+  const connector = await authenticateSocket({
+    url, role: 'connector', token: CONNECTOR_TOKEN, deviceId: 'personal-pc',
+    registry: server.deviceRegistry,
+  });
+  await nextJson(client.socket); // connector presence update
+  connector.socket.send(JSON.stringify({ type: 'push.notify', kind: 'completed' }));
+  await notificationReceived;
+  assert.equal(notification?.kind, 'completed');
+  assert.equal(notification?.online.has(client.identity.id), true);
+  client.socket.close();
+  connector.socket.close();
+});
+
 test('one-time pairing enrolls a browser and approved device-key auth needs no shared token', async (t) => {
   const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
@@ -198,7 +245,17 @@ test('an unapproved device key cannot sign in or create a pending approval reque
 });
 
 test('server exposes a no-store runtime UI language configuration', async (t) => {
-  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN, uiLanguage: 'en-US' });
+  const server = createBridgeServer({
+    clientToken: TOKEN,
+    connectorToken: TOKEN,
+    uiLanguage: 'en-US',
+    pushNotifications: {
+      publicKey: 'public-push-key',
+      subscribe: () => false,
+      unsubscribe: () => false,
+      notify: async () => undefined,
+    },
+  });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
 
@@ -206,7 +263,9 @@ test('server exposes a no-store runtime UI language configuration', async (t) =>
   assert.equal(response.status, 200);
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.match(response.headers.get('content-type'), /^text\/javascript/);
-  assert.match(await response.text(), /"locale":"en"/);
+  const config = await response.text();
+  assert.match(config, /"locale":"en"/);
+  assert.match(config, /"pushPublicKey":"public-push-key"/);
 });
 
 test('runtime UI language defaults to Chinese', async (t) => {

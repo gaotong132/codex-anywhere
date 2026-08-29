@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isIP } from 'node:net';
 import type { TLSSocket } from 'node:tls';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LRUCache } from 'lru-cache';
 import sirv from 'sirv';
@@ -24,6 +24,11 @@ import {
   type NegotiatedProtocol,
 } from '../shared/protocol-negotiation.js';
 import { DeviceRegistry } from './device-registry.js';
+import {
+  PushNotificationService,
+  type PushNotifier,
+  type PushNotificationKind,
+} from './push-notifications.js';
 import {
   VISUALIZATION_PREVIEW_PREFIX,
   VisualizationPreviewStore,
@@ -68,6 +73,7 @@ type BridgeServerOptions = {
   clock?: () => number;
   deviceRegistryPath?: string | null;
   deviceRegistry?: DeviceRegistry;
+  pushNotifications?: PushNotifier;
 };
 type HttpContext = {
   request: IncomingMessage;
@@ -76,6 +82,7 @@ type HttpContext = {
   uiLanguage: string;
   staticHandler: StaticHandler;
   visualizationPreviews: VisualizationPreviewStore;
+  pushPublicKey: string;
 };
 type AuthLimiterOptions = {
   limit?: number;
@@ -110,6 +117,15 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       options.clientToken || options.connectorToken ? null : resolve('data/devices.json')
     );
   const deviceRegistry = options.deviceRegistry || new DeviceRegistry(configuredRegistryPath);
+  const pushNotifications = options.pushNotifications || new PushNotificationService({
+    publicKey: process.env.BRIDGE_PUSH_PUBLIC_KEY,
+    privateKey: process.env.BRIDGE_PUSH_PRIVATE_KEY,
+    subject: process.env.BRIDGE_PUSH_SUBJECT,
+    filePath: process.env.BRIDGE_PUSH_SUBSCRIPTIONS_FILE || (
+      configuredRegistryPath ? resolve(dirname(configuredRegistryPath), 'push-subscriptions.json') : null
+    ),
+    isApproved: (device) => deviceRegistry.isApproved('client', device),
+  });
   const connectors = new Map<string, AliveWebSocket>();
   const clients = new Map<string, AliveWebSocket>();
   const visualizationPreviews = new VisualizationPreviewStore();
@@ -132,6 +148,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   const httpServer = createServer((request, response) => {
     handleHttpRequest({
       request, response, trustProxy, uiLanguage, staticHandler, visualizationPreviews,
+      pushPublicKey: pushNotifications.publicKey,
     });
   });
   const webSocketServer = new WebSocketServer({
@@ -199,10 +216,13 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
           return;
         }
         if (meta.role === 'client') {
-          routeClientMessage({ socket, meta, message, connectors, pendingVisualizationRequests });
+          routeClientMessage({
+            socket, meta, message, connectors, pendingVisualizationRequests, pushNotifications,
+          });
         } else {
           routeConnectorMessage({
             message, clients, meta, pendingVisualizationRequests, visualizationPreviews,
+            pushNotifications, socketMeta,
           });
         }
       } catch (error) {
@@ -266,7 +286,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
 }
 
 function handleHttpRequest({
-  request, response, trustProxy, uiLanguage, staticHandler, visualizationPreviews,
+  request, response, trustProxy, uiLanguage, staticHandler, visualizationPreviews, pushPublicKey,
 }: HttpContext) {
   setSecurityHeaders(response, request, trustProxy);
   const method = String(request.method || 'GET').toUpperCase();
@@ -296,7 +316,7 @@ function handleHttpRequest({
     return;
   }
   if (pathname === '/config.js') {
-    serveRuntimeConfig(response, uiLanguage, headOnly);
+    serveRuntimeConfig(response, uiLanguage, pushPublicKey, headOnly);
     return;
   }
   if (pathname.startsWith(VISUALIZATION_PREVIEW_PREFIX)) {
@@ -480,14 +500,29 @@ function rejectAuthentication(
 }
 
 function routeClientMessage({
-  socket, meta, message, connectors, pendingVisualizationRequests,
+  socket, meta, message, connectors, pendingVisualizationRequests, pushNotifications,
 }: {
   socket: AliveWebSocket;
   meta: Extract<SocketMeta, { role: 'client' }>;
   message: JsonObject;
   connectors: Map<string, AliveWebSocket>;
   pendingVisualizationRequests: LRUCache<string, true>;
+  pushNotifications: PushNotifier;
 }) {
+  if (message.type === 'push.subscribe') {
+    try {
+      const enabled = pushNotifications.subscribe(meta.device, message.subscription);
+      safeSend(socket, { type: 'push.registered', enabled });
+    } catch (error) {
+      safeSend(socket, { type: 'push.registered', enabled: false, error: publicError(error) });
+    }
+    return;
+  }
+  if (message.type === 'push.unsubscribe') {
+    pushNotifications.unsubscribe(meta.device);
+    safeSend(socket, { type: 'push.registered', enabled: false });
+    return;
+  }
   const deviceId = String(message.deviceId || 'personal-pc');
   const connector = connectors.get(deviceId);
   if (isSecureClientFrame(message.type)) {
@@ -537,13 +572,27 @@ function routeClientMessage({
 
 function routeConnectorMessage({
   message, clients, meta, pendingVisualizationRequests, visualizationPreviews,
+  pushNotifications, socketMeta,
 }: {
   message: JsonObject;
   clients: Map<string, AliveWebSocket>;
   meta: Extract<SocketMeta, { role: 'connector' }>;
   pendingVisualizationRequests: LRUCache<string, true>;
   visualizationPreviews: VisualizationPreviewStore;
+  pushNotifications: PushNotifier;
+  socketMeta: WeakMap<AliveWebSocket, SocketMeta>;
 }) {
+  if (message.type === 'push.notify') {
+    const kind = String(message.kind || '') as PushNotificationKind;
+    if (kind !== 'completed' && kind !== 'approval') return;
+    const onlineDeviceIds = new Set<string>();
+    for (const socket of clients.values()) {
+      const clientMeta = socketMeta.get(socket);
+      if (clientMeta?.role === 'client') onlineDeviceIds.add(clientMeta.device.id);
+    }
+    void pushNotifications.notify(kind, onlineDeviceIds).catch(() => undefined);
+    return;
+  }
   if (isSecureConnectorFrame(message.type)) {
     const clientId = String(message.clientId || '');
     const client = clients.get(clientId);
@@ -631,8 +680,16 @@ function normalizeUiLanguage(value: unknown) {
   return String(value || '').trim().toLowerCase().startsWith('en') ? 'en' : 'zh-CN';
 }
 
-function serveRuntimeConfig(response: ServerResponse, locale: string, headOnly = false) {
-  const body = `window.__CODEX_ANYWHERE_CONFIG__ = ${JSON.stringify({ locale })};\n`;
+function serveRuntimeConfig(
+  response: ServerResponse,
+  locale: string,
+  pushPublicKey: string,
+  headOnly = false,
+) {
+  const body = `window.__CODEX_ANYWHERE_CONFIG__ = ${JSON.stringify({
+    locale,
+    ...(pushPublicKey ? { pushPublicKey } : {}),
+  })};\n`;
   response.writeHead(200, {
     'content-type': 'text/javascript; charset=utf-8',
     'cache-control': 'no-store',

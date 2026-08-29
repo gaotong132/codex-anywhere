@@ -3,6 +3,11 @@ export type BrowserNotificationKind = 'completed' | 'approval';
 const ENABLED_KEY = 'codex-anywhere.notifications.enabled';
 const SERVICE_WORKER_URL = '/service-worker.js';
 
+type PushRegistrationFrame = {
+  type: 'push.subscribe' | 'push.unsubscribe';
+  subscription?: PushSubscriptionJSON;
+};
+
 export function browserNotificationCopy(kind: BrowserNotificationKind, language: string) {
   const chinese = language.toLowerCase().startsWith('zh');
   if (kind === 'approval') {
@@ -34,6 +39,25 @@ async function registerNotificationWorker() {
   return navigator.serviceWorker.register(SERVICE_WORKER_URL, { scope: '/' });
 }
 
+function pushPublicKey() {
+  return window.__CODEX_ANYWHERE_CONFIG__?.pushPublicKey?.trim() || '';
+}
+
+function decodeApplicationServerKey(value: string) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=');
+  const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  return bytes.buffer;
+}
+
+async function ensurePushSubscription(registration: ServiceWorkerRegistration) {
+  const publicKey = pushPublicKey();
+  if (!publicKey || !registration.pushManager) return null;
+  return await registration.pushManager.getSubscription() || registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: decodeApplicationServerKey(publicKey),
+  });
+}
+
 export async function restoreBrowserNotifications() {
   if (!browserNotificationsEnabled()) return false;
   await registerNotificationWorker();
@@ -44,6 +68,9 @@ export async function setBrowserNotificationsEnabled(enabled: boolean) {
   if (!browserNotificationsSupported()) return false;
   if (!enabled) {
     try { localStorage.removeItem(ENABLED_KEY); } catch { /* blocked storage */ }
+    const registration = await navigator.serviceWorker.getRegistration('/');
+    const subscription = await registration?.pushManager?.getSubscription();
+    await subscription?.unsubscribe();
     return false;
   }
 
@@ -51,9 +78,21 @@ export async function setBrowserNotificationsEnabled(enabled: boolean) {
     ? 'granted'
     : await Notification.requestPermission();
   if (permission !== 'granted') return false;
-  await registerNotificationWorker();
+  const registration = await registerNotificationWorker();
+  try { await ensurePushSubscription(registration); } catch { /* local notifications still work */ }
   try { localStorage.setItem(ENABLED_KEY, 'true'); } catch { /* blocked storage */ }
   return true;
+}
+
+export async function syncBrowserPushSubscription(send: (frame: PushRegistrationFrame) => void) {
+  if (!browserNotificationsSupported()) return;
+  if (!browserNotificationsEnabled() || !pushPublicKey()) {
+    send({ type: 'push.unsubscribe' });
+    return;
+  }
+  const registration = await registerNotificationWorker();
+  const subscription = await ensurePushSubscription(registration);
+  if (subscription) send({ type: 'push.subscribe', subscription: subscription.toJSON() });
 }
 
 export async function notifyWhenHidden(kind: BrowserNotificationKind) {

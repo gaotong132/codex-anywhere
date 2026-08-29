@@ -65,6 +65,7 @@ import {
   browserNotificationsSupported,
   notifyWhenHidden,
   setBrowserNotificationsEnabled,
+  syncBrowserPushSubscription,
 } from './browser-notifications';
 import { BrowserSecureChannel } from './secure-channel-client';
 import { createAuthProof } from '../../src/shared/auth';
@@ -311,12 +312,20 @@ export default function App() {
   const optimisticRestoreRef = useRef<string | null>(null);
   const runningRef = useRef(running);
   const ownedTurnThreadIdRef = useRef(ownedTurnThreadId);
+  const previousExecutionStateRef = useRef<ExecutionState>('idle');
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
   useEffect(() => { tokenRef.current = token; }, [token]);
   useEffect(() => { pairingCredentialRef.current = pairingCredential; }, [pairingCredential]);
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { ownedTurnThreadIdRef.current = ownedTurnThreadId; }, [ownedTurnThreadId]);
+  useEffect(() => {
+    const previous = previousExecutionStateRef.current;
+    previousExecutionStateRef.current = executionState;
+    if (executionState === 'completed' && (previous === 'running' || previous === 'waiting')) {
+      void notifyWhenHidden('completed').catch(() => undefined);
+    }
+  }, [executionState]);
 
   const updateSessionAttention = useCallback((
     update: (current: SessionAttentionState) => SessionAttentionState,
@@ -433,6 +442,10 @@ export default function App() {
     try {
       const enabled = await setBrowserNotificationsEnabled(!notificationsEnabled);
       setNotificationsEnabled(enabled);
+      const socket = socketRef.current;
+      if (socket?.readyState === WebSocket.OPEN && socketAuthenticatedRef.current) {
+        await syncBrowserPushSubscription((frame) => socket.send(JSON.stringify(frame)));
+      }
     } finally {
       setNotificationBusy(false);
     }
@@ -634,6 +647,11 @@ export default function App() {
       setAuthenticated(true);
       setConnecting(false);
       setConnectionEpoch((current) => current + 1);
+      const authenticatedSocket = socketRef.current;
+      if (authenticatedSocket?.readyState === WebSocket.OPEN) {
+        void syncBrowserPushSubscription((frame) => authenticatedSocket.send(JSON.stringify(frame)))
+          .catch(() => undefined);
+      }
       const connected = Boolean(message.devices?.includes(DEVICE_ID));
       const secure = connected && Boolean(message.secureDevices?.includes(DEVICE_ID));
       if (secure) {
@@ -763,7 +781,6 @@ export default function App() {
       setExecutionState('failed');
       addTimeline('error', String(payload.error || t('Codex 运行错误', 'Codex execution error')));
     } else if (message.event === 'turn.ended') {
-      void notifyWhenHidden('completed').catch(() => undefined);
       streamItemRef.current = null;
       setApproval(null);
       setToolPurpose('');
