@@ -64,9 +64,15 @@ export class ConnectorSecureChannels {
   sendEvent(frame: JsonObject) {
     const clientId = String(frame.clientId || '');
     const state = this.channels.get(clientId);
-    if (!state?.confirmed) return false;
-    const { clientId: _clientId, ...payload } = frame;
-    return this.send({ type: 'secure', clientId, envelope: state.codec.seal(payload) });
+    if (!state) return false;
+    if (!state.confirmed) return true;
+    try {
+      const { clientId: _clientId, ...payload } = frame;
+      this.send({ type: 'secure', clientId, envelope: state.codec.seal(payload) });
+    } catch {
+      this.fail(clientId, state.acceptance.transcript.channelId);
+    }
+    return true;
   }
 
   clear() {

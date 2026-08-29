@@ -109,6 +109,7 @@ test('protocol negotiation selects the highest compatible version and shared cap
     version: 4, minimumVersion: 3, capabilities: [],
   }), /protocol_version_unsupported/);
   assert.equal(createProtocolOffer().capabilities.includes('protocol-negotiation.v1'), true);
+  assert.equal(createProtocolOffer().capabilities.includes('e2ee-channel.v1'), true);
 });
 
 test('browser pairing links are fragment-only and challenge bound', () => {

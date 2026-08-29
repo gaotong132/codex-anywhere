@@ -81,9 +81,13 @@ export function MessageBubble({
 
   useEffect(() => {
     setVisualizationOpen(false);
-    setVisualizationSource('');
+    clearVisualizationSource();
     setVisualizationStatus('idle');
   }, [item.visualization?.path]);
+
+  useEffect(() => () => {
+    if (visualizationSource.startsWith('blob:')) URL.revokeObjectURL(visualizationSource);
+  }, [visualizationSource]);
 
   useEffect(() => {
     if (!imageExpanded && !visualizationOpen) return undefined;
@@ -102,7 +106,7 @@ export function MessageBubble({
     const closeOnBack = () => {
       visualizationHistoryEntry.current = false;
       setVisualizationOpen(false);
-      setVisualizationSource('');
+      clearVisualizationSource();
     };
     window.addEventListener('popstate', closeOnBack);
     return () => window.removeEventListener('popstate', closeOnBack);
@@ -120,10 +124,17 @@ export function MessageBubble({
 
   function closeVisualization() {
     setVisualizationOpen(false);
-    setVisualizationSource('');
+    clearVisualizationSource();
     if (!visualizationHistoryEntry.current) return;
     visualizationHistoryEntry.current = false;
     window.history.back();
+  }
+
+  function clearVisualizationSource() {
+    setVisualizationSource((current) => {
+      if (current.startsWith('blob:')) URL.revokeObjectURL(current);
+      return '';
+    });
   }
 
   async function openVisualization() {

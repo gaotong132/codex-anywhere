@@ -6,6 +6,7 @@ export const BRIDGE_PROTOCOL_CAPABILITIES = Object.freeze([
   'device-auth.v1',
   'device-key-auth.v1',
   'browser-pairing.v1',
+  'e2ee-channel.v1',
   'request-routing.v1',
   'history-pagination.v1',
   'approval.v1',
@@ -58,6 +59,10 @@ export function negotiateProtocol(
     version,
     capabilities: localOffer.capabilities.filter((capability) => remoteCapabilities.has(capability)),
   };
+}
+
+export function protocolHasCapability(protocol: NegotiatedProtocol, capability: string) {
+  return protocol.capabilities.includes(capability);
 }
 
 function normalizeProtocolOffer(value: unknown): ProtocolOffer {

@@ -58,6 +58,7 @@ import {
   type SessionAttentionState,
 } from './app-utils';
 import { DownloadIndicator, MessageBubble, SidebarIcon } from './ui-components';
+import { BrowserSecureChannel } from './secure-channel-client';
 import { createAuthProof } from '../../src/shared/auth';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
 import {
@@ -273,6 +274,9 @@ export default function App() {
   const reconnectWantedRef = useRef(false);
   const socketAuthenticatedRef = useRef(false);
   const connectorOnlineRef = useRef(false);
+  const secureRequiredRef = useRef(false);
+  const secureChannelRef = useRef<BrowserSecureChannel | null>(null);
+  const messageHandlerRef = useRef<(message: BridgeMessage) => void>(() => {});
   const lastServerActivityRef = useRef(0);
   const scheduleReconnectRef = useRef<(immediate?: boolean) => void>(() => {});
   const threadIdRef = useRef<string | null>(null);
@@ -478,7 +482,12 @@ export default function App() {
         resolve: (value) => resolve(value as T), reject, timer,
       });
       try {
-        socket.send(JSON.stringify({ type: 'request', requestId, action, payload, deviceId: DEVICE_ID }));
+        const frame = { type: 'request', requestId, action, payload, deviceId: DEVICE_ID };
+        if (secureRequiredRef.current) {
+          if (!secureChannelRef.current?.sendFrame(frame)) throw new Error('secure_channel_not_ready');
+        } else {
+          socket.send(JSON.stringify(frame));
+        }
       } catch {
         clearTimeout(timer);
         pendingRef.current.delete(requestId);
@@ -540,6 +549,39 @@ export default function App() {
     }
   }, [request, updateSessionAttention]);
 
+  const beginSecureChannel = useCallback(() => {
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    secureRequiredRef.current = true;
+    secureChannelRef.current?.clear();
+    const channel = new BrowserSecureChannel({
+      identity: loadOrCreateBrowserDeviceIdentity(),
+      routeDeviceId: DEVICE_ID,
+      send: (frame) => {
+        if (socketRef.current !== socket || socket.readyState !== WebSocket.OPEN) return false;
+        socket.send(JSON.stringify(frame));
+        return true;
+      },
+      onFrame: (frame) => messageHandlerRef.current(frame as BridgeMessage),
+      onReady: () => {
+        if (secureChannelRef.current !== channel) return;
+        connectorOnlineRef.current = true;
+        setOnline(true);
+        setStatusText(t('电脑在线', 'Computer online'));
+        void refreshSessions();
+      },
+      onError: () => {
+        if (secureChannelRef.current !== channel) return;
+        connectorOnlineRef.current = false;
+        setOnline(false);
+        setStatusText(t('安全通道中断，正在重连…', 'Secure channel interrupted. Reconnecting…'));
+        if (socketRef.current === socket) socket.close(4410, 'secure channel failed');
+      },
+    });
+    secureChannelRef.current = channel;
+    return channel.start();
+  }, [refreshSessions]);
+
   const handleBridgeMessage = useCallback((message: BridgeMessage) => {
     if (message.type === 'auth.pairing') {
       setStatusText(t('当前设备等待批准', 'This device is waiting for approval'));
@@ -562,19 +604,50 @@ export default function App() {
       setConnecting(false);
       setConnectionEpoch((current) => current + 1);
       const connected = Boolean(message.devices?.includes(DEVICE_ID));
-      connectorOnlineRef.current = connected;
-      setOnline(connected);
-      setStatusText(connected ? t('电脑在线', 'Computer online') : t('电脑离线', 'Computer offline'));
+      const secure = connected && Boolean(message.secureDevices?.includes(DEVICE_ID));
+      if (secure) {
+        connectorOnlineRef.current = false;
+        setOnline(false);
+        setStatusText(t('正在建立安全通道…', 'Establishing secure channel…'));
+        beginSecureChannel();
+      } else {
+        secureRequiredRef.current = false;
+        secureChannelRef.current?.clear();
+        secureChannelRef.current = null;
+        connectorOnlineRef.current = connected;
+        setOnline(connected);
+        setStatusText(connected ? t('电脑在线', 'Computer online') : t('电脑离线', 'Computer offline'));
+      }
       return;
     }
     if (message.type === 'pong') return;
     if (message.type === 'presence') {
       const wasConnected = connectorOnlineRef.current;
       const connected = Boolean(message.devices?.includes(DEVICE_ID));
-      connectorOnlineRef.current = connected;
-      setOnline(connected);
-      setStatusText(connected ? t('电脑在线', 'Computer online') : t('电脑离线', 'Computer offline'));
-      if (connected && !wasConnected) void refreshSessions();
+      const secure = connected && Boolean(message.secureDevices?.includes(DEVICE_ID));
+      if (!connected) {
+        secureRequiredRef.current = false;
+        secureChannelRef.current?.clear();
+        secureChannelRef.current = null;
+        connectorOnlineRef.current = false;
+        setOnline(false);
+        setStatusText(t('电脑离线', 'Computer offline'));
+      } else if (secure) {
+        if (!secureChannelRef.current?.isReady()) {
+          connectorOnlineRef.current = false;
+          setOnline(false);
+          setStatusText(t('正在建立安全通道…', 'Establishing secure channel…'));
+          if (!secureChannelRef.current) beginSecureChannel();
+        }
+      } else {
+        secureRequiredRef.current = false;
+        secureChannelRef.current?.clear();
+        secureChannelRef.current = null;
+        connectorOnlineRef.current = true;
+        setOnline(true);
+        setStatusText(t('电脑在线', 'Computer online'));
+        if (!wasConnected) void refreshSessions();
+      }
       return;
     }
     if (message.type === 'response' && message.requestId) {
@@ -663,9 +736,8 @@ export default function App() {
       setExecutionState((current) => current === 'failed' ? current : 'completed');
       void refreshSessions();
     }
-  }, [addTimeline, appendStream, finishAssistant, refreshSessions]);
+  }, [addTimeline, appendStream, beginSecureChannel, finishAssistant, refreshSessions]);
 
-  const messageHandlerRef = useRef(handleBridgeMessage);
   useEffect(() => { messageHandlerRef.current = handleBridgeMessage; }, [handleBridgeMessage]);
 
   const rejectPendingRequests = useCallback((message: string) => {
@@ -753,6 +825,7 @@ export default function App() {
           }
           return;
         }
+        if (secureChannelRef.current?.handle(message as Record<string, any>)) return;
         messageHandlerRef.current(message);
       } catch {
         if (!socketAuthenticatedRef.current) socket.close(4003, 'invalid authentication challenge');
@@ -763,6 +836,9 @@ export default function App() {
       socketRef.current = null;
       socketAuthenticatedRef.current = false;
       connectorOnlineRef.current = false;
+      secureRequiredRef.current = false;
+      secureChannelRef.current?.clear();
+      secureChannelRef.current = null;
       setConnecting(false);
       setOnline(false);
       setRunning(false);
@@ -921,6 +997,9 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibility);
       const socket = socketRef.current;
       socketRef.current = null;
+      secureRequiredRef.current = false;
+      secureChannelRef.current?.clear();
+      secureChannelRef.current = null;
       socket?.close(1000, 'page closed');
       rejectPendingRequests(t('页面已关闭', 'Page closed'));
     };
@@ -1486,10 +1565,13 @@ export default function App() {
 
   const readVisualization = useCallback(async (path: string) => {
     const result = await request<VisualizationDocument>('visualization.read', { path });
-    if (!result || !/^\/visualization-preview\/[A-Za-z0-9_-]{43}$/.test(result.previewUrl || '')) {
-      throw new Error('visualization_content_invalid');
+    if (result?.content && result.content.length <= 2 * 1024 * 1024 && !result.content.includes('\0')) {
+      return URL.createObjectURL(new Blob([result.content], { type: 'text/html' }));
     }
-    return result.previewUrl;
+    if (result && /^\/visualization-preview\/[A-Za-z0-9_-]{43}$/.test(result.previewUrl || '')) {
+      return result.previewUrl!;
+    }
+    throw new Error('visualization_content_invalid');
   }, [request]);
 
   const cancelFileDownload = useCallback(() => {

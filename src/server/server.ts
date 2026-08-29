@@ -20,6 +20,7 @@ import {
   createProtocolOffer,
   legacyProtocolOffer,
   negotiateProtocol,
+  protocolHasCapability,
   type NegotiatedProtocol,
 } from '../shared/protocol-negotiation.js';
 import { DeviceRegistry } from './device-registry.js';
@@ -187,7 +188,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
           if (authenticated) {
             sessionTimer = setTimeout(() => socket.close(4005, 'authentication expired'), sessionMaxAgeMs);
             sessionTimer.unref?.();
-            broadcastPresence(clients, connectors);
+            broadcastPresence(clients, connectors, socketMeta);
           }
           return;
         }
@@ -214,7 +215,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       if (!meta) return;
       if (meta.role === 'client') clients.delete(meta.id);
       if (meta.role === 'connector' && connectors.get(meta.deviceId) === socket) connectors.delete(meta.deviceId);
-      broadcastPresence(clients, connectors);
+      broadcastPresence(clients, connectors, socketMeta);
     });
     safeSend(socket, {
       type: 'auth.challenge', challenge: authChallenge, protocol: createProtocolOffer(),
@@ -457,6 +458,7 @@ function authenticateSocket({
   safeSend(socket, {
     type: 'auth.ok', role, clientId: id,
     devices: [...connectors.keys()],
+    secureDevices: secureConnectorIds(connectors, socketMeta),
     protocol,
     authMode,
   });
@@ -598,9 +600,29 @@ function isSecureConnectorFrame(type: unknown) {
     || type === 'channel.error' || type === 'secure';
 }
 
-function broadcastPresence(clients: Map<string, AliveWebSocket>, connectors: Map<string, AliveWebSocket>) {
-  const payload = { type: 'presence', devices: [...connectors.keys()] };
+function broadcastPresence(
+  clients: Map<string, AliveWebSocket>,
+  connectors: Map<string, AliveWebSocket>,
+  socketMeta: WeakMap<AliveWebSocket, SocketMeta>,
+) {
+  const payload = {
+    type: 'presence',
+    devices: [...connectors.keys()],
+    secureDevices: secureConnectorIds(connectors, socketMeta),
+  };
   for (const socket of clients.values()) safeSend(socket, payload);
+}
+
+function secureConnectorIds(
+  connectors: Map<string, AliveWebSocket>,
+  socketMeta: WeakMap<AliveWebSocket, SocketMeta>,
+) {
+  return [...connectors.entries()]
+    .filter(([, socket]) => {
+      const meta = socketMeta.get(socket);
+      return meta?.role === 'connector' && protocolHasCapability(meta.protocol, 'e2ee-channel.v1');
+    })
+    .map(([deviceId]) => deviceId);
 }
 
 function normalizeUiLanguage(value: unknown) {
@@ -663,7 +685,7 @@ function setSecurityHeaders(response: ServerResponse, request: IncomingMessage, 
   response.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
   response.setHeader('permissions-policy', 'camera=(self), microphone=(), geolocation=()');
   const webSocketSource = currentWebSocketSource(request, trustProxy);
-  response.setHeader('content-security-policy', `default-src 'self'; connect-src 'self'${webSocketSource ? ` ${webSocketSource}` : ''}; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; frame-src 'self'; object-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
+  response.setHeader('content-security-policy', `default-src 'self'; connect-src 'self'${webSocketSource ? ` ${webSocketSource}` : ''}; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
 }
 
 function currentWebSocketSource(request: IncomingMessage | undefined, trustProxy: boolean) {

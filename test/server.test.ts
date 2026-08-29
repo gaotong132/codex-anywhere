@@ -99,6 +99,7 @@ test('server negotiates protocol capabilities while retaining legacy rolling-upg
   assert.equal(current.auth.protocol.version, 2);
   assert.equal(current.auth.protocol.capabilities.includes('protocol-negotiation.v1'), true);
   assert.equal(current.auth.protocol.capabilities.includes('browser-pairing.v1'), true);
+  assert.equal(current.auth.protocol.capabilities.includes('e2ee-channel.v1'), true);
   current.socket.close();
 
   const legacy = await authenticateSocket({
@@ -295,7 +296,7 @@ test('content security policy limits WebSocket connections to the current host',
     .trim().split(/\s+/).slice(1);
   assert.equal(connectSources.includes('ws:'), false);
   assert.equal(connectSources.includes('wss:'), false);
-  assert.match(policy, /frame-src 'self';/);
+  assert.match(policy, /frame-src 'self' blob:;/);
   assert.equal(response.headers.get('permissions-policy'), 'camera=(self), microphone=(), geolocation=()');
   await response.arrayBuffer();
 });
@@ -320,6 +321,7 @@ test('server authenticates and relays client requests to connector', async (t) =
   assert.equal(auth.type, 'auth.ok');
   assert.equal(auth.identityId, undefined);
   assert.deepEqual(auth.devices, ['personal-pc']);
+  assert.deepEqual(auth.secureDevices, ['personal-pc']);
 
   client.send(JSON.stringify({ type: 'ping', at: 123 }));
   const pong = await nextJson(client);
