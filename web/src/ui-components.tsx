@@ -58,6 +58,7 @@ export function MessageBubble({
   onDownloadFile: (path: string) => void;
 }) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [imageExpanded, setImageExpanded] = useState(false);
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyable = item.kind === 'user' || item.kind === 'assistant';
 
@@ -67,6 +68,19 @@ export function MessageBubble({
       if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
     };
   }, [item.text]);
+
+  useEffect(() => {
+    setImageExpanded(false);
+  }, [item.attachment?.path]);
+
+  useEffect(() => {
+    if (!imageExpanded) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setImageExpanded(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [imageExpanded]);
 
   async function copyMessage() {
     try {
@@ -156,9 +170,14 @@ export function MessageBubble({
           {imageSource === undefined && <div className="message-image-state">{t('正在加载图片…', 'Loading image…')}</div>}
           {imageSource === '' && <div className="message-image-state">{t('图片已过期或无法读取', 'Image expired or unavailable')}</div>}
           {imageSource && (
-            <a href={imageSource} target="_blank" rel="noreferrer noopener" aria-label={t('查看图片预览', 'View image preview')}>
+            <button
+              className="message-image-preview"
+              type="button"
+              onClick={() => setImageExpanded(true)}
+              aria-label={t('放大图片', 'Expand image')}
+            >
               <img src={imageSource} alt={item.attachment.name} loading="lazy" />
-            </a>
+            </button>
           )}
           <figcaption>
             <span>{item.attachment.name}</span>
@@ -170,6 +189,29 @@ export function MessageBubble({
             )}
           </figcaption>
         </figure>
+      )}
+      {imageExpanded && imageSource && item.attachment && (
+        <div
+          className="image-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('图片预览', 'Image preview')}
+          onClick={() => setImageExpanded(false)}
+        >
+          <button
+            className="image-lightbox-close"
+            type="button"
+            onClick={() => setImageExpanded(false)}
+            aria-label={t('关闭图片预览', 'Close image preview')}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+          </button>
+          <img
+            src={imageSource}
+            alt={item.attachment.name}
+            onClick={(event) => event.stopPropagation()}
+          />
+        </div>
       )}
       {copyable && (
         <div className="message-meta">

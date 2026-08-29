@@ -166,10 +166,10 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
   const introducesNewTurn = [...latestTurnIds].some((turnId) => !knownTurnIds.has(turnId));
   const transientAttachments = new Map(current
     .filter((item) => item.transient && item.attachment)
-    .map((item) => [messageIdentity(item), item.attachment]));
+    .map((item) => [messageContentIdentity(item), item.attachment]));
   const hydratedLatest = latest.map((item) => item.attachment ? item : {
     ...item,
-    attachment: transientAttachments.get(messageIdentity(item)),
+    attachment: transientAttachments.get(messageContentIdentity(item)),
   });
   const persistedMessages = new Set(hydratedLatest
     .filter((item) => item.kind === 'user' || item.kind === 'assistant')
@@ -192,7 +192,11 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
 }
 
 function messageIdentity(item: TimelineItem) {
-  return `${item.kind}\0${canonicalMessageText(item.text)}\0${item.attachment?.path || ''}`;
+  return `${messageContentIdentity(item)}\0${item.attachment?.path || ''}`;
+}
+
+function messageContentIdentity(item: TimelineItem) {
+  return `${item.kind}\0${canonicalMessageText(item.text)}`;
 }
 
 function canonicalMessageText(text: string) {

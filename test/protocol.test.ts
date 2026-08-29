@@ -4,6 +4,8 @@ import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { createAuthProof } from '../src/shared/auth.js';
 import {
   createDeviceAuthProof,
@@ -33,7 +35,8 @@ import {
   markSessionAttentionRead,
   reconcileSessionAttention,
 } from '../web/src/app-utils.js';
-import { historyItems } from '../web/src/history-utils.js';
+import { historyItems, mergeHistorySnapshot } from '../web/src/history-utils.js';
+import { MessageBubble } from '../web/src/ui-components.js';
 
 test('authentication proofs are role, device and challenge bound', () => {
   const token = 'a'.repeat(32);
@@ -380,6 +383,37 @@ test('assistant Markdown images become safe local preview references', () => {
     items: [{ type: 'assistant', text: '![Diagram](D:/workspace/diagrams/architecture.svg)' }],
   }]);
   assert.equal(svgOnly[0].attachment, undefined);
+});
+
+test('history merge replaces an optimistic image message without duplicating it', () => {
+  const attachment = {
+    path: 'C:\\Users\\example\\AppData\\Local\\Temp\\bridge\\photo.jpg',
+    name: 'photo.jpg',
+  };
+  const current = [{
+    id: 'optimistic', kind: 'user' as const, text: '这是什么？', transient: true, attachment,
+  }];
+  const latest = [{
+    id: 'history:turn-new:0', kind: 'user' as const, text: '这是什么？', historyTurnId: 'turn-new',
+  }];
+
+  assert.deepEqual(mergeHistorySnapshot(current, latest, new Set(['turn-new'])), [{
+    ...latest[0], attachment,
+  }]);
+});
+
+test('image previews open in the page instead of navigating to a data URL', () => {
+  const markup = renderToStaticMarkup(createElement(MessageBubble, {
+    item: {
+      id: 'image-message', kind: 'assistant' as const, text: '更新后的图片',
+      attachment: { path: 'D:\\workspace\\diagram.png', name: 'diagram.png', source: 'local' as const },
+    },
+    imageSource: 'data:image/webp;base64,UklGRg==',
+    onDownloadFile: () => undefined,
+  }));
+
+  assert.match(markup, /class="message-image-preview"/);
+  assert.doesNotMatch(markup, /href="data:image\/webp/);
 });
 
 test('rollout tail recovers a generated image reference from a truncated Base64 event row', async () => {
