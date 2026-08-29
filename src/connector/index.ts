@@ -15,7 +15,7 @@ import { createAuthProof } from '../shared/auth.js';
 import { createDeviceAuthProof } from '../shared/device-auth.js';
 import {
   requireCurrentProtocol,
-} from '../shared/protocol-negotiation.js';
+} from '../shared/protocol-contract.js';
 import {
   MAX_FRAME_BYTES, parseFrame, safeSend,
 } from '../shared/protocol.js';

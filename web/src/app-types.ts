@@ -1,5 +1,5 @@
 import type { Turn } from './history-utils';
-import type { NegotiatedProtocol, ProtocolOffer } from '../../src/shared/protocol-negotiation';
+import type { CurrentProtocol, ProtocolOffer } from '../../src/shared/protocol-contract';
 
 export type Session = {
   id: string;
@@ -38,7 +38,7 @@ export type PendingRequest = {
 };
 export type BridgeMessage = {
   type: string;
-  protocol?: ProtocolOffer | NegotiatedProtocol;
+  protocol?: ProtocolOffer | CurrentProtocol;
   authMode?: 'token' | 'device' | 'pairing';
   challenge?: string;
   requestId?: string;

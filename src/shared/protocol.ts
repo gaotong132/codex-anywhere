@@ -1,5 +1,5 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
-import { BRIDGE_PROTOCOL_VERSION } from './protocol-negotiation.js';
+import { BRIDGE_PROTOCOL_VERSION } from './protocol-contract.js';
 
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 export const CLIENT_ACTIONS = new Set([

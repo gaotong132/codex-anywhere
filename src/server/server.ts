@@ -19,8 +19,8 @@ import {
 import {
   createProtocolOffer,
   requireCurrentProtocol,
-  type NegotiatedProtocol,
-} from '../shared/protocol-negotiation.js';
+  type CurrentProtocol,
+} from '../shared/protocol-contract.js';
 import { DeviceRegistry } from './device-registry.js';
 import {
   PushNotificationService,
@@ -337,7 +337,7 @@ function authenticateSocket({
   const authType = String(message.type || '');
   const role = message.role === 'connector' ? 'connector' : message.role === 'client' ? 'client' : '';
   const deviceId = normalizeAuthDeviceId(message.deviceId);
-  let protocol: NegotiatedProtocol;
+  let protocol: CurrentProtocol;
   try {
     protocol = requireCurrentProtocol(message.protocol);
   } catch {

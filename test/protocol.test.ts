@@ -16,7 +16,7 @@ import { normalizeBridgeUrl, parseFrame, secretMatches } from '../src/shared/pro
 import {
   createProtocolOffer,
   requireCurrentProtocol,
-} from '../src/shared/protocol-negotiation.js';
+} from '../src/shared/protocol-contract.js';
 import {
   browserPairingFragment,
   browserPairingVerifier,

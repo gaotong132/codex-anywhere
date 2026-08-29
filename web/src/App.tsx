@@ -71,7 +71,7 @@ import {
 import { BrowserSecureChannel } from './secure-channel-client';
 import { createAuthProof } from '../../src/shared/auth';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
-import { requireCurrentProtocol } from '../../src/shared/protocol-negotiation';
+import { requireCurrentProtocol } from '../../src/shared/protocol-contract';
 import {
   clearBrowserDeviceApproval,
   createBrowserDeviceProof,

@@ -19,7 +19,7 @@ export type ProtocolOffer = {
   capabilities: string[];
 };
 
-export type NegotiatedProtocol = {
+export type CurrentProtocol = {
   version: number;
   capabilities: string[];
 };
@@ -33,7 +33,7 @@ export function createProtocolOffer(
   };
 }
 
-export function requireCurrentProtocol(remote: unknown): NegotiatedProtocol {
+export function requireCurrentProtocol(remote: unknown): CurrentProtocol {
   const remoteOffer = normalizeProtocolOffer(remote);
   if (remoteOffer.version !== BRIDGE_PROTOCOL_VERSION) throw new Error('protocol_version_unsupported');
   const remoteCapabilities = new Set(remoteOffer.capabilities);

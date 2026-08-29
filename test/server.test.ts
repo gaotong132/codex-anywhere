@@ -9,7 +9,7 @@ import { createBridgeServer, internals as serverInternals } from '../src/server/
 import { createAuthProof } from '../src/shared/auth.js';
 import { createDeviceAuthProof, createDeviceIdentity, type DeviceIdentity } from '../src/shared/device-auth.js';
 import type { DeviceRegistry } from '../src/server/device-registry.js';
-import { requireCurrentProtocol } from '../src/shared/protocol-negotiation.js';
+import { requireCurrentProtocol } from '../src/shared/protocol-contract.js';
 import {
   DEVICE_KEY_AUTH_CONTEXT,
   browserPairingVerifier,
