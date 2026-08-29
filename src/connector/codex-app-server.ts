@@ -211,8 +211,12 @@ export class CodexAppServer extends EventEmitter {
     if (!cursor && mode === 'live' && metadata?.path) {
       return this.readSessionTail(resolvedThreadId, metadata.path);
     }
+    if (cursor.startsWith('rollout:v1:')) {
+      if (!metadata?.path) throw new Error('session_history_unavailable');
+      return this.readSessionTail(resolvedThreadId, metadata.path, { paged: true, cursor });
+    }
     if (!cursor && await this.isLargeSession(resolvedThreadId)) {
-      return this.readSessionTail(resolvedThreadId, metadata?.path);
+      return this.readSessionTail(resolvedThreadId, metadata?.path, { paged: true });
     }
     try {
       const result = await this.rpcRaw('thread/turns/list', {
@@ -232,7 +236,7 @@ export class CodexAppServer extends EventEmitter {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!cursor && metadata?.path && /RPC timeout: thread\/turns\/list/i.test(message)) {
-        return this.readSessionTail(resolvedThreadId, metadata.path);
+        return this.readSessionTail(resolvedThreadId, metadata.path, { paged: true });
       }
       throw error;
     }
@@ -266,9 +270,11 @@ export class CodexAppServer extends EventEmitter {
     return [...this.sessionMetadata.keys()].find((threadId) => threadId !== target) || target;
   }
 
-  async readSessionTail(threadId: string, filePath?: string) {
+  async readSessionTail(
+    threadId: string, filePath?: string, options: { paged?: boolean; cursor?: string | null } = {},
+  ) {
     if (!filePath) throw new Error('session_history_unavailable');
-    return readRolloutTail({ filePath, threadId });
+    return readRolloutTail({ filePath, threadId, ...options });
   }
 
   async startTurn({ text, threadId, cwd, clientId, requestId }: StartTurnOptions) {

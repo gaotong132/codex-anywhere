@@ -60,6 +60,7 @@ export type HistoryPage = {
   activityStartedAt?: number | null;
   activityUpdatedAt?: number | null;
   toolPurpose?: string;
+  activityDetail?: string;
   turnProgress?: TurnProgress;
 };
 export type TurnStartResult = { threadId: string; delivery?: 'desktop' | 'appServer' };

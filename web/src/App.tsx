@@ -226,8 +226,14 @@ function elapsedLabel(startedAt: number | null, now: number) {
 }
 
 function LiveActivityStatus({
-  kind, purpose, progress, startedAt,
-}: { kind: LiveActivityKind; purpose: string; progress: TurnProgress; startedAt: number | null }) {
+  kind, purpose, detail, progress, startedAt,
+}: {
+  kind: LiveActivityKind;
+  purpose: string;
+  detail: string;
+  progress: TurnProgress;
+  startedAt: number | null;
+}) {
   const [clock, setClock] = useState(Date.now());
   const elapsed = elapsedLabel(startedAt, clock);
   const hasMetrics = Boolean(progress.plan || progress.files);
@@ -242,19 +248,28 @@ function LiveActivityStatus({
       className={`tool-purpose${purpose ? ' has-purpose' : ''}${hasMetrics ? ' has-metrics' : ''}`}
       role="status"
       aria-live="polite"
-      aria-label={[activityLabel(kind), purpose, elapsed].filter(Boolean).join(' · ')}
-      title={[purpose, elapsed].filter(Boolean).join(' · ')}
+      aria-label={[purpose, detail || activityLabel(kind), elapsed].filter(Boolean).join(' · ')}
+      title={[purpose, detail || activityLabel(kind), elapsed].filter(Boolean).join(' · ')}
     >
       <i aria-hidden="true" />
       <div className="activity-content">
-        <div className="activity-primary">
-          {purpose ? (
+        {purpose && (
+          <div className="activity-line activity-purpose-line">
             <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
-          ) : null}
+          </div>
+        )}
+        <div className="activity-line activity-detail-line">
+          <TypewriterText
+            active
+            as="strong"
+            className="status-change"
+            key={detail || kind}
+            text={detail || activityLabel(kind)}
+          />
           {startedAt && <time>{elapsed}</time>}
         </div>
         {hasMetrics && (
-          <div className="activity-secondary">
+          <div className="activity-line activity-secondary">
             <span className="activity-metrics">
               {progress.files && (
                 <TypewriterText
@@ -370,7 +385,6 @@ export default function App() {
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyTruncated, setHistoryTruncated] = useState(false);
   const [initialHistoryLoaded, setInitialHistoryLoaded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
@@ -384,6 +398,7 @@ export default function App() {
   const [followState, setFollowState] = useState<FollowState>('idle');
   const [executionState, setExecutionState] = useState<ExecutionState>('idle');
   const [toolPurpose, setToolPurpose] = useState('');
+  const [activityDetail, setActivityDetail] = useState('');
   const [liveActivity, setLiveActivity] = useState<LiveActivityKind>('working');
   const [activityStartedAt, setActivityStartedAt] = useState<number | null>(null);
   const [turnProgress, setTurnProgress] = useState<TurnProgress>({});
@@ -816,6 +831,7 @@ export default function App() {
     const payload = message.payload || {};
     if (message.event === 'turn.started') {
       setToolPurpose('');
+      setActivityDetail('');
       setTurnProgress({});
       setLiveActivity('starting');
       setActivityStartedAt(Date.now());
@@ -842,11 +858,11 @@ export default function App() {
     } else if (message.event === 'tool.started') {
       setLiveActivity(liveEventActivity(payload));
       const detail = normalizeToolPurpose(payload.detail);
-      if (detail) setToolPurpose(detail);
+      if (detail) setActivityDetail(detail);
     } else if (message.event === 'tool.completed') {
       setLiveActivity('checking');
       const detail = normalizeToolPurpose(payload.detail);
-      if (detail) setToolPurpose(`✓ ${detail}`);
+      if (detail) setActivityDetail(`✓ ${detail}`);
     } else if (message.event === 'turn.final') {
       setLiveActivity('responding');
       const text = String(payload.text || '');
@@ -874,6 +890,7 @@ export default function App() {
       activeTurnIdRef.current = '';
       setApproval(null);
       setToolPurpose('');
+      setActivityDetail('');
       setLiveActivity('working');
       setActivityStartedAt(null);
       setTurnProgress({});
@@ -886,6 +903,7 @@ export default function App() {
       activeTurnIdRef.current = '';
       setApproval(null);
       setToolPurpose('');
+      setActivityDetail('');
       setLiveActivity('working');
       setActivityStartedAt(null);
       setTurnProgress({});
@@ -1199,6 +1217,7 @@ export default function App() {
         const failed = latestStatus === 'failed';
         setExecutionState(active ? 'running' : failed ? 'failed' : 'idle');
         setToolPurpose(active ? normalizeToolPurpose(page.toolPurpose) : '');
+        setActivityDetail(active ? normalizeToolPurpose(page.activityDetail) : '');
         setLiveActivity(active ? safeActivityKind(page.activityKind || (page.toolPurpose ? 'planning' : 'working')) : 'working');
         setActivityStartedAt(active
           ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || Date.now()
@@ -1222,7 +1241,6 @@ export default function App() {
         }
       }
       setNextCursor(page.nextCursor || null);
-      if (!cursor) setHistoryTruncated(Boolean(page.truncated));
       setInitialHistoryLoaded(true);
     } catch (error) {
       if (selectedRequestRef.current === requestVersion) reportTimelineError(error);
@@ -1264,6 +1282,7 @@ export default function App() {
         const inProgress = latestStatus === 'inProgress';
         const failed = latestStatus === 'failed';
         setToolPurpose(inProgress ? normalizeToolPurpose(page.toolPurpose) : '');
+        setActivityDetail(inProgress ? normalizeToolPurpose(page.activityDetail) : '');
         setLiveActivity(inProgress ? safeActivityKind(page.activityKind || (page.toolPurpose ? 'planning' : 'working')) : 'working');
         setActivityStartedAt((current) => (inProgress
           ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || current || Date.now()
@@ -1358,7 +1377,6 @@ export default function App() {
     setAttachmentUrls({});
     attachmentLoadsRef.current.clear();
     setNextCursor(null);
-    setHistoryTruncated(false);
     setInitialHistoryLoaded(!nextThreadId);
     setHistoryLoading(false);
     followFingerprintRef.current = '';
@@ -1367,6 +1385,7 @@ export default function App() {
     setFollowState(nextThreadId ? 'checking' : 'idle');
     setExecutionState('idle');
     setToolPurpose('');
+    setActivityDetail('');
     setLiveActivity('working');
     setActivityStartedAt(null);
     setTurnProgress({});
@@ -2091,9 +2110,6 @@ export default function App() {
                 {historyLoading ? t('正在加载…', 'Loading…') : t('加载更早记录', 'Load older messages')}
               </button>
             )}
-            {threadId && initialHistoryLoaded && historyTruncated && (
-              <div className="history-tail-notice">{t('该会话记录较大，当前展示最近活动；新输出会继续实时同步。', 'This session is large, so only recent activity is shown. New output will continue to sync live.')}</div>
-            )}
             {threadId && historyLoading && !initialHistoryLoaded && <div className="history-skeleton">{t('正在加载最近记录…', 'Loading recent messages…')}</div>}
             {!timeline.length && !historyLoading && (
               <div className="empty-conversation">
@@ -2133,6 +2149,7 @@ export default function App() {
             <LiveActivityStatus
               kind={liveActivity}
               purpose={toolPurpose}
+              detail={activityDetail}
               progress={turnProgress}
               startedAt={activityStartedAt}
             />

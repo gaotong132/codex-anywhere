@@ -18,6 +18,8 @@ import {
 
 const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_ITEMS = 80;
+const HISTORY_PAGE_BYTES = 512 * 1024;
+const ROLLOUT_CURSOR_PREFIX = 'rollout:v1:';
 const MAX_TEXT_LENGTH = 4_000;
 const ACTIVITY_SCAN_CHUNK_BYTES = 4 * 1024 * 1024;
 const ACTIVITY_SCAN_OVERLAP_BYTES = 1_024;
@@ -47,7 +49,14 @@ type RolloutItem = {
   attachment?: GeneratedImageAttachment;
   completedAt?: number | null;
 };
-type RolloutOptions = { filePath: string; threadId: string; maxBytes?: number; maxItems?: number };
+type RolloutOptions = {
+  filePath: string;
+  threadId: string;
+  maxBytes?: number;
+  maxItems?: number;
+  cursor?: string | null;
+  paged?: boolean;
+};
 type SnapshotOptions = { threadId: string; maxBytes: number; maxItems: number };
 type RolloutSnapshot = SnapshotOptions & {
   fileSize: number;
@@ -56,6 +65,7 @@ type RolloutSnapshot = SnapshotOptions & {
   activity: RolloutActivity;
   liveActivity: LiveActivity;
   toolPurpose: string;
+  activityDetail: string;
   progress: RolloutProgress;
 };
 type CompleteRows = { rows: RolloutRow[]; parsedOffset: number; firstCompleteOffset: number };
@@ -78,6 +88,9 @@ export async function readRolloutTail(options: RolloutOptions) {
   const handle = await open(filePath, 'r');
   try {
     const fileStat = await handle.stat();
+    if (options.paged) {
+      return await readHistoryPage(handle, fileStat.size, threadId, options.cursor);
+    }
     const cached = rolloutCache.get(filePath);
     const reusable = cached
       && cached.threadId === threadId
@@ -106,11 +119,87 @@ export async function readRolloutTail(options: RolloutOptions) {
       activityStartedAt: snapshot.activity.status === 'inProgress' ? snapshot.activity.startedAt : null,
       activityUpdatedAt: snapshot.activity.status === 'inProgress' ? snapshot.liveActivity.updatedAt : null,
       toolPurpose: snapshot.activity.status === 'inProgress' ? snapshot.toolPurpose : '',
+      activityDetail: snapshot.activity.status === 'inProgress' ? snapshot.activityDetail : '',
       turnProgress: { plan: snapshot.progress.plan, files: snapshot.progress.files },
     };
   } finally {
     await handle.close();
   }
+}
+
+async function readHistoryPage(
+  handle: FileHandle, fileSize: number, threadId: string, encodedCursor?: string | null,
+) {
+  const endOffset = decodeRolloutCursor(encodedCursor, fileSize);
+  const startOffset = Math.max(0, endOffset - HISTORY_PAGE_BYTES);
+  const window = await readCompleteRows(handle, startOffset, endOffset, startOffset > 0);
+  const items = mapRolloutRows(window.rows);
+  const activity = encodedCursor
+    ? { status: 'completed' as const, id: '', startedAt: null }
+    : await activityForHistoryPage(handle, window.rows, window.firstCompleteOffset);
+  const nextOffset = window.firstCompleteOffset < endOffset
+    ? window.firstCompleteOffset
+    : startOffset;
+  const nextCursor = nextOffset > 0 ? encodeRolloutCursor(nextOffset) : null;
+  const progress = encodedCursor
+    ? { patchFiles: new Set<string>() }
+    : await progressForHistoryPage(handle, window.rows, activity, window.firstCompleteOffset);
+  const liveActivity = updateLiveActivity(
+    { kind: 'working', updatedAt: activity.startedAt }, window.rows, activity.status,
+  );
+  return {
+    threadId,
+    turns: items.length || activity.status !== 'unknown' ? [{
+      id: `rollout:${threadId}:${window.firstCompleteOffset}:${endOffset}`,
+      status: activity.status,
+      startedAt: null,
+      completedAt: null,
+      items,
+    }] : [],
+    nextCursor,
+    truncated: Boolean(nextCursor),
+    source: 'rolloutPage',
+    fileSize,
+    activityId: activity.id,
+    activityKind: activity.status === 'inProgress' ? liveActivity.kind : '',
+    activityStartedAt: activity.status === 'inProgress' ? activity.startedAt : null,
+    activityUpdatedAt: activity.status === 'inProgress' ? liveActivity.updatedAt : null,
+    toolPurpose: activity.status === 'inProgress' ? updateToolPurpose('', window.rows, activity.status) : '',
+    activityDetail: activity.status === 'inProgress' ? updateActivityDetail('', window.rows, activity.status) : '',
+    turnProgress: { plan: progress.plan, files: progress.files },
+  };
+}
+
+async function activityForHistoryPage(handle: FileHandle, rows: RolloutRow[], firstCompleteOffset: number) {
+  const activity = inferRolloutActivity(rows);
+  if (activity.status !== 'unknown' || firstCompleteOffset <= 0) return activity;
+  return findLatestActivityBefore(handle, firstCompleteOffset);
+}
+
+async function progressForHistoryPage(
+  handle: FileHandle, rows: RolloutRow[], activity: RolloutActivity, firstCompleteOffset: number,
+) {
+  const progress = updateTurnProgress({ patchFiles: new Set<string>() }, rows, activity.status);
+  if (activity.status !== 'unknown' && !progress.plan && firstCompleteOffset > 0) {
+    progress.plan = await findLatestPlanBefore(handle, firstCompleteOffset);
+  }
+  return progress;
+}
+
+function encodeRolloutCursor(offset: number) {
+  return `${ROLLOUT_CURSOR_PREFIX}${offset}`;
+}
+
+function decodeRolloutCursor(cursor: string | null | undefined, fileSize: number) {
+  if (!cursor) return fileSize;
+  if (!cursor.startsWith(ROLLOUT_CURSOR_PREFIX)) throw new Error('invalid_rollout_cursor');
+  const value = cursor.slice(ROLLOUT_CURSOR_PREFIX.length);
+  if (!/^\d+$/.test(value)) throw new Error('invalid_rollout_cursor');
+  const offset = Number(value);
+  if (!Number.isSafeInteger(offset) || offset <= 0 || offset > fileSize) {
+    throw new Error('invalid_rollout_cursor');
+  }
+  return offset;
 }
 
 async function initializeSnapshot(handle: FileHandle, fileSize: number, options: SnapshotOptions): Promise<RolloutSnapshot> {
@@ -132,6 +221,7 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
     activity,
     liveActivity: updateLiveActivity({ kind: 'working', updatedAt: activity.startedAt }, window.rows, activity.status),
     toolPurpose: updateToolPurpose('', window.rows, activity.status),
+    activityDetail: updateActivityDetail('', window.rows, activity.status),
     progress,
   };
 }
@@ -155,6 +245,7 @@ async function updateSnapshot(handle: FileHandle, fileSize: number, cached: Roll
     activity,
     liveActivity: updateLiveActivity(cached.liveActivity, appended.rows, activity.status),
     toolPurpose: updateToolPurpose(cached.toolPurpose, appended.rows, activity.status),
+    activityDetail: updateActivityDetail(cached.activityDetail, appended.rows, activity.status),
     progress: updateTurnProgress(cached.progress, appended.rows, activity.status),
   };
 }
@@ -293,16 +384,27 @@ function updateToolPurpose(current: string, rows: RolloutRow[], status: RolloutS
       purpose = '';
     } else if (type === 'agent_reasoning' || type === 'reasoning' || /Reasoning/i.test(String(payload.item?.type || ''))) {
       purpose = reasoningSummary(payload) || purpose;
-    } else {
-      const detail = summarizeToolActivity(payload);
-      if (detail) {
-        purpose = /(?:_end|completed)$/i.test(type) ? `✓ ${detail}` : detail;
-      } else if (/custom_tool_call_output|function_call_output/i.test(type) && purpose && !purpose.startsWith('✓ ')) {
-        purpose = `✓ ${purpose}`;
-      }
     }
   }
   return status === 'inProgress' ? purpose : '';
+}
+
+function updateActivityDetail(current: string, rows: RolloutRow[], status: RolloutStatus) {
+  let detail = current;
+  for (const row of rows) {
+    const payload = row.payload || {};
+    const type = String(payload.type || '');
+    if (type === 'task_started' || /task_complete|task_failed|turn_aborted|turn_error/.test(type)) {
+      detail = '';
+      continue;
+    }
+    const next = summarizeToolActivity(payload);
+    if (next) detail = /(?:_end|completed)$/i.test(type) ? `✓ ${next}` : next;
+    else if (/custom_tool_call_output|function_call_output/i.test(type) && detail && !detail.startsWith('✓ ')) {
+      detail = `✓ ${detail}`;
+    }
+  }
+  return status === 'inProgress' ? detail : '';
 }
 
 function reasoningSummary(payload: RolloutRow) {
@@ -498,9 +600,10 @@ function capText(value: unknown, limit = MAX_TEXT_LENGTH) {
 }
 
 export const internals = {
-  activityKind, capText, epochMillis, extractContent, findLatestActivityBefore, findLatestPlanBefore,
+  activityKind, capText, decodeRolloutCursor, encodeRolloutCursor, epochMillis, extractContent,
+  findLatestActivityBefore, findLatestPlanBefore,
   inferRolloutActivity,
   inferRolloutStatus, mapRolloutRows, recoverGeneratedImageRows, rolloutCache, updateLiveActivity,
-  reasoningSummary, updateToolPurpose,
+  reasoningSummary, updateActivityDetail, updateToolPurpose,
   updateTurnProgress,
 };

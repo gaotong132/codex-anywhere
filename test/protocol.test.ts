@@ -842,11 +842,12 @@ test('rollout activity follows real response-item tool calls and command complet
   } } };
   const output = { type: 'response_item', payload: { type: 'custom_tool_call_output', output: 'private output' } };
 
-  assert.equal(rolloutInternals.updateToolPurpose('', [started, invoked], 'inProgress'), 'exec_command · kubectl get');
+  assert.equal(rolloutInternals.updateActivityDetail('', [started, invoked], 'inProgress'), 'exec_command · kubectl get');
   assert.equal(
-    rolloutInternals.updateToolPurpose('', [started, invoked, completed, output], 'inProgress'),
+    rolloutInternals.updateActivityDetail('', [started, invoked, completed, output], 'inProgress'),
     '✓ command · kubectl get · exit 0',
   );
+  assert.equal(rolloutInternals.updateToolPurpose('', [started, invoked, completed, output], 'inProgress'), '');
 });
 
 test('rollout activity uses only public reasoning summaries from current Codex rows', () => {
@@ -934,9 +935,46 @@ test('rollout tail exposes active plan and aggregate file progress', async () =>
       plan: { current: 2, total: 2 },
       files: { changed: 1, additions: 1, deletions: 1 },
     });
-    assert.equal(result.toolPurpose, '✓ apply_patch · a.ts');
+    assert.equal(result.toolPurpose, '');
+    assert.equal(result.activityDetail, '✓ apply_patch · a.ts');
   } finally {
     rolloutInternals.rolloutCache.delete(filePath);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('large rollout pages walk backward to the oldest visible messages', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-pages-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const row = (value) => `${JSON.stringify(value)}\n`;
+  const expected = Array.from({ length: 14 }, (_, index) => `message-${index}`);
+  try {
+    await writeFile(filePath, expected.map((message) => [
+      row({ type: 'event_msg', payload: { type: 'user_message', message } }),
+      row({ type: 'response_item', payload: { type: 'custom_tool_call_output', output: 'x'.repeat(70 * 1024) } }),
+    ].join('')).join(''));
+
+    let cursor: string | null = null;
+    const pages: Awaited<ReturnType<typeof readRolloutTail>>[] = [];
+    do {
+      const page = await readRolloutTail({
+        filePath, threadId: 'thread-pages', paged: true, cursor,
+      });
+      pages.unshift(page);
+      assert.notEqual(page.nextCursor, cursor);
+      cursor = page.nextCursor;
+    } while (cursor && pages.length < 10);
+
+    assert.equal(cursor, null);
+    assert.equal(new Set(pages.flatMap((page) => page.turns.map((turn) => turn.id))).size, pages.length);
+    assert.deepEqual(
+      pages.flatMap((page) => page.turns.flatMap((turn) => turn.items.map((item) => item.text))),
+      expected,
+    );
+    await assert.rejects(() => readRolloutTail({
+      filePath, threadId: 'thread-pages', paged: true, cursor: 'rollout:v1:not-a-number',
+    }), /invalid_rollout_cursor/);
+  } finally {
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -1093,6 +1131,36 @@ test('conversation history uses a lightweight bounded descending cursor page', a
   const result = await codex.listSessionTurns('thread-1', { cursor: 'next-page', limit: 999 });
   assert.equal(result.turns.length, 1);
   assert.equal(result.nextCursor, 'more');
+});
+
+test('large conversation history keeps rollout cursors on the bounded file reader', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  codex.ensureStarted = async () => {};
+  codex.sessionMetadata.set('thread-large', { path: 'large-rollout.jsonl' });
+  codex.isLargeSession = async () => true;
+  const calls: unknown[] = [];
+  codex.readSessionTail = async (threadId, filePath, options) => {
+    calls.push({ threadId, filePath, options });
+    return { threadId, turns: [], nextCursor: options.cursor || 'rollout:v1:512' };
+  };
+  codex.rpcRaw = async () => { throw new Error('app server should not read a large rollout'); };
+
+  const first = await codex.listSessionTurns('thread-large', { mode: 'conversation' });
+  const older = await codex.listSessionTurns('thread-large', {
+    mode: 'conversation', cursor: first.nextCursor,
+  });
+
+  assert.equal(older.nextCursor, 'rollout:v1:512');
+  assert.deepEqual(calls, [
+    {
+      threadId: 'thread-large', filePath: 'large-rollout.jsonl',
+      options: { paged: true },
+    },
+    {
+      threadId: 'thread-large', filePath: 'large-rollout.jsonl',
+      options: { paged: true, cursor: 'rollout:v1:512' },
+    },
+  ]);
 });
 
 test('live history keeps visible updates but never requests more than two turns', async () => {
