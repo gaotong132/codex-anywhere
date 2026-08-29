@@ -82,7 +82,7 @@ Desktop 中处理。Codex Anywhere 没有实现 ACP。
 这是单用户个人桥接工具，不是多租户身份系统、零信任网关，也不能替代 Codex 的权限审查。建议使用
 自己控制的 ECS/VPS，在不受信网络优先使用 WSS、VPN 或安全隧道，及时更新主机，只批准刚刚由自己
 发起且可以确认的设备请求；疑似泄露后应撤销设备并轮换对应角色 Token。完整说明参见
-[安全策略](SECURITY.zh-CN.md)和[正式部署指南](docs/deployment.zh-CN.md)。
+[安全策略](docs/SECURITY.zh-CN.md)和[正式部署指南](docs/deployment.zh-CN.md)。
 
 ## 部署
 
@@ -131,7 +131,7 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
 
    命令会列出待批准设备；输入对应序号并确认即可，不需要复制设备 ID 或修改 JSON。
 
-将服务暴露到互联网前请阅读[安全策略](SECURITY.zh-CN.md)。ECS/VPS 上不需要安装 Codex，也不要
+将服务暴露到互联网前请阅读[安全策略](docs/SECURITY.zh-CN.md)。ECS/VPS 上不需要安装 Codex，也不要
 把项目文件复制到 ECS/VPS。
 
 ### 必要配置
@@ -189,6 +189,8 @@ npm run build
 
 应用源码和测试统一使用严格 TypeScript。转发服务和连接器运行编译后的 JavaScript；Windows
 启动器只会在 TypeScript 源码变化后重新构建。
+
+欢迎参与改进；提交 Pull Request 前请阅读[贡献指南](docs/CONTRIBUTING.zh-CN.md)。
 
 ## 许可证
 

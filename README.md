@@ -94,7 +94,7 @@ choice but offers no confidentiality.
 This is a single-user personal bridge, not a multi-tenant identity system, a zero-trust gateway, or a
 replacement for Codex permission review. Use an ECS/VPS you control, prefer WSS/VPN/a secure tunnel on
 untrusted networks, keep the host patched, approve only a freshly initiated device request, and revoke
-devices or rotate role tokens after suspected exposure. See the complete [security policy](SECURITY.md)
+devices or rotate role tokens after suspected exposure. See the complete [security policy](docs/SECURITY.md)
 and [production deployment guide](docs/deployment.md).
 
 ## Deployment
@@ -145,7 +145,7 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
    docker compose exec bridge node build/server/device-admin.js
    ```
 
-Read [SECURITY.md](SECURITY.md) before exposing the relay to the internet. Do not install Codex or copy
+Read the [security policy](docs/SECURITY.md) before exposing the relay to the internet. Do not install Codex or copy
 project files onto the ECS/VPS.
 
 ### Essential configuration
@@ -206,6 +206,8 @@ npm run build
 
 Application source and tests use strict TypeScript. The relay and connector run compiled JavaScript;
 the Windows launcher rebuilds only when the TypeScript source changes.
+
+Contributions are welcome; read the [contributing guide](docs/CONTRIBUTING.md) before opening a pull request.
 
 ## License
 
