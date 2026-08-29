@@ -12,6 +12,7 @@ function createDependencies(overrides = {}) {
       listSessionTurns: async () => ({}),
       startTurn: async () => ({ threadId: 'started-thread' }),
       steerTurn: async ({ threadId }) => ({ threadId, turnId: 'turn-1', steered: true }),
+      queueTurn: ({ threadId }) => ({ threadId, queued: true }),
       stopTurn: async () => ({ stopped: true }),
       listApprovals: () => ({ approvals: [] }),
       respondApproval: async () => ({}),
@@ -122,6 +123,25 @@ test('active Web-owned sessions steer the in-flight app-server turn', async () =
   });
   assert.deepEqual(response.data, {
     threadId: 'target-thread', turnId: 'turn-1', steered: true, delivery: 'appServer',
+  });
+});
+
+test('active Desktop sessions queue one next turn through app-server', async () => {
+  let queued;
+  const handle = createRequestHandler(createDependencies({
+    codex: { queueTurn: (message) => {
+      queued = message;
+      return { threadId: message.threadId, queued: true };
+    } },
+  }));
+  const response = await handle(request('turn.queue', {
+    threadId: 'target-thread', text: 'run this next',
+  }));
+  assert.deepEqual(queued, {
+    threadId: 'target-thread', text: 'run this next', requestId: 'request-1', clientId: 'client-1',
+  });
+  assert.deepEqual(response.data, {
+    threadId: 'target-thread', queued: true, delivery: 'appServer',
   });
 });
 

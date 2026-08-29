@@ -367,6 +367,30 @@ export class CodexAppServer extends EventEmitter {
     return { threadId: targetThreadId, turnId: turnContext.turnId, steered: true };
   }
 
+  queueTurn({ text, threadId, clientId, requestId }: StartTurnOptions) {
+    const targetThreadId = String(threadId || '').trim();
+    const prompt = String(text || '').trim();
+    if (!targetThreadId) throw new Error('thread_id_required');
+    if (!prompt) throw new Error('message_required');
+    if (this.activeTurn) throw new Error('another_turn_is_active');
+    void this.startTurn({
+      text: prompt,
+      threadId: targetThreadId,
+      clientId,
+      requestId,
+      waitForActiveWriter: true,
+    }).catch((error) => {
+      if (String(error instanceof Error ? error.message : error) === 'turn_cancelled') return;
+      this.emit('turn-event', {
+        clientId,
+        requestId,
+        event: 'turn.error',
+        payload: { error: String(error instanceof Error ? error.message : error).slice(0, SUMMARY_LIMIT) },
+      });
+    });
+    return { threadId: targetThreadId, queued: true };
+  }
+
   async resumeWhenWritable(
     threadId: string,
     threadParams: JsonObject,

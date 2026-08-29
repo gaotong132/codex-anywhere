@@ -16,6 +16,7 @@ type CodexGateway = {
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
   startTurn(options: Payload): Promise<Record<string, any>>;
   steerTurn(options: Payload): Promise<Record<string, any>>;
+  queueTurn(options: Payload): Record<string, any>;
   stopTurn(): Promise<any>;
   listApprovals(threadId: unknown, clientId?: string): any;
   respondApproval(approvalId: unknown, approved: boolean, threadId?: unknown): Promise<any>;
@@ -103,6 +104,9 @@ async function dispatchAction({
       ...await codex.steerTurn({ ...payload, clientId, requestId }),
       delivery: 'appServer',
     };
+  }
+  if (action === 'turn.queue') {
+    return { ...codex.queueTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
   }
   if (action === 'turn.stop') return codex.stopTurn();
   if (action === 'approval.pending') {

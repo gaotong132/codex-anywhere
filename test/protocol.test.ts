@@ -40,6 +40,7 @@ import {
 import { internals as rolloutInternals, readRolloutTail } from '../src/connector/rollout-tail.js';
 import { needsDesktopPermissionRecovery } from '../src/connector/session-permissions.js';
 import {
+  canQueueDesktopTurn,
   canStopOwnedTurn,
   canSteerOwnedTurn,
   friendlyError,
@@ -243,6 +244,14 @@ test('steering is available only while the selected Web-owned turn is actively r
   assert.equal(canSteerOwnedTurn(true, 'waiting', 'thread-1', 'thread-1'), false);
   assert.equal(canSteerOwnedTurn(true, 'running', 'thread-1', 'thread-2'), false);
   assert.equal(canSteerOwnedTurn(false, 'running', 'thread-1', 'thread-1'), false);
+});
+
+test('Desktop-owned active sessions offer one text-only next-turn queue', () => {
+  assert.equal(canQueueDesktopTurn(false, 'running', null, 'thread-1'), true);
+  assert.equal(canQueueDesktopTurn(true, 'running', null, 'thread-1'), false);
+  assert.equal(canQueueDesktopTurn(false, 'waiting', null, 'thread-1'), false);
+  assert.equal(canQueueDesktopTurn(false, 'running', 'thread-1', 'thread-1'), false);
+  assert.equal(canQueueDesktopTurn(false, 'running', null, null), false);
 });
 
 test('automatic message following tolerates a small mobile bottom offset', () => {
@@ -911,6 +920,27 @@ test('active app-server turns accept steering only for the matching turn', async
     () => codex.steerTurn({ text: 'wrong', threadId: 'thread-2' }),
     /turn_not_active/,
   );
+});
+
+test('queued turns acknowledge immediately and wait for the Desktop writer in the background', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  let captured;
+  let release;
+  codex.startTurn = async (options) => {
+    captured = options;
+    await new Promise((resolvePromise) => { release = resolvePromise; });
+    return { threadId: String(options.threadId) };
+  };
+  const result = codex.queueTurn({
+    text: 'run this next', threadId: 'thread-1', clientId: 'client-1', requestId: 'request-1',
+  });
+  assert.deepEqual(result, { threadId: 'thread-1', queued: true });
+  assert.deepEqual(captured, {
+    text: 'run this next', threadId: 'thread-1', clientId: 'client-1', requestId: 'request-1',
+    waitForActiveWriter: true,
+  });
+  release();
+  await new Promise((resolvePromise) => setImmediate(resolvePromise));
 });
 
 test('active desktop writer wait has a bounded timeout', async () => {

@@ -124,6 +124,15 @@ export function canSteerOwnedTurn(
   return state === 'running' && canStopOwnedTurn(running, ownedThreadId, selectedThreadId);
 }
 
+export function canQueueDesktopTurn(
+  running: boolean,
+  state: ExecutionState,
+  ownedThreadId: string | null,
+  selectedThreadId: string | null,
+) {
+  return !running && state === 'running' && !ownedThreadId && Boolean(selectedThreadId);
+}
+
 export function isNearScrollBottom(
   metrics: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
   threshold = 180,

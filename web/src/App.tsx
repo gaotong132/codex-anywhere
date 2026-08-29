@@ -42,6 +42,7 @@ import {
   followLabel,
   formatDate,
   friendlyError,
+  canQueueDesktopTurn,
   canSteerOwnedTurn,
   canStopOwnedTurn,
   isConnectionInterruption,
@@ -1363,12 +1364,16 @@ export default function App() {
     const steering = canSteerOwnedTurn(
       running, executionState, ownedTurnThreadId, targetThreadId,
     );
+    const queueing = canQueueDesktopTurn(
+      running, executionState, ownedTurnThreadId, targetThreadId,
+    );
     if (
       (!text && !image)
       || uploading
       || sendingRef.current
       || (running && !steering)
       || (steering && Boolean(image))
+      || (queueing && Boolean(image))
     ) return;
     const isExistingSession = Boolean(threadIdRef.current);
     const projectCwd = newSessionCwd.trim();
@@ -1420,14 +1425,15 @@ export default function App() {
       if (!steering) {
         setRunning(true);
         setOwnedTurnThreadId(threadIdRef.current || NEW_TURN_KEY);
-        setExecutionState('running');
-        setLiveActivity('starting');
+        setExecutionState(queueing ? 'waiting' : 'running');
+        setLiveActivity(queueing ? 'waiting' : 'starting');
         setActivityStartedAt(Date.now());
       }
-      const data = await request<TurnStartResult>(steering ? 'turn.steer' : 'turn.start', {
+      const action = steering ? 'turn.steer' : queueing ? 'turn.queue' : 'turn.start';
+      const data = await request<TurnStartResult>(action, {
         text: turnText,
         threadId: threadIdRef.current,
-        ...(steering ? {} : { cwd: isExistingSession ? '' : projectCwd }),
+        ...(steering || queueing ? {} : { cwd: isExistingSession ? '' : projectCwd }),
       });
       const sentAt = Date.now();
       if (optimisticItemId) {
@@ -1678,6 +1684,9 @@ export default function App() {
     project.toLocaleLowerCase() === newSessionCwd.trim().toLocaleLowerCase()
   )) || '';
   const steeringAvailable = canSteerOwnedTurn(
+    running, executionState, ownedTurnThreadId, threadId,
+  );
+  const queueingAvailable = canQueueDesktopTurn(
     running, executionState, ownedTurnThreadId, threadId,
   );
 
@@ -2028,13 +2037,13 @@ export default function App() {
                 event.target.value = '';
                 void chooseImage(file);
               }}
-              disabled={!online || running || uploading}
+              disabled={!online || running || uploading || queueingAvailable}
             />
             <button
               className="attach-button"
               type="button"
               onClick={() => imageInputRef.current?.click()}
-              disabled={!online || running || uploading}
+              disabled={!online || running || uploading || queueingAvailable}
               aria-label={t('添加图片', 'Add image')}
               title={t('添加图片', 'Add image')}
             >＋</button>
@@ -2049,6 +2058,8 @@ export default function App() {
                 ? t('正在上传图片…', 'Uploading image…')
                 : steeringAvailable
                   ? t('向当前任务追加指令…', 'Steer the current run…')
+                  : queueingAvailable
+                    ? t('排队到当前任务完成后执行…', 'Queue after the current run…')
                   : online ? t('发送给本机 Codex…', 'Send to local Codex…') : t('本机连接器离线', 'Local connector is offline')}
               disabled={!online || uploading}
             />
@@ -2062,13 +2073,16 @@ export default function App() {
                     !online
                     || uploading
                     || (running && !steeringAvailable)
+                    || (queueingAvailable && Boolean(pendingImage))
                     || (!prompt.trim() && !pendingImage)
                     || (!threadId && !newSessionCwd.trim())
                   }
                   onClick={() => void sendTurn()}
                   aria-label={uploading
                     ? t('正在发送图片', 'Sending image')
-                    : steeringAvailable ? t('追加指令', 'Steer') : t('发送', 'Send')}
+                    : steeringAvailable
+                      ? t('追加指令', 'Steer')
+                      : queueingAvailable ? t('排队下一轮', 'Queue next turn') : t('发送', 'Send')}
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Zm3 7h13" /></svg>
               </button>
@@ -2076,7 +2090,9 @@ export default function App() {
           </div>
           <small>{steeringAvailable
             ? t('运行中可继续追加文字指令', 'You can steer this run with another text instruction')
-            : t('Ctrl / ⌘ + Enter 发送 · 历史记录按页加载', 'Ctrl / ⌘ + Enter to send · History loads by page')}</small>
+            : queueingAvailable
+              ? t('这条文字会在桌面任务结束后自动开始', 'This text will start after the Desktop run finishes')
+              : t('Ctrl / ⌘ + Enter 发送 · 历史记录按页加载', 'Ctrl / ⌘ + Enter to send · History loads by page')}</small>
         </footer>}
       </section>
     </main>
