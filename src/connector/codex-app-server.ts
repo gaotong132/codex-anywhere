@@ -16,8 +16,6 @@ const DEFAULT_HISTORY_PAGE_SIZE = 6;
 const MAX_HISTORY_PAGE_SIZE = 10;
 const MAX_LIVE_PAGE_SIZE = 2;
 const LARGE_ROLLOUT_BYTES = 64 * 1024 * 1024;
-const DEFAULT_ACTIVE_WRITER_WAIT_MS = 10 * 60_000;
-const DEFAULT_ACTIVE_WRITER_RETRY_MS = 2_000;
 
 type JsonObject = Record<string, any>;
 type CodexAppServerOptions = {
@@ -25,8 +23,6 @@ type CodexAppServerOptions = {
   runtimeCwd?: string;
   allowedRoots?: string[];
   networkAccess?: boolean;
-  activeWriterWaitMs?: number;
-  activeWriterRetryMs?: number;
 };
 type PendingRpc = {
   method: string;
@@ -57,7 +53,6 @@ type StartTurnOptions = {
   cwd?: unknown;
   clientId?: string;
   requestId?: string;
-  waitForActiveWriter?: boolean;
 };
 
 const APPROVAL_METHODS = new Set([
@@ -73,8 +68,6 @@ export class CodexAppServer extends EventEmitter {
   runtimeCwd: string;
   allowedRoots: string[];
   networkAccess: boolean;
-  activeWriterWaitMs: number;
-  activeWriterRetryMs: number;
   child: ChildProcessWithoutNullStreams | null;
   readyPromise: Promise<void> | null;
   nextId: number;
@@ -92,10 +85,6 @@ export class CodexAppServer extends EventEmitter {
       : [];
     this.allowedRoots = configuredRoots.length ? configuredRoots : [this.runtimeCwd];
     this.networkAccess = options.networkAccess === true;
-    this.activeWriterWaitMs = Number.isFinite(options.activeWriterWaitMs)
-      ? Math.max(0, Number(options.activeWriterWaitMs)) : DEFAULT_ACTIVE_WRITER_WAIT_MS;
-    this.activeWriterRetryMs = Number.isFinite(options.activeWriterRetryMs)
-      ? Math.max(1, Number(options.activeWriterRetryMs)) : DEFAULT_ACTIVE_WRITER_RETRY_MS;
     this.child = null;
     this.readyPromise = null;
     this.nextId = 0;
@@ -280,9 +269,7 @@ export class CodexAppServer extends EventEmitter {
     return readRolloutTail({ filePath, threadId });
   }
 
-  async startTurn({
-    text, threadId, cwd, clientId, requestId, waitForActiveWriter = true,
-  }: StartTurnOptions) {
+  async startTurn({ text, threadId, cwd, clientId, requestId }: StartTurnOptions) {
     if (this.activeTurn) throw new Error('another_turn_is_active');
     let resolvedThreadId = String(threadId || '').trim();
     const isNewThread = !resolvedThreadId;
@@ -323,9 +310,7 @@ export class CodexAppServer extends EventEmitter {
       };
       const threadParams = isNewThread ? { cwd: turnCwd, ...secureDefaults } : { cwd: turnCwd };
       if (resolvedThreadId) {
-        const result = await this.resumeWhenWritable(
-          resolvedThreadId, threadParams, turnContext, waitForActiveWriter,
-        );
+        const result = await this.resumeThread(resolvedThreadId, threadParams, turnContext);
         resolvedThreadId = result?.thread?.id || result?.id || resolvedThreadId;
       } else {
         const result = await this.rpcRaw('thread/start', threadParams);
@@ -382,59 +367,18 @@ export class CodexAppServer extends EventEmitter {
     return { threadId: targetThreadId, turnId: turnContext.turnId, steered: true };
   }
 
-  queueTurn({ text, threadId, clientId, requestId }: StartTurnOptions) {
-    const targetThreadId = String(threadId || '').trim();
-    const prompt = String(text || '').trim();
-    if (!targetThreadId) throw new Error('thread_id_required');
-    if (!prompt) throw new Error('message_required');
-    if (this.activeTurn) throw new Error('another_turn_is_active');
-    void this.startTurn({
-      text: prompt,
-      threadId: targetThreadId,
-      clientId,
-      requestId,
-      waitForActiveWriter: true,
-    }).catch((error) => {
-      if (String(error instanceof Error ? error.message : error) === 'turn_cancelled') return;
-      this.emit('turn-event', {
-        clientId,
-        requestId,
-        event: 'turn.error',
-        payload: { error: String(error instanceof Error ? error.message : error).slice(0, SUMMARY_LIMIT) },
-      });
-    });
-    return { threadId: targetThreadId, queued: true };
-  }
-
-  async resumeWhenWritable(
+  async resumeThread(
     threadId: string,
     threadParams: JsonObject,
     turnContext: TurnContext,
-    waitForActiveWriter = true,
   ) {
-    const deadline = Date.now() + this.activeWriterWaitMs;
-    let waitingNotified = false;
-    while (this.activeTurn === turnContext) {
-      try {
-        return await this.rpcRaw('thread/resume', { threadId, ...threadParams });
-      } catch (error) {
-        if (this.activeTurn !== turnContext) throw new Error('turn_cancelled');
-        if (!isActiveWriterError(error)) throw error;
-        if (!waitForActiveWriter) throw new Error('thread_active_writer_conflict');
-        if (Date.now() >= deadline) throw new Error('thread_active_writer_timeout');
-        if (!waitingNotified) {
-          waitingNotified = true;
-          turnContext.state = 'waiting';
-          this.emitTurn('turn.waiting', {
-            threadId,
-            reason: 'active_writer',
-            retryMs: this.activeWriterRetryMs,
-          });
-        }
-        await wait(this.activeWriterRetryMs);
-      }
+    try {
+      return await this.rpcRaw('thread/resume', { threadId, ...threadParams });
+    } catch (error) {
+      if (this.activeTurn !== turnContext) throw new Error('turn_cancelled');
+      if (isActiveWriterError(error)) throw new Error('thread_active_writer_conflict');
+      throw error;
     }
-    throw new Error('turn_cancelled');
   }
 
   listApprovals(threadId: unknown, clientId?: string) {
@@ -768,10 +712,6 @@ function isActiveWriterError(error: unknown) {
   return /already has an active writer/i.test(String(error instanceof Error ? error.message : error || ''));
 }
 
-function wait(milliseconds: number) {
-  return new Promise<void>((resolveWait) => setTimeout(resolveWait, milliseconds));
-}
-
 function resolveAllowedWorkspace(roots: string[] | string, candidate: unknown) {
   const rawCandidate = String(candidate || '').trim();
   if (!rawCandidate) throw new Error('project_directory_required');
@@ -799,6 +739,6 @@ function isAllowedWorkspace(roots: string[] | string, candidate: unknown) {
 }
 
 export const internals = {
-  approvedPermissions, approvalKind, approvalResult, extractText, isActiveWriterError, mapTurns,
+  approvedPermissions, approvalKind, approvalResult, extractText, mapTurns,
   isAllowedWorkspace, resolveAllowedWorkspace, summarizeItem,
 };

@@ -37,10 +37,6 @@ Original downloads require confirmation and a short-lived capability bound to on
 Interactive HTML is restricted to Codex visualizations and runs in a network-blocked, opaque-origin
 sandbox in the browser.
 
-Web Push is optional. When the page is disconnected, it carries only the generic event kind
-`completed` or `approval`. The relay and push provider can learn the event type and time, but receive
-no task title, message, project name, path, or tool output.
-
 ## Trust boundary
 
 The ECS/VPS remains trusted infrastructure because it serves the Web app and manages device approvals.

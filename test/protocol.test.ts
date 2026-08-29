@@ -39,7 +39,7 @@ import {
 import { internals as rolloutInternals, readRolloutTail } from '../src/connector/rollout-tail.js';
 import { needsDesktopPermissionRecovery } from '../src/connector/session-permissions.js';
 import {
-  canQueueDesktopTurn,
+  canSendToActiveDesktopTurn,
   canStopOwnedTurn,
   canSteerOwnedTurn,
   friendlyError,
@@ -241,12 +241,12 @@ test('steering is available only while the selected Web-owned turn is actively r
   assert.equal(canSteerOwnedTurn(false, 'running', 'thread-1', 'thread-1'), false);
 });
 
-test('Desktop-owned active sessions offer one text-only next-turn queue', () => {
-  assert.equal(canQueueDesktopTurn(false, 'running', null, 'thread-1'), true);
-  assert.equal(canQueueDesktopTurn(true, 'running', null, 'thread-1'), false);
-  assert.equal(canQueueDesktopTurn(false, 'waiting', null, 'thread-1'), false);
-  assert.equal(canQueueDesktopTurn(false, 'running', 'thread-1', 'thread-1'), false);
-  assert.equal(canQueueDesktopTurn(false, 'running', null, null), false);
+test('Desktop-owned active sessions accept direct delivery', () => {
+  assert.equal(canSendToActiveDesktopTurn(false, 'running', null, 'thread-1'), true);
+  assert.equal(canSendToActiveDesktopTurn(true, 'running', null, 'thread-1'), false);
+  assert.equal(canSendToActiveDesktopTurn(false, 'waiting', null, 'thread-1'), false);
+  assert.equal(canSendToActiveDesktopTurn(false, 'running', 'thread-1', 'thread-1'), false);
+  assert.equal(canSendToActiveDesktopTurn(false, 'running', null, null), false);
 });
 
 test('automatic message following tolerates a small mobile bottom offset', () => {
@@ -800,37 +800,25 @@ test('live history restores rollout metadata after a connector restart', async (
   assert.equal(result.filePath, 'restored-rollout.jsonl');
 });
 
-test('active desktop writer waits and resumes the original thread without forking', async () => {
-  const codex = new CodexAppServer({
-    runtimeCwd: process.cwd(), activeWriterWaitMs: 100, activeWriterRetryMs: 1,
-  });
+test('active Desktop writers return a conflict immediately without forking', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
   const calls = [];
   codex.rpcRaw = async (method, params) => {
     calls.push({ method, params });
     if (method === 'thread/read') return { thread: { id: 'original', cwd: process.cwd() } };
-    if (method === 'thread/resume' && calls.filter((call) => call.method === 'thread/resume').length === 1) {
-      throw new Error('thread original already has an active writer');
-    }
-    if (method === 'turn/start') return { turn: { id: 'turn-1' } };
-    return { thread: { id: 'original' } };
+    throw new Error('thread original already has an active writer');
   };
-  const result = await codex.startTurn({
+  await assert.rejects(() => codex.startTurn({
     text: 'continue', threadId: 'original', cwd: join(process.cwd(), 'wrong-directory'),
     clientId: 'client', requestId: 'request',
-  });
-  assert.deepEqual(result, { threadId: 'original' });
+  }), /thread_active_writer_conflict/);
   assert.equal(calls[0].method, 'thread/read');
   assert.equal(calls[1].method, 'thread/resume');
-  assert.equal(calls[2].method, 'thread/resume');
-  assert.equal(calls[3].method, 'turn/start');
-  assert.equal(calls[3].params.threadId, 'original');
-  assert.equal(calls[3].params.cwd, process.cwd());
   assert.equal(calls[1].params.cwd, process.cwd());
   assert.equal('approvalPolicy' in calls[1].params, false);
   assert.equal('sandbox' in calls[1].params, false);
   assert.equal('config' in calls[1].params, false);
-  assert.equal('approvalPolicy' in calls[3].params, false);
   assert.equal(calls.some((call) => call.method === 'thread/fork'), false);
 });
 
@@ -915,39 +903,6 @@ test('active app-server turns accept steering only for the matching turn', async
     () => codex.steerTurn({ text: 'wrong', threadId: 'thread-2' }),
     /turn_not_active/,
   );
-});
-
-test('queued turns acknowledge immediately and wait for the Desktop writer in the background', async () => {
-  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
-  let captured;
-  let release;
-  codex.startTurn = async (options) => {
-    captured = options;
-    await new Promise((resolvePromise) => { release = resolvePromise; });
-    return { threadId: String(options.threadId) };
-  };
-  const result = codex.queueTurn({
-    text: 'run this next', threadId: 'thread-1', clientId: 'client-1', requestId: 'request-1',
-  });
-  assert.deepEqual(result, { threadId: 'thread-1', queued: true });
-  assert.deepEqual(captured, {
-    text: 'run this next', threadId: 'thread-1', clientId: 'client-1', requestId: 'request-1',
-    waitForActiveWriter: true,
-  });
-  release();
-  await new Promise((resolvePromise) => setImmediate(resolvePromise));
-});
-
-test('active desktop writer wait has a bounded timeout', async () => {
-  const codex = new CodexAppServer({ runtimeCwd: process.cwd(), activeWriterWaitMs: 0 });
-  codex.ensureStarted = async () => {};
-  codex.rpcRaw = async (method) => {
-    if (method === 'thread/read') return { thread: { id: 'original', cwd: process.cwd() } };
-    throw new Error('thread original already has an active writer');
-  };
-  await assert.rejects(() => codex.startTurn({
-    text: 'continue', threadId: 'original', cwd: process.cwd(), clientId: 'client', requestId: 'request',
-  }), /thread_active_writer_timeout/);
 });
 
 test('non-writer resume errors are returned unchanged', async () => {

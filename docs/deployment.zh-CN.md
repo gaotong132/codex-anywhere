@@ -79,9 +79,8 @@ docker compose up --build -d
 
 转发服务要求每个已批准设备密钥提供 Ed25519 签名；一次性注册和恢复 Token 引导还会把 HMAC 证明
 绑定到新的随机质询。它会拒绝证明重放、临时锁定重复失败，并每小时更新认证连接
-（`BRIDGE_SESSION_MAX_AGE_MS`）。Compose 卷 `bridge-state` 会持久化设备公钥、单向配对校验值、
-配对元数据和可选 Web Push 状态。转发服务会在该卷内生成自己的 VAPID 密钥；浏览器和连接器的设备
-私钥不会进入转发服务，也不会保存会话或文件内容。
+（`BRIDGE_SESSION_MAX_AGE_MS`）。Compose 卷 `bridge-state` 会持久化设备公钥、单向配对校验值和
+配对元数据。浏览器和连接器的设备私钥不会进入转发服务，也不会保存会话或文件内容。
 
 Compose 服务默认：
 
@@ -108,9 +107,6 @@ ss -ltn | grep 3300
 | `BRIDGE_CONNECTOR_TOKEN` | 必填 | 连接器凭据，必须与浏览器凭据不同 |
 | `BRIDGE_SESSION_MAX_AGE_MS` | `3600000` | 已认证 WebSocket 重新鉴权前的最长生存期 |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | `data/devices.json` | 已批准公钥和短期待配对记录 |
-| `BRIDGE_PUSH_SUBJECT` | Compose 中为 `https://codex-anywhere.local` | 可选 Web Push 联系 URI；Compose 会在 `/data/vapid.json` 生成 VAPID 密钥 |
-| `BRIDGE_PUSH_VAPID_FILE` | 默认未设置（Compose 为 `/data/vapid.json`） | 受保护、自动生成的 Web Push 密钥文件 |
-| `BRIDGE_PUSH_SUBSCRIPTIONS_FILE` | 与设备注册表同目录（Compose 为 `/data/push-subscriptions.json`） | 用户主动开启的已批准浏览器订阅；不包含会话内容 |
 | `CODEX_UI_LANGUAGE` | `zh-CN` | Web 界面语言：`zh-CN` 或 `en` |
 | `HOST` / `PORT` | `127.0.0.1` / `3300` | 直接运行 Node 时的监听地址；Compose 会设置容器内参数 |
 | `BRIDGE_TRUST_PROXY` | `0` | 只有受控代理是唯一入口时才能信任 `X-Real-IP` |

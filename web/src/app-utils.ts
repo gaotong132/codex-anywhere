@@ -48,8 +48,8 @@ export function friendlyError(error: unknown) {
     const detail = message.slice('desktop_delivery_failed:'.length);
     return t(`桌面 Codex 未接收这条消息：${detail}`, `Codex Desktop did not receive this message: ${detail}`);
   }
-  if (message === 'thread_active_writer_timeout') {
-    return t('等待原会话可写已超时，消息没有发送，也没有创建 fork。请确认桌面任务已经结束后重试。', 'Timed out waiting for the original session. The message was not sent and no fork was created. Ensure the desktop task has ended, then retry.');
+  if (message === 'thread_active_writer_conflict') {
+    return t('无法通过桌面通道直接发送，消息没有进入排队。请确认桌面 Codex 在线后重试。', 'Direct Desktop delivery is unavailable and the message was not queued. Confirm Codex Desktop is online, then retry.');
   }
   if (/already has an active writer/i.test(message)) {
     return t('这个会话当前正由桌面 Codex 占用，不能同时从手机写入。请先让桌面任务结束并关闭该会话，再重试；系统不会自动创建 fork。', 'Codex Desktop is currently writing to this session, so the phone cannot write at the same time. Finish and close the desktop task before retrying; no fork will be created automatically.');
@@ -124,7 +124,7 @@ export function canSteerOwnedTurn(
   return state === 'running' && canStopOwnedTurn(running, ownedThreadId, selectedThreadId);
 }
 
-export function canQueueDesktopTurn(
+export function canSendToActiveDesktopTurn(
   running: boolean,
   state: ExecutionState,
   ownedThreadId: string | null,

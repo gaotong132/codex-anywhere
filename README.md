@@ -21,11 +21,9 @@ computer; a lightweight relay on your own ECS/VPS provides the remote entry poin
 
 - **Continue existing sessions** — browse recent work, read Markdown history, and send new text or image
   messages from a phone.
-- **Guide the next step** — steer a Web-owned run while it is active, or queue one text instruction
-  behind a Desktop-owned run without creating another session.
+- **Guide the next step** — send follow-up instructions directly to a running task without creating
+  another session.
 - **Follow work in progress** — see which sessions are running and follow useful progress as it happens.
-- **Know when to come back** — opt in to generic completion and approval notifications, including Web
-  Push after the page disconnects when the browser and mobile OS support it.
 - **Approve from your phone** — accept or reject supported command, file-change, and permission
   requests in the browser, even after reconnecting.
 - **Bring results back with you** — preview images and download files linked in assistant replies after
@@ -63,15 +61,9 @@ Both the browser and local connector initiate connections to the relay. Every ap
 response, event, preview, and download chunk uses an authenticated end-to-end encrypted channel; the
 relay authenticates devices and routes ciphertext.
 
-The connector uses Codex app-server JSON-RPC for sessions it owns. Active Desktop sessions use task
-delivery and adaptive history polling. Web-owned runs can be steered; Desktop-owned runs can queue one
-text instruction for the next turn. Approvals already owned by Desktop remain there. Codex Anywhere
-does not implement ACP.
-
-Notifications are deliberately separate from the encrypted conversation channel. An online background
-page creates its own local notification. If the page is disconnected, the connector sends only a
-`completed` or `approval` category to the relay; no session title, message, project name, or file path
-is included.
+The connector uses Codex app-server JSON-RPC for sessions it owns. Active Desktop sessions use native
+delivery and adaptive history polling, so follow-up instructions go straight to the running task.
+Approvals already owned by Desktop remain there. Codex Anywhere does not implement ACP.
 
 ## Security model
 
@@ -92,7 +84,7 @@ Security is layered rather than delegated to a single bearer token:
 
 The ECS still serves the Web app and manages device trust, so it is not a zero-trust relay. A compromised
 host can change Web code or approvals and observe metadata. A compromised browser profile or connector
-computer keeps that endpoint's authority. Web Push reveals only a generic event type and time. Direct
+computer keeps that endpoint's authority. Direct
 `ws://` keeps application traffic encrypted but does not protect Web delivery, pairing, or metadata;
 prefer WSS, a VPN, or a secure tunnel on untrusted networks.
 
@@ -167,7 +159,6 @@ project files onto the ECS/VPS.
 | `BRIDGE_CONNECTOR_TOKEN` | Relay and connector | Local connector secret |
 | `BRIDGE_SESSION_MAX_AGE_MS` | Relay | Maximum authenticated WebSocket lifetime; defaults to one hour |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | Relay | Persistent approved/pending public device records; Compose configures this automatically |
-| `BRIDGE_PUSH_SUBJECT` | Relay | Optional Web Push contact URI; Compose generates its VAPID key inside the protected state volume |
 | `BRIDGE_URL` | Connector | Relay WebSocket URL; supports `ws://` and `wss://` |
 | `CODEX_UI_LANGUAGE` | Relay | Web UI language: `zh-CN` or `en` |
 

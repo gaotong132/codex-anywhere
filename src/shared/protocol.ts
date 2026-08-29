@@ -7,7 +7,7 @@ export const CLIENT_ACTIONS = new Set([
   'attachment.upload', 'attachment.read',
   'visualization.read',
   'file.download.open', 'file.download.chunk', 'file.download.close',
-  'turn.start', 'turn.steer', 'turn.queue', 'turn.stop', 'approval.pending', 'approval.respond',
+  'turn.start', 'turn.steer', 'turn.stop', 'approval.pending', 'approval.respond',
 ]);
 
 export type BridgeFrame = Record<string, any>;

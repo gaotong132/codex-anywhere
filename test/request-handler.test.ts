@@ -12,7 +12,6 @@ function createDependencies(overrides = {}) {
       listSessionTurns: async () => ({}),
       startTurn: async () => ({ threadId: 'started-thread' }),
       steerTurn: async ({ threadId }) => ({ threadId, turnId: 'turn-1', steered: true }),
-      queueTurn: ({ threadId }) => ({ threadId, queued: true }),
       stopTurn: async () => ({ stopped: true }),
       listApprovals: () => ({ approvals: [] }),
       respondApproval: async () => ({}),
@@ -103,10 +102,30 @@ test('idle existing sessions use app-server so Web can receive approval requests
   const response = await handle(request('turn.start', { threadId: 'target-thread', text: 'hello' }));
   assert.deepEqual(started, {
     threadId: 'target-thread', text: 'hello', requestId: 'request-1', clientId: 'client-1',
-    waitForActiveWriter: false,
   });
   assert.equal(response.ok, true);
   assert.equal(response.data.delivery, 'appServer');
+});
+
+test('active Desktop sessions receive follow-up messages immediately through Desktop', async () => {
+  let delivered;
+  let appServerCalls = 0;
+  const handle = createRequestHandler(createDependencies({
+    codex: { startTurn: async () => { appServerCalls += 1; return {}; } },
+    desktop: { sendMessage: async (message) => {
+      delivered = message;
+      return { threadId: message.threadId, delivery: 'desktop' };
+    } },
+  }));
+  const response = await handle(request('turn.start', {
+    threadId: 'target-thread', text: 'adjust this now', preferDesktop: true,
+  }));
+  assert.deepEqual(delivered, {
+    threadId: 'target-thread', text: 'adjust this now', requestId: 'request-1',
+    callerThreadId: 'controller-thread',
+  });
+  assert.equal(appServerCalls, 0);
+  assert.deepEqual(response.data, { threadId: 'target-thread', delivery: 'desktop' });
 });
 
 test('active Web-owned sessions steer the in-flight app-server turn', async () => {
@@ -123,25 +142,6 @@ test('active Web-owned sessions steer the in-flight app-server turn', async () =
   });
   assert.deepEqual(response.data, {
     threadId: 'target-thread', turnId: 'turn-1', steered: true, delivery: 'appServer',
-  });
-});
-
-test('active Desktop sessions queue one next turn through app-server', async () => {
-  let queued;
-  const handle = createRequestHandler(createDependencies({
-    codex: { queueTurn: (message) => {
-      queued = message;
-      return { threadId: message.threadId, queued: true };
-    } },
-  }));
-  const response = await handle(request('turn.queue', {
-    threadId: 'target-thread', text: 'run this next',
-  }));
-  assert.deepEqual(queued, {
-    threadId: 'target-thread', text: 'run this next', requestId: 'request-1', clientId: 'client-1',
-  });
-  assert.deepEqual(response.data, {
-    threadId: 'target-thread', queued: true, delivery: 'appServer',
   });
 });
 
@@ -183,25 +183,19 @@ test('active Desktop sessions preserve the required caller task', async () => {
   assert.equal(response.data.delivery, 'desktop');
 });
 
-test('Desktop absence falls back only for sessions safe to resume', async () => {
-  let resumed;
+test('Desktop absence never turns a follow-up into a hidden queue', async () => {
   let startCalls = 0;
   const fallback = createRequestHandler(createDependencies({
     codex: { startTurn: async (message) => {
       startCalls += 1;
-      if (message.waitForActiveWriter === false) throw new Error('thread_active_writer_conflict');
-      resumed = message;
-      return { threadId: message.threadId };
+      throw new Error('thread_active_writer_conflict');
     } },
     desktop: { sendMessage: async () => { throw new Error('desktop_app_unavailable'); } },
   }));
   const response = await fallback(request('turn.start', { threadId: 'thread-1', text: 'continue' }));
-  assert.equal(response.ok, true);
-  assert.equal(response.data.delivery, 'appServer');
+  assert.equal(response.ok, false);
+  assert.equal(response.error, 'thread_active_writer_conflict');
   assert.equal(startCalls, 2);
-  assert.deepEqual(resumed, {
-    threadId: 'thread-1', text: 'continue', clientId: 'client-1', requestId: 'request-1',
-  });
 
   const large = createRequestHandler(createDependencies({
     codex: { isLargeSession: async () => true },

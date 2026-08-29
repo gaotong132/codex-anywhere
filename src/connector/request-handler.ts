@@ -16,7 +16,6 @@ type CodexGateway = {
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
   startTurn(options: Payload): Promise<Record<string, any>>;
   steerTurn(options: Payload): Promise<Record<string, any>>;
-  queueTurn(options: Payload): Record<string, any>;
   stopTurn(): Promise<any>;
   listApprovals(threadId: unknown, clientId?: string): any;
   respondApproval(approvalId: unknown, approved: boolean, threadId?: unknown): Promise<any>;
@@ -105,9 +104,6 @@ async function dispatchAction({
       delivery: 'appServer',
     };
   }
-  if (action === 'turn.queue') {
-    return { ...codex.queueTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
-  }
   if (action === 'turn.stop') return codex.stopTurn();
   if (action === 'approval.pending') {
     const pending = await codex.listApprovals(payload.threadId, clientId);
@@ -147,6 +143,14 @@ async function startTurn({
   if (!threadId) {
     return { ...await codex.startTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
   }
+  if (payload.preferDesktop === true) {
+    return desktop.sendMessage({
+      threadId,
+      text: payload.text,
+      requestId,
+      callerThreadId: codex.getControllerThreadId(threadId),
+    });
+  }
   const largeSession = await codex.isLargeSession(threadId);
   if (!largeSession && await codex.needsDesktopPermissionRecovery(threadId)) {
     try {
@@ -163,9 +167,7 @@ async function startTurn({
   if (codex.canOwnSession(threadId) && !largeSession) {
     try {
       return {
-        ...await codex.startTurn({
-          ...payload, clientId, requestId, waitForActiveWriter: false,
-        }),
+        ...await codex.startTurn({ ...payload, clientId, requestId }),
         delivery: 'appServer',
       };
     } catch (error) {
@@ -182,6 +184,9 @@ async function startTurn({
   } catch (error) {
     if (String(error instanceof Error ? error.message : error) !== 'desktop_app_unavailable') throw error;
     if (largeSession) throw new Error('desktop_required_for_large_session');
-    return { ...await codex.startTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
+    return {
+      ...await codex.startTurn({ ...payload, clientId, requestId }),
+      delivery: 'appServer',
+    };
   }
 }

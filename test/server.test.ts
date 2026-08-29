@@ -114,53 +114,6 @@ test('server requires the current protocol and rejects missing protocol metadata
   assert.equal(code, 4406);
 });
 
-test('authenticated devices register Web Push and connectors emit only generic notification kinds', async (t) => {
-  const registrations: Array<{ id: string; subscription: unknown }> = [];
-  let notification: { kind: string; online: ReadonlySet<string> } | undefined;
-  let notified!: () => void;
-  const notificationReceived = new Promise<void>((resolve) => { notified = resolve; });
-  const server = createBridgeServer({
-    clientToken: CLIENT_TOKEN,
-    connectorToken: CONNECTOR_TOKEN,
-    pushNotifications: {
-      publicKey: 'push-public-key',
-      subscribe: (device, subscription) => {
-        registrations.push({ id: device.id, subscription });
-        return true;
-      },
-      unsubscribe: () => true,
-      notify: async (kind, online) => {
-        notification = { kind, online: online || new Set() };
-        notified();
-      },
-    },
-  });
-  const address = await server.listen(0, '127.0.0.1');
-  t.after(() => server.close());
-  const url = `ws://127.0.0.1:${address.port}/ws`;
-  const client = await authenticateSocket({
-    url, role: 'client', token: CLIENT_TOKEN, registry: server.deviceRegistry,
-  });
-  client.socket.send(JSON.stringify({
-    type: 'push.subscribe',
-    subscription: { endpoint: 'https://push.example.test/one' },
-  }));
-  assert.deepEqual(await nextJson(client.socket), { type: 'push.registered', enabled: true, version: 3 });
-  assert.equal(registrations[0].id, client.identity.id);
-
-  const connector = await authenticateSocket({
-    url, role: 'connector', token: CONNECTOR_TOKEN, deviceId: 'personal-pc',
-    registry: server.deviceRegistry,
-  });
-  await nextJson(client.socket); // connector presence update
-  connector.socket.send(JSON.stringify({ type: 'push.notify', kind: 'completed' }));
-  await notificationReceived;
-  assert.equal(notification?.kind, 'completed');
-  assert.equal(notification?.online.has(client.identity.id), true);
-  client.socket.close();
-  connector.socket.close();
-});
-
 test('one-time pairing enrolls a browser and approved device-key auth needs no shared token', async (t) => {
   const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
@@ -256,12 +209,6 @@ test('server exposes a no-store runtime UI language configuration', async (t) =>
     clientToken: TOKEN,
     connectorToken: TOKEN,
     uiLanguage: 'en-US',
-    pushNotifications: {
-      publicKey: 'public-push-key',
-      subscribe: () => false,
-      unsubscribe: () => false,
-      notify: async () => undefined,
-    },
   });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
@@ -272,7 +219,6 @@ test('server exposes a no-store runtime UI language configuration', async (t) =>
   assert.match(response.headers.get('content-type'), /^text\/javascript/);
   const config = await response.text();
   assert.match(config, /"locale":"en"/);
-  assert.match(config, /"pushPublicKey":"public-push-key"/);
 });
 
 test('runtime UI language defaults to Chinese', async (t) => {
@@ -316,7 +262,6 @@ test('static middleware serves assets and preserves SPA fallback caching', async
   await mkdir(publicDir);
   await writeFile(join(publicDir, 'index.html'), '<main>Codex Anywhere</main>');
   await writeFile(join(publicDir, 'app.css'), 'body { color: white; }');
-  await writeFile(join(publicDir, 'service-worker.js'), 'self.skipWaiting();');
   await writeFile(join(fixtureDir, 'private.txt'), 'must not be served');
   const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN, publicDir });
   const address = await server.listen(0, '127.0.0.1');
@@ -338,10 +283,6 @@ test('static middleware serves assets and preserves SPA fallback caching', async
   assert.match(asset.headers.get('content-type'), /^text\/css/);
   assert.equal(asset.headers.get('cache-control'), 'public, max-age=3600');
   assert.match(await asset.text(), /color: white/);
-
-  const serviceWorker = await fetchOnce('/service-worker.js');
-  assert.equal(serviceWorker.status, 200);
-  assert.equal(serviceWorker.headers.get('cache-control'), 'no-store');
 
   const missingAsset = await fetchOnce('/missing.js');
   assert.equal(missingAsset.status, 404);

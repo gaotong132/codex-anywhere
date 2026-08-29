@@ -61,7 +61,7 @@ export type HistoryPage = {
   activityUpdatedAt?: number | null;
   toolPurpose?: string;
 };
-export type TurnStartResult = { threadId: string; delivery?: 'desktop' | 'appServer'; queued?: boolean };
+export type TurnStartResult = { threadId: string; delivery?: 'desktop' | 'appServer' };
 export type PendingImage = { file: File; transferPreview?: File; previewUrl: string };
 export type DownloadedImage = { path: string; mimeType: string; size: number; data: string };
 export type VisualizationDocument = { name: string; size: number; content?: string };

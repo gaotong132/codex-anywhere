@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isIP } from 'node:net';
 import type { TLSSocket } from 'node:tls';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { LRUCache } from 'lru-cache';
 import sirv from 'sirv';
@@ -22,11 +22,6 @@ import {
   type CurrentProtocol,
 } from '../shared/protocol-contract.js';
 import { DeviceRegistry } from './device-registry.js';
-import {
-  PushNotificationService,
-  type PushNotifier,
-  type PushNotificationKind,
-} from './push-notifications.js';
 import {
   MAX_FRAME_BYTES,
   createId,
@@ -66,7 +61,6 @@ type BridgeServerOptions = {
   clock?: () => number;
   deviceRegistryPath?: string | null;
   deviceRegistry?: DeviceRegistry;
-  pushNotifications?: PushNotifier;
 };
 type HttpContext = {
   request: IncomingMessage;
@@ -74,7 +68,6 @@ type HttpContext = {
   trustProxy: boolean;
   uiLanguage: string;
   staticHandler: StaticHandler;
-  pushPublicKey: string;
 };
 type AuthLimiterOptions = {
   limit?: number;
@@ -97,8 +90,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
     single: true,
     setHeaders(response, pathname) {
       const cacheableAsset = /\.[^/]+$/.test(pathname)
-        && !pathname.endsWith('.html')
-        && !pathname.endsWith('/service-worker.js');
+        && !pathname.endsWith('.html');
       response.setHeader('cache-control', cacheableAsset ? 'public, max-age=3600' : 'no-store');
     },
   });
@@ -109,16 +101,6 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       options.clientToken || options.connectorToken ? null : resolve('data/devices.json')
     );
   const deviceRegistry = options.deviceRegistry || new DeviceRegistry(configuredRegistryPath);
-  const pushNotifications = options.pushNotifications || new PushNotificationService({
-    publicKey: process.env.BRIDGE_PUSH_PUBLIC_KEY,
-    privateKey: process.env.BRIDGE_PUSH_PRIVATE_KEY,
-    subject: process.env.BRIDGE_PUSH_SUBJECT,
-    vapidFilePath: process.env.BRIDGE_PUSH_VAPID_FILE,
-    filePath: process.env.BRIDGE_PUSH_SUBSCRIPTIONS_FILE || (
-      configuredRegistryPath ? resolve(dirname(configuredRegistryPath), 'push-subscriptions.json') : null
-    ),
-    isApproved: (device) => deviceRegistry.isApproved('client', device),
-  });
   const connectors = new Map<string, AliveWebSocket>();
   const clients = new Map<string, AliveWebSocket>();
   const socketMeta = new WeakMap<AliveWebSocket, SocketMeta>();
@@ -139,7 +121,6 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   const httpServer = createServer((request, response) => {
     handleHttpRequest({
       request, response, trustProxy, uiLanguage, staticHandler,
-      pushPublicKey: pushNotifications.publicKey,
     });
   });
   const webSocketServer = new WebSocketServer({
@@ -207,13 +188,9 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
           return;
         }
         if (meta.role === 'client') {
-          routeClientMessage({
-            socket, meta, message, connectors, pushNotifications,
-          });
+          routeClientMessage({ socket, meta, message, connectors });
         } else {
-          routeConnectorMessage({
-            message, clients, meta, pushNotifications, socketMeta,
-          });
+          routeConnectorMessage({ message, clients, meta });
         }
       } catch (error) {
         safeSend(socket, { type: 'error', error: publicError(error) });
@@ -273,9 +250,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   };
 }
 
-function handleHttpRequest({
-  request, response, trustProxy, uiLanguage, staticHandler, pushPublicKey,
-}: HttpContext) {
+function handleHttpRequest({ request, response, trustProxy, uiLanguage, staticHandler }: HttpContext) {
   setSecurityHeaders(response, request, trustProxy);
   const method = String(request.method || 'GET').toUpperCase();
   if (method !== 'GET' && method !== 'HEAD') {
@@ -304,7 +279,7 @@ function handleHttpRequest({
     return;
   }
   if (pathname === '/config.js') {
-    serveRuntimeConfig(response, uiLanguage, pushPublicKey, headOnly);
+    serveRuntimeConfig(response, uiLanguage, headOnly);
     return;
   }
   staticHandler(request, response, () => {
@@ -482,29 +457,12 @@ function rejectAuthentication(
   return false;
 }
 
-function routeClientMessage({
-  socket, meta, message, connectors, pushNotifications,
-}: {
+function routeClientMessage({ socket, meta, message, connectors }: {
   socket: AliveWebSocket;
   meta: Extract<SocketMeta, { role: 'client' }>;
   message: JsonObject;
   connectors: Map<string, AliveWebSocket>;
-  pushNotifications: PushNotifier;
 }) {
-  if (message.type === 'push.subscribe') {
-    try {
-      const enabled = pushNotifications.subscribe(meta.device, message.subscription);
-      safeSend(socket, { type: 'push.registered', enabled });
-    } catch (error) {
-      safeSend(socket, { type: 'push.registered', enabled: false, error: publicError(error) });
-    }
-    return;
-  }
-  if (message.type === 'push.unsubscribe') {
-    pushNotifications.unsubscribe(meta.device);
-    safeSend(socket, { type: 'push.registered', enabled: false });
-    return;
-  }
   const deviceId = String(message.deviceId || 'personal-pc');
   const connector = connectors.get(deviceId);
   if (isSecureClientFrame(message.type)) {
@@ -534,26 +492,11 @@ function routeClientMessage({
   safeSend(socket, { type: 'error', requestId: message.requestId, error: 'secure_channel_required' });
 }
 
-function routeConnectorMessage({
-  message, clients, meta, pushNotifications, socketMeta,
-}: {
+function routeConnectorMessage({ message, clients, meta }: {
   message: JsonObject;
   clients: Map<string, AliveWebSocket>;
   meta: Extract<SocketMeta, { role: 'connector' }>;
-  pushNotifications: PushNotifier;
-  socketMeta: WeakMap<AliveWebSocket, SocketMeta>;
 }) {
-  if (message.type === 'push.notify') {
-    const kind = String(message.kind || '') as PushNotificationKind;
-    if (kind !== 'completed' && kind !== 'approval') return;
-    const onlineDeviceIds = new Set<string>();
-    for (const socket of clients.values()) {
-      const clientMeta = socketMeta.get(socket);
-      if (clientMeta?.role === 'client') onlineDeviceIds.add(clientMeta.device.id);
-    }
-    void pushNotifications.notify(kind, onlineDeviceIds).catch(() => undefined);
-    return;
-  }
   if (isSecureConnectorFrame(message.type)) {
     const clientId = String(message.clientId || '');
     const client = clients.get(clientId);
@@ -603,12 +546,10 @@ function normalizeUiLanguage(value: unknown) {
 function serveRuntimeConfig(
   response: ServerResponse,
   locale: string,
-  pushPublicKey: string,
   headOnly = false,
 ) {
   const body = `window.__CODEX_ANYWHERE_CONFIG__ = ${JSON.stringify({
     locale,
-    ...(pushPublicKey ? { pushPublicKey } : {}),
   })};\n`;
   response.writeHead(200, {
     'content-type': 'text/javascript; charset=utf-8',

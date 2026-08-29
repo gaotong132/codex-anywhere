@@ -2,7 +2,7 @@ type UiLocale = 'zh-CN' | 'en';
 
 declare global {
   interface Window {
-    __CODEX_ANYWHERE_CONFIG__?: { locale?: string; pushPublicKey?: string };
+    __CODEX_ANYWHERE_CONFIG__?: { locale?: string };
   }
 }
 

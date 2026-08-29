@@ -89,9 +89,9 @@ and access-controlled.
 The relay requires an Ed25519 signature from every approved device key. One-time enrollment and recovery
 Token bootstrap also bind an HMAC proof to a fresh challenge. The relay rejects captured-proof replay,
 locks repeated failures, and renews authenticated sockets every hour (`BRIDGE_SESSION_MAX_AGE_MS`). The
-Compose volume `bridge-state` persists public device keys, one-way pairing verifiers, pairing metadata,
-and optional Web Push state. The relay generates its own VAPID key in that volume; browser and connector
-private device keys never enter the relay. Conversation and file content are not stored.
+Compose volume `bridge-state` persists public device keys, one-way pairing verifiers, and pairing
+metadata. Browser and connector private device keys never enter the relay. Conversation and file
+content are not stored.
 
 The supplied Compose service:
 
@@ -118,9 +118,6 @@ Relay configuration:
 | `BRIDGE_CONNECTOR_TOKEN` | required | Connector credential; keep it different from the browser credential |
 | `BRIDGE_SESSION_MAX_AGE_MS` | `3600000` | Maximum authenticated WebSocket lifetime before fresh authentication |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | `data/devices.json` | Approved public keys and short-lived pairing records |
-| `BRIDGE_PUSH_SUBJECT` | `https://codex-anywhere.local` in Compose | Contact URI for optional Web Push; Compose generates VAPID keys in `/data/vapid.json` |
-| `BRIDGE_PUSH_VAPID_FILE` | unset (`/data/vapid.json` in Compose) | Protected auto-generated Web Push key file |
-| `BRIDGE_PUSH_SUBSCRIPTIONS_FILE` | next to the device registry (`/data/push-subscriptions.json` in Compose) | Opted-in approved browser subscriptions; never contains conversation content |
 | `CODEX_UI_LANGUAGE` | `zh-CN` | Web UI language: `zh-CN` or `en` |
 | `HOST` / `PORT` | `127.0.0.1` / `3300` | Direct Node listener; Compose supplies its own container values |
 | `BRIDGE_TRUST_PROXY` | `0` | Trust `X-Real-IP` only when a controlled proxy is the relay's sole ingress |

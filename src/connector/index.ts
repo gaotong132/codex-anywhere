@@ -66,8 +66,6 @@ let socket: WebSocket | undefined;
 let reconnectAttempt = 0;
 let stopped = false;
 codex.on('turn-event', (message) => {
-  if (message.event === 'turn.ended') safeSend(socket, { type: 'push.notify', kind: 'completed' });
-  if (message.event === 'approval.requested') safeSend(socket, { type: 'push.notify', kind: 'approval' });
   const frame = { type: 'event', ...message };
   secureChannels.sendEvent(frame);
 });
