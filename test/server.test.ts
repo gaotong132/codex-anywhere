@@ -340,6 +340,72 @@ test('server authenticates and relays client requests to connector', async (t) =
   client.close();
 });
 
+test('server routes secure-channel control and ciphertext frames without reading their payload', async (t) => {
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+
+  const connectorConnection = await authenticateSocket({
+    url, role: 'connector', token: TOKEN, deviceId: 'personal-pc', registry: server.deviceRegistry,
+  });
+  const clientConnection = await authenticateSocket({
+    url, role: 'client', token: TOKEN, registry: server.deviceRegistry,
+  });
+  const offer = {
+    initiator: {
+      id: clientConnection.identity.id,
+      publicKey: clientConnection.identity.publicKey,
+      ephemeralPublicKey: 'a'.repeat(43),
+    },
+    opaque: 'relay-must-not-interpret-this',
+  };
+  clientConnection.socket.send(JSON.stringify({
+    type: 'channel.offer', deviceId: 'personal-pc', offer,
+  }));
+  const routedOffer = await nextJson(connectorConnection.socket);
+  assert.equal(routedOffer.type, 'channel.offer');
+  assert.deepEqual(routedOffer.offer, offer);
+  assert.ok(routedOffer.clientId);
+
+  const accept = {
+    transcript: {
+      responder: {
+        id: connectorConnection.identity.id,
+        publicKey: connectorConnection.identity.publicKey,
+      },
+    },
+    opaque: 'still-not-relay-readable',
+  };
+  connectorConnection.socket.send(JSON.stringify({
+    type: 'channel.accept', clientId: routedOffer.clientId, accept,
+  }));
+  const routedAccept = await nextJson(clientConnection.socket);
+  assert.equal(routedAccept.type, 'channel.accept');
+  assert.deepEqual(routedAccept.accept, accept);
+  assert.equal(routedAccept.clientId, undefined);
+  assert.equal(routedAccept.deviceId, 'personal-pc');
+
+  const encryptedRequest = { channelId: 'opaque', ciphertext: 'browser-ciphertext' };
+  clientConnection.socket.send(JSON.stringify({
+    type: 'secure', deviceId: 'personal-pc', envelope: encryptedRequest,
+  }));
+  const routedRequest = await nextJson(connectorConnection.socket);
+  assert.deepEqual(routedRequest.envelope, encryptedRequest);
+  assert.equal(routedRequest.clientId, routedOffer.clientId);
+
+  const encryptedResponse = { channelId: 'opaque', ciphertext: 'connector-ciphertext' };
+  connectorConnection.socket.send(JSON.stringify({
+    type: 'secure', clientId: routedOffer.clientId, envelope: encryptedResponse,
+  }));
+  const routedResponse = await nextJson(clientConnection.socket);
+  assert.deepEqual(routedResponse.envelope, encryptedResponse);
+  assert.equal(routedResponse.clientId, undefined);
+
+  connectorConnection.socket.close();
+  clientConnection.socket.close();
+});
+
 test('visualization previews use a short-lived same-origin sandbox capability', async (t) => {
   const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');

@@ -484,12 +484,36 @@ function routeClientMessage({
   connectors: Map<string, AliveWebSocket>;
   pendingVisualizationRequests: LRUCache<string, true>;
 }) {
+  const deviceId = String(message.deviceId || 'personal-pc');
+  const connector = connectors.get(deviceId);
+  if (isSecureClientFrame(message.type)) {
+    if (!connector) {
+      safeSend(socket, { type: 'channel.error', error: 'connector_offline', deviceId });
+      return;
+    }
+    if (message.type === 'channel.offer') {
+      const initiator = message.offer?.initiator;
+      if (initiator?.id !== meta.device.id || initiator?.publicKey !== meta.device.publicKey) {
+        safeSend(socket, { type: 'channel.error', error: 'secure_channel_identity_mismatch', deviceId });
+        return;
+      }
+      safeSend(connector, { type: message.type, clientId: meta.id, offer: message.offer });
+      return;
+    }
+    if (message.type === 'channel.confirm') {
+      safeSend(connector, {
+        type: message.type, clientId: meta.id,
+        channelId: message.channelId, signature: message.signature,
+      });
+      return;
+    }
+    safeSend(connector, { type: message.type, clientId: meta.id, envelope: message.envelope });
+    return;
+  }
   if (message.type !== 'request' || !CLIENT_ACTIONS.has(message.action)) {
     safeSend(socket, { type: 'error', requestId: message.requestId, error: 'unsupported_action' });
     return;
   }
-  const deviceId = String(message.deviceId || 'personal-pc');
-  const connector = connectors.get(deviceId);
   if (!connector) {
     safeSend(socket, { type: 'response', requestId: message.requestId, ok: false, error: 'connector_offline' });
     return;
@@ -516,6 +540,26 @@ function routeConnectorMessage({
   pendingVisualizationRequests: LRUCache<string, true>;
   visualizationPreviews: VisualizationPreviewStore;
 }) {
+  if (isSecureConnectorFrame(message.type)) {
+    const clientId = String(message.clientId || '');
+    const client = clients.get(clientId);
+    if (!client) return;
+    if (message.type === 'channel.accept') {
+      const responder = message.accept?.transcript?.responder;
+      if (responder?.id !== meta.device.id || responder?.publicKey !== meta.device.publicKey) return;
+      safeSend(client, { type: message.type, accept: message.accept, deviceId: meta.deviceId });
+      return;
+    }
+    if (message.type === 'channel.ready' || message.type === 'channel.error') {
+      safeSend(client, {
+        type: message.type, channelId: message.channelId,
+        error: message.error, deviceId: meta.deviceId,
+      });
+      return;
+    }
+    safeSend(client, { type: message.type, envelope: message.envelope, deviceId: meta.deviceId });
+    return;
+  }
   if (message.type !== 'response' && message.type !== 'event') return;
   const clientId = String(message.clientId || '');
   const client = clients.get(clientId);
@@ -543,6 +587,15 @@ function routeConnectorMessage({
     }
   }
   safeSend(client, { ...message, deviceId: meta.deviceId });
+}
+
+function isSecureClientFrame(type: unknown) {
+  return type === 'channel.offer' || type === 'channel.confirm' || type === 'secure';
+}
+
+function isSecureConnectorFrame(type: unknown) {
+  return type === 'channel.accept' || type === 'channel.ready'
+    || type === 'channel.error' || type === 'secure';
 }
 
 function broadcastPresence(clients: Map<string, AliveWebSocket>, connectors: Map<string, AliveWebSocket>) {
