@@ -196,14 +196,41 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
     ...item,
     attachment: transientAttachments.get(messageContentIdentity(item)),
   });
-  const persistedMessages = new Set(hydratedLatest
-    .filter((item) => item.kind === 'user' || item.kind === 'assistant')
-    .map(messageIdentity));
+  const persistedItems = new Set(hydratedLatest.map(messageIdentity));
+  const carriedProgress = current.filter((item) => item.transient
+    && item.kind === 'progress'
+    && item.historyTurnId
+    && latestTurnIds.has(item.historyTurnId)
+    && !persistedItems.has(messageIdentity(item)));
+  const carriedProgressIds = new Set(carriedProgress.map((item) => item.id));
+  const carriedProgressByTurn = new Map<string, TimelineItem[]>();
+  for (const item of carriedProgress) {
+    const turnItems = carriedProgressByTurn.get(item.historyTurnId!) || [];
+    turnItems.push(item);
+    carriedProgressByTurn.set(item.historyTurnId!, turnItems);
+  }
+  const insertedProgressTurns = new Set<string>();
+  const mergedLatest: TimelineItem[] = [];
+  for (const [index, item] of hydratedLatest.entries()) {
+    const turnId = item.historyTurnId;
+    const progress = turnId ? carriedProgressByTurn.get(turnId) : undefined;
+    if (progress?.length && item.kind === 'assistant' && !insertedProgressTurns.has(turnId!)) {
+      mergedLatest.push(...progress);
+      insertedProgressTurns.add(turnId!);
+    }
+    mergedLatest.push(item);
+    const nextTurnId = hydratedLatest[index + 1]?.historyTurnId;
+    if (progress?.length && nextTurnId !== turnId && !insertedProgressTurns.has(turnId!)) {
+      mergedLatest.push(...progress);
+      insertedProgressTurns.add(turnId!);
+    }
+  }
   const firstMatch = current.findIndex((item) => item.historyTurnId && latestTurnIds.has(item.historyTurnId));
   const keep = (item: TimelineItem) => (
-    !(item.historyTurnId && latestTurnIds.has(item.historyTurnId))
-    && !(introducesNewTurn && item.transient && item.kind !== 'user')
-    && !(item.transient && persistedMessages.has(messageIdentity(item)))
+    !carriedProgressIds.has(item.id)
+    && !(item.historyTurnId && latestTurnIds.has(item.historyTurnId) && !item.transient)
+    && !(introducesNewTurn && item.transient && item.kind === 'assistant')
+    && !(item.transient && persistedItems.has(messageIdentity(item)))
   );
   const retained = current.filter(keep);
   const insertionIndex = firstMatch < 0
@@ -211,7 +238,7 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
     : current.slice(0, firstMatch).filter(keep).length;
   return [
     ...retained.slice(0, insertionIndex),
-    ...hydratedLatest,
+    ...mergedLatest,
     ...retained.slice(insertionIndex),
   ];
 }

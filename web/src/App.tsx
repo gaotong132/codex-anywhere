@@ -61,7 +61,7 @@ import {
   shortId,
   type SessionAttentionState,
 } from './app-utils';
-import { DownloadIndicator, MessageBubble, SidebarIcon } from './ui-components';
+import { DownloadIndicator, MessageBubble, SidebarIcon, TypewriterText } from './ui-components';
 import {
   buildAwaySummary,
   formatAwayDuration,
@@ -241,24 +241,43 @@ function LiveActivityStatus({
       title={purpose || activityLabel(kind)}
     >
       <i aria-hidden="true" />
-      <span className="activity-kind status-change" key={kind}>{activityLabel(kind)}</span>
-      {purpose && <strong className="status-change" key={purpose}>{purpose}</strong>}
+      <TypewriterText
+        active
+        className="activity-kind status-change"
+        key={kind}
+        showCaret={false}
+        text={activityLabel(kind)}
+      />
+      {purpose && (
+        <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
+      )}
       {(progress.plan || progress.files) && (
         <span className="activity-metrics">
           {progress.plan && (
-            <span className="status-change" key={`plan:${progress.plan.current}:${progress.plan.total}`}>
-              {t(`第 ${progress.plan.current} / ${progress.plan.total} 步`, `Step ${progress.plan.current} / ${progress.plan.total}`)}
-            </span>
+            <TypewriterText
+              active
+              className="status-change"
+              key={`plan:${progress.plan.current}:${progress.plan.total}`}
+              showCaret={false}
+              text={t(`第 ${progress.plan.current} / ${progress.plan.total} 步`, `Step ${progress.plan.current} / ${progress.plan.total}`)}
+            />
           )}
           {progress.files && (
-            <span
+            <TypewriterText
+              active
               className="status-change"
+              completeContent={<>
+                {t(`${progress.files.changed} 个文件已更改`, `${progress.files.changed} files changed`)}
+                {' '}<b className="additions">+{progress.files.additions}</b>
+                {' '}<b className="deletions">-{progress.files.deletions}</b>
+              </>}
               key={`files:${progress.files.changed}:${progress.files.additions}:${progress.files.deletions}`}
-            >
-              {t(`${progress.files.changed} 个文件已更改`, `${progress.files.changed} files changed`)}
-              {' '}<b className="additions">+{progress.files.additions}</b>
-              {' '}<b className="deletions">-{progress.files.deletions}</b>
-            </span>
+              showCaret={false}
+              text={t(
+                `${progress.files.changed} 个文件已更改 +${progress.files.additions} -${progress.files.deletions}`,
+                `${progress.files.changed} files changed +${progress.files.additions} -${progress.files.deletions}`,
+              )}
+            />
           )}
         </span>
       )}
@@ -395,6 +414,7 @@ export default function App() {
   const shouldScrollBottomRef = useRef(false);
   const autoFollowLatestRef = useRef(true);
   const streamItemRef = useRef<{ id: string; kind: TimelineKind } | null>(null);
+  const activeTurnIdRef = useRef('');
   const followFingerprintRef = useRef('');
   const latestActivityIdRef = useRef('');
   const awaitingDesktopTurnRef = useRef<AwaitingDesktopTurn | null>(null);
@@ -563,7 +583,10 @@ export default function App() {
     }
     const id = makeId();
     streamItemRef.current = { id, kind };
-    setTimeline((items) => [...items, { id, kind, text, transient: true }]);
+    setTimeline((items) => [...items, {
+      id, kind, text, transient: true,
+      ...(activeTurnIdRef.current ? { historyTurnId: activeTurnIdRef.current } : {}),
+    }]);
   }, []);
 
   const finishAssistant = useCallback((text: string) => {
@@ -582,6 +605,7 @@ export default function App() {
       }
       return [...items, {
         id: makeId(), kind: 'assistant', text: visibleText, contexts: content.contexts, transient: true,
+        ...(activeTurnIdRef.current ? { historyTurnId: activeTurnIdRef.current } : {}),
         completedAt,
       }];
     });
@@ -783,6 +807,7 @@ export default function App() {
       setLiveActivity('starting');
       setActivityStartedAt(Date.now());
       const nextThreadId = String(payload.threadId || '');
+      activeTurnIdRef.current = String(payload.turnId || '');
       setOwnedTurnThreadId(nextThreadId || threadIdRef.current || NEW_TURN_KEY);
       if (nextThreadId) {
         setThreadId(nextThreadId);
@@ -829,6 +854,7 @@ export default function App() {
       }
     } else if (message.event === 'turn.error') {
       streamItemRef.current = null;
+      activeTurnIdRef.current = '';
       setApproval(null);
       setToolPurpose('');
       setLiveActivity('working');
@@ -840,6 +866,7 @@ export default function App() {
       addTimeline('error', String(payload.error || t('Codex 运行错误', 'Codex execution error')));
     } else if (message.event === 'turn.ended') {
       streamItemRef.current = null;
+      activeTurnIdRef.current = '';
       setApproval(null);
       setToolPurpose('');
       setLiveActivity('working');
@@ -1330,6 +1357,7 @@ export default function App() {
     setApproval(null);
     autoFollowLatestRef.current = true;
     streamItemRef.current = null;
+    activeTurnIdRef.current = '';
     setDrawerOpen(false);
     if (nextThreadId) void loadHistory(nextThreadId, null, requestVersion);
   }, [loadHistory, updateSessionAttention]);
@@ -1532,6 +1560,7 @@ export default function App() {
       composerCleared = true;
       optimisticItemId = addTimeline('user', visibleText, true, true, timelineAttachment);
       streamItemRef.current = null;
+      if (!steering) activeTurnIdRef.current = '';
       if (!steering) {
         setRunning(true);
         setOwnedTurnThreadId(threadIdRef.current || NEW_TURN_KEY);

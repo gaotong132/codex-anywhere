@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatDate } from './app-utils';
@@ -14,6 +14,69 @@ function dateTimeValue(value: TimelineItem['completedAt']) {
   const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1_000 : value;
   const date = new Date(numeric);
   return Number.isFinite(date.getTime()) ? date.toISOString() : '';
+}
+
+export function TypewriterText({
+  text,
+  active,
+  className = '',
+  as = 'span',
+  showCaret = true,
+  completeContent,
+}: {
+  text: string;
+  active: boolean;
+  className?: string;
+  as?: 'span' | 'strong';
+  showCaret?: boolean;
+  completeContent?: ReactNode;
+}) {
+  const [visibleText, setVisibleText] = useState(active ? '' : text);
+  const visibleTextRef = useRef(visibleText);
+
+  useEffect(() => {
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (!active || reduceMotion) {
+      visibleTextRef.current = text;
+      setVisibleText(text);
+      return undefined;
+    }
+
+    let current = visibleTextRef.current;
+    if (!text.startsWith(current)) {
+      current = '';
+      visibleTextRef.current = '';
+      setVisibleText('');
+    }
+    const characters = Array.from(text);
+    let index = Array.from(current).length;
+    const remaining = characters.length - index;
+    if (remaining <= 0) return undefined;
+
+    // Keep each incoming chunk lively without allowing long progress messages
+    // to trail the real execution state by more than roughly half a second.
+    const charactersPerFrame = Math.max(1, Math.ceil(remaining / 20));
+    let timer: ReturnType<typeof setInterval>;
+    const reveal = () => {
+      index = Math.min(characters.length, index + charactersPerFrame);
+      const next = characters.slice(0, index).join('');
+      visibleTextRef.current = next;
+      setVisibleText(next);
+      if (index >= characters.length) clearInterval(timer);
+    };
+    timer = setInterval(reveal, 24);
+    reveal();
+    return () => clearInterval(timer);
+  }, [active, text]);
+
+  const typing = active && visibleText !== text;
+  const Tag = as;
+  return (
+    <Tag className={`${className}${className ? ' ' : ''}typewriter-text${typing ? ' typing' : ''}`}>
+      <span className="typewriter-copy">{!typing && completeContent ? completeContent : visibleText}</span>
+      {typing && showCaret && <i className="typewriter-caret" aria-hidden="true" />}
+    </Tag>
+  );
 }
 
 export function SidebarIcon({ name }: { name: SidebarIconName }) {
@@ -188,7 +251,7 @@ export function MessageBubble({
     return (
       <details className={`progress-card${active ? ' live' : ''}`} open>
         <summary>{t('进度更新', 'Progress update')}</summary>
-        <pre>{item.text}</pre>
+        <pre><TypewriterText text={item.text} active={active} /></pre>
       </details>
     );
   }

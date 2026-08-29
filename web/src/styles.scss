@@ -583,7 +583,11 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .progress-card.live { border-left-color: #5f80be; animation: progress-arrive .32s ease-out both; }
 .progress-card.live summary::after { width: 5px; height: 5px; border-radius: 50%; background: #6f98e3; box-shadow: 0 0 0 0 rgba(111, 152, 227, .45); content: ''; animation: progress-live-pulse 1.8s ease-out infinite; }
 .progress-card.live::after { position: absolute; top: 0; bottom: 0; left: -2px; width: 2px; content: ''; background: linear-gradient(transparent, #91b5ff, transparent); animation: progress-rail 2.2s ease-in-out infinite; }
-.progress-card pre { padding: 5px 11px 10px; font-size: 12px; line-height: 1.55; }
+.progress-card pre { min-height: 1.55em; padding: 5px 11px 10px; font-size: 12px; line-height: 1.55; }
+.progress-card pre .typewriter-text.typing { color: #93a3bb; }
+.typewriter-text { min-width: 0; }
+.typewriter-copy { white-space: pre-wrap; }
+.typewriter-caret { display: inline-block; width: 1.5px; height: 1.05em; margin-left: 2px; border-radius: 1px; vertical-align: -.15em; background: #82a9f4; box-shadow: 0 0 7px rgba(130, 169, 244, .48); animation: typewriter-caret .78s steps(1, end) infinite; }
 .execution-strip { min-width: 0; width: 100%; padding: 8px max(22px, calc((100% - 860px) / 2)); overflow: hidden; border-top: 1px solid $panel-divider; background: #0d121c; }
 .execution-strip:empty { display: none; }
 .tool-purpose { position: relative; isolation: isolate; width: 100%; min-width: 0; max-width: $content-width; display: flex; align-items: center; gap: 7px; margin: 0 auto; overflow: hidden; color: #8491a5; font-size: 11px; animation: activity-strip-arrive .25s ease-out both; }
@@ -602,6 +606,8 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .activity-metrics b { font-weight: 650; }
 .activity-metrics .additions { color: #34d17b; }
 .activity-metrics .deletions { color: #ff5d68; }
+.activity-metrics .typewriter-copy { white-space: nowrap; }
+.tool-purpose strong .typewriter-caret { flex: 0 0 auto; }
 .tool-purpose time { max-width: 54px; flex: 0 0 auto; margin-left: auto; overflow: hidden; color: #637187; font-variant-numeric: tabular-nums; line-height: 1; text-align: right; white-space: nowrap; }
 .tool-purpose .status-change { animation: status-change .3s cubic-bezier(.2, .75, .3, 1) both; }
 @keyframes purpose-pulse {
@@ -614,6 +620,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 @keyframes progress-arrive { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 @keyframes progress-live-pulse { 0% { box-shadow: 0 0 0 0 rgba(111, 152, 227, .4); } 72%, 100% { box-shadow: 0 0 0 6px rgba(111, 152, 227, 0); } }
 @keyframes progress-rail { 0%, 100% { opacity: .2; transform: translateY(-70%); } 50% { opacity: .9; transform: translateY(70%); } }
+@keyframes typewriter-caret { 0%, 48% { opacity: 1; } 49%, 100% { opacity: .15; } }
 .download-status { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; max-width: $content-width; color: #aebbd0; font-size: 11px; }
 .download-status span { @include truncate; }
 .download-status strong { color: #8cb5ff; font-variant-numeric: tabular-nums; }
@@ -627,7 +634,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
   .presence.running::before, .presence.running::after, .presence.waiting::before, .session-running-dot,
   .message.live, .message.assistant.settling, .message.assistant.live::after, .progress-card.live, .progress-card.live::after,
   .progress-card.live summary::after, .away-summary, .tool-purpose, .tool-purpose::before,
-  .tool-purpose i::after, .tool-purpose .status-change { animation: none; }
+  .tool-purpose i::after, .tool-purpose .status-change, .typewriter-caret { animation: none; }
 }
 @media (max-width: 480px) {
   .tool-purpose.has-metrics {

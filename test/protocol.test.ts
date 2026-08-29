@@ -538,6 +538,27 @@ test('history merge replaces an optimistic image message without duplicating it'
   }]);
 });
 
+test('history merge carries unpublished progress into its turn when a later turn appears', () => {
+  const current = [
+    { id: 'old-user', kind: 'user' as const, text: 'first', historyTurnId: 'turn-old' },
+    {
+      id: 'live-progress', kind: 'progress' as const, text: 'initial progress',
+      historyTurnId: 'turn-old', transient: true,
+    },
+  ];
+  const latest = [
+    { id: 'history-old-user', kind: 'user' as const, text: 'first', historyTurnId: 'turn-old' },
+    { id: 'history-old-answer', kind: 'assistant' as const, text: 'done', historyTurnId: 'turn-old' },
+    { id: 'history-new-user', kind: 'user' as const, text: 'second', historyTurnId: 'turn-new' },
+  ];
+
+  const merged = mergeHistorySnapshot(current, latest, new Set(['turn-old', 'turn-new']));
+  assert.deepEqual(merged.map((item) => item.id), [
+    'history-old-user', 'live-progress', 'history-old-answer', 'history-new-user',
+  ]);
+  assert.equal(merged[1], current[1]);
+});
+
 test('image previews open in the page instead of navigating to a data URL', () => {
   const markup = renderToStaticMarkup(createElement(MessageBubble, {
     item: {
