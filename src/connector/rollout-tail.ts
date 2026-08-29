@@ -287,13 +287,12 @@ function inferRolloutStatus(rows: RolloutRow[]) {
 function updateToolPurpose(current: string, rows: RolloutRow[], status: RolloutStatus) {
   let purpose = current;
   for (const row of rows) {
-    if (row?.type !== 'event_msg') continue;
     const payload = row.payload || {};
     const type = String(payload.type || '');
     if (type === 'task_started' || /task_complete|task_failed|turn_aborted|turn_error/.test(type)) {
       purpose = '';
-    } else if (type === 'agent_reasoning') {
-      purpose = normalizeToolPurpose(payload.text);
+    } else if (type === 'agent_reasoning' || type === 'reasoning' || /Reasoning/i.test(String(payload.item?.type || ''))) {
+      purpose = reasoningSummary(payload) || purpose;
     } else {
       const detail = summarizeToolActivity(payload);
       if (detail) {
@@ -304,6 +303,23 @@ function updateToolPurpose(current: string, rows: RolloutRow[], status: RolloutS
     }
   }
   return status === 'inProgress' ? purpose : '';
+}
+
+function reasoningSummary(payload: RolloutRow) {
+  const candidates = [payload.text, payload.summary_text, payload.item?.summary_text, payload.summary, payload.item?.summary];
+  for (const value of candidates) {
+    if (typeof value === 'string') {
+      const summary = normalizeToolPurpose(value);
+      if (summary) return summary;
+    }
+    if (!Array.isArray(value)) continue;
+    for (const entry of value) {
+      const text = typeof entry === 'string' ? entry : entry?.text;
+      const summary = normalizeToolPurpose(text);
+      if (summary) return summary;
+    }
+  }
+  return '';
 }
 
 function updateLiveActivity(current: LiveActivity, rows: RolloutRow[], status: RolloutStatus): LiveActivity {
@@ -485,6 +501,6 @@ export const internals = {
   activityKind, capText, epochMillis, extractContent, findLatestActivityBefore, findLatestPlanBefore,
   inferRolloutActivity,
   inferRolloutStatus, mapRolloutRows, recoverGeneratedImageRows, rolloutCache, updateLiveActivity,
-  updateToolPurpose,
+  reasoningSummary, updateToolPurpose,
   updateTurnProgress,
 };

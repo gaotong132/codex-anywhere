@@ -651,6 +651,17 @@ test('message time and copy action render outside the message card', () => {
   assert.match(markup, /<\/div><div class="message-meta">/);
 });
 
+test('message metadata reserves stable space before completion time arrives', () => {
+  const markup = renderToStaticMarkup(createElement(MessageBubble, {
+    item: { id: 'streaming-meta', kind: 'assistant' as const, text: '回复生成中' },
+    onDownloadFile: () => undefined,
+    onReadVisualization: async () => '',
+  }));
+
+  assert.match(markup, /class="message-time placeholder"[^>]*>00:00<\/span>/);
+  assert.match(markup, /class="message-copy idle"/);
+});
+
 test('only progress after the latest user message is treated as the live progress block', () => {
   assert.equal(latestTurnProgressItemId([
     { id: 'old-user', kind: 'user', text: 'first' },
@@ -818,6 +829,43 @@ test('rollout activity exposes changing categories for actual tool events', () =
   assert.equal(rolloutInternals.activityKind({
     type: 'response_item', payload: { type: 'function_call', name: 'wait', arguments: '{}' },
   }), 'waiting');
+});
+
+test('rollout activity follows real response-item tool calls and command completion', () => {
+  const started = { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-tools' } };
+  const invoked = { type: 'response_item', payload: {
+    type: 'custom_tool_call', name: 'exec',
+    input: 'const r = await tools.exec_command({cmd:"kubectl get pods"});',
+  } };
+  const completed = { type: 'event_msg', payload: { type: 'item_completed', item: {
+    type: 'CommandExecution', parsed_cmd: [{ type: 'unknown', cmd: 'kubectl get pods' }], exit_code: 0,
+  } } };
+  const output = { type: 'response_item', payload: { type: 'custom_tool_call_output', output: 'private output' } };
+
+  assert.equal(rolloutInternals.updateToolPurpose('', [started, invoked], 'inProgress'), 'exec_command · kubectl get');
+  assert.equal(
+    rolloutInternals.updateToolPurpose('', [started, invoked, completed, output], 'inProgress'),
+    '✓ command · kubectl get · exit 0',
+  );
+});
+
+test('rollout activity uses only public reasoning summaries from current Codex rows', () => {
+  const responseSummary = { type: 'reasoning', summary: [
+    { type: 'summary_text', text: '**Checking deployment health**' },
+  ], encrypted_content: 'must-not-be-read' };
+  const completedSummary = { type: 'item_completed', item: {
+    type: 'Reasoning', summary_text: ['**Preparing verification**'], raw_content: ['private'],
+  } };
+
+  assert.equal(rolloutInternals.reasoningSummary(responseSummary), 'Checking deployment health');
+  assert.equal(rolloutInternals.reasoningSummary(completedSummary), 'Preparing verification');
+  assert.equal(
+    rolloutInternals.updateToolPurpose('', [
+      { type: 'event_msg', payload: { type: 'task_started' } },
+      { type: 'response_item', payload: responseSummary },
+    ], 'inProgress'),
+    'Checking deployment health',
+  );
 });
 
 test('turn progress safely summarizes structured plans and diffs', () => {

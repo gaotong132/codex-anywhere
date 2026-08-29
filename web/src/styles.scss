@@ -473,17 +473,19 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .new-session-dialog-actions .primary-action { border-color: #3970dc; color: #fff; background: #3267d8; }
 .new-session-dialog-actions .primary-action:hover:not(:disabled) { border-color: #5689ef; background: #3c74e4; }
 .message-block {
-  position: relative;
   width: fit-content;
   min-width: 0;
   max-width: min(84%, 760px);
+  display: grid;
+  justify-items: start;
+  row-gap: 2px;
   margin: 0 0 7px;
 
-  &.copyable { padding-bottom: 21px; }
-  &.user { margin-left: auto; }
+  &.user { justify-items: end; margin-left: auto; }
 }
-.message-meta { position: absolute; right: 4px; bottom: 1px; min-width: 0; display: flex; align-items: center; gap: 3px; color: #687589; }
-.message-time { font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.message-meta { min-width: 0; min-height: 18px; display: flex; align-items: center; justify-self: end; gap: 3px; margin-right: 4px; color: #687589; }
+.message-time { min-width: 28px; font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.message-time.placeholder { visibility: hidden; }
 .message-copy {
     width: 18px;
     height: 18px;
@@ -557,9 +559,9 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 @keyframes assistant-sheen { 0%, 46% { transform: translateX(-110%); } 78%, 100% { transform: translateX(110%); } }
 @keyframes summary-arrive { from { opacity: 0; transform: translateY(8px) scale(.992); } to { opacity: 1; transform: none; } }
 @keyframes final-reply-arrive {
-  0% { opacity: .55; border-color: rgba(109, 157, 245, .78); box-shadow: 0 0 0 1px rgba(94, 139, 224, .18), 0 18px 44px rgba(17, 48, 105, .28); transform: translateY(9px) scale(.988); }
-  58% { opacity: 1; border-color: rgba(91, 139, 224, .64); box-shadow: 0 0 0 1px rgba(94, 139, 224, .09), 0 15px 38px rgba(15, 40, 88, .22); transform: translateY(-1px) scale(1); }
-  100% { opacity: 1; border-color: #252e3d; box-shadow: none; transform: none; }
+  0% { opacity: .68; border-color: rgba(109, 157, 245, .78); box-shadow: 0 0 0 1px rgba(94, 139, 224, .18), 0 18px 44px rgba(17, 48, 105, .28); }
+  58% { opacity: 1; border-color: rgba(91, 139, 224, .64); box-shadow: 0 0 0 1px rgba(94, 139, 224, .09), 0 15px 38px rgba(15, 40, 88, .22); }
+  100% { opacity: 1; border-color: #252e3d; box-shadow: none; }
 }
 .message-image { width: min(100%, 420px); margin: 10px 0 0; overflow: hidden; border: 1px solid rgba(255, 255, 255, .12); border-radius: 12px; background: rgba(7, 11, 18, .28); }
 .message-image-preview { display: block; width: 100%; border: 0; padding: 0; background: transparent; cursor: zoom-in; }
@@ -610,7 +612,6 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .activity-content { min-width: 0; display: grid; gap: 3px; }
 .activity-primary { min-width: 0; display: flex; align-items: center; gap: 7px; }
 .activity-primary strong { min-width: 0; flex: 1 1 auto; @include truncate; color: #aab6c8; font-weight: 500; }
-.activity-elapsed-label { min-width: 0; @include truncate; color: #8d9bb0; }
 .activity-secondary { min-width: 0; color: #aab6c8; }
 .activity-secondary strong { display: block; min-width: 0; @include truncate; font-weight: 500; }
 .activity-metrics { min-width: 0; flex: 0 1 auto; display: flex; gap: 7px; overflow: hidden; color: #96a4b8; font-variant-numeric: tabular-nums; white-space: nowrap; }

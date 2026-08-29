@@ -10,6 +10,8 @@ export function summarizeToolActivity(value: ActivityValue) {
   const input = String(item.input || item.arguments || outer.input || outer.arguments || '');
   const query = firstText(item.query, outer.query, item.action?.query, outer.action?.query);
 
+  if (/(?:custom_tool_call|function_call)_output/i.test(type)) return '';
+
   if (/web.?search/i.test(type) || /web.?search/i.test(name)) {
     return joinDetail('web_search', query);
   }
@@ -26,7 +28,11 @@ export function summarizeToolActivity(value: ActivityValue) {
     return joinDetail('mcp', [server, tool].filter(Boolean).map(toolLabel).join('.'));
   }
   if (/command.?execution/i.test(type)) {
-    return joinDetail('command', safeCommandSummary(firstText(item.command, outer.command)));
+    const command = commandText(item.parsed_cmd, item.command, outer.parsed_cmd, outer.command);
+    const exitCode = numericValue(item.exit_code, outer.exit_code);
+    const detail = [safeCommandSummary(command), exitCode == null ? '' : `exit ${exitCode}`]
+      .filter(Boolean).join(' · ');
+    return joinDetail('command', detail);
   }
   if (/custom_tool_call|function_call|toolCall/i.test(type) || name) {
     const nestedTool = nestedToolName(input);
@@ -70,12 +76,40 @@ function safeCommandSummary(command: string) {
     /\bnpm\s+(?:test|ci|install)\b/ig,
     /\bgit\s+(?:status|diff|log|show|add|commit|push|pull|fetch|rev-parse)\b/ig,
     /\bdocker\s+compose\s+(?:up|build|ps|logs|pull|restart)\b/ig,
-    /\b(?:Get-Content|Get-ChildItem|Invoke-RestMethod|Select-String|rg|ssh)\b/ig,
+    /\bkubectl\s+(?:apply|create|delete|describe|exec|get|logs|patch|rollout|scale|set|top|wait)\b/ig,
+    /\bhelm\s+(?:install|list|rollback|status|test|uninstall|upgrade)\b/ig,
+    /\b(?:df|du|free|journalctl|netstat|openssl|ping|ps|ss|systemctl|top|traceroute)\b/ig,
+    /\b(?:Get-Content|Get-ChildItem|Get-CimInstance|Get-NetTCPConnection|Invoke-RestMethod|Invoke-WebRequest|Select-String|Start-Process|Stop-Process|Test-Path|Wait-Process)\b/ig,
+    /\b(?:curl|node|npx|python|rg|ssh|tsc|tsx|vite)\b/ig,
   ];
   const matches = patterns.flatMap((pattern) => [...text.matchAll(pattern)]
     .map((match) => ({ index: match.index || 0, text: match[0] })))
     .sort((left, right) => left.index - right.index);
   return [...new Set(matches.map((match) => match.text))].slice(0, 2).join(' + ');
+}
+
+function commandText(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (!Array.isArray(value)) continue;
+    const structured = value
+      .map((entry) => entry && typeof entry === 'object' ? String((entry as ActivityValue).cmd || '') : '')
+      .filter(Boolean);
+    if (structured.length) return structured.join('; ');
+    const parts = value.map((entry) => typeof entry === 'string' ? entry : '').filter(Boolean);
+    if (!parts.length) continue;
+    const shellIndex = parts.findIndex((part) => /^(?:-c|-command)$/i.test(part));
+    return (shellIndex >= 0 ? parts.slice(shellIndex + 1) : parts).join(' ');
+  }
+  return '';
+}
+
+function numericValue(...values: unknown[]) {
+  for (const value of values) {
+    const numeric = typeof value === 'number' ? value : Number.NaN;
+    if (Number.isInteger(numeric)) return numeric;
+  }
+  return null;
 }
 
 function joinDetail(label: string, detail = '') {
@@ -95,4 +129,4 @@ function firstText(...values: unknown[]) {
   return values.map((value) => typeof value === 'string' ? value.trim() : '').find(Boolean) || '';
 }
 
-export const internals = { extractedString, nestedToolName, patchDetail, safeCommandSummary };
+export const internals = { commandText, extractedString, nestedToolName, patchDetail, safeCommandSummary };

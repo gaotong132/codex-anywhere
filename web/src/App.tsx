@@ -250,9 +250,7 @@ function LiveActivityStatus({
         <div className="activity-primary">
           {purpose ? (
             <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
-          ) : (
-            <span className="activity-elapsed-label">{t('本轮已持续', 'Active')}</span>
-          )}
+          ) : null}
           {startedAt && <time>{elapsed}</time>}
         </div>
         {hasMetrics && (
