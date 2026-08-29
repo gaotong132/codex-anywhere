@@ -50,11 +50,13 @@ export function DownloadIndicator({
 
 export function MessageBubble({
   item,
+  active = false,
   imageSource,
   onDownloadFile,
   onReadVisualization,
 }: {
   item: TimelineItem;
+  active?: boolean;
   imageSource?: string;
   onDownloadFile: (path: string) => void;
   onReadVisualization: (path: string) => Promise<string>;
@@ -64,7 +66,10 @@ export function MessageBubble({
   const [visualizationOpen, setVisualizationOpen] = useState(false);
   const [visualizationSource, setVisualizationSource] = useState('');
   const [visualizationStatus, setVisualizationStatus] = useState<'idle' | 'loading' | 'failed'>('idle');
+  const [summarySettling, setSummarySettling] = useState(false);
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const summarySettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previousCompletion = useRef<TimelineItem['completedAt']>(null);
   const visualizationHistoryEntry = useRef(false);
   const copyable = item.kind === 'user' || item.kind === 'assistant';
 
@@ -74,6 +79,19 @@ export function MessageBubble({
       if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
     };
   }, [item.text]);
+
+  useEffect(() => {
+    const previous = previousCompletion.current;
+    previousCompletion.current = item.completedAt;
+    if (item.kind !== 'assistant' || !active || !item.completedAt || item.completedAt === previous) return;
+    setSummarySettling(true);
+    if (summarySettleTimer.current) clearTimeout(summarySettleTimer.current);
+    summarySettleTimer.current = setTimeout(() => setSummarySettling(false), 560);
+  }, [active, item.completedAt, item.kind]);
+
+  useEffect(() => () => {
+    if (summarySettleTimer.current) clearTimeout(summarySettleTimer.current);
+  }, []);
 
   useEffect(() => {
     setImageExpanded(false);
@@ -168,7 +186,7 @@ export function MessageBubble({
 
   if (item.kind === 'progress') {
     return (
-      <details className="progress-card" open>
+      <details className={`progress-card${active ? ' live' : ''}`} open>
         <summary>{t('进度更新', 'Progress update')}</summary>
         <pre>{item.text}</pre>
       </details>
@@ -181,7 +199,7 @@ export function MessageBubble({
       : t('复制消息', 'Copy message');
   const completedDateTime = dateTimeValue(item.completedAt);
   return (
-    <div className={`message ${item.kind}${copyable ? ' copyable' : ''}`}>
+    <div className={`message ${item.kind}${copyable ? ' copyable' : ''}${active ? ' live' : ''}${summarySettling ? ' settling' : ''}`}>
       {item.contexts?.length ? (
         <div className="message-contexts" aria-label={t('消息来源', 'Message context')}>
           {item.contexts.map((context, index) => {

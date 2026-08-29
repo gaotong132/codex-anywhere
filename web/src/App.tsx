@@ -241,15 +241,20 @@ function LiveActivityStatus({
       title={purpose || activityLabel(kind)}
     >
       <i aria-hidden="true" />
-      <span className="activity-kind">{activityLabel(kind)}</span>
-      {purpose && <strong>{purpose}</strong>}
+      <span className="activity-kind status-change" key={kind}>{activityLabel(kind)}</span>
+      {purpose && <strong className="status-change" key={purpose}>{purpose}</strong>}
       {(progress.plan || progress.files) && (
         <span className="activity-metrics">
           {progress.plan && (
-            <span>{t(`第 ${progress.plan.current} / ${progress.plan.total} 步`, `Step ${progress.plan.current} / ${progress.plan.total}`)}</span>
+            <span className="status-change" key={`plan:${progress.plan.current}:${progress.plan.total}`}>
+              {t(`第 ${progress.plan.current} / ${progress.plan.total} 步`, `Step ${progress.plan.current} / ${progress.plan.total}`)}
+            </span>
           )}
           {progress.files && (
-            <span>
+            <span
+              className="status-change"
+              key={`files:${progress.files.changed}:${progress.files.additions}:${progress.files.deletions}`}
+            >
               {t(`${progress.files.changed} 个文件已更改`, `${progress.files.changed} files changed`)}
               {' '}<b className="additions">+{progress.files.additions}</b>
               {' '}<b className="deletions">-{progress.files.deletions}</b>
@@ -305,9 +310,15 @@ function AwaySummaryCard({ summary, onDismiss }: { summary: AwaySummary; onDismi
 function StartupScreen({ status }: { status: string }) {
   return (
     <main className="startup-shell" aria-busy="true" aria-live="polite">
-      <div className="startup-mark"><span>C</span><i aria-hidden="true" /></div>
-      <strong>CODEX ANYWHERE</strong>
-      <span>{status || t('正在恢复上次会话…', 'Restoring your last session…')}</span>
+      <div className="startup-visual" aria-hidden="true">
+        <div className="startup-orbit"><i /><i /><i /></div>
+        <div className="startup-mark"><span>C</span><i /></div>
+      </div>
+      <div className="startup-copy">
+        <strong>CODEX ANYWHERE</strong>
+        <span>{status || t('正在恢复上次会话…', 'Restoring your last session…')}</span>
+        <div className="startup-pulse" aria-hidden="true"><i /><i /><i /></div>
+      </div>
     </main>
   );
 }
@@ -2044,10 +2055,13 @@ export default function App() {
             )}
             {timeline.map((item) => {
               const attachment = resolveTimelineAttachment(item, threadId, knownAttachments);
+              const active = Boolean(item.transient
+                && (executionState === 'running' || executionState === 'waiting'));
               return (
                 <MessageBubble
                   key={item.id}
                   item={attachment && !item.attachment ? { ...item, attachment } : item}
+                  active={active}
                   imageSource={attachment ? attachmentUrls[attachment.path] : undefined}
                   onDownloadFile={downloadLocalFile}
                   onReadVisualization={readVisualization}

@@ -553,6 +553,20 @@ test('image previews open in the page instead of navigating to a data URL', () =
   assert.doesNotMatch(markup, /href="data:image\/webp/);
 });
 
+test('only active timeline items receive live motion classes', () => {
+  const props = {
+    item: { id: 'live-reply', kind: 'assistant' as const, text: '正在生成回复' },
+    onDownloadFile: () => undefined,
+    onReadVisualization: async () => '',
+  };
+  const activeMarkup = renderToStaticMarkup(createElement(MessageBubble, { ...props, active: true }));
+  const historyMarkup = renderToStaticMarkup(createElement(MessageBubble, props));
+
+  assert.match(activeMarkup, /class="message assistant copyable live"/);
+  assert.match(historyMarkup, /class="message assistant copyable"/);
+  assert.doesNotMatch(historyMarkup, /class="message assistant copyable live"/);
+});
+
 test('rollout tail recovers a generated image reference from a truncated Base64 event row', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-image-'));
   const filePath = join(directory, 'rollout.jsonl');
