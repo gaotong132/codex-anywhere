@@ -88,6 +88,9 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
 
+   登录启动器还包含一个轻量守护进程。当应用升级或主机事件结束连接器时，它会重新启动唯一的
+   Node 连接器进程，并且不会长期持有明文 Token。
+
 4. 在手机浏览器中打开转发服务地址并输入浏览器 Token。浏览器会自动生成设备身份，页面只显示
    通用的等待批准状态。
 5. 在 ECS/VPS 上按[正式部署指南](docs/deployment.md)的一次性运维步骤批准新增记录。Web 界面不会
@@ -150,7 +153,7 @@ npm run build
 ```
 
 应用源码和测试统一使用严格 TypeScript。转发服务和连接器运行编译后的 JavaScript；Windows
-启动器只会在 TypeScript 源码变化后重新构建，并保持单个 Node 连接器进程运行。
+启动器只会在 TypeScript 源码变化后重新构建。
 
 ## 许可证
 

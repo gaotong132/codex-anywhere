@@ -8,6 +8,7 @@ import { generatedImagesDirectory } from './generated-images.js';
 import { acquireConnectorInstanceLock } from './instance-lock.js';
 import { loadOrCreateConnectorDeviceIdentity } from './device-identity.js';
 import { createRequestHandler } from './request-handler.js';
+import { scheduleReferencedRetry } from './reconnect.js';
 import { createAuthProof } from '../shared/auth.js';
 import { createDeviceAuthProof } from '../shared/device-auth.js';
 import {
@@ -91,7 +92,7 @@ function scheduleReconnect() {
   if (stopped) return;
   const delay = Math.min(30_000, 1_000 * (2 ** reconnectAttempt)) + Math.floor(Math.random() * 500);
   reconnectAttempt += 1;
-  setTimeout(connect, delay).unref?.();
+  scheduleReferencedRetry(connect, delay);
 }
 
 async function shutdown() {

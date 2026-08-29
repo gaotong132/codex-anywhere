@@ -151,6 +151,10 @@ $clientToken = Read-Host 'Browser client token' -AsSecureString
   -BridgeUrl 'wss://codex.example.com/ws'
 ```
 
+The installed login shortcut runs a lightweight watchdog in the interactive user session. It restarts
+the single Node connector process after an application update or unexpected exit. The watchdog does not
+decrypt or retain either token; each restart goes through the DPAPI-backed launcher.
+
 New sessions require a project directory selected in the web UI; there is no default-workspace setting.
 `-AllowedRoots` is optional and defaults to the connector checkout. Set it only when additional local
 roots should be selectable. Downloads are limited to those roots by default. Add

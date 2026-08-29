@@ -14,8 +14,35 @@ $secretPath = Join-Path $stateDirectory 'connector-token.dpapi'
 $deviceSecretPath = Join-Path $stateDirectory 'connector-device-key.dpapi'
 $configPath = if ($ConfigPath) { [IO.Path]::GetFullPath($ConfigPath) } else { Join-Path $stateDirectory 'connector.json' }
 $failurePath = Join-Path $stateDirectory 'last-start-error.log'
+$compiledConnectorPath = Join-Path $projectRoot 'build\connector\index.js'
 
 New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+
+# The login watchdog and a manual launch can race. Avoid decrypting credentials,
+# rebuilding, or spawning a duplicate when the connector is healthy.
+try {
+    $runningConnector = Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
+        Where-Object {
+            $_.CommandLine -and
+            $_.CommandLine.IndexOf($compiledConnectorPath, [StringComparison]::OrdinalIgnoreCase) -ge 0
+        } |
+        Select-Object -First 1
+    if ($runningConnector) {
+        # A terminated process can remain visible briefly. Confirm the same PID
+        # after a short interval before treating it as the healthy instance.
+        Start-Sleep -Milliseconds 500
+        $confirmedConnector = Get-CimInstance Win32_Process -Filter "ProcessId = $($runningConnector.ProcessId)" |
+            Where-Object {
+                $_.CommandLine -and
+                $_.CommandLine.IndexOf($compiledConnectorPath, [StringComparison]::OrdinalIgnoreCase) -ge 0
+            } |
+            Select-Object -First 1
+        if ($confirmedConnector) { exit 0 }
+    }
+}
+catch {
+    # The connector's named-pipe instance lock remains the race-safe fallback.
+}
 
 trap {
     $failureText = "$(Get-Date -Format o)`r`n$($_ | Out-String)"
@@ -148,7 +175,6 @@ if (-not $nodePath) {
 if (-not (Test-Path -LiteralPath $nodePath -PathType Leaf)) {
     throw 'Node.js executable was not found.'
 }
-$compiledConnectorPath = Join-Path $projectRoot 'build\connector\index.js'
 $compiledConnector = Get-Item -LiteralPath $compiledConnectorPath -ErrorAction SilentlyContinue
 $buildInputs = @(
     Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src') -Filter '*.ts' -Recurse -File

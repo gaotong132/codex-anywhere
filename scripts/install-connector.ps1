@@ -15,7 +15,7 @@ Set-StrictMode -Version Latest
 [void][Reflection.Assembly]::LoadWithPartialName('System.Security')
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$launcherPath = Join-Path $PSScriptRoot 'start-connector.ps1'
+$watcherPath = Join-Path $PSScriptRoot 'watch-connector.ps1'
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PersonalCodexBridge'
 $secretPath = Join-Path $stateDirectory 'connector-token.dpapi'
 $deviceSecretPath = Join-Path $stateDirectory 'connector-device-key.dpapi'
@@ -93,7 +93,7 @@ $connectorConfig = [ordered]@{
 )
 
 $powerShellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
-$arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcherPath`""
+$arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watcherPath`""
 $shell = New-Object -ComObject WScript.Shell
 $shortcut = $null
 try {

@@ -100,6 +100,9 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
 
+   The login launcher also runs a lightweight watchdog. If an application update or host event terminates
+   the connector, it restarts the single Node connector process without retaining a plaintext token.
+
 4. Open the relay URL in the phone browser and enter the browser-client token. The browser generates
    its device identity automatically and shows only a generic waiting state.
 5. Approve the new pending record from the ECS/VPS using the one-time operator procedure in the
@@ -166,8 +169,7 @@ npm run build
 ```
 
 Application source and tests use strict TypeScript. The relay and connector run compiled JavaScript;
-the Windows launcher rebuilds only when the TypeScript source changes and then keeps one Node connector
-process running.
+the Windows launcher rebuilds only when the TypeScript source changes.
 
 ## License
 
