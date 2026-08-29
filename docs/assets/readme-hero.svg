@@ -43,9 +43,9 @@
     <text x="40" y="25" fill="#bcd0f3" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="14" font-weight="700" letter-spacing="2">CODEX ANYWHERE</text>
   </g>
 
-  <text x="82" y="190" fill="#f5f8ff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="60" font-weight="750" letter-spacing="-2">Your Codex sessions,</text>
-  <text x="82" y="258" fill="url(#brand)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="60" font-weight="750" letter-spacing="-2">in your pocket.</text>
-  <text x="84" y="314" fill="#95a6bf" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20">Follow and continue Codex work from any browser.</text>
+  <text x="82" y="190" fill="#f5f8ff" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="64" font-weight="750" letter-spacing="-2.2">Take Codex</text>
+  <text x="82" y="260" fill="url(#brand)" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="64" font-weight="750" letter-spacing="-2.2">anywhere.</text>
+  <text x="84" y="314" fill="#95a6bf" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="20">Follow progress. Continue from any browser.</text>
   <text x="84" y="344" fill="#71839e" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">Single-user · self-hosted · project files stay local</text>
 
   <g transform="translate(82 395)" font-family="Inter,Segoe UI,Arial,sans-serif">
