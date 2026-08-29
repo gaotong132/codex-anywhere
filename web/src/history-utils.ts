@@ -11,7 +11,7 @@ export { parseAssistantMessage } from '../../src/shared/message-content';
 
 const ATTACHMENT_STORAGE_KEY = 'bridge.knownAttachments.v2';
 const LOCAL_MARKDOWN_IMAGE_PATTERN = /!\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|((?:file:\/\/\/|[A-Za-z]:[\\/])[^)\r\n]+))\s*\)/i;
-const VISUALIZATION_MARKER_PATTERN = /(?:^|\r?\n)[ \t]*visualize[ \t]+\{[^\r\n{}]*"path"\s*:\s*("(?:\\.|[^"\\])*")[^\r\n{}]*\}[ \t]*(?=\r?\n|$)/i;
+const VISUALIZATION_MARKER_PATTERN = /(?:^|\r?\n)[ \t]*(?:visualize[ \t]+|\uE200visualize\uE202)\{[^\r\n{}]*"path"\s*:\s*("(?:\\.|[^"\\])*")[^\r\n{}]*\}[ \t]*(?:\uE201)?[ \t]*(?=\r?\n|$)/i;
 
 type TurnItem = {
   type?: string;

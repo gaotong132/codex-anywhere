@@ -402,6 +402,24 @@ test('visualize HTML markers become isolated artifact references', () => {
   });
 });
 
+test('historical Codex visualization markers become isolated artifact references', () => {
+  const items = historyItems([{
+    id: 'turn-historical-visualization',
+    items: [{
+      type: 'AgentMessage',
+      phase: 'final_answer',
+      text: '这里是交互稿。\n\n\uE200visualize\uE202{"path":"C:/Users/example/.codex/visualizations/thread/concept.html"}\uE201\n\n请查看设计。',
+    }],
+  }]);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].text, '这里是交互稿。\n\n请查看设计。');
+  assert.deepEqual(items[0].visualization, {
+    path: 'C:\\Users\\example\\.codex\\visualizations\\thread\\concept.html',
+    name: 'concept.html',
+    source: 'visualize',
+  });
+});
+
 test('history merge replaces an optimistic image message without duplicating it', () => {
   const attachment = {
     path: 'C:\\Users\\example\\AppData\\Local\\Temp\\bridge\\photo.jpg',
