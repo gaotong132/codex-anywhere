@@ -11,6 +11,7 @@ import {
   deriveSecureChannelKeys,
   openSecureChannelEnvelope,
   sealSecureChannelEnvelope,
+  SecureChannelCodec,
   secureChannelParticipant,
   signSecureChannelTranscript,
   verifySecureChannelAcceptance,
@@ -210,4 +211,46 @@ test('secure channel uses a fresh extended nonce for every envelope', () => {
   });
   assert.notEqual(first.nonce, second.nonce);
   assert.notEqual(first.ciphertext, second.ciphertext);
+});
+
+test('secure channel codec round-trips JSON frames and rejects replay or gaps', () => {
+  const fixture = createFixture();
+  const initiator = new SecureChannelCodec({
+    channelId: fixture.transcript.channelId,
+    side: 'initiator',
+    keys: deriveSecureChannelKeys({
+      side: 'initiator',
+      localSecretKey: fixture.initiatorEphemeral.secretKey,
+      peerEphemeralPublicKey: fixture.responderEphemeral.publicKey,
+      transcript: fixture.transcript,
+    }),
+  });
+  const responder = new SecureChannelCodec({
+    channelId: fixture.transcript.channelId,
+    side: 'responder',
+    keys: deriveSecureChannelKeys({
+      side: 'responder',
+      localSecretKey: fixture.responderEphemeral.secretKey,
+      peerEphemeralPublicKey: fixture.initiatorEphemeral.publicKey,
+      transcript: fixture.transcript,
+    }),
+  });
+
+  const first = initiator.seal({ type: 'request', requestId: 'r1', payload: { text: 'hello' } });
+  assert.deepEqual(responder.open(first), {
+    type: 'request', requestId: 'r1', payload: { text: 'hello' },
+  });
+  assert.throws(() => responder.open(first), /secure_channel_sequence_invalid/);
+
+  const second = initiator.seal({ type: 'request', requestId: 'r2' });
+  const third = initiator.seal({ type: 'request', requestId: 'r3' });
+  assert.throws(() => responder.open(third), /secure_channel_sequence_invalid/);
+  assert.deepEqual(responder.open(second), { type: 'request', requestId: 'r2' });
+  assert.deepEqual(responder.open(third), { type: 'request', requestId: 'r3' });
+
+  const reply = responder.seal({ type: 'response', requestId: 'r3', ok: true });
+  assert.deepEqual(initiator.open(reply), { type: 'response', requestId: 'r3', ok: true });
+  initiator.destroy();
+  responder.destroy();
+  assert.throws(() => initiator.seal({ type: 'request' }), /secure_channel_destroyed/);
 });

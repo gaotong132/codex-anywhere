@@ -18,6 +18,7 @@ import {
 export const SECURE_CHANNEL_PROTOCOL = 'codex-anywhere-e2ee-v1';
 export const SECURE_CHANNEL_NONCE_BYTES = 24;
 export const SECURE_CHANNEL_KEY_BYTES = 32;
+export const SECURE_CHANNEL_MAX_PLAINTEXT_BYTES = 5 * 1024 * 1024;
 export const SECURE_CHANNEL_ID_PATTERN = /^[A-Za-z0-9_-]{22,86}$/;
 export const SECURE_CHANNEL_EPHEMERAL_KEY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const SECURE_CHANNEL_NONCE_PATTERN = /^[A-Za-z0-9_-]{32}$/;
@@ -59,6 +60,8 @@ export type SecureChannelDirectionalKeys = {
   sendKey: Uint8Array;
   receiveKey: Uint8Array;
 };
+
+export type SecureChannelFrame = Record<string, unknown>;
 
 export type SecureChannelEnvelope = {
   protocol: typeof SECURE_CHANNEL_PROTOCOL;
@@ -312,6 +315,94 @@ export function openSecureChannelEnvelope({
     ).decrypt(base64urlnopad.decode(envelope.ciphertext));
   } catch {
     throw new Error('secure_channel_decryption_failed');
+  }
+}
+
+export class SecureChannelCodec {
+  readonly channelId: string;
+  readonly side: SecureChannelSide;
+  private readonly sendKey: Uint8Array;
+  private readonly receiveKey: Uint8Array;
+  private sendSequence = 0;
+  private receiveSequence = 0;
+  private destroyed = false;
+
+  constructor({
+    channelId,
+    side,
+    keys,
+  }: {
+    channelId: string;
+    side: SecureChannelSide;
+    keys: SecureChannelDirectionalKeys;
+  }) {
+    if (!SECURE_CHANNEL_ID_PATTERN.test(channelId)
+      || (side !== 'initiator' && side !== 'responder')
+      || keys.sendKey.length !== SECURE_CHANNEL_KEY_BYTES
+      || keys.receiveKey.length !== SECURE_CHANNEL_KEY_BYTES) {
+      throw new Error('secure_channel_codec_invalid');
+    }
+    this.channelId = channelId;
+    this.side = side;
+    this.sendKey = keys.sendKey.slice();
+    this.receiveKey = keys.receiveKey.slice();
+  }
+
+  seal(frame: SecureChannelFrame) {
+    this.assertActive();
+    if (!frame || typeof frame !== 'object' || Array.isArray(frame)) {
+      throw new Error('secure_channel_frame_invalid');
+    }
+    const plaintext = utf8ToBytes(JSON.stringify(frame));
+    if (plaintext.length > SECURE_CHANNEL_MAX_PLAINTEXT_BYTES) {
+      throw new Error('secure_channel_frame_too_large');
+    }
+    this.sendSequence += 1;
+    return sealSecureChannelEnvelope({
+      key: this.sendKey,
+      channelId: this.channelId,
+      sender: this.side,
+      sequence: this.sendSequence,
+      plaintext,
+    });
+  }
+
+  open(envelope: SecureChannelEnvelope): SecureChannelFrame {
+    this.assertActive();
+    if (envelope.sequence !== this.receiveSequence + 1) {
+      throw new Error('secure_channel_sequence_invalid');
+    }
+    const plaintext = openSecureChannelEnvelope({
+      key: this.receiveKey,
+      envelope,
+      expectedChannelId: this.channelId,
+      expectedSender: this.side === 'initiator' ? 'responder' : 'initiator',
+    });
+    if (plaintext.length > SECURE_CHANNEL_MAX_PLAINTEXT_BYTES) {
+      throw new Error('secure_channel_frame_too_large');
+    }
+    let frame: unknown;
+    try {
+      frame = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(plaintext));
+    } catch {
+      throw new Error('secure_channel_frame_invalid');
+    }
+    if (!frame || typeof frame !== 'object' || Array.isArray(frame)) {
+      throw new Error('secure_channel_frame_invalid');
+    }
+    this.receiveSequence = envelope.sequence;
+    return frame as SecureChannelFrame;
+  }
+
+  destroy() {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.sendKey.fill(0);
+    this.receiveKey.fill(0);
+  }
+
+  private assertActive() {
+    if (this.destroyed) throw new Error('secure_channel_destroyed');
   }
 }
 
