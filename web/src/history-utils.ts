@@ -53,6 +53,21 @@ export type TimelineItem = {
 };
 export type KnownAttachment = ImageAttachment & { savedAt: number };
 
+export function latestTurnProgressItemId(items: TimelineItem[]) {
+  let latestUserIndex = -1;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (items[index]?.kind === 'user') {
+      latestUserIndex = index;
+      break;
+    }
+  }
+  for (let index = items.length - 1; index > latestUserIndex; index -= 1) {
+    const item = items[index];
+    if (item?.kind === 'progress' && item.text.trim()) return item.id;
+  }
+  return null;
+}
+
 export function historyItems(turns: Turn[]) {
   const items: TimelineItem[] = [];
   for (const turn of [...(turns || [])].reverse()) {

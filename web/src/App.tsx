@@ -14,6 +14,7 @@ import {
   parseAssistantMessage,
   historyFingerprint,
   historyItems,
+  latestTurnProgressItemId,
   loadKnownAttachments,
   mergeHistorySnapshot,
   resolveTimelineAttachment,
@@ -241,13 +242,7 @@ function LiveActivityStatus({
       title={purpose || activityLabel(kind)}
     >
       <i aria-hidden="true" />
-      <TypewriterText
-        active
-        className="activity-kind status-change"
-        key={kind}
-        showCaret={false}
-        text={activityLabel(kind)}
-      />
+      <span className="activity-kind">{activityLabel(kind)}</span>
       {purpose && (
         <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
       )}
@@ -1831,6 +1826,8 @@ export default function App() {
   const directDesktopDeliveryAvailable = canSendToActiveDesktopTurn(
     running, executionState, ownedTurnThreadId, threadId,
   );
+  const executionActive = executionState === 'running' || executionState === 'waiting';
+  const liveProgressItemId = executionActive ? latestTurnProgressItemId(timeline) : null;
 
   if (initialBootstrapPending) return <StartupScreen status={statusText} />;
 
@@ -2084,8 +2081,9 @@ export default function App() {
             )}
             {timeline.map((item) => {
               const attachment = resolveTimelineAttachment(item, threadId, knownAttachments);
-              const active = Boolean(item.transient
-                && (executionState === 'running' || executionState === 'waiting'));
+              const active = executionActive && (item.kind === 'progress'
+                ? item.id === liveProgressItemId
+                : Boolean(item.transient));
               return (
                 <MessageBubble
                   key={item.id}

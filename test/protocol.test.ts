@@ -57,7 +57,11 @@ import {
   replayPendingFrames,
   shouldLoadOlderHistory,
 } from '../web/src/app-utils.js';
-import { historyItems, mergeHistorySnapshot } from '../web/src/history-utils.js';
+import {
+  historyItems,
+  latestTurnProgressItemId,
+  mergeHistorySnapshot,
+} from '../web/src/history-utils.js';
 import { MessageBubble } from '../web/src/ui-components.js';
 import { buildAwaySummary, formatAwayDuration } from '../web/src/away-summary.js';
 
@@ -586,6 +590,19 @@ test('only active timeline items receive live motion classes', () => {
   assert.match(activeMarkup, /class="message assistant copyable live"/);
   assert.match(historyMarkup, /class="message assistant copyable"/);
   assert.doesNotMatch(historyMarkup, /class="message assistant copyable live"/);
+});
+
+test('only progress after the latest user message is treated as the live progress block', () => {
+  assert.equal(latestTurnProgressItemId([
+    { id: 'old-user', kind: 'user', text: 'first' },
+    { id: 'old-progress', kind: 'progress', text: 'old progress' },
+    { id: 'new-user', kind: 'user', text: 'second' },
+  ]), null);
+  assert.equal(latestTurnProgressItemId([
+    { id: 'old-progress', kind: 'progress', text: 'old progress' },
+    { id: 'new-user', kind: 'user', text: 'second' },
+    { id: 'live-progress', kind: 'progress', text: 'new progress from polling' },
+  ]), 'live-progress');
 });
 
 test('rollout tail recovers a generated image reference from a truncated Base64 event row', async () => {
