@@ -2,7 +2,9 @@ import { stdin, stdout } from 'node:process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline/promises';
+import QRCode from 'qrcode';
 import { DeviceRegistry, type ApprovedDevice, type PendingDevice } from './device-registry.js';
+import { browserPairingFragment } from '../shared/pairing-auth.js';
 
 type DeviceAdminIo = {
   question(prompt: string): Promise<string>;
@@ -16,6 +18,7 @@ type DeviceAdminOptions = {
   args?: string[];
   io?: DeviceAdminIo;
   language?: string;
+  renderQrCode?: (value: string) => Promise<string>;
 };
 
 export function resolveDeviceAdminRegistryPath(configuredPath?: string) {
@@ -120,6 +123,22 @@ export async function runDeviceAdmin(options: DeviceAdminOptions = {}) {
     close: () => readline!.close(),
   };
   try {
+    if (args[0] === 'pair') {
+      const publicUrl = normalizePublicUrl(args[1] || process.env.BRIDGE_PUBLIC_URL);
+      const pairing = registry.createBrowserPairing();
+      publicUrl.hash = browserPairingFragment(pairing.credential);
+      const pairingUrl = publicUrl.toString();
+      const renderQrCode = options.renderQrCode
+        || ((value: string) => QRCode.toString(value, { type: 'terminal', small: true, errorCorrectionLevel: 'M' }));
+      operator.write(isChinese
+        ? `在 10 分钟内打开下面的单次配对链接，或扫描二维码：\n${pairingUrl}\n\n`
+        : `Open this one-time pairing link within 10 minutes, or scan the QR code:\n${pairingUrl}\n\n`);
+      operator.write(`${await renderQrCode(pairingUrl)}\n`);
+      operator.write(isChinese
+        ? '没有摄像头时可直接复制链接，或在 Web 页面上传二维码截图。\n'
+        : 'Without a camera, copy the link or upload a QR screenshot on the Web page.\n');
+      return 'pairing-created';
+    }
     if (args[0] === 'revoke' || args[0] === 'list-approved') {
       return await revokeApprovedDevice({ registry, args, operator, isChinese });
     }
@@ -172,6 +191,24 @@ export async function runDeviceAdmin(options: DeviceAdminOptions = {}) {
   } finally {
     operator.close?.();
   }
+}
+
+function normalizePublicUrl(value: unknown) {
+  let parsed: URL;
+  try {
+    parsed = new URL(String(value || '').trim());
+  } catch {
+    throw new Error('Provide the public Web URL: device-admin.js pair https://codex.example.com');
+  }
+  if (!['http:', 'https:'].includes(parsed.protocol)
+    || parsed.username
+    || parsed.password
+    || parsed.search
+    || parsed.hash) {
+    throw new Error('The public Web URL must use http:// or https:// without credentials, query, or fragment.');
+  }
+  parsed.pathname = '/';
+  return parsed;
 }
 
 const isEntryPoint = process.argv[1]

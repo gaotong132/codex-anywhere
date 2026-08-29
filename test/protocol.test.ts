@@ -19,6 +19,13 @@ import {
   negotiateProtocol,
 } from '../src/shared/protocol-negotiation.js';
 import {
+  browserPairingFragment,
+  browserPairingVerifier,
+  createBrowserPairingCredential,
+  createBrowserPairingProof,
+  parseBrowserPairingCredential,
+} from '../src/shared/pairing-auth.js';
+import {
   displayAssistantMessage,
   displayUserMessage,
   parseAssistantMessage,
@@ -102,6 +109,26 @@ test('protocol negotiation selects the highest compatible version and shared cap
     version: 4, minimumVersion: 3, capabilities: [],
   }), /protocol_version_unsupported/);
   assert.equal(createProtocolOffer().capabilities.includes('protocol-negotiation.v1'), true);
+});
+
+test('browser pairing links are fragment-only and challenge bound', () => {
+  const credential = createBrowserPairingCredential();
+  const fragment = browserPairingFragment(credential);
+  const parsed = parseBrowserPairingCredential(`https://codex.example.com/#${fragment}`);
+  assert.deepEqual(parsed, credential);
+  const identity = createDeviceIdentity();
+  const verifier = browserPairingVerifier(credential.secret);
+  const input = {
+    verifier,
+    challenge: 'a'.repeat(64),
+    pairingId: credential.id,
+    deviceId: identity.id,
+    publicKey: identity.publicKey,
+  };
+  const proof = createBrowserPairingProof(input);
+  assert.equal(proof.length, 64);
+  assert.notEqual(proof, createBrowserPairingProof({ ...input, challenge: 'b'.repeat(64) }));
+  assert.throws(() => parseBrowserPairingCredential('not-a-pairing'), /browser_pairing_invalid/);
 });
 
 test('connector supports ws and wss without allowing credentials in the URL', () => {

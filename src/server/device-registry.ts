@@ -6,12 +6,20 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { AuthRole } from '../shared/auth.js';
 import type { DeviceAuthProof } from '../shared/device-auth.js';
+import {
+  BROWSER_PAIRING_ID_PATTERN,
+  BROWSER_PAIRING_VERIFIER_PATTERN,
+  browserPairingVerifier,
+  createBrowserPairingCredential,
+} from '../shared/pairing-auth.js';
 
 const PAIRING_TTL_MS = 15 * 60_000;
+const BROWSER_PAIRING_TTL_MS = 10 * 60_000;
 const MAX_PENDING_DEVICES = 32;
+const MAX_BROWSER_PAIRINGS = 8;
 
 export type PendingDevice = {
   requestId: string;
@@ -28,14 +36,22 @@ export type ApprovedDevice = Omit<PendingDevice, 'requestId' | 'address' | 'requ
   approvedAt: number;
 };
 
+type BrowserPairing = {
+  id: string;
+  verifier: string;
+  requestedAt: number;
+  expiresAt: number;
+};
+
 type DeviceRegistryState = {
-  version: 1;
+  version: 2;
   approved: ApprovedDevice[];
   pending: PendingDevice[];
+  browserPairings: BrowserPairing[];
 };
 
 function emptyState(): DeviceRegistryState {
-  return { version: 1, approved: [], pending: [] };
+  return { version: 2, approved: [], pending: [], browserPairings: [] };
 }
 
 function recordKey(role: AuthRole, id: string) {
@@ -43,7 +59,7 @@ function recordKey(role: AuthRole, id: string) {
 }
 
 function sanitizeState(value: unknown): DeviceRegistryState {
-  if (!value || typeof value !== 'object' || (value as { version?: unknown }).version !== 1) {
+  if (!value || typeof value !== 'object' || ![1, 2].includes(Number((value as { version?: unknown }).version))) {
     throw new Error('device registry has an unsupported format');
   }
   const raw = value as Partial<DeviceRegistryState>;
@@ -51,9 +67,17 @@ function sanitizeState(value: unknown): DeviceRegistryState {
     throw new Error('device registry is invalid');
   }
   return {
-    version: 1,
+    version: 2,
     approved: raw.approved.filter((entry) => entry?.id && entry?.publicKey && entry?.role),
     pending: raw.pending.filter((entry) => entry?.requestId && entry?.id && entry?.publicKey && entry?.role),
+    browserPairings: Array.isArray(raw.browserPairings)
+      ? raw.browserPairings.filter((entry) => (
+        BROWSER_PAIRING_ID_PATTERN.test(String(entry?.id || ''))
+        && BROWSER_PAIRING_VERIFIER_PATTERN.test(String(entry?.verifier || ''))
+        && Number.isFinite(entry?.requestedAt)
+        && Number.isFinite(entry?.expiresAt)
+      ))
+      : [],
   };
 }
 
@@ -134,6 +158,63 @@ export class DeviceRegistry {
     };
   }
 
+  createBrowserPairing(now = Date.now()) {
+    this.refresh();
+    this.prune(false, now);
+    while (this.state.browserPairings.length >= MAX_BROWSER_PAIRINGS) {
+      this.state.browserPairings.sort((left, right) => left.requestedAt - right.requestedAt).shift();
+    }
+    const credential = createBrowserPairingCredential();
+    const expiresAt = now + BROWSER_PAIRING_TTL_MS;
+    this.state.browserPairings.push({
+      id: credential.id,
+      verifier: browserPairingVerifier(credential.secret),
+      requestedAt: now,
+      expiresAt,
+    });
+    this.persist();
+    return { credential, expiresAt };
+  }
+
+  getBrowserPairingVerifier(id: string, now = Date.now()) {
+    this.refresh();
+    this.prune(false, now);
+    return this.state.browserPairings.find((entry) => entry.id === id)?.verifier || null;
+  }
+
+  approveBrowserPairing({
+    pairingId,
+    verifier,
+    device,
+    label,
+    now = Date.now(),
+  }: {
+    pairingId: string;
+    verifier: string;
+    device: Pick<DeviceAuthProof, 'id' | 'publicKey'>;
+    label?: string;
+    now?: number;
+  }) {
+    this.refresh();
+    this.prune(false, now);
+    const index = this.state.browserPairings.findIndex((entry) => entry.id === pairingId);
+    if (index < 0 || !verifiersEqual(this.state.browserPairings[index].verifier, verifier)) return null;
+    this.state.browserPairings.splice(index, 1);
+    const approved: ApprovedDevice = {
+      id: device.id,
+      publicKey: device.publicKey,
+      role: 'client',
+      label: label?.trim().slice(0, 80) || 'Web browser',
+      approvedAt: now,
+    };
+    const key = recordKey(approved.role, approved.id);
+    this.state.pending = this.state.pending.filter((entry) => recordKey(entry.role, entry.id) !== key);
+    this.state.approved = this.state.approved.filter((entry) => recordKey(entry.role, entry.id) !== key);
+    this.state.approved.push(approved);
+    this.persist();
+    return approved;
+  }
+
   approve(requestId: string) {
     this.refresh();
     this.prune(false);
@@ -176,8 +257,11 @@ export class DeviceRegistry {
 
   private prune(persist: boolean, now = Date.now()) {
     const pending = this.state.pending.filter((entry) => now - entry.requestedAt <= PAIRING_TTL_MS);
-    if (pending.length === this.state.pending.length) return;
+    const browserPairings = this.state.browserPairings.filter((entry) => now <= entry.expiresAt);
+    if (pending.length === this.state.pending.length
+      && browserPairings.length === this.state.browserPairings.length) return;
     this.state.pending = pending;
+    this.state.browserPairings = browserPairings;
     if (persist) this.persist();
   }
 
@@ -190,4 +274,10 @@ export class DeviceRegistry {
     });
     renameSync(temporary, this.filePath);
   }
+}
+
+function verifiersEqual(left: string, right: string) {
+  if (!BROWSER_PAIRING_VERIFIER_PATTERN.test(left)
+    || !BROWSER_PAIRING_VERIFIER_PATTERN.test(right)) return false;
+  return timingSafeEqual(Buffer.from(left, 'hex'), Buffer.from(right, 'hex'));
 }

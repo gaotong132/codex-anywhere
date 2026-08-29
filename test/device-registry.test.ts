@@ -6,6 +6,7 @@ import test from 'node:test';
 import { DeviceRegistry } from '../src/server/device-registry.js';
 import { resolveDeviceAdminRegistryPath, runDeviceAdmin } from '../src/server/device-admin.js';
 import { createDeviceIdentity } from '../src/shared/device-auth.js';
+import { browserPairingVerifier } from '../src/shared/pairing-auth.js';
 
 test('device approval command uses the local registry unless a deployment path is configured', () => {
   assert.equal(resolveDeviceAdminRegistryPath(), resolve('data/devices.json'));
@@ -127,4 +128,65 @@ test('device administration revokes an approved device without printing identity
   assert.match(output, /Revoked connector: Office PC/);
   assert.doesNotMatch(output, new RegExp(identity.id));
   assert.doesNotMatch(output, new RegExp(identity.publicKey));
+});
+
+test('one-time browser pairing expires, cannot be reused, and stores no bearer secret', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'codex-anywhere-browser-pairing-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const filePath = join(directory, 'devices.json');
+  const registry = new DeviceRegistry(filePath);
+  const now = Date.now();
+  const pairing = registry.createBrowserPairing(now);
+  const identity = createDeviceIdentity();
+  const verifier = browserPairingVerifier(pairing.credential.secret);
+
+  assert.equal(registry.getBrowserPairingVerifier(pairing.credential.id, now), verifier);
+  assert.equal(registry.approveBrowserPairing({
+    pairingId: pairing.credential.id,
+    verifier,
+    device: identity,
+    label: 'Paired phone',
+    now,
+  })?.id, identity.id);
+  assert.equal(registry.isApproved('client', identity), true);
+  assert.equal(registry.approveBrowserPairing({
+    pairingId: pairing.credential.id,
+    verifier,
+    device: identity,
+    now,
+  }), null);
+
+  const stored = await readFile(filePath, 'utf8');
+  assert.doesNotMatch(stored, new RegExp(pairing.credential.secret));
+  assert.doesNotMatch(stored, new RegExp(identity.privateKey));
+
+  const expired = registry.createBrowserPairing(now);
+  assert.equal(registry.getBrowserPairingVerifier(expired.credential.id, now + 10 * 60_000 + 1), null);
+});
+
+test('device admin creates a camera-optional one-time pairing link', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'codex-anywhere-device-pair-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const filePath = join(directory, 'devices.json');
+  const registry = new DeviceRegistry(filePath);
+  let output = '';
+  let renderedValue = '';
+  const result = await runDeviceAdmin({
+    registry,
+    args: ['pair', 'https://codex.example.com'],
+    language: 'zh-CN',
+    renderQrCode: async (value) => { renderedValue = value; return '<qr>'; },
+    io: {
+      question: async () => '',
+      write: (text) => { output += text; },
+    },
+  });
+
+  assert.equal(result, 'pairing-created');
+  assert.match(renderedValue, /^https:\/\/codex\.example\.com\/#pair=v1\./);
+  assert.match(output, /没有摄像头/);
+  assert.match(output, /<qr>/);
+  const stored = await readFile(filePath, 'utf8');
+  const secret = renderedValue.split('.').at(-1)!;
+  assert.doesNotMatch(stored, new RegExp(secret));
 });
