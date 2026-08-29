@@ -24,6 +24,7 @@ import {
   mergeDesktopSessionStatuses,
 } from '../src/connector/codex-desktop.js';
 import { internals as rolloutInternals, readRolloutTail } from '../src/connector/rollout-tail.js';
+import { needsDesktopPermissionRecovery } from '../src/connector/session-permissions.js';
 import {
   canStopOwnedTurn,
   friendlyError,
@@ -650,7 +651,65 @@ test('active desktop writer waits and resumes the original thread without forkin
   assert.equal(calls[3].params.threadId, 'original');
   assert.equal(calls[3].params.cwd, process.cwd());
   assert.equal(calls[1].params.cwd, process.cwd());
+  assert.equal('approvalPolicy' in calls[1].params, false);
+  assert.equal('sandbox' in calls[1].params, false);
+  assert.equal('config' in calls[1].params, false);
+  assert.equal('approvalPolicy' in calls[3].params, false);
   assert.equal(calls.some((call) => call.method === 'thread/fork'), false);
+});
+
+test('legacy bridge restrictions are detected only after a prior full-access context', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-permission-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const fullAccess = {
+    type: 'turn_context',
+    payload: {
+      approval_policy: 'never',
+      sandbox_policy: { type: 'danger-full-access' },
+      permission_profile: { type: 'disabled' },
+    },
+  };
+  const legacyOverride = {
+    type: 'turn_context',
+    payload: {
+      approval_policy: 'untrusted',
+      sandbox_policy: {
+        type: 'workspace-write', network_access: false,
+        exclude_tmpdir_env_var: false, exclude_slash_tmp: false,
+      },
+      permission_profile: {
+        type: 'managed', file_system: { type: 'restricted' }, network: 'restricted',
+      },
+    },
+  };
+  try {
+    await writeFile(filePath, `${JSON.stringify(fullAccess)}\n${JSON.stringify(legacyOverride)}\n`);
+    assert.equal(await needsDesktopPermissionRecovery(filePath), true);
+    await writeFile(filePath, `${JSON.stringify(legacyOverride)}\n`);
+    assert.equal(await needsDesktopPermissionRecovery(filePath), false);
+    await writeFile(filePath, `${JSON.stringify(legacyOverride)}\n${JSON.stringify(fullAccess)}\n`);
+    assert.equal(await needsDesktopPermissionRecovery(filePath), false);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('new Web sessions retain the restricted approval and sandbox defaults', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  codex.ensureStarted = async () => {};
+  const calls = [];
+  codex.rpcRaw = async (method, params) => {
+    calls.push({ method, params });
+    return { thread: { id: 'new-thread' } };
+  };
+  codex.sendRpcNotification = (method, params) => calls.push({ method, params });
+  await codex.startTurn({ text: 'hello', cwd: process.cwd() });
+  assert.equal(calls[0].method, 'thread/start');
+  assert.equal(calls[0].params.approvalPolicy, 'untrusted');
+  assert.equal(calls[0].params.sandbox, 'workspace-write');
+  assert.equal(calls[0].params.config.sandbox_mode, 'workspace-write');
+  assert.equal(calls[1].method, 'turn/start');
+  assert.equal(calls[1].params.approvalPolicy, 'untrusted');
 });
 
 test('active desktop writer wait has a bounded timeout', async () => {

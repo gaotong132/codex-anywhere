@@ -17,6 +17,7 @@ function createDependencies(overrides = {}) {
       getControllerThreadId: () => 'controller-thread',
       isLargeSession: async () => false,
       canOwnSession: () => true,
+      needsDesktopPermissionRecovery: async () => false,
       ...overrides.codex,
     },
     desktop: {
@@ -87,6 +88,27 @@ test('idle existing sessions use app-server so Web can receive approval requests
   });
   assert.equal(response.ok, true);
   assert.equal(response.data.delivery, 'appServer');
+});
+
+test('a legacy bridge permission override is handed back to Desktop once', async () => {
+  let sent;
+  let appServerCalls = 0;
+  const handle = createRequestHandler(createDependencies({
+    codex: {
+      needsDesktopPermissionRecovery: async () => true,
+      startTurn: async () => { appServerCalls += 1; return { threadId: 'target-thread' }; },
+    },
+    desktop: { sendMessage: async (message) => {
+      sent = message;
+      return { threadId: message.threadId, delivery: 'desktop' };
+    } },
+  }));
+  const response = await handle(request('turn.start', { threadId: 'target-thread', text: 'continue' }));
+  assert.deepEqual(sent, {
+    threadId: 'target-thread', text: 'continue', requestId: 'request-1', callerThreadId: 'controller-thread',
+  });
+  assert.equal(response.data.delivery, 'desktop');
+  assert.equal(appServerCalls, 0);
 });
 
 test('active Desktop sessions preserve the required caller task', async () => {

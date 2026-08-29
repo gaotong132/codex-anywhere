@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline';
 import { parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
 import { readRolloutTail } from './rollout-tail.js';
 import { extractGeneratedImageAttachment } from './generated-images.js';
+import { needsDesktopPermissionRecovery } from './session-permissions.js';
 
 const RPC_TIMEOUT_MS = 20_000;
 const SUMMARY_LIMIT = 4_000;
@@ -241,6 +242,16 @@ export class CodexAppServer extends EventEmitter {
     return Boolean(cwd && isAllowedWorkspace(this.allowedRoots, cwd));
   }
 
+  async needsDesktopPermissionRecovery(threadId: unknown) {
+    const resolvedThreadId = String(threadId || '').trim();
+    let filePath = this.sessionMetadata.get(resolvedThreadId)?.path;
+    if (!filePath) {
+      await this.listSessions();
+      filePath = this.sessionMetadata.get(resolvedThreadId)?.path;
+    }
+    return filePath ? needsDesktopPermissionRecovery(filePath) : false;
+  }
+
   getControllerThreadId(targetThreadId: unknown) {
     const target = String(targetThreadId || '').trim();
     // Desktop requires a valid caller task for app tool requests. Prefer a
@@ -258,6 +269,7 @@ export class CodexAppServer extends EventEmitter {
   }: StartTurnOptions) {
     if (this.activeTurn) throw new Error('another_turn_is_active');
     let resolvedThreadId = String(threadId || '').trim();
+    const isNewThread = !resolvedThreadId;
     if (!resolvedThreadId && !String(cwd || '').trim()) throw new Error('project_directory_required');
     let turnCwd = '';
     const turnContext = { clientId, requestId, threadId: resolvedThreadId, cwd: turnCwd, state: 'starting' };
@@ -277,8 +289,7 @@ export class CodexAppServer extends EventEmitter {
         turnCwd = resolveAllowedWorkspace(this.allowedRoots, cwd);
       }
       turnContext.cwd = turnCwd;
-      const threadParams = {
-        cwd: turnCwd,
+      const secureDefaults = {
         approvalPolicy: 'untrusted',
         approvalsReviewer: 'user',
         sandbox: 'workspace-write',
@@ -292,6 +303,7 @@ export class CodexAppServer extends EventEmitter {
           },
         },
       };
+      const threadParams = isNewThread ? { cwd: turnCwd, ...secureDefaults } : { cwd: turnCwd };
       if (resolvedThreadId) {
         const result = await this.resumeWhenWritable(
           resolvedThreadId, threadParams, turnContext, waitForActiveWriter,
@@ -310,8 +322,10 @@ export class CodexAppServer extends EventEmitter {
         threadId: resolvedThreadId,
         input: [{ type: 'text', text: String(text || '') }],
         cwd: turnCwd,
-        approvalPolicy: 'untrusted',
-        approvalsReviewer: 'user',
+        ...(isNewThread ? {
+          approvalPolicy: secureDefaults.approvalPolicy,
+          approvalsReviewer: secureDefaults.approvalsReviewer,
+        } : {}),
       }, true);
       return { threadId: resolvedThreadId };
     } catch (error) {

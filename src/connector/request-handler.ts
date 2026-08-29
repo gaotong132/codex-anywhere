@@ -21,6 +21,7 @@ type CodexGateway = {
   getControllerThreadId(threadId: string): string;
   isLargeSession(threadId: string): Promise<boolean>;
   canOwnSession(threadId: string): boolean;
+  needsDesktopPermissionRecovery(threadId: string): Promise<boolean>;
 };
 type DesktopGateway = {
   listThreads(options: Payload): Promise<any[]>;
@@ -131,7 +132,20 @@ async function startTurn({
   if (!threadId) {
     return { ...await codex.startTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
   }
-  if (codex.canOwnSession(threadId) && !await codex.isLargeSession(threadId)) {
+  const largeSession = await codex.isLargeSession(threadId);
+  if (!largeSession && await codex.needsDesktopPermissionRecovery(threadId)) {
+    try {
+      return await desktop.sendMessage({
+        threadId,
+        text: payload.text,
+        requestId,
+        callerThreadId: codex.getControllerThreadId(threadId),
+      });
+    } catch (error) {
+      if (String(error instanceof Error ? error.message : error) !== 'desktop_app_unavailable') throw error;
+    }
+  }
+  if (codex.canOwnSession(threadId) && !largeSession) {
     try {
       return {
         ...await codex.startTurn({
@@ -152,7 +166,7 @@ async function startTurn({
     });
   } catch (error) {
     if (String(error instanceof Error ? error.message : error) !== 'desktop_app_unavailable') throw error;
-    if (await codex.isLargeSession(threadId)) throw new Error('desktop_required_for_large_session');
+    if (largeSession) throw new Error('desktop_required_for_large_session');
     return { ...await codex.startTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
   }
 }
