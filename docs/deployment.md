@@ -174,7 +174,7 @@ $env:CODEX_NETWORK_ACCESS = '0'
 npm run connector
 ```
 
-On Windows, the login-startup installer stores the token with user-scoped DPAPI rather than in the
+On Windows, the background-task installer stores the token with user-scoped DPAPI rather than in the
 repository or a plaintext script. It also creates a separate persistent Ed25519 connector identity and
 protects that private key with the same user-scoped DPAPI boundary:
 
@@ -187,9 +187,10 @@ $clientToken = Read-Host 'Browser client token' -AsSecureString
   -BridgeUrl 'wss://codex.example.com/ws'
 ```
 
-The installed login shortcut runs a lightweight watchdog in the interactive user session. It restarts
-the single Node connector process after an application update or unexpected exit. The watchdog does not
-decrypt or retain either token; each restart goes through the DPAPI-backed launcher.
+The installer registers a current-user Task Scheduler task that starts after sign-in and runs a lightweight
+watchdog in the interactive user session. It restarts the single Node connector process after an application
+update or unexpected exit. The watchdog does not decrypt or retain either token; each restart goes through
+the DPAPI-backed launcher. If Task Scheduler is unavailable, the installer falls back to a login shortcut.
 
 New sessions require a project directory selected in the web UI; there is no default-workspace setting.
 `-AllowedRoots` is optional and defaults to the connector checkout. Set it only when additional local
@@ -197,11 +198,12 @@ roots should be selectable. Local raster previews and downloads are limited to t
 `-AllowAnyFileDownload` only when this is a trusted single-user computer and unrestricted local download
 is intentional. Leave network access disabled unless the Codex task actually needs it.
 
-The encrypted credential and non-secret settings are stored outside the checkout under
-`%LOCALAPPDATA%\PersonalCodexBridge`. This legacy-compatible directory name is retained so upgrades do
-not orphan existing DPAPI credentials. Re-run the installer without either token to update settings while
-retaining the credentials. `scripts/copy-token.ps1` copies only the separately stored browser token;
-it never exposes the connector credential. Clear clipboard history afterward on shared computers.
+The encrypted credentials and non-secret settings are stored outside the checkout under
+`%USERPROFILE%\.codex-anywhere`. Re-running the installer migrates existing DPAPI records from the legacy
+LocalAppData location without deleting the old copies, so an interrupted upgrade can still be rolled back.
+You may omit both tokens when re-running the installer to update settings while retaining the credentials.
+`scripts/copy-token.ps1` copies only the separately stored browser token; it never exposes the connector
+credential. Clear clipboard history afterward on shared computers.
 
 Connector configuration:
 

@@ -107,7 +107,7 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
    [正式部署指南](docs/deployment.zh-CN.md)。
 2. 分别生成两个至少含 32 字节随机量的密钥：浏览器 Token 和连接器 Token。在转发服务中配置
    两者，本机连接器只保存连接器 Token。
-3. 在运行 Codex 的电脑上安装连接器。Windows 可以将其注册为登录后自动启动：
+3. 在运行 Codex 的电脑上安装连接器。Windows 会注册一个当前用户后台任务，在登录后自动启动：
 
    ```powershell
    $connectorToken = Read-Host 'Connector token' -AsSecureString
@@ -116,8 +116,8 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
 
-   登录启动器还包含一个轻量守护进程。当应用升级或主机事件结束连接器时，它会重新启动唯一的
-   Node 连接器进程，并且不会长期持有明文 Token。
+   轻量守护进程会在应用升级或意外退出后重新启动唯一的 Node 连接器进程，并且不会长期持有明文
+   Token。无法使用任务计划程序时，安装器会自动回退到登录快捷方式。
 
 4. 启动连接器，然后在 ECS/VPS 上批准该连接器。Web 界面不会获取或展示设备 ID、请求 ID、公钥、
    IP 和设备清单。

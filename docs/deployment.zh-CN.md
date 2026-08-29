@@ -159,7 +159,7 @@ $env:CODEX_NETWORK_ACCESS = '0'
 npm run connector
 ```
 
-Windows 登录启动安装器使用当前用户 DPAPI 保存 Token，而不是写入仓库或明文脚本。它还会建立独立、
+Windows 后台任务安装器使用当前用户 DPAPI 保存 Token，而不是写入仓库或明文脚本。它还会建立独立、
 持久的 Ed25519 连接器身份，并使用同一 DPAPI 边界保护私钥：
 
 ```powershell
@@ -171,17 +171,18 @@ $clientToken = Read-Host 'Browser client token' -AsSecureString
   -BridgeUrl 'wss://codex.example.com/ws'
 ```
 
-安装后的登录启动项会在当前交互用户会话中运行轻量守护进程。应用升级或连接器意外退出时，它会重新
-启动唯一的 Node 连接器进程。守护进程不解密也不长期持有 Token；每次重启都通过 DPAPI 启动器。
+安装器会注册一个当前用户计划任务，在登录后于交互用户会话中运行轻量守护进程。应用升级或连接器意外
+退出时，它会重新启动唯一的 Node 连接器进程。守护进程不解密也不长期持有 Token；每次重启都通过
+DPAPI 启动器。无法使用任务计划程序时，安装器会自动回退到登录快捷方式。
 
 新会话必须在 Web UI 明确选择项目目录，不存在默认工作区配置。`-AllowedRoots` 可选，默认只包含
 连接器仓库；只有需要选择更多本地目录时才配置。本机位图预览和下载默认限制在这些根目录内。只有在单用户可信电脑上
 明确需要不受限本地下载时才添加 `-AllowAnyFileDownload`。除非任务确实需要，否则保持网络访问关闭。
 
-加密凭据和非敏感配置保存在仓库外的 `%LOCALAPPDATA%\PersonalCodexBridge`。为避免升级后丢失已有
-DPAPI 凭据，当前保留了这个兼容旧版本的内部目录名。再次运行安装器时可以
-省略两个 Token，只更新设置并保留凭据。`scripts/copy-token.ps1` 只复制单独保存的浏览器 Token，
-不会暴露连接器 Token。在共享电脑上使用后应清除剪贴板历史。
+加密凭据和非敏感配置保存在仓库外的 `%USERPROFILE%\.codex-anywhere`。再次运行安装器会迁移旧版
+LocalAppData 目录中的 DPAPI 记录，但不会删除旧副本，以便升级中断时回退。再次运行时可以省略两个
+Token，只更新设置并保留凭据。`scripts/copy-token.ps1` 只复制单独保存的浏览器 Token，不会暴露
+连接器 Token。在共享电脑上使用后应清除剪贴板历史。
 
 连接器配置：
 

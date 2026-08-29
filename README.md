@@ -123,8 +123,8 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
    [production deployment guide](docs/deployment.md).
 2. Generate two independent secrets from at least 32 random bytes: one browser-client token and one
    connector token. Configure both on the relay and give only the connector token to the connector.
-3. On the computer that runs Codex, install the connector. Windows users can register it for login
-   startup with:
+3. On the computer that runs Codex, install the connector. On Windows this registers a current-user
+   background task that starts after sign-in:
 
    ```powershell
    $connectorToken = Read-Host 'Connector token' -AsSecureString
@@ -133,8 +133,9 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
 
-   The login launcher also runs a lightweight watchdog. If an application update or host event terminates
-   the connector, it restarts the single Node connector process without retaining a plaintext token.
+   A lightweight watchdog restarts the single Node connector process after an application update or
+   unexpected exit, without retaining a plaintext token. If Task Scheduler is unavailable, installation
+   falls back to a login shortcut.
 
 4. Start the connector, then approve that connector from the ECS/VPS. Device identity and registry
    internals are never exposed to the browser UI.
