@@ -136,6 +136,7 @@ export function MessageBubble({
               : <a {...props} href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
           },
           img: ({ node: _node, src, alt, ...props }) => {
+            if (!src) return null;
             const localPath = localFilePathFromHref(src);
             if (!localPath) return <img {...props} src={src} alt={alt || ''} loading="lazy" />;
             if (item.attachment?.path === localPath) return null;

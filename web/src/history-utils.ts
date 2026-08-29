@@ -10,6 +10,7 @@ import { localFileName, localFilePathFromHref } from './file-utils';
 export { parseAssistantMessage } from '../../src/shared/message-content';
 
 const ATTACHMENT_STORAGE_KEY = 'bridge.knownAttachments.v2';
+const LOCAL_MARKDOWN_IMAGE_PATTERN = /!\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|((?:file:\/\/\/|[A-Za-z]:[\\/])[^)\r\n]+))\s*\)/i;
 
 type TurnItem = {
   type?: string;
@@ -55,13 +56,18 @@ export function historyItems(turns: Turn[]) {
     for (const [index, item] of (turn.items || []).entries()) {
       const type = item.type || '';
       const rawText = item.text?.trim();
+      const userItem = /user/i.test(type);
+      const localMarkdownImage = userItem ? undefined : extractLocalMarkdownImage(rawText || '');
       const attachment = item.attachment
-        || (/user/i.test(type)
+        || (userItem
           ? extractImageAttachment(rawText || '')
-          : extractLocalMarkdownImage(rawText || ''));
-      const content = /user/i.test(type)
+          : localMarkdownImage);
+      const presentationText = localMarkdownImage && attachment === localMarkdownImage
+        ? stripLocalMarkdownImage(rawText || '')
+        : rawText || '';
+      const content = userItem
         ? parseUserMessage(rawText || '')
-        : parseAssistantMessage(rawText || '');
+        : parseAssistantMessage(presentationText);
       const text = content.text;
       let kind: TimelineKind | null = null;
       const displayText = text || '';
@@ -92,7 +98,7 @@ export function historyItems(turns: Turn[]) {
 }
 
 function extractLocalMarkdownImage(text: string): ImageAttachment | undefined {
-  const image = /!\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|((?:file:\/\/\/|[A-Za-z]:[\\/])[^)\r\n]+))\s*\)/i.exec(text);
+  const image = LOCAL_MARKDOWN_IMAGE_PATTERN.exec(text);
   const rawHref = (image?.[2] || image?.[3] || '')
     .replace(/\s+(?:"[^"]*"|'[^']*')\s*$/, '')
     .trim();
@@ -103,6 +109,13 @@ function extractLocalMarkdownImage(text: string): ImageAttachment | undefined {
     name: image?.[1]?.trim() || localFileName(path),
     source: 'local',
   };
+}
+
+function stripLocalMarkdownImage(text: string) {
+  return text
+    .replace(LOCAL_MARKDOWN_IMAGE_PATTERN, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 function extractImageAttachment(text: string): ImageAttachment | undefined {

@@ -372,6 +372,8 @@ test('assistant Markdown images become safe local preview references', () => {
     name: 'Architecture',
     source: 'local',
   });
+  assert.equal(items[0].text, '图已生成：\n\n[SVG](D:/workspace/diagrams/architecture.svg)');
+  assert.doesNotMatch(items[0].text, /!\[Architecture\]/);
 
   const svgOnly = historyItems([{
     id: 'turn-local-svg',
