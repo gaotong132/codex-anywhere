@@ -105,9 +105,26 @@ ss -ltn | grep 3300
 
 The listener shown by `ss` must be `127.0.0.1:3300`, not `0.0.0.0:3300` or `[::]:3300`.
 
-## 3. Optional reference: TLS reverse proxy
+## 3. Recommended public ingress: TLS reverse proxy
 
-If using the included Nginx path, obtain a certificate appropriate for the endpoint, then copy
+For direct access from an ordinary phone browser over the internet, the best balance is a maintained
+TLS reverse proxy on the ECS/VPS with the relay kept on loopback. Nginx is the included reference, not
+a required dependency. If a correctly configured Nginx deployment is already stable, replacing it
+solely for this project adds migration risk without changing the relay trust boundary.
+
+| Situation | Recommended ingress |
+| --- | --- |
+| Existing maintained Nginx and a public browser URL | Keep Nginx and use WSS; this is the reference path below. |
+| New single-service host with minimal administration | A maintained proxy with automatic HTTPS, such as Caddy, can reduce certificate and redirect configuration. |
+| Only explicitly enrolled personal devices need access | A private VPN or overlay-network ingress reduces public exposure, but every phone or computer must join that network. |
+| Loopback or a fully trusted private network | Direct `ws://` remains supported; never treat it as confidential on an untrusted path. |
+
+Whichever TLS proxy is selected, it must support WebSocket upgrade, overwrite trusted forwarding
+headers, and be the only path to port 3300. Certificate renewal, proxy updates, and host security
+updates remain operator responsibilities. TLS still terminates on the ECS/VPS; changing proxy software
+does not create application-layer end-to-end encryption.
+
+To use the included Nginx path, obtain a certificate appropriate for the endpoint, then copy
 [`deploy/nginx-example.conf`](../deploy/nginx-example.conf) into the Nginx site configuration. Replace
 every `codex.example.com` with your hostname and adjust certificate paths if necessary.
 
