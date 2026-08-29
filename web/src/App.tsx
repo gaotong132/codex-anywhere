@@ -60,6 +60,12 @@ import {
   type SessionAttentionState,
 } from './app-utils';
 import { DownloadIndicator, MessageBubble, SidebarIcon } from './ui-components';
+import {
+  browserNotificationsEnabled,
+  browserNotificationsSupported,
+  notifyWhenHidden,
+  setBrowserNotificationsEnabled,
+} from './browser-notifications';
 import { BrowserSecureChannel } from './secure-channel-client';
 import { createAuthProof } from '../../src/shared/auth';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
@@ -264,6 +270,8 @@ export default function App() {
   const [newSessionImage, setNewSessionImage] = useState<PendingImage | null>(null);
   const [newSessionError, setNewSessionError] = useState('');
   const [connectionEpoch, setConnectionEpoch] = useState(0);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(browserNotificationsEnabled);
+  const [notificationBusy, setNotificationBusy] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
   const pendingRef = useRef(new Map<string, PendingRequest>());
@@ -418,6 +426,17 @@ export default function App() {
     if (isConnectionInterruption(error)) return;
     addTimeline('error', friendlyError(error));
   }, [addTimeline]);
+
+  const toggleNotifications = useCallback(async () => {
+    if (notificationBusy) return;
+    setNotificationBusy(true);
+    try {
+      const enabled = await setBrowserNotificationsEnabled(!notificationsEnabled);
+      setNotificationsEnabled(enabled);
+    } finally {
+      setNotificationBusy(false);
+    }
+  }, [notificationBusy, notificationsEnabled]);
 
   const rememberAttachment = useCallback((targetThreadId: string, text: string, attachment: ImageAttachment) => {
     if (!targetThreadId || !text.trim()) return;
@@ -723,6 +742,7 @@ export default function App() {
         actionable: true,
       };
       if (!nextApproval.threadId || nextApproval.threadId === threadIdRef.current) {
+        void notifyWhenHidden('approval').catch(() => undefined);
         setApproval(nextApproval);
         setRunning(true);
         setOwnedTurnThreadId(nextApproval.threadId || threadIdRef.current || NEW_TURN_KEY);
@@ -743,6 +763,7 @@ export default function App() {
       setExecutionState('failed');
       addTimeline('error', String(payload.error || t('Codex 运行错误', 'Codex execution error')));
     } else if (message.event === 'turn.ended') {
+      void notifyWhenHidden('completed').catch(() => undefined);
       streamItemRef.current = null;
       setApproval(null);
       setToolPurpose('');
@@ -1705,6 +1726,23 @@ export default function App() {
             >
               <SidebarIcon name="search" />
             </button>
+            {browserNotificationsSupported() && (
+              <button
+                className={`sidebar-tool ${notificationsEnabled ? 'active' : ''}`}
+                type="button"
+                disabled={notificationBusy}
+                onClick={() => void toggleNotifications()}
+                aria-pressed={notificationsEnabled}
+                aria-label={notificationsEnabled
+                  ? t('关闭后台通知', 'Disable background notifications')
+                  : t('开启后台通知', 'Enable background notifications')}
+                title={notificationsEnabled
+                  ? t('后台通知已开启', 'Background notifications enabled')
+                  : t('开启后台通知', 'Enable background notifications')}
+              >
+                <SidebarIcon name="notifications" />
+              </button>
+            )}
             <button className="sidebar-tool mobile-only" onClick={() => setDrawerOpen(false)} aria-label={t('收起会话列表', 'Collapse session list')} title={t('收起会话列表', 'Collapse session list')}>
               <SidebarIcon name="panel-close" />
             </button>
