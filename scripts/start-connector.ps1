@@ -9,7 +9,17 @@ Set-StrictMode -Version Latest
 [void][Reflection.Assembly]::LoadWithPartialName('System.Security')
 
 $projectRoot = if ($ProjectRoot) { [IO.Path]::GetFullPath($ProjectRoot) } else { Split-Path -Parent $PSScriptRoot }
-$stateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PersonalCodexBridge'
+$primaryStateDirectory = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex-anywhere'
+$legacyStateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PersonalCodexBridge'
+$stateDirectory = if (
+    [IO.File]::Exists((Join-Path $primaryStateDirectory 'connector-token.dpapi')) -or
+    -not [IO.File]::Exists((Join-Path $legacyStateDirectory 'connector-token.dpapi'))
+) {
+    $primaryStateDirectory
+}
+else {
+    $legacyStateDirectory
+}
 $secretPath = Join-Path $stateDirectory 'connector-token.dpapi'
 $deviceSecretPath = Join-Path $stateDirectory 'connector-device-key.dpapi'
 $configPath = if ($ConfigPath) { [IO.Path]::GetFullPath($ConfigPath) } else { Join-Path $stateDirectory 'connector.json' }
@@ -50,7 +60,7 @@ trap {
     exit 1
 }
 
-if (-not (Test-Path -LiteralPath $secretPath -PathType Leaf)) {
+if (-not [IO.File]::Exists($secretPath)) {
     throw "Bridge credential is missing: $secretPath"
 }
 
