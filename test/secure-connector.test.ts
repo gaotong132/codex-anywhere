@@ -59,6 +59,8 @@ test('connector secure channel authenticates, decrypts requests, and encrypts re
       type: 'request', requestId: 'r1', action: 'echo', payload: { text: 'hello' },
     }),
   });
+  const acknowledgement = sent.shift()!;
+  assert.deepEqual(browser.open(acknowledgement.envelope), { type: 'ack', requestId: 'r1' });
   const response = sent.shift()!;
   assert.equal(response.type, 'secure');
   assert.deepEqual(browser.open(response.envelope), {
@@ -72,6 +74,64 @@ test('connector secure channel authenticates, decrypts requests, and encrypts re
     type: 'event', event: 'turn.delta', payload: { delta: 'working' },
   });
   manager.clear();
+});
+
+test('connector deduplicates replayed mutating requests for the same browser identity', async () => {
+  const browserIdentity = createDeviceIdentity();
+  const connectorIdentity = createDeviceIdentity();
+  const sent: Record<string, any>[] = [];
+  let calls = 0;
+  const manager = new ConnectorSecureChannels({
+    identity: connectorIdentity,
+    deviceId: 'personal-pc',
+    send: (frame) => { sent.push(frame); return true; },
+    handleRequest: async (frame) => {
+      calls += 1;
+      return {
+        type: 'response', clientId: frame.clientId, requestId: frame.requestId,
+        ok: true, data: { threadId: 'thread-1' },
+      };
+    },
+  });
+
+  async function connect(clientId: string) {
+    const ephemeral = createSecureChannelEphemeralKeyPair();
+    const offer = createSecureChannelOffer({
+      identity: browserIdentity,
+      routeDeviceId: 'personal-pc',
+      ephemeralPublicKey: ephemeral.publicKey,
+    });
+    await manager.handle({ type: 'channel.offer', clientId, offer });
+    const acceptance = sent.shift()!.accept;
+    const keys = deriveSecureChannelKeys({
+      side: 'initiator',
+      localSecretKey: ephemeral.secretKey,
+      peerEphemeralPublicKey: acceptance.transcript.responder.ephemeralPublicKey,
+      transcript: acceptance.transcript,
+    });
+    const codec = new SecureChannelCodec({ channelId: offer.channelId, side: 'initiator', keys });
+    await manager.handle({
+      type: 'channel.confirm', clientId, channelId: offer.channelId,
+      signature: signSecureChannelTranscript(browserIdentity, acceptance.transcript),
+    });
+    sent.shift();
+    return codec;
+  }
+
+  const request = {
+    type: 'request', requestId: 'same-request', action: 'turn.start', payload: { text: 'once' },
+  };
+  const first = await connect('client-1');
+  await manager.handle({ type: 'secure', clientId: 'client-1', envelope: first.seal(request) });
+  first.open(sent.shift()!.envelope);
+  assert.equal(first.open(sent.shift()!.envelope).ok, true);
+
+  manager.clear();
+  const second = await connect('client-2');
+  await manager.handle({ type: 'secure', clientId: 'client-2', envelope: second.seal(request) });
+  second.open(sent.shift()!.envelope);
+  assert.equal(second.open(sent.shift()!.envelope).ok, true);
+  assert.equal(calls, 1);
 });
 
 test('connector secure channel rejects an offer for another route', async () => {

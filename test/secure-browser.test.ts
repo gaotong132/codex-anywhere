@@ -41,6 +41,9 @@ test('browser and connector secure-channel controllers exchange only encrypted a
   assert.equal(encryptedRequest.action, undefined);
   assert.equal(encryptedRequest.requestId, undefined);
   await connector.handle({ ...encryptedRequest, clientId: 'client-1' });
+  const encryptedAck = toBrowser.shift()!;
+  browser.handle(encryptedAck);
+  assert.deepEqual(received.shift(), { type: 'ack', requestId: 'r1' });
   const encryptedResponse = toBrowser.shift()!;
   assert.equal(encryptedResponse.type, 'secure');
   assert.equal(encryptedResponse.data, undefined);
