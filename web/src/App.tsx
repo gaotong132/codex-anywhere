@@ -44,6 +44,7 @@ import {
   canSendToActiveDesktopTurn,
   canSteerOwnedTurn,
   canStopOwnedTurn,
+  initialBootstrapReady,
   isConnectionInterruption,
   isNearScrollBottom,
   isSessionRunning,
@@ -113,6 +114,7 @@ const RECONNECT_MAX_DELAY_MS = 30_000;
 const CLIENT_HEARTBEAT_MS = 20_000;
 const CLIENT_STALE_AFTER_MS = 55_000;
 const SESSION_STATUS_REFRESH_MS = 6_000;
+const INITIAL_BOOTSTRAP_TIMEOUT_MS = 10_000;
 const SESSION_ATTENTION_KEY = 'bridge.sessionAttention.v1';
 const SESSION_VISITS_KEY = 'bridge.sessionVisits.v1';
 const PENDING_PAIRING_KEY = 'bridge.pendingPairing.v1';
@@ -300,6 +302,16 @@ function AwaySummaryCard({ summary, onDismiss }: { summary: AwaySummary; onDismi
   );
 }
 
+function StartupScreen({ status }: { status: string }) {
+  return (
+    <main className="startup-shell" aria-busy="true" aria-live="polite">
+      <div className="startup-mark"><span>C</span><i aria-hidden="true" /></div>
+      <strong>CODEX ANYWHERE</strong>
+      <span>{status || t('正在恢复上次会话…', 'Restoring your last session…')}</span>
+    </main>
+  );
+}
+
 export default function App() {
   const [pairingCredential, setPairingCredential] = useState<BrowserPairingCredential | null>(loadInitialBrowserPairing);
   const [pairingDialogOpen, setPairingDialogOpen] = useState(false);
@@ -308,6 +320,10 @@ export default function App() {
     return isTemporaryProjectPath(stored) ? '' : stored;
   });
   const [authenticated, setAuthenticated] = useState(false);
+  const [initialBootstrapPending, setInitialBootstrapPending] = useState(() => (
+    hasApprovedBrowserDevice() || Boolean(pairingCredential)
+  ));
+  const [sessionsInitialized, setSessionsInitialized] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [online, setOnline] = useState(false);
   const [statusText, setStatusText] = useState(t('未连接', 'Disconnected'));
@@ -391,6 +407,10 @@ export default function App() {
   useEffect(() => { pairingCredentialRef.current = pairingCredential; }, [pairingCredential]);
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { ownedTurnThreadIdRef.current = ownedTurnThreadId; }, [ownedTurnThreadId]);
+
+  const finishInitialBootstrap = useCallback(() => {
+    setInitialBootstrapPending(false);
+  }, []);
 
   const updateSessionAttention = useCallback((
     update: (current: SessionAttentionState) => SessionAttentionState,
@@ -618,6 +638,7 @@ export default function App() {
       const data = await request<{ sessions: Session[] }>('sessions.list', {});
       const nextSessions = data.sessions || [];
       setSessions(nextSessions);
+      setSessionsInitialized(true);
       const currentThreadId = threadIdRef.current;
       updateSessionAttention((current) => reconcileSessionAttention(
         current,
@@ -702,6 +723,7 @@ export default function App() {
         connectorOnlineRef.current = false;
         setOnline(false);
         setStatusText(t('电脑离线', 'Computer offline'));
+        finishInitialBootstrap();
       }
       return;
     }
@@ -719,6 +741,7 @@ export default function App() {
         connectorOnlineRef.current = false;
         setOnline(false);
         setStatusText(t('电脑离线', 'Computer offline'));
+        finishInitialBootstrap();
       } else {
         if (!secureChannelRef.current?.isReady()) {
           connectorOnlineRef.current = false;
@@ -813,7 +836,7 @@ export default function App() {
       setExecutionState((current) => current === 'failed' ? current : 'completed');
       void refreshSessions();
     }
-  }, [addTimeline, appendStream, beginSecureChannel, finishAssistant, refreshSessions]);
+  }, [addTimeline, appendStream, beginSecureChannel, finishAssistant, finishInitialBootstrap, refreshSessions]);
 
   useEffect(() => { messageHandlerRef.current = handleBridgeMessage; }, [handleBridgeMessage]);
 
@@ -920,6 +943,7 @@ export default function App() {
       if (!replayPending) rejectPendingRequests(t('连接已断开', 'Connection closed'));
       if (event.code === 4003) {
         reconnectWantedRef.current = false;
+        finishInitialBootstrap();
         if (authAttemptModeRef.current === 'pairing') {
           clearPendingPairing();
           setStatusText(t('配对链接无效或已过期', 'Pairing link is invalid or expired'));
@@ -931,6 +955,7 @@ export default function App() {
       }
       if (event.code === 4403) {
         setAuthenticated(false);
+        finishInitialBootstrap();
         if (authAttemptModeRef.current === 'device') {
           approvedDeviceRef.current = false;
           clearBrowserDeviceApproval();
@@ -945,18 +970,21 @@ export default function App() {
       if (event.code === 4407) {
         reconnectWantedRef.current = false;
         setAuthenticated(false);
+        finishInitialBootstrap();
         setStatusText(t('设备身份验证失败', 'Device identity verification failed'));
         return;
       }
       if (event.code === 4406) {
         reconnectWantedRef.current = false;
         setAuthenticated(false);
+        finishInitialBootstrap();
         setStatusText(t('连接协议已更新，请刷新页面', 'Connection protocol updated. Refresh the page.'));
         return;
       }
       if (event.code === 4429) {
         reconnectWantedRef.current = false;
         setAuthenticated(false);
+        finishInitialBootstrap();
         setStatusText(t('登录尝试过多，请 15 分钟后重试', 'Too many login attempts. Try again in 15 minutes.'));
         return;
       }
@@ -968,7 +996,7 @@ export default function App() {
     socket.addEventListener('error', () => {
       if (socketRef.current === socket) setStatusText(t('连接失败', 'Connection failed'));
     });
-  }, [clearPendingPairing, clearReconnectTimer, hasAuthenticationMaterial, rejectPendingRequests]);
+  }, [clearPendingPairing, clearReconnectTimer, finishInitialBootstrap, hasAuthenticationMaterial, rejectPendingRequests]);
 
   const scheduleReconnect = useCallback((immediate = false) => {
     if (!reconnectWantedRef.current || !hasAuthenticationMaterial()) return;
@@ -1006,6 +1034,8 @@ export default function App() {
     authAttemptModeRef.current = 'pairing';
     reconnectWantedRef.current = true;
     reconnectAttemptRef.current = 0;
+    setInitialBootstrapPending(true);
+    setSessionsInitialized(false);
     setPairingDialogOpen(false);
     setStatusText(t('正在安全配对…', 'Pairing securely…'));
     openSocket(true);
@@ -1073,10 +1103,6 @@ export default function App() {
     }, CLIENT_HEARTBEAT_MS);
     return () => clearInterval(heartbeat);
   }, []);
-
-  useEffect(() => {
-    if (authenticated && connectionEpoch) void refreshSessions();
-  }, [authenticated, connectionEpoch, refreshSessions]);
 
   useEffect(() => {
     if (!authenticated || !online) return;
@@ -1327,6 +1353,25 @@ export default function App() {
     const initialSession = sessions.find((session) => session.id === previousThreadId) || sessions[0];
     selectSession(initialSession);
   }, [authenticated, creatingNewSession, selectSession, sessions, threadId]);
+
+  useEffect(() => {
+    if (initialBootstrapPending && initialBootstrapReady(
+      authenticated,
+      sessionsInitialized,
+      sessions.length,
+      threadId,
+      initialHistoryLoaded,
+    )) finishInitialBootstrap();
+  }, [
+    authenticated, finishInitialBootstrap, initialBootstrapPending, initialHistoryLoaded,
+    sessions.length, sessionsInitialized, threadId,
+  ]);
+
+  useEffect(() => {
+    if (!initialBootstrapPending) return undefined;
+    const timer = setTimeout(finishInitialBootstrap, INITIAL_BOOTSTRAP_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [finishInitialBootstrap, initialBootstrapPending]);
 
   const loadOlder = useCallback(() => {
     if (!threadId || !nextCursor || olderHistoryLoadingRef.current) return;
@@ -1741,6 +1786,8 @@ export default function App() {
   const directDesktopDeliveryAvailable = canSendToActiveDesktopTurn(
     running, executionState, ownedTurnThreadId, threadId,
   );
+
+  if (initialBootstrapPending) return <StartupScreen status={statusText} />;
 
   if (!authenticated) {
     return (

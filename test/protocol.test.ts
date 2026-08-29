@@ -49,6 +49,7 @@ import {
   canStopOwnedTurn,
   canSteerOwnedTurn,
   friendlyError,
+  initialBootstrapReady,
   isNearScrollBottom,
   isConnectionInterruption,
   markSessionAttentionRead,
@@ -267,6 +268,15 @@ test('older history loads only near the top with another page available', () => 
   assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, null, true, false), false);
   assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, 'next', false, false), false);
   assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, 'next', true, true), false);
+});
+
+test('initial bootstrap waits for both sessions and the restored conversation', () => {
+  assert.equal(initialBootstrapReady(false, false, 0, null, false), false);
+  assert.equal(initialBootstrapReady(true, false, 0, null, false), false);
+  assert.equal(initialBootstrapReady(true, true, 0, null, false), true);
+  assert.equal(initialBootstrapReady(true, true, 3, null, false), false);
+  assert.equal(initialBootstrapReady(true, true, 3, 'thread-1', false), false);
+  assert.equal(initialBootstrapReady(true, true, 3, 'thread-1', true), true);
 });
 
 test('only transient transport failures are treated as reconnectable connection interruptions', () => {

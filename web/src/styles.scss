@@ -29,6 +29,27 @@ pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; 
     radial-gradient(circle at 80% 92%, rgba(124, 58, 237, .18), transparent 35%),
     $page-bg;
 }
+.startup-shell {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  color: #8c9bb0;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(37, 99, 235, .14), transparent 25%),
+    $page-bg;
+}
+.startup-mark { position: relative; width: 52px; height: 52px; display: grid; place-items: center; }
+.startup-mark span { position: relative; z-index: 1; color: #f3f7ff; font-size: 18px; font-weight: 800; }
+.startup-mark::before { position: absolute; inset: 5px; border-radius: 14px; background: linear-gradient(145deg, #3977ed, #5b42d6); content: ''; }
+.startup-mark i { position: absolute; inset: 0; border: 1px solid rgba(101, 149, 239, .18); border-top-color: #6f9cea; border-radius: 17px; animation: startup-spin 1.2s linear infinite; }
+.startup-shell > strong { margin-top: 4px; color: #b8c6dc; font-size: 11px; letter-spacing: .17em; }
+.startup-shell > span { min-height: 18px; color: #69778c; font-size: 11px; text-align: center; }
+@keyframes startup-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .startup-mark i { animation: none; } }
 .login-card {
   width: min(440px, 100%);
   padding: 34px;
@@ -553,7 +574,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
     grid-template-columns: 12px minmax(0, 1fr) auto;
     grid-template-areas:
       'indicator purpose purpose'
-      '. metrics elapsed';
+      'indicator metrics elapsed';
     gap: 5px 7px;
     overflow: visible;
   }

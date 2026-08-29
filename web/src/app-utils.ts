@@ -150,6 +150,18 @@ export function shouldLoadOlderHistory(
   return Boolean(nextCursor) && initialHistoryLoaded && !historyLoading && metrics.scrollTop <= threshold;
 }
 
+export function initialBootstrapReady(
+  authenticated: boolean,
+  sessionsInitialized: boolean,
+  sessionCount: number,
+  selectedThreadId: string | null,
+  initialHistoryLoaded: boolean,
+) {
+  return authenticated
+    && sessionsInitialized
+    && (sessionCount === 0 || (Boolean(selectedThreadId) && initialHistoryLoaded));
+}
+
 export function sessionUpdatedAt(value: Session['updatedAt']) {
   if (!value) return 0;
   const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1000 : value;
