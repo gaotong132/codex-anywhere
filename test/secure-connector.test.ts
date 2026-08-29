@@ -55,7 +55,9 @@ test('connector secure channel authenticates, decrypts requests, and encrypts re
 
   await manager.handle({
     type: 'secure', clientId: 'client-1',
-    envelope: browser.seal({ type: 'request', requestId: 'r1', payload: { text: 'hello' } }),
+    envelope: browser.seal({
+      type: 'request', requestId: 'r1', action: 'echo', payload: { text: 'hello' },
+    }),
   });
   const response = sent.shift()!;
   assert.equal(response.type, 'secure');

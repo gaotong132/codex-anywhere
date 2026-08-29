@@ -10,6 +10,7 @@ import { acquireConnectorInstanceLock } from './instance-lock.js';
 import { loadOrCreateConnectorDeviceIdentity } from './device-identity.js';
 import { createRequestHandler } from './request-handler.js';
 import { scheduleReferencedRetry } from './reconnect.js';
+import { ConnectorSecureChannels } from './secure-channels.js';
 import { createAuthProof } from '../shared/auth.js';
 import { createDeviceAuthProof } from '../shared/device-auth.js';
 import {
@@ -55,11 +56,20 @@ const handleRequest = createRequestHandler({
   downloads,
   deviceId,
 });
+const secureChannels = new ConnectorSecureChannels({
+  identity: deviceIdentity,
+  deviceId,
+  send: (frame) => safeSend(socket, frame),
+  handleRequest,
+});
 
 let socket: WebSocket | undefined;
 let reconnectAttempt = 0;
 let stopped = false;
-codex.on('turn-event', (message) => safeSend(socket, { type: 'event', ...message }));
+codex.on('turn-event', (message) => {
+  const frame = { type: 'event', ...message };
+  if (!secureChannels.sendEvent(frame)) safeSend(socket, frame);
+});
 
 function connect() {
   if (stopped) return;
@@ -93,6 +103,7 @@ function connect() {
       reconnectAttempt = 0;
       return;
     }
+    if (await secureChannels.handle(message)) return;
     if (message.type === 'request') {
       safeSend(socket, await handleRequest({ ...message, action: String(message.action || '') }));
     }
@@ -103,6 +114,7 @@ function connect() {
 
 function scheduleReconnect() {
   if (stopped) return;
+  secureChannels.clear();
   const delay = Math.min(30_000, 1_000 * (2 ** reconnectAttempt)) + Math.floor(Math.random() * 500);
   reconnectAttempt += 1;
   scheduleReferencedRetry(connect, delay);
@@ -110,6 +122,7 @@ function scheduleReconnect() {
 
 async function shutdown() {
   stopped = true;
+  secureChannels.clear();
   socket?.close(1000, 'connector shutdown');
   desktop.close();
   await downloads.closeAll();

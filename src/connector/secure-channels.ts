@@ -21,7 +21,7 @@ export class ConnectorSecureChannels {
   private readonly identity: DeviceIdentity;
   private readonly deviceId: string;
   private readonly send: (frame: JsonObject) => boolean;
-  private readonly handleRequest: (frame: JsonObject) => Promise<JsonObject>;
+  private readonly handleRequest: (frame: JsonObject & { action: string }) => Promise<JsonObject>;
   private readonly channels = new Map<string, SecureChannelState>();
 
   constructor({
@@ -33,7 +33,7 @@ export class ConnectorSecureChannels {
     identity: DeviceIdentity;
     deviceId: string;
     send: (frame: JsonObject) => boolean;
-    handleRequest: (frame: JsonObject) => Promise<JsonObject>;
+    handleRequest: (frame: JsonObject & { action: string }) => Promise<JsonObject>;
   }) {
     this.identity = identity;
     this.deviceId = deviceId;
@@ -135,8 +135,10 @@ export class ConnectorSecureChannels {
     }
     try {
       const request = state.codec.open(envelope);
-      if (request.type !== 'request') throw new Error('secure_channel_frame_invalid');
-      const response = await this.handleRequest({ ...request, clientId });
+      if (request.type !== 'request' || typeof request.action !== 'string') {
+        throw new Error('secure_channel_frame_invalid');
+      }
+      const response = await this.handleRequest({ ...request, action: request.action, clientId });
       const { clientId: _clientId, ...payload } = response;
       this.send({ type: 'secure', clientId, envelope: state.codec.seal(payload) });
     } catch {
