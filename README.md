@@ -75,12 +75,12 @@ Security is layered rather than delegated to a single bearer token:
 
 | Layer | What the current implementation does |
 | --- | --- |
-| Device access | Uses separate browser and connector tokens, a fresh 256-bit challenge, an HMAC-SHA-256 proof, and an Ed25519 signature from an explicitly approved device. A token alone cannot open a session. |
+| Device access | Uses one-time, ten-minute browser pairing links and persistent Ed25519 device keys. The relay stores only a verifier for each unused pairing link; after enrollment, the browser reconnects with its approved device key instead of a shared token. Connector and legacy browser token flows remain challenge-bound and separately scoped. |
 | Session controls | Rejects replayed proofs, expires authenticated connections after one hour by default, rate-limits repeated failures, validates browser origins, and limits WebSocket frame size. |
 | Local computer | Accepts no inbound public connection. On Windows, the connector token and device private key are protected with current-user DPAPI. Codex execution and project files remain local. |
 | File access | Raster previews are restricted to configured roots, content-validated, resized, and converted to WebP; SVG remains download-only. Codex HTML visualizations are size-limited, held briefly in relay memory, and run in an isolated, network-blocked frame. Original-file downloads require explicit confirmation and a random, client-bound, short-lived capability. |
 | Relay deployment | The reference Compose service binds only to ECS loopback, runs as a non-root user with a read-only filesystem and no Linux capabilities, and persists public device keys plus approval metadata—not conversations or file content. |
-| Browser hardening | Keeps the browser token in `sessionStorage`, enforces same-origin WebSocket access, and serves a restrictive CSP and other browser security headers. |
+| Browser hardening | Removes the one-time secret from the URL fragment before connecting, clears temporary pairing/token material after approval, enforces same-origin WebSocket access, and serves a restrictive CSP and other browser security headers. |
 
 The limits matter just as much. Codex Anywhere does **not** provide application-layer end-to-end
 encryption across the relay: WSS protects traffic on the network, but TLS terminates at the ECS/VPS and
@@ -125,25 +125,30 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
 
    ```powershell
    $connectorToken = Read-Host 'Connector token' -AsSecureString
-   $clientToken = Read-Host 'Browser client token' -AsSecureString
    .\scripts\install-connector.ps1 `
      -ConnectorToken $connectorToken `
-     -ClientToken $clientToken `
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
 
    The login launcher also runs a lightweight watchdog. If an application update or host event terminates
    the connector, it restarts the single Node connector process without retaining a plaintext token.
 
-4. Open the relay URL in the phone browser and enter the browser-client token. The browser generates
-   its device identity automatically and shows only a generic waiting state.
-5. Approve each newly installed connector or browser from the ECS/VPS using the operator procedure in
-   the [production deployment guide](docs/deployment.md). Run the command again when another trusted
-   device is added. Device identity and registry internals are never exposed to the browser UI.
+4. Start the connector, then approve that connector from the ECS/VPS. Device identity and registry
+   internals are never exposed to the browser UI.
 
    ```bash
    docker compose exec bridge node build/server/device-admin.js
    ```
+
+5. Create a single-use browser pairing link, replacing the example URL with your actual Web endpoint:
+
+   ```bash
+   docker compose exec bridge node build/server/device-admin.js pair https://codex.example.com
+   ```
+
+   Open the printed link or scan its QR code within ten minutes. A camera is optional: the Web page
+   also accepts the link directly or decodes an uploaded QR screenshot locally. The shared browser
+   token remains a compatibility and recovery path, not the preferred daily login.
 
 Read the [security policy](docs/SECURITY.md) before exposing the relay to the internet. Do not install Codex or copy
 project files onto the ECS/VPS.
@@ -152,16 +157,16 @@ project files onto the ECS/VPS.
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
-| `BRIDGE_CLIENT_TOKEN` | Relay and browser | Browser-control secret; keep separate from the connector credential |
+| `BRIDGE_CLIENT_TOKEN` | Relay and legacy/recovery browser login | Browser bootstrap secret; keep separate from the connector credential |
 | `BRIDGE_CONNECTOR_TOKEN` | Relay and connector | Local connector secret |
 | `BRIDGE_SESSION_MAX_AGE_MS` | Relay | Maximum authenticated WebSocket lifetime; defaults to one hour |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | Relay | Persistent approved/pending public device records; Compose configures this automatically |
 | `BRIDGE_URL` | Connector | Relay WebSocket URL; supports `ws://` and `wss://` |
 | `CODEX_UI_LANGUAGE` | Relay | Web UI language: `zh-CN` or `en` |
 
-Authentication requires both a fresh HMAC-SHA-256 token proof and a signature from an approved,
-persistent Ed25519 device key. The challenge binds both proofs to the role, connection, and connector
-route, so captured proofs cannot be replayed. This does not make plaintext `ws://` private: use
+After pairing, browser authentication uses a fresh challenge signed by its approved, persistent
+Ed25519 device key. One-time enrollment and legacy Token login bind their HMAC proof and device
+signature to the same challenge, so captured proofs cannot be replayed. This does not make plaintext `ws://` private: use
 `wss://`, a VPN, or another secure tunnel on untrusted networks.
 
 New sessions always require an explicit project directory selected in the web UI; the connector has no

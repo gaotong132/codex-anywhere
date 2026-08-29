@@ -16,14 +16,15 @@ filesystem paths in a public issue.
 ## Deployment checklist
 
 - Use independent browser-client and connector tokens, each generated from at least 32
-  cryptographically random bytes.
+  cryptographically random bytes. Prefer one-time links for browser enrollment; keep the browser Token
+  as a compatibility and recovery credential rather than sharing it with every browser.
 - Store both tokens in the root-readable relay `.env`. The Windows installer keeps the connector token
   and connector device key in current-user DPAPI state; if supplied, it stores the browser token in a
   separate DPAPI record only so the operator can copy it to a trusted browser. The connector process
   does not receive the browser token. A password manager remains the recommended browser-token store.
-- Keep the device registry volume persistent and root-administered. From an encrypted administrator
-  session, identify a freshly initiated request by its role, label, source address, and request time;
-  never approve an ambiguous request. Review pending requests and revoke lost or retired devices.
+- Keep the device registry volume persistent and root-administered. Create one-time browser pairings
+  only from an encrypted administrator session. Treat an unused ten-minute link as a temporary secret;
+  do not paste it into logs, issues, or chat. Review pending fallback requests and revoke lost or retired devices.
 - Prefer `wss://` for every remote connector. Plaintext `ws://` is supported by operator choice but
   exposes relayed content and permits active network attackers to interfere with an authenticated
   connection. Challenge-response authentication avoids sending the token itself, but is not a
@@ -55,15 +56,20 @@ see plaintext frames in memory. This project does not provide application-layer 
 that hides content from the ECS operator or cloud host. Protect process memory, `.env`, proxy error
 logs, backups, DNS and cloud accounts, and every administrator with access to the host.
 
-The client token is the browser's first authentication factor. It is stored in browser `sessionStorage`
-(not persistent local storage) for the active tab and in a root-readable ECS `.env`.
+The preferred browser bootstrap is a random, ten-minute, single-use pairing link. Its secret is carried
+in a URL fragment, removed from the address bar before the WebSocket is opened, and retained only in
+`sessionStorage` until enrollment succeeds. The relay persists only a SHA-256 verifier and expiry, then
+deletes that record after use. The client token remains a fallback bootstrap credential in the
+root-readable ECS `.env`; when used, it exists only in browser `sessionStorage` until approval succeeds.
 The connector token can register or replace a local connector and is stored in the ECS `.env` and
 user-scoped DPAPI storage when the Windows installer is used. Keep the roles separate so disclosure of
 the browser token cannot impersonate the connector.
 
-WebSocket authentication also requires an Ed25519 signature from an approved device identity. The
-signature binds the public device key to the fresh 256-bit challenge, HMAC proof, role, and connector
-route ID; raw tokens and private device keys are never sent to the relay. Browser device keys persist
+WebSocket authentication requires an Ed25519 signature from an approved device identity. Enrollment
+binds the one-time HMAC proof, public device key, and fresh 256-bit challenge; later browser reconnects
+need only a new challenge signed by that already approved device key. Connector and fallback Token
+flows bind the signature to their challenge, HMAC proof, role, and connector route ID. Raw tokens,
+pairing secrets, and private device keys are never sent to the relay. Browser device keys persist
 in that browser profile, while the Windows connector key is protected with user-scoped DPAPI. The
 registry stores only public keys and pairing metadata. Captured proofs are not reusable, and a token
 alone can create only a visible pending request—not an authenticated session. Authenticated sockets
@@ -85,11 +91,13 @@ frame without access to the parent page, storage, forms, popups, top navigation,
 Inline script is allowed inside that isolated frame so the artifact remains interactive. The original
 file still uses the confirmed, short-lived download capability.
 
-Device administration is deliberately available only from the relay host. The default command lists
-pending requests and asks before approval. These variants list or revoke approved devices without
+Device administration is deliberately available only from the relay host. Create a browser pairing,
+or use the default command to approve a connector or fallback Token request. These variants list or
+revoke approved devices without
 printing device IDs, request IDs, or public keys:
 
 ```bash
+docker compose exec bridge node build/server/device-admin.js pair https://codex.example.com
 docker compose exec bridge node build/server/device-admin.js list-approved
 docker compose exec bridge node build/server/device-admin.js revoke
 ```

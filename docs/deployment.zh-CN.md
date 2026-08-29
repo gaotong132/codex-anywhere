@@ -70,13 +70,15 @@ chmod 600 .env
 docker compose up --build -d
 ```
 
-只通过加密的管理员会话读取浏览器 Token，并将其保存到密码管理器。本地安装器只接收连接器 Token。
-不要把任何 Token 粘贴到聊天、Issue、截图、源码、Shell 参数或 CI 日志。除非备份已加密并严格控制
-访问，否则不要把 `.env` 纳入服务器备份。
+日常注册浏览器请使用第 5 节的一次性配对流程，不需要把浏览器 Token 复制到每台设备。浏览器 Token
+只作为恢复和旧版本兼容凭据，建议仅通过加密的管理员会话读取并保存在密码管理器中。本地安装器只接收
+连接器 Token。不要把任何 Token 粘贴到聊天、Issue、截图、源码、Shell 参数或 CI 日志。除非备份已
+加密并严格控制访问，否则不要把 `.env` 纳入服务器备份。
 
-转发服务同时要求新的 HMAC Token 证明和已批准设备密钥的 Ed25519 签名；它会拒绝证明重放、临时
-锁定重复失败，并每小时更新认证连接（`BRIDGE_SESSION_MAX_AGE_MS`）。Compose 卷
-`bridge-state` 在 `/data/devices.json` 只持久化设备公钥和配对元数据；设备私钥不会进入转发服务。
+转发服务要求每个已批准设备密钥提供 Ed25519 签名；一次性注册和旧版 Token 引导还会把 HMAC 证明
+绑定到新的随机质询。它会拒绝证明重放、临时锁定重复失败，并每小时更新认证连接
+（`BRIDGE_SESSION_MAX_AGE_MS`）。Compose 卷 `bridge-state` 在 `/data/devices.json` 只持久化
+设备公钥、单向配对校验值和配对元数据；设备私钥不会进入转发服务。
 
 Compose 服务默认：
 
@@ -191,45 +193,54 @@ DPAPI 凭据，当前保留了这个兼容旧版本的内部目录名。再次�
 | `CODEX_ALLOW_ANY_FILE_DOWNLOAD` / `-AllowAnyFileDownload` | 关闭 | 允许确认后下载配置根目录之外的文件 |
 | `CODEX_NETWORK_ACCESS` / `-EnableNetworkAccess` | 关闭 | 允许连接器持有的 Codex 轮次申请网络访问 |
 
-## 5. 批准可信设备
+## 5. 配对可信设备
 
-转发服务不会自动批准连接器或浏览器。先启动连接器，并/或打开 Web 页面输入浏览器 Token，让页面停留
-在通用的“等待批准”状态。随后在 ECS 部署目录的加密管理员会话中运行：
+转发服务不会自动批准连接器或浏览器。先启动连接器，再通过 ECS 的加密管理员会话批准连接器：
+
+```bash
+docker compose exec bridge node build/server/device-admin.js
+```
+
+浏览器优先使用短时、单次配对链接：
+
+```bash
+docker compose exec bridge node build/server/device-admin.js pair https://codex.example.com
+```
+
+把示例地址替换为真实 Web 入口，并在十分钟内打开输出的链接或扫描终端二维码。没有摄像头也不影响：
+可以直接复制链接，或在 Web 配对面板上传二维码截图；截图只在当前浏览器本机解析，不会上传。
 
 ```mermaid
 sequenceDiagram
     participant B as 浏览器
     participant R as 自托管转发服务
     participant A as ECS 管理员
+    A->>R: 创建一次性浏览器配对
+    R->>R: 保存校验值和十分钟有效期
+    R-->>A: 输出 URL 片段和二维码
+    A-->>B: 打开、扫描、粘贴或上传二维码截图
+    B->>B: 从地址栏移除密钥并创建设备密钥
     B->>R: 建立 WebSocket
     R-->>B: 返回新的 256 位随机挑战
-    B->>R: HMAC Token 证明 + Ed25519 签名
-    R->>R: 验证证明和已批准设备公钥
-    alt 设备尚未批准
-        R-->>B: 要求配对并关闭连接
-        A->>R: 运行 device-admin 并确认请求
-        R->>R: 将设备公钥移入已批准列表
-        B->>R: 使用新证明自动重连
-    end
+    B->>R: 一次性证明 + Ed25519 签名
+    R->>R: 验证、消费配对记录并批准公钥
     R-->>B: 建立已认证会话
+    Note over B,R: 后续重连只使用已批准设备密钥
 ```
 
-```bash
-docker compose exec bridge node build/server/device-admin.js
-```
-
-- 原始 Token 和设备私钥不会发送到转发服务。有效 Token 配合未批准密钥只能创建一条待批准请求，
-  请求约 15 分钟后过期。
-- Web UI 不能查看或批准设备。命令只显示角色、标签、来源地址和请求时间；输入匹配序号并确认，无法
-  明确识别时不要批准。
-- 批准结果直接写入共享设备注册表，无需重启转发服务；选中的连接器或浏览器会自动重连并使用新挑战
-  重新认证。每增加一个可信设备，都重新运行一次命令。
+- 链接密钥只放在 URL 片段中，不属于 HTTP 请求；浏览器连接前会从地址栏移除它。转发服务只保存
+  校验值和有效期，不保存持有者密钥；配对成功后立即消费该记录。
+- 浏览器设备私钥不会离开浏览器。配对后，每次重连使用新的随机质询和已批准 Ed25519 设备密钥，
+  日常登录不再需要共享浏览器 Token。
+- 浏览器 Token 登录仍作为兼容和恢复路径；它会创建待批准请求。运行第一条命令，选择匹配请求，
+  无法明确识别时不要批准。
+- Web UI 不能列出或批准注册设备；批准和撤销仍只能在 ECS 上操作。
 
 设备批准只负责桥接访问认证，与 Codex 的命令执行、文件修改和权限审批是不同的控制。
 
 ## 6. 端到端验证
 
-1. 打开实际配置的 Web 入口（例如 `https://codex.example.com`），输入 `BRIDGE_CLIENT_TOKEN`，确认
+1. 使用一次性链接完成浏览器配对，重新打开 Web 入口，确认无需共享浏览器 Token 即可重连，并显示
    已批准的连接器在线。
 2. 打开一个已有会话并发送无害测试消息。
 3. 确认 Codex Desktop 和浏览器都能看到消息与回复。

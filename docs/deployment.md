@@ -78,15 +78,18 @@ chmod 600 .env
 docker compose up --build -d
 ```
 
-Retrieve the client token only over your encrypted administrator session and place it in a password
-manager. Pass only the connector token to the local installer. Never paste either value into a chat,
-issue, screenshot, source file, shell argument, or CI log. Do not include `.env` in server backups
-unless that backup is encrypted and access-controlled.
+Use the one-time browser-pairing flow in section 5 for normal enrollment; it avoids copying the client
+token to each browser. Keep the client token only as a recovery and legacy-compatibility credential,
+preferably in a password manager reached through an encrypted administrator session. Pass only the
+connector token to the local installer. Never paste either value into a chat, issue, screenshot, source
+file, shell argument, or CI log. Do not include `.env` in server backups unless that backup is encrypted
+and access-controlled.
 
-The relay requires both a fresh HMAC token proof and an Ed25519 signature from an approved device key,
-rejects captured-proof replay, locks repeated failures, and renews authenticated sockets every hour
-(`BRIDGE_SESSION_MAX_AGE_MS`). The Compose volume `bridge-state` persists only public device keys and
-pairing metadata at `/data/devices.json`; device private keys never enter the relay.
+The relay requires an Ed25519 signature from every approved device key. One-time enrollment and legacy
+token bootstrap also bind an HMAC proof to a fresh challenge. The relay rejects captured-proof replay,
+locks repeated failures, and renews authenticated sockets every hour (`BRIDGE_SESSION_MAX_AGE_MS`). The
+Compose volume `bridge-state` persists only public device keys, one-way pairing verifiers, and pairing
+metadata at `/data/devices.json`; device private keys never enter the relay.
 
 The supplied Compose service:
 
@@ -211,49 +214,59 @@ Connector configuration:
 | `CODEX_ALLOW_ANY_FILE_DOWNLOAD` / `-AllowAnyFileDownload` | off | Allow confirmed downloads outside the configured roots |
 | `CODEX_NETWORK_ACCESS` / `-EnableNetworkAccess` | off | Permit connector-owned Codex turns to request network access |
 
-## 5. Approve trusted devices
+## 5. Pair trusted devices
 
-The relay never auto-approves a connector or browser. Start the connector and/or open the Web page,
-enter the browser token, and leave it at the generic “waiting for approval” state. Then run this command
-from the deployment directory in an encrypted ECS administrator session:
+The relay never auto-approves a connector or browser. Start the connector and approve it from an
+encrypted ECS administrator session:
+
+```bash
+docker compose exec bridge node build/server/device-admin.js
+```
+
+For a browser, the preferred path is a short-lived, single-use pairing link:
+
+```bash
+docker compose exec bridge node build/server/device-admin.js pair https://codex.example.com
+```
+
+Replace the example URL with the real Web endpoint. Open the printed link or scan the terminal QR code
+within ten minutes. A camera is not required: copy the link, or open the Web pairing panel and upload a
+QR screenshot. Screenshot decoding happens in the browser and is not uploaded.
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
     participant R as Self-hosted relay
     participant A as ECS administrator
+    A->>R: Create one-time browser pairing
+    R->>R: Store verifier and ten-minute expiry
+    R-->>A: URL fragment and QR code
+    A-->>B: Open, scan, paste, or upload QR screenshot
+    B->>B: Remove secret from address bar; create device key
     B->>R: Open WebSocket
     R-->>B: Fresh 256-bit challenge
-    B->>R: HMAC token proof + Ed25519 signature
-    R->>R: Verify proof and approved device key
-    alt Device is not approved
-        R-->>B: Pairing required; close connection
-        A->>R: Run device-admin and confirm request
-        R->>R: Move public key to approved registry
-        B->>R: Reconnect with a fresh proof
-    end
+    B->>R: One-time proof + Ed25519 signature
+    R->>R: Verify, consume pairing, approve public key
     R-->>B: Authenticated session
+    Note over B,R: Later reconnects use only the approved device key
 ```
 
-```bash
-docker compose exec bridge node build/server/device-admin.js
-```
-
-- The raw token and device private key are never sent. A valid token from an unapproved key creates only
-  a pending request, which expires after about 15 minutes.
-- The Web UI cannot list or approve devices. The command shows role, label, source address, and request
-  time; select the matching number and never approve an ambiguous request.
-- Approval updates the shared device registry without restarting the relay. The selected connector or
-  browser reconnects automatically and authenticates again with a fresh challenge. Repeat the command
-  for every new trusted device.
+- The link secret is in the URL fragment, so it is not part of the HTTP request. The browser removes it
+  from the address bar before connecting. The relay stores only its verifier, expiry, and no bearer
+  secret; successful enrollment consumes the record.
+- The device private key never leaves the browser. After pairing, reconnects use a fresh challenge and
+  the approved Ed25519 device key, so the shared browser Token is not needed for daily login.
+- Browser Token login remains available as a compatibility/recovery path. It creates a pending request;
+  run the first command, select the matching request, and do not approve an ambiguous device.
+- The Web UI cannot list or approve registered devices. Approval and revocation remain ECS-only.
 
 Device approval authenticates access to the bridge. Codex command, file-change, and permission
 approvals remain separate controls.
 
 ## 6. End-to-end validation
 
-1. Open the configured Web endpoint (for example `https://codex.example.com`), enter
-   `BRIDGE_CLIENT_TOKEN`, and verify the approved connector is online.
+1. Pair the browser with the one-time link, reopen the Web endpoint, and verify it reconnects without
+   asking for the shared browser Token and shows the approved connector online.
 2. Open an existing session and send a harmless test message.
 3. Confirm the message and reply appear in Codex Desktop and the browser.
 4. For the reference TLS setup, confirm HTTP redirects to HTTPS and `http://ECS-IP:3300` is

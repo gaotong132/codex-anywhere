@@ -36,8 +36,8 @@
 
       <g transform="translate(24 98)">
         <rect width="317" height="72" rx="14" fill="#0c1626" stroke="#253d5e"/>
-        <text x="18" y="27" fill="#bcd0ed" font-size="13" font-weight="700">Browser client token</text>
-        <text x="18" y="50" fill="#788ca8" font-size="12">Held in sessionStorage for the active tab</text>
+        <text x="18" y="27" fill="#bcd0ed" font-size="13" font-weight="700">One-time pairing credential</text>
+        <text x="18" y="50" fill="#788ca8" font-size="12">Consumed after enrollment · token fallback</text>
       </g>
       <g transform="translate(24 184)">
         <rect width="317" height="72" rx="14" fill="#0c1626" stroke="#253d5e"/>
@@ -63,8 +63,8 @@
       <g transform="translate(24 98)">
         <rect width="317" height="84" rx="14" fill="#0d192b" stroke="#31578a"/>
         <text x="18" y="27" fill="#c9dbf6" font-size="13" font-weight="700">Fresh challenge on every connection</text>
-        <text x="18" y="51" fill="#8095b4" font-size="12">HMAC-SHA-256 token proof</text>
-        <text x="18" y="69" fill="#8095b4" font-size="12">+ signature from an approved Ed25519 key</text>
+        <text x="18" y="51" fill="#8095b4" font-size="12">Approved Ed25519 device signature</text>
+        <text x="18" y="69" fill="#8095b4" font-size="12">+ HMAC proof during enrollment or fallback</text>
       </g>
       <g transform="translate(24 196)">
         <rect width="317" height="84" rx="14" fill="#0d192b" stroke="#31578a"/>

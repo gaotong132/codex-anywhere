@@ -64,12 +64,12 @@ Desktop 中处理。Codex Anywhere 没有实现 ACP。
 
 | 防护层 | 当前实际实现 |
 | --- | --- |
-| 设备访问 | 浏览器与连接器使用不同 Token；每次连接都需要新的 256 位随机挑战、HMAC-SHA-256 证明，以及已由管理员明确批准设备的 Ed25519 签名。只有 Token 无法建立会话。 |
+| 设备访问 | 浏览器优先使用十分钟内有效、仅可使用一次的配对链接，并持久化 Ed25519 设备密钥。转发服务只保存尚未使用链接的校验值；完成配对后，浏览器使用已批准设备密钥重连，不再依赖共享 Token。连接器及旧版浏览器 Token 流程仍使用独立作用域和随机质询。 |
 | 会话控制 | 拒绝重放证明；认证连接默认一小时过期；重复认证失败会被限速和临时锁定；检查浏览器同源，并限制 WebSocket 帧大小。 |
 | 本机电脑 | 不接受公网入站连接。Windows 上的连接器 Token 和设备私钥使用当前用户 DPAPI 保护；Codex 执行和项目文件始终留在本机。 |
 | 文件访问 | 位图预览只能来自配置根目录，并经过内容校验、缩放和 WebP 转换；SVG 只允许下载。Codex HTML 可视化受大小限制，只在转发服务内存中短暂停留，并在隔离且禁用网络的框架中运行。原文件下载仍需明确确认，并使用随机、绑定当前客户端且短时有效的能力凭证。 |
 | 转发部署 | 参考 Compose 只绑定 ECS 回环地址；容器使用非 root 用户、只读文件系统并删除全部 Linux capabilities；只持久化设备公钥和审批元数据，不保存会话或文件内容。 |
-| 浏览器加固 | 浏览器 Token 只保存在 `sessionStorage`；WebSocket 要求同源；网页响应包含严格 CSP 和其他浏览器安全响应头。 |
+| 浏览器加固 | 连接前从地址栏移除一次性密钥片段，批准后清理临时配对/Token 数据；WebSocket 要求同源；网页响应包含严格 CSP 和其他浏览器安全响应头。 |
 
 安全边界也必须如实说明。Codex Anywhere **没有**提供跨转发服务的应用层端到端加密：WSS 可以保护
 网络传输，但 TLS 会在 ECS/VPS 终止，因此转发进程能够在内存中看到消息、预览和文件分块。转发服务
@@ -109,26 +109,29 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
 
    ```powershell
    $connectorToken = Read-Host 'Connector token' -AsSecureString
-   $clientToken = Read-Host 'Browser client token' -AsSecureString
    .\scripts\install-connector.ps1 `
      -ConnectorToken $connectorToken `
-     -ClientToken $clientToken `
      -BridgeUrl 'wss://codex.example.com/ws'
    ```
 
    登录启动器还包含一个轻量守护进程。当应用升级或主机事件结束连接器时，它会重新启动唯一的
    Node 连接器进程，并且不会长期持有明文 Token。
 
-4. 在手机浏览器中打开转发服务地址并输入浏览器 Token。浏览器会自动生成设备身份，页面只显示
-   通用的等待批准状态。
-5. 在 ECS/VPS 上按[正式部署指南](docs/deployment.zh-CN.md)批准每个新连接器或浏览器。以后增加可信
-   设备时重新运行该命令。Web 界面不会获取或展示设备 ID、请求 ID、公钥、IP 和设备清单。
+4. 启动连接器，然后在 ECS/VPS 上批准该连接器。Web 界面不会获取或展示设备 ID、请求 ID、公钥、
+   IP 和设备清单。
 
    ```bash
    docker compose exec bridge node build/server/device-admin.js
    ```
 
-   命令会列出待批准设备；输入对应序号并确认即可，不需要复制设备 ID 或修改 JSON。
+5. 生成一个仅可使用一次的浏览器配对链接，把示例地址替换为实际 Web 入口：
+
+   ```bash
+   docker compose exec bridge node build/server/device-admin.js pair https://codex.example.com
+   ```
+
+   在十分钟内打开链接或扫描二维码。摄像头不是前提：Web 页面也可以直接粘贴链接，或在本机解析
+   上传的二维码截图。共享浏览器 Token 仍可用于兼容和恢复，但不再是日常登录的首选方式。
 
 将服务暴露到互联网前请阅读[安全策略](docs/SECURITY.zh-CN.md)。ECS/VPS 上不需要安装 Codex，也不要
 把项目文件复制到 ECS/VPS。
@@ -137,15 +140,15 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
 
 | 环境变量 | 使用方 | 用途 |
 | --- | --- | --- |
-| `BRIDGE_CLIENT_TOKEN` | 转发服务和浏览器 | 浏览器控制密钥，应与连接器密钥分开 |
+| `BRIDGE_CLIENT_TOKEN` | 转发服务和旧版/恢复登录 | 浏览器引导密钥，应与连接器密钥分开 |
 | `BRIDGE_CONNECTOR_TOKEN` | 转发服务和连接器 | 本机连接器密钥 |
 | `BRIDGE_SESSION_MAX_AGE_MS` | 转发服务 | 已认证 WebSocket 的最长生存期，默认一小时 |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | 转发服务 | 持久化已批准/待批准设备的公开记录；Compose 已自动配置 |
 | `BRIDGE_URL` | 连接器 | 转发服务 WebSocket 地址，支持 `ws://` 和 `wss://` |
 | `CODEX_UI_LANGUAGE` | 转发服务 | Web 界面语言：`zh-CN` 或 `en` |
 
-鉴权同时要求一次性 HMAC-SHA-256 Token 证明，以及已批准、持久化的 Ed25519 设备密钥签名。
-随机挑战会把两份证明绑定到角色、当前连接和连接器路由，截获后不能重放。但这不会让明文
+完成配对后，浏览器使用已批准、持久化的 Ed25519 设备密钥签署每次随机质询。一次性配对和旧版
+Token 登录会把 HMAC 证明与设备签名绑定到同一质询，因此截获后不能重放。但这不会让明文
 `ws://` 具备保密性；不受信网络仍应使用 `wss://`、VPN 或其他安全隧道。
 
 新会话必须在 Web 界面中明确选择或填写项目目录，连接器不再提供可配置的默认工作目录。
