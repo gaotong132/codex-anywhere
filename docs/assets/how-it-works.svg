@@ -26,7 +26,7 @@
   <circle cx="707" cy="332" r="270" fill="#2e6bd0" opacity=".055"/>
 
   <text x="70" y="78" fill="#f2f6fc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="750">How it works</text>
-  <text x="70" y="111" fill="#8091aa" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">Protocol v3 requires E2EE while a tiny relay joins your browser to Codex without a local inbound port.</text>
+  <text x="70" y="111" fill="#8091aa" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">A tiny relay joins your browser to Codex while application traffic stays end-to-end encrypted.</text>
 
   <g font-family="Inter,Segoe UI,Arial,sans-serif" filter="url(#shadow2)">
     <g transform="translate(70 205)">
@@ -102,7 +102,7 @@
       <circle cx="30" cy="82" r="4" fill="#55dda1"/>
       <text x="44" y="87" fill="#94a4ba" font-size="12">Files and execution stay local</text>
       <circle cx="30" cy="109" r="4" fill="#55dda1"/>
-      <text x="44" y="114" fill="#94a4ba" font-size="12">Protocol v3 · E2EE required</text>
+      <text x="44" y="114" fill="#94a4ba" font-size="12">Authenticated E2EE required</text>
     </g>
   </g>
 </svg>

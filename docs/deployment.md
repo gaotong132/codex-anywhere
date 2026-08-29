@@ -32,13 +32,13 @@ local Connector ── outbound WS/WSS ───┘
 ## Privacy and trust boundary
 
 The ECS reduces exposure of the personal computer: both endpoints make outbound connections, the ECS
-keeps no conversation database, and the reference deployment keeps port 3300 private. Current browser
-and connector peers add authenticated application-layer encryption, so the relay routes message,
+keeps no conversation database, and the reference deployment keeps port 3300 private. Browser and
+connector use authenticated application-layer encryption, so the relay routes message,
 preview, visualization, and download ciphertext without intentionally persisting it. WSS remains the
 recommended transport because it also protects Web code delivery, authentication bootstrap and metadata.
 
-This is not a zero-trust relay. The ECS serves the Web application, stores role tokens and public trust
-records, and enforces the current protocol. A compromised root administrator can change future code or
+This is not a zero-trust relay. The ECS serves the Web application and manages role tokens and device trust.
+A compromised root administrator can change future code or
 trust decisions, register an attacker-controlled device, or observe routing metadata.
 Use infrastructure you control, minimize administrators and logs, keep the host patched, separate the
 two roles, and revoke a device or rotate an affected token after any suspected disclosure.
@@ -129,8 +129,8 @@ Relay configuration:
 
 For direct access from an ordinary phone browser over the internet, the best balance is a maintained
 TLS reverse proxy on the ECS/VPS with the relay kept on loopback. Nginx is the included reference, not
-a required dependency. If a correctly configured Nginx deployment is already stable, replacing it
-solely for this project adds migration risk without changing the relay trust boundary.
+a required dependency. Keep an existing, correctly configured Nginx deployment; changing proxies does
+not strengthen the relay trust boundary by itself.
 
 | Situation | Recommended ingress |
 | --- | --- |
@@ -141,8 +141,8 @@ solely for this project adds migration risk without changing the relay trust bou
 
 Whichever TLS proxy is selected, it must support WebSocket upgrade, overwrite trusted forwarding
 headers, and be the only path to port 3300. Certificate renewal, proxy updates, and host security
-updates remain operator responsibilities. TLS terminates on the ECS/VPS, while protocol v3 requires an
-authenticated end-to-end encrypted channel for every application frame between browser and connector.
+updates remain operator responsibilities. TLS terminates on the ECS/VPS; application frames also use an
+authenticated end-to-end encrypted channel between browser and connector.
 
 To use the included Nginx path, obtain a certificate appropriate for the endpoint, then copy
 [`deploy/nginx-example.conf`](../deploy/nginx-example.conf) into the Nginx site configuration. Replace
@@ -202,10 +202,9 @@ roots should be selectable. Local raster previews and downloads are limited to t
 `-AllowAnyFileDownload` only when this is a trusted single-user computer and unrestricted local download
 is intentional. Leave network access disabled unless the Codex task actually needs it.
 
-The encrypted credentials and non-secret settings are stored outside the checkout under
-`%USERPROFILE%\.codex-anywhere`. Re-running the installer migrates existing DPAPI records from the previous
-LocalAppData location without deleting the old copies, so an interrupted upgrade can still be rolled back.
-You may omit both tokens when re-running the installer to update settings while retaining the credentials.
+Encrypted credentials and settings are stored outside the checkout under
+`%USERPROFILE%\.codex-anywhere`. Re-run the installer without Tokens to update settings while keeping the
+stored credentials.
 `scripts/copy-token.ps1` copies only the separately stored browser token; it never exposes the connector
 credential. Clear clipboard history afterward on shared computers.
 
@@ -261,8 +260,8 @@ sequenceDiagram
 - The link secret is in the URL fragment, so it is not part of the HTTP request. The browser removes it
   from the address bar before connecting. The relay stores only its verifier, expiry, and no bearer
   secret; successful enrollment consumes the record.
-- The device private key never leaves the browser. After pairing, reconnects use a fresh challenge and
-  the approved Ed25519 device key, so the shared browser Token is not needed for daily login.
+- The device private key never leaves the browser. Reconnects use a fresh challenge and the approved
+  Ed25519 device key; the browser Token is reserved for administrator recovery.
 - Browser Token login remains available as an administrator recovery path. It creates a pending request;
   run the first command, select the matching request, and do not approve an ambiguous device.
 - The Web UI cannot list or approve registered devices. Approval and revocation remain ECS-only.
@@ -284,9 +283,7 @@ approvals remain separate controls.
 
 ## Updating
 
-Protocol v3 deliberately has no rolling-compatibility or plaintext fallback. Keep the ECS relay, served
-Web assets, and local connector on the same commit; an outdated peer is rejected with a protocol error.
-Plan a short offline window and update both runtime components together:
+Keep the ECS relay and local connector on the same commit. Update both components together:
 
 ```bash
 git pull --ff-only

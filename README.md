@@ -59,19 +59,14 @@ local connector ── outbound WS/WSS ───┘
        └── Codex Desktop/CLI + local projects
 ```
 
-Both the browser and the local connector initiate connections to the relay. The relay authenticates
-them and requires the exact current protocol and capability set. Protocol v3 then requires an
-authenticated end-to-end encrypted channel for every application request, response, event, preview,
-and download chunk. There is no plaintext application-frame fallback; mismatched peers are rejected
-and must be updated together.
+Both the browser and local connector initiate connections to the relay. Every application request,
+response, event, preview, and download chunk uses an authenticated end-to-end encrypted channel; the
+relay authenticates devices and routes ciphertext.
 
-New sessions and eligible idle sessions are owned by the connector through the Codex app-server
-JSON-RPC protocol, enabling native deltas and browser approval prompts. Sessions that are already
-active in Codex Desktop remain Desktop-owned and use task tools for delivery plus adaptive history-tail
-polling over the same WebSocket. While Desktop still owns the writer, the connector can hold one
-text-only next-turn instruction in memory and start it after the writer is released; restarting the
-connector cancels that pending instruction. An approval already pending in Desktop must still be
-handled there. Codex Anywhere does not implement ACP.
+The connector uses Codex app-server JSON-RPC for sessions it owns. Active Desktop sessions use task
+delivery and adaptive history polling. Web-owned runs can be steered; Desktop-owned runs can queue one
+text instruction for the next turn. Approvals already owned by Desktop remain there. Codex Anywhere
+does not implement ACP.
 
 Notifications are deliberately separate from the encrypted conversation channel. An online background
 page creates its own local notification. If the page is disconnected, the connector sends only a
@@ -86,26 +81,20 @@ is included.
 
 Security is layered rather than delegated to a single bearer token:
 
-| Layer | What the current implementation does |
+| Layer | Protection |
 | --- | --- |
-| Device access | Uses one-time, ten-minute browser pairing links and persistent Ed25519 device keys. The relay stores only a verifier for each unused pairing link; after enrollment, the browser reconnects with its approved device key instead of a shared token. Connector and recovery-token flows remain challenge-bound and separately scoped. |
-| Content protection | Protocol v3 requires browser and connector peers to authenticate an ephemeral X25519 handshake with their approved Ed25519 identities, then encrypt ordered application frames with XChaCha20-Poly1305. The relay rejects plaintext application frames and sees routing metadata, timing and ciphertext size, but not message or file content. |
-| Session controls | Rejects replayed proofs, expires authenticated connections after one hour by default, rate-limits repeated failures, validates browser origins, and limits WebSocket frame size. |
+| Device access | Ten-minute, single-use browser pairing and administrator-approved Ed25519 device keys. A Token alone cannot open a session. |
+| Content protection | Authenticated X25519 key exchange and XChaCha20-Poly1305 encryption for application traffic. The relay sees metadata and ciphertext size, not messages or files. |
+| Session controls | Challenge-bound proofs, periodic reauthentication, failure throttling, origin checks, and frame-size limits. |
 | Local computer | Accepts no inbound public connection. On Windows, the connector token and device private key are protected with current-user DPAPI. Codex execution and project files remain local. |
-| File access | Raster previews are restricted to configured roots, content-validated, resized, and converted to WebP; SVG remains download-only. Codex HTML visualizations are size-limited, decrypted in the browser, and run in an isolated, network-blocked frame. Original-file downloads require explicit confirmation and a random, client-bound, short-lived capability. |
-| Relay deployment | The reference Compose service binds only to ECS loopback, runs as a non-root user with a read-only filesystem and no Linux capabilities, and persists public device keys, approval metadata, and opted-in Web Push endpoints—not conversations or file content. |
-| Browser hardening | Removes the one-time secret from the URL fragment before connecting, clears temporary pairing/token material after approval, enforces same-origin WebSocket access, and serves a restrictive CSP and other browser security headers. |
+| Files and previews | Root-bound image previews, confirmed short-lived downloads, and isolated network-blocked HTML visualizations. |
+| Relay | The reference service binds to ECS loopback, runs with reduced privileges, and stores device trust records—not conversations or file content. |
 
-The limits matter just as much. End-to-end encryption prevents the normal relay process from reading
-current application frames, but it does not make the deployment zero-trust. The ECS serves the Web app
-and administers the device trust registry; a compromised host or root administrator could serve changed
-browser code, alter future trust decisions, register an attacker-controlled device, or observe metadata. Browser keys
-live in that browser profile rather than hardware-backed storage, so a compromised profile or extension
-can act as the approved browser. A compromised local computer can access everything available to Codex.
-With Web Push enabled, the relay and the browser's push provider also learn that a generic completion
-or approval event occurred and when it occurred; they do not receive the corresponding conversation.
-Plain `ws://` remains supported, but does not protect Web delivery, authentication bootstrap, or metadata
-from the network; use WSS, a VPN, or a secure tunnel on untrusted networks.
+The ECS still serves the Web app and manages device trust, so it is not a zero-trust relay. A compromised
+host can change Web code or approvals and observe metadata. A compromised browser profile or connector
+computer keeps that endpoint's authority. Web Push reveals only a generic event type and time. Direct
+`ws://` keeps application traffic encrypted but does not protect Web delivery, pairing, or metadata;
+prefer WSS, a VPN, or a secure tunnel on untrusted networks.
 
 This is a single-user personal bridge, not a multi-tenant identity system, a zero-trust gateway, or a
 replacement for Codex permission review. Use an ECS/VPS you control, prefer WSS/VPN/a secure tunnel on
@@ -165,7 +154,7 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
 
    Open the printed link or scan its QR code within ten minutes. A camera is optional: the Web page
    also accepts the link directly or decodes an uploaded QR screenshot locally. The shared browser
-   token remains an administrator-controlled recovery path, not the preferred daily login.
+   token is reserved for administrator recovery.
 
 Read the [security policy](docs/SECURITY.md) before exposing the relay to the internet. Do not install Codex or copy
 project files onto the ECS/VPS.
@@ -182,14 +171,12 @@ project files onto the ECS/VPS.
 | `BRIDGE_URL` | Connector | Relay WebSocket URL; supports `ws://` and `wss://` |
 | `CODEX_UI_LANGUAGE` | Relay | Web UI language: `zh-CN` or `en` |
 
-After pairing, browser authentication uses a fresh challenge signed by its approved, persistent
-Ed25519 device key. One-time enrollment and recovery Token login bind their HMAC proof and device
-signature to the same challenge, so captured proofs cannot be replayed. Application frames remain
-end-to-end encrypted over `ws://`, but plain HTTP/WS does not protect Web code delivery, enrollment,
-or metadata; use `wss://`, a VPN, or another secure tunnel on untrusted networks.
+After pairing, the browser signs a fresh challenge with its approved device key. Captured proofs cannot
+be replayed. Application traffic is end-to-end encrypted over WS and WSS; WSS also protects Web delivery,
+pairing, and metadata from the network.
 
-New sessions always require an explicit project directory selected in the web UI; the connector has no
-configurable default workspace. `-AllowedRoots` is optional and limits which local directories may be
+New sessions require an explicit project directory selected in the web UI; there is no default workspace.
+`-AllowedRoots` is optional and limits which local directories may be
 selected. When omitted, the connector checkout is the only allowed root. The installer stores this
 optional setting outside the repository, so it does not belong in the relay `.env` file.
 
