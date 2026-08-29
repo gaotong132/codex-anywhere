@@ -105,9 +105,7 @@ export async function readRolloutTail(options: RolloutOptions) {
       activityStartedAt: snapshot.activity.status === 'inProgress' ? snapshot.activity.startedAt : null,
       activityUpdatedAt: snapshot.activity.status === 'inProgress' ? snapshot.liveActivity.updatedAt : null,
       toolPurpose: snapshot.activity.status === 'inProgress' ? snapshot.toolPurpose : '',
-      turnProgress: snapshot.activity.status === 'inProgress'
-        ? { plan: snapshot.progress.plan, files: snapshot.progress.files }
-        : {},
+      turnProgress: { plan: snapshot.progress.plan, files: snapshot.progress.files },
     };
   } finally {
     await handle.close();
@@ -122,7 +120,7 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
     activity = await findLatestActivityBefore(handle, window.firstCompleteOffset);
   }
   const progress = updateTurnProgress({ patchFiles: new Set() }, window.rows, activity.status);
-  if (activity.status === 'inProgress' && !progress.plan && window.firstCompleteOffset > 0) {
+  if (activity.status !== 'unknown' && !progress.plan && window.firstCompleteOffset > 0) {
     progress.plan = await findLatestPlanBefore(handle, window.firstCompleteOffset);
   }
   return {
@@ -323,10 +321,7 @@ function updateTurnProgress(current: RolloutProgress, rows: RolloutRow[], status
       progress = { patchFiles: new Set() };
       continue;
     }
-    if (/task_complete|task_failed|turn_aborted|turn_error/.test(type)) {
-      progress = { patchFiles: new Set() };
-      continue;
-    }
+    if (/task_complete|task_failed|turn_aborted|turn_error/.test(type)) continue;
     const structuredPlan = summarizePlanSteps(payload.plan);
     if (structuredPlan) progress.plan = structuredPlan;
     const structuredDiff = summarizeUnifiedDiff(payload.diff);
@@ -347,7 +342,7 @@ function updateTurnProgress(current: RolloutProgress, rows: RolloutRow[], status
     const plan = planProgressFromRow(row);
     if (plan) progress.plan = plan;
   }
-  return status === 'inProgress' ? progress : { patchFiles: new Set() };
+  return status === 'unknown' ? { patchFiles: new Set() } : progress;
 }
 
 function planProgressFromRow(row: RolloutRow | null) {
