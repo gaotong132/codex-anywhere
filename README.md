@@ -35,8 +35,8 @@ computer; a lightweight relay on your own ECS/VPS provides the remote entry poin
   attachments, and keep common actions within easy reach.
 - **Resilient connection** — your phone and connected computer recover automatically from transient
   disconnects and network switches.
-- **Approve every device** — each phone, browser, and connected computer must be trusted by the owner
-  before it can open any session; a copied token alone is not enough.
+- **Approve every device** — browsers enroll with a ten-minute, single-use pairing link and reconnect
+  with their approved device key; connected computers require owner approval too.
 - **Keep work on your own computer** — Codex execution and project files stay local, while a relay you
   control provides the remote entry point.
 
@@ -71,11 +71,11 @@ Approvals already owned by Desktop remain there. Codex Anywhere does not impleme
   <img src="docs/assets/security-model.svg" alt="Codex Anywhere security model: layered device authentication, a self-hosted relay trust boundary, and local-only Codex execution and files" width="100%">
 </p>
 
-Security is layered rather than delegated to a single bearer token:
+Security is layered around short-lived enrollment and persistent device identities:
 
 | Layer | Protection |
 | --- | --- |
-| Device access | Ten-minute, single-use browser pairing and administrator-approved Ed25519 device keys. A Token alone cannot open a session. |
+| Device access | Ten-minute, single-use browser pairing followed by an approved Ed25519 device key. Browsers have no shared-token login. |
 | Content protection | Authenticated X25519 key exchange and XChaCha20-Poly1305 encryption for application traffic. The relay sees metadata and ciphertext size, not messages or files. |
 | Session controls | Challenge-bound proofs, periodic reauthentication, failure throttling, origin checks, and frame-size limits. |
 | Local computer | Accepts no inbound public connection. On Windows, the connector token and device private key are protected with current-user DPAPI. Codex execution and project files remain local. |
@@ -91,7 +91,7 @@ prefer WSS, a VPN, or a secure tunnel on untrusted networks.
 This is a single-user personal bridge, not a multi-tenant identity system, a zero-trust gateway, or a
 replacement for Codex permission review. Use an ECS/VPS you control, prefer WSS/VPN/a secure tunnel on
 untrusted networks, keep the host patched, approve only a freshly initiated device request, and revoke
-devices or rotate role tokens after suspected exposure. See the complete [security policy](docs/SECURITY.md)
+devices or rotate the connector credential after suspected exposure. See the complete [security policy](docs/SECURITY.md)
 and [production deployment guide](docs/deployment.md).
 
 ## Deployment
@@ -115,8 +115,8 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
 
 1. Deploy the relay to your ECS/VPS and choose how it will be reachable. Follow the complete
    [production deployment guide](docs/deployment.md).
-2. Generate two independent secrets from at least 32 random bytes: one browser-client token and one
-   connector token. Configure both on the relay and give only the connector token to the connector.
+2. Generate a connector secret from at least 32 random bytes. Configure it on the relay and install the
+   same value on the connector computer. Browsers do not use this secret.
 3. On the computer that runs Codex, install the connector. On Windows this registers a current-user
    background task that starts after sign-in:
 
@@ -145,8 +145,7 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
    ```
 
    Open the printed link or scan its QR code within ten minutes. A camera is optional: the Web page
-   also accepts the link directly or decodes an uploaded QR screenshot locally. The shared browser
-   token is reserved for administrator recovery.
+   also accepts the link directly or decodes an uploaded QR screenshot locally.
 
 Read the [security policy](docs/SECURITY.md) before exposing the relay to the internet. Do not install Codex or copy
 project files onto the ECS/VPS.
@@ -155,7 +154,6 @@ project files onto the ECS/VPS.
 
 | Variable | Used by | Purpose |
 | --- | --- | --- |
-| `BRIDGE_CLIENT_TOKEN` | Relay and recovery browser login | Browser recovery bootstrap secret; keep separate from the connector credential |
 | `BRIDGE_CONNECTOR_TOKEN` | Relay and connector | Local connector secret |
 | `BRIDGE_SESSION_MAX_AGE_MS` | Relay | Maximum authenticated WebSocket lifetime; defaults to one hour |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | Relay | Persistent approved/pending public device records; Compose configures this automatically |
@@ -185,8 +183,7 @@ Requirements: Node.js 22+ and an authenticated Codex CLI.
 git clone https://github.com/gaotong132/codex-anywhere.git
 cd codex-anywhere
 npm ci
-$env:BRIDGE_CLIENT_TOKEN = 'replace-with-at-least-32-random-characters-for-the-browser'
-$env:BRIDGE_CONNECTOR_TOKEN = 'replace-with-a-different-32-random-characters-for-the-connector'
+$env:BRIDGE_CONNECTOR_TOKEN = 'replace-with-at-least-32-random-characters-for-the-connector'
 npm run server
 ```
 
@@ -199,13 +196,13 @@ $env:BRIDGE_DEVICE_IDENTITY_FILE = '.\data\connector-device.json'
 npm run connector
 ```
 
-Open `http://127.0.0.1:3300` and enter the token. Strict device approval still applies in local
-development. In a third terminal, approve the pending connector and browser through the same
-administrator command used in production (run it once for each); it reads the local
+Strict device approval still applies in local development. In a third terminal, approve the pending
+connector, then create and open a one-time browser pairing link; the commands read the local
 `data/devices.json` automatically:
 
 ```powershell
 node build/server/device-admin.js
+node build/server/device-admin.js pair http://127.0.0.1:3300
 ```
 
 Do not add an automatic first-device exception. For development checks and builds:

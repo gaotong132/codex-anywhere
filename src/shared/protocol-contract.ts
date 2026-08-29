@@ -1,4 +1,4 @@
-export const BRIDGE_PROTOCOL_VERSION = 3;
+export const BRIDGE_PROTOCOL_VERSION = 4;
 
 export const BRIDGE_PROTOCOL_CAPABILITIES = Object.freeze([
   'strict-protocol.v1',

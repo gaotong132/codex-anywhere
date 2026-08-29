@@ -37,7 +37,7 @@
       <g transform="translate(24 98)">
         <rect width="317" height="72" rx="14" fill="#0c1626" stroke="#253d5e"/>
         <text x="18" y="27" fill="#bcd0ed" font-size="13" font-weight="700">One-time pairing credential</text>
-        <text x="18" y="50" fill="#788ca8" font-size="12">Consumed after enrollment · recovery option</text>
+        <text x="18" y="50" fill="#788ca8" font-size="12">Expires in 10 minutes · consumed once</text>
       </g>
       <g transform="translate(24 184)">
         <rect width="317" height="72" rx="14" fill="#0c1626" stroke="#253d5e"/>
@@ -47,9 +47,9 @@
       <g transform="translate(24 270)">
         <rect width="317" height="108" rx="14" fill="#111c2d" stroke="#315a8c"/>
         <path d="M22 26l8 8 15-18" fill="none" stroke="#73a9ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-        <text x="58" y="31" fill="#dce9fb" font-size="13" font-weight="700">Out-of-band approval required</text>
-        <text x="18" y="61" fill="#8297b6" font-size="12">A valid token alone creates only a</text>
-        <text x="18" y="81" fill="#8297b6" font-size="12">pending request, not an active session.</text>
+        <text x="58" y="31" fill="#dce9fb" font-size="13" font-weight="700">Administrator-issued enrollment</text>
+        <text x="18" y="61" fill="#8297b6" font-size="12">No shared browser token or fallback.</text>
+        <text x="18" y="81" fill="#8297b6" font-size="12">Lost access requires a new pairing link.</text>
       </g>
     </g>
 
@@ -64,12 +64,12 @@
         <rect width="317" height="84" rx="14" fill="#0d192b" stroke="#31578a"/>
         <text x="18" y="27" fill="#c9dbf6" font-size="13" font-weight="700">Fresh challenge on every connection</text>
         <text x="18" y="51" fill="#8095b4" font-size="12">Approved Ed25519 device signature</text>
-        <text x="18" y="69" fill="#8095b4" font-size="12">+ HMAC proof during enrollment or recovery</text>
+        <text x="18" y="69" fill="#8095b4" font-size="12">+ single-use proof during enrollment</text>
       </g>
       <g transform="translate(24 196)">
         <rect width="317" height="84" rx="14" fill="#0d192b" stroke="#31578a"/>
         <text x="18" y="27" fill="#c9dbf6" font-size="13" font-weight="700">Bounded authenticated sessions</text>
-        <text x="18" y="51" fill="#8095b4" font-size="12">Role-separated secrets · 1-hour reauth</text>
+        <text x="18" y="51" fill="#8095b4" font-size="12">Connector secret · 1-hour reauth</text>
         <text x="18" y="69" fill="#8095b4" font-size="12">Failure throttling · origin validation</text>
       </g>
       <g transform="translate(24 294)">

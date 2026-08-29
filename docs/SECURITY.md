@@ -18,8 +18,9 @@ Never put tokens, private addresses, conversation content, or local paths in a p
   no public inbound connection.
 - The relay has no conversation database and does not intentionally persist messages, previews, HTML,
   or download chunks.
-- Every browser and connector needs an administrator-approved Ed25519 device key. A Token alone can
-  create only a pending approval request.
+- Browsers enroll only through a ten-minute, single-use pairing link and then authenticate with their
+  approved Ed25519 device key. There is no shared browser Token or recovery login.
+- Connectors require both their secret and an administrator-approved Ed25519 device key.
 - Browser and connector authenticate ephemeral X25519 keys and encrypt application frames with
   XChaCha20-Poly1305. The relay sees routing metadata, timing, and approximate ciphertext size, but not
   message or file content.
@@ -28,9 +29,8 @@ Never put tokens, private addresses, conversation content, or local paths in a p
 - Windows protects the connector Token and device key with current-user DPAPI. Browser keys remain in
   that browser profile.
 
-One-time browser pairing links expire after ten minutes and work once. Their secret stays in the URL
-fragment, is removed before connecting, and is not stored by the relay. The browser Token is an
-administrator recovery credential; keep it separate from the connector Token.
+The pairing secret stays in the URL fragment, is removed before connecting, and is stored by the relay
+only as a one-way verifier until it expires or is consumed.
 
 Image previews are limited to configured roots, validated by content, resized, and converted to WebP.
 Original downloads require confirmation and a short-lived capability bound to one client and file.
@@ -51,8 +51,8 @@ secure tunnel on untrusted networks.
 
 ## Deployment baseline
 
-- Generate independent browser and connector Tokens from at least 32 random bytes. Store relay secrets
-  in a root-readable `.env`; keep browser recovery credentials in a password manager.
+- Generate the connector Token from at least 32 random bytes and store the relay copy in a root-readable
+  `.env`. Never give it to a browser.
 - Keep the device registry volume private, persistent, and backed up only with encryption. Revoke lost
   or retired devices.
 - Expose the relay through a maintained ingress or private network. The reference Compose service binds
@@ -79,9 +79,8 @@ The running relay applies revocation and closes the device connection, normally 
 ## If a credential may have leaked
 
 1. Revoke the affected device. Treat a leaked device private key as a compromised device.
-2. Replace a leaked `BRIDGE_CLIENT_TOKEN` and restart the relay.
-3. Replace a leaked `BRIDGE_CONNECTOR_TOKEN`, reinstall the connector credential, and restart both sides.
-4. Review ECS and proxy logs, browser extensions, clipboard and shell history, CI output, and related
+2. Replace a leaked `BRIDGE_CONNECTOR_TOKEN`, reinstall the connector credential, and restart both sides.
+3. Review ECS and proxy logs, browser extensions, clipboard and shell history, CI output, and related
    infrastructure credentials.
 
 ## Out of scope

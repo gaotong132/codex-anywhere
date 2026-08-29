@@ -28,7 +28,7 @@ ECS/VPS 只提供轻量的远程入口。
 - **长会话也能快速打开**：优先打开最近内容，需要时再继续加载更早的记录。
 - **针对手机操作优化**：可以在已有项目中新建会话、搜索最近会话并查看附件。
 - **断线自动恢复**：手机网络切换或短暂断联后，手机与连接电脑会自动重连并同步当前状态。
-- **每台设备都要经过确认**：每台手机、浏览器和连接电脑只有得到所有者批准后才能访问会话，仅拿到 Token 也无法直接登录。
+- **每台设备都要经过确认**：浏览器通过十分钟单次链接配对，之后仅凭已批准的设备密钥重连；连接电脑也需要所有者批准。
 - **工作始终留在自己的电脑上**：Codex 和项目文件都在本机运行，由你掌控的转发服务只负责提供远程入口。
 
 Codex Anywhere 定位为个人桥接工具，不提供自动 fork、通用远程 Shell 或多用户网关。
@@ -60,11 +60,11 @@ Codex Anywhere 没有实现 ACP。
   <img src="docs/assets/security-model.svg" alt="Codex Anywhere 安全设计：多层设备认证、自托管转发服务信任边界，以及只在本机执行的 Codex 和文件访问" width="100%">
 </p>
 
-当前安全机制采用多层防护，而不是只依赖一个持有者 Token：
+当前安全机制以短时注册和持久设备身份为核心：
 
 | 防护层 | 保护措施 |
 | --- | --- |
-| 设备访问 | 十分钟有效的单次浏览器配对和管理员批准的 Ed25519 设备密钥；只有 Token 不能打开会话。 |
+| 设备访问 | 十分钟有效的单次浏览器配对和后续 Ed25519 设备密钥认证；浏览器没有共享 Token 登录。 |
 | 内容保护 | 使用经过身份验证的 X25519 密钥交换和 XChaCha20-Poly1305 加密应用流量；转发服务只能看到元数据和密文大小。 |
 | 会话控制 | 随机质询、防重放、定期重新认证、失败限速、来源检查和帧大小限制。 |
 | 本机电脑 | 不接受公网入站连接。Windows 上的连接器 Token 和设备私钥使用当前用户 DPAPI 保护；Codex 执行和项目文件始终留在本机。 |
@@ -78,7 +78,7 @@ Web 代码或批准记录并观察元数据；浏览器配置或连接器电脑�
 
 这是单用户个人桥接工具，不是多租户身份系统、零信任网关，也不能替代 Codex 的权限审查。建议使用
 自己控制的 ECS/VPS，在不受信网络优先使用 WSS、VPN 或安全隧道，及时更新主机，只批准刚刚由自己
-发起且可以确认的设备请求；疑似泄露后应撤销设备并轮换对应角色 Token。完整说明参见
+发起且可以确认的设备请求；疑似泄露后应撤销设备并轮换连接器凭据。完整说明参见
 [安全策略](docs/SECURITY.zh-CN.md)和[正式部署指南](docs/deployment.zh-CN.md)。
 
 ## 部署
@@ -101,8 +101,8 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
 
 1. 将转发服务部署到 ECS/VPS，并决定如何提供访问入口。完整步骤参见
    [正式部署指南](docs/deployment.zh-CN.md)。
-2. 分别生成两个至少含 32 字节随机量的密钥：浏览器 Token 和连接器 Token。在转发服务中配置
-   两者，本机连接器只保存连接器 Token。
+2. 生成一个至少含 32 字节随机量的连接器密钥，在转发服务和连接电脑上配置同一个值。浏览器不使用
+   该密钥。
 3. 在运行 Codex 的电脑上安装连接器。Windows 会注册一个当前用户后台任务，在登录后自动启动：
 
    ```powershell
@@ -129,7 +129,7 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
    ```
 
    在十分钟内打开链接或扫描二维码。摄像头不是前提：Web 页面也可以直接粘贴链接，或在本机解析
-   上传的二维码截图。共享浏览器 Token 只用于管理员恢复。
+   上传的二维码截图。
 
 将服务暴露到互联网前请阅读[安全策略](docs/SECURITY.zh-CN.md)。ECS/VPS 上不需要安装 Codex，也不要
 把项目文件复制到 ECS/VPS。
@@ -138,7 +138,6 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
 
 | 环境变量 | 使用方 | 用途 |
 | --- | --- | --- |
-| `BRIDGE_CLIENT_TOKEN` | 转发服务和恢复登录 | 浏览器恢复引导密钥，应与连接器密钥分开 |
 | `BRIDGE_CONNECTOR_TOKEN` | 转发服务和连接器 | 本机连接器密钥 |
 | `BRIDGE_SESSION_MAX_AGE_MS` | 转发服务 | 已认证 WebSocket 的最长生存期，默认一小时 |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | 转发服务 | 持久化已批准/待批准设备的公开记录；Compose 已自动配置 |
@@ -166,8 +165,7 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
 git clone https://github.com/gaotong132/codex-anywhere.git
 cd codex-anywhere
 npm ci
-$env:BRIDGE_CLIENT_TOKEN = 'replace-with-at-least-32-random-characters-for-the-browser'
-$env:BRIDGE_CONNECTOR_TOKEN = 'replace-with-a-different-32-random-characters-for-the-connector'
+$env:BRIDGE_CONNECTOR_TOKEN = 'replace-with-at-least-32-random-characters-for-the-connector'
 npm run server
 ```
 
@@ -180,14 +178,15 @@ $env:BRIDGE_DEVICE_IDENTITY_FILE = '.\data\connector-device.json'
 npm run connector
 ```
 
-打开 `http://127.0.0.1:3300` 并输入 Token。本机开发也保持严格设备审批。在第三个终端运行与正式
-环境相同的管理员命令，分别批准连接器和浏览器；它会自动读取本机的 `data/devices.json`：
+本机开发也保持严格设备审批。在第三个终端批准连接器，再生成并打开单次浏览器配对链接；命令会自动
+读取本机的 `data/devices.json`：
 
 ```powershell
 node build/server/device-admin.js
+node build/server/device-admin.js pair http://127.0.0.1:3300
 ```
 
-每个设备运行一次，不要增加“首设备自动放行”的代码例外。开发检查与构建命令：
+不要增加“首设备自动放行”的代码例外。开发检查与构建命令：
 
 ```powershell
 npm run check

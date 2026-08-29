@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { LRUCache } from 'lru-cache';
 import sirv from 'sirv';
 import { WebSocket, WebSocketServer } from 'ws';
-import { createAuthProof, normalizeAuthDeviceId } from '../shared/auth.js';
+import { createConnectorAuthProof, normalizeAuthDeviceId } from '../shared/auth.js';
 import { verifyDeviceAuthProof, type DeviceAuthProof } from '../shared/device-auth.js';
 import {
   BROWSER_PAIRING_ID_PATTERN,
@@ -47,7 +47,6 @@ type SocketMeta =
   | { role: 'client'; id: string; device: AuthenticatedDevice }
   | { role: 'connector'; deviceId: string; device: AuthenticatedDevice };
 type BridgeServerOptions = {
-  clientToken?: unknown;
   connectorToken?: unknown;
   publicDir?: string;
   uiLanguage?: unknown;
@@ -79,9 +78,7 @@ type AuthLimiterOptions = {
 type AuthEntry = { failures: number; windowStartedAt: number; lockedUntil: number };
 
 export function createBridgeServer(options: BridgeServerOptions = {}) {
-  const clientToken = String(options.clientToken || process.env.BRIDGE_CLIENT_TOKEN || '');
   const connectorToken = String(options.connectorToken || process.env.BRIDGE_CONNECTOR_TOKEN || '');
-  if (clientToken.length < 32) throw new Error('BRIDGE_CLIENT_TOKEN must contain at least 32 characters');
   if (connectorToken.length < 32) throw new Error('BRIDGE_CONNECTOR_TOKEN must contain at least 32 characters');
   const publicDir = resolve(options.publicDir || defaultPublicDir);
   const staticHandler = sirv(publicDir, {
@@ -98,7 +95,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   const configuredRegistryPath = options.deviceRegistryPath !== undefined
     ? options.deviceRegistryPath
     : process.env.BRIDGE_DEVICE_REGISTRY_FILE || (
-      options.clientToken || options.connectorToken ? null : resolve('data/devices.json')
+      options.connectorToken ? null : resolve('data/devices.json')
     );
   const deviceRegistry = options.deviceRegistry || new DeviceRegistry(configuredRegistryPath);
   const connectors = new Map<string, AliveWebSocket>();
@@ -172,7 +169,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
             return;
           }
           const authenticated = authenticateSocket({
-            socket, message, clientToken, connectorToken, authChallenge,
+            socket, message, connectorToken, authChallenge,
             connectors, clients, socketMeta, authTimer,
             authLimiter, clientAddress, deviceRegistry,
           });
@@ -289,12 +286,11 @@ function handleHttpRequest({ request, response, trustProxy, uiLanguage, staticHa
 }
 
 function authenticateSocket({
-  socket, message, clientToken, connectorToken, authChallenge,
+  socket, message, connectorToken, authChallenge,
   connectors, clients, socketMeta, authTimer, authLimiter, clientAddress, deviceRegistry,
 }: {
   socket: AliveWebSocket;
   message: JsonObject;
-  clientToken: string;
   connectorToken: string;
   authChallenge: string;
   connectors: Map<string, AliveWebSocket>;
@@ -305,10 +301,6 @@ function authenticateSocket({
   clientAddress: string;
   deviceRegistry: DeviceRegistry;
 }) {
-  if (message.type === 'auth') {
-    socket.close(4406, 'client upgrade required');
-    return false;
-  }
   const authType = String(message.type || '');
   const role = message.role === 'connector' ? 'connector' : message.role === 'client' ? 'client' : '';
   const deviceId = normalizeAuthDeviceId(message.deviceId);
@@ -328,12 +320,11 @@ function authenticateSocket({
   }
   let deviceAuthContext = '';
   let browserPairingVerifier: string | null = null;
-  let authMode: 'token' | 'device' | 'pairing';
-  if (authType === 'auth.response') {
-    const roleToken = role === 'connector' ? connectorToken : clientToken;
+  let authMode: 'connector-token' | 'device' | 'pairing';
+  if (authType === 'auth.connector' && role === 'connector') {
     let expectedProof = '';
     try {
-      expectedProof = createAuthProof(roleToken, authChallenge, role, deviceId);
+      expectedProof = createConnectorAuthProof(connectorToken, authChallenge, deviceId);
     } catch {
       expectedProof = '';
     }
@@ -341,7 +332,7 @@ function authenticateSocket({
       return rejectAuthentication(socket, authLimiter, clientAddress);
     }
     deviceAuthContext = String(message.proof || '');
-    authMode = 'token';
+    authMode = 'connector-token';
   } else if (!device) {
     socket.close(4406, 'device authentication required');
     return false;
@@ -404,10 +395,10 @@ function authenticateSocket({
     });
     if (!approved) return rejectAuthentication(socket, authLimiter, clientAddress);
   } else if (!deviceRegistry.isApproved(role, device)) {
-    if (authMode === 'token') {
+    if (authMode === 'connector-token') {
       deviceRegistry.requestPairing({
         role,
-        routeDeviceId: role === 'connector' ? deviceId : undefined,
+        routeDeviceId: deviceId,
         device,
         address: clientAddress,
       });

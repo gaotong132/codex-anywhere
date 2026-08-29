@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { createAuthProof } from '../src/shared/auth.js';
+import { createConnectorAuthProof } from '../src/shared/auth.js';
 import {
   createDeviceAuthProof,
   createDeviceIdentity,
@@ -52,22 +52,21 @@ import {
 import { historyItems, mergeHistorySnapshot } from '../web/src/history-utils.js';
 import { MessageBubble } from '../web/src/ui-components.js';
 
-test('authentication proofs are role, device and challenge bound', () => {
+test('connector bootstrap proofs are route and challenge bound', () => {
   const token = 'a'.repeat(32);
   const challenge = 'b'.repeat(64);
-  const clientProof = createAuthProof(token, challenge, 'client');
-  assert.equal(clientProof.length, 64);
-  assert.equal(secretMatches(clientProof, createAuthProof(token, challenge, 'client')), true);
-  assert.equal(secretMatches(clientProof, createAuthProof(token, 'c'.repeat(64), 'client')), false);
-  assert.equal(secretMatches(clientProof, createAuthProof(token, challenge, 'connector', 'pc')), false);
+  const proof = createConnectorAuthProof(token, challenge, 'pc');
+  assert.equal(proof.length, 64);
+  assert.equal(secretMatches(proof, createConnectorAuthProof(token, challenge, 'pc')), true);
+  assert.equal(secretMatches(proof, createConnectorAuthProof(token, 'c'.repeat(64), 'pc')), false);
   assert.equal(
     secretMatches(
-      createAuthProof(token, challenge, 'connector', 'pc'),
-      createAuthProof(token, challenge, 'connector', 'other-pc'),
+      createConnectorAuthProof(token, challenge, 'pc'),
+      createConnectorAuthProof(token, challenge, 'other-pc'),
     ),
     false,
   );
-  assert.throws(() => createAuthProof(token, 'not-a-challenge', 'client'), /invalid_auth_challenge/);
+  assert.throws(() => createConnectorAuthProof(token, 'not-a-challenge', 'pc'), /invalid_auth_challenge/);
 });
 
 test('device signatures are key, token proof, role, route and challenge bound', () => {

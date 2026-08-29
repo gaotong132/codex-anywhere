@@ -11,7 +11,7 @@ import { loadOrCreateConnectorDeviceIdentity } from './device-identity.js';
 import { createRequestHandler } from './request-handler.js';
 import { scheduleReferencedRetry } from './reconnect.js';
 import { ConnectorSecureChannels } from './secure-channels.js';
-import { createAuthProof } from '../shared/auth.js';
+import { createConnectorAuthProof } from '../shared/auth.js';
 import { createDeviceAuthProof } from '../shared/device-auth.js';
 import {
   requireCurrentProtocol,
@@ -79,7 +79,7 @@ function connect() {
     if (message.type === 'auth.challenge') {
       try {
         const protocol = requireCurrentProtocol(message.protocol);
-        const proof = createAuthProof(token, String(message.challenge || ''), 'connector', deviceId);
+        const proof = createConnectorAuthProof(token, String(message.challenge || ''), deviceId);
         const device = createDeviceAuthProof(deviceIdentity, {
           challenge: String(message.challenge || ''),
           role: 'connector',
@@ -87,7 +87,7 @@ function connect() {
           authProof: proof,
         }, `Connector · ${deviceId}`);
         safeSend(socket, {
-          type: 'auth.response', role: 'connector', proof, deviceId, device, protocol,
+          type: 'auth.connector', role: 'connector', proof, deviceId, device, protocol,
         });
       } catch {
         socket?.close(4003, 'invalid authentication challenge');

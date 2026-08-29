@@ -34,10 +34,9 @@ ECS 可以降低个人电脑暴露面：两端都主动建立出站连接，ECS 
 可视化和下载密文，并且不会有意持久化这些内容。仍建议使用 WSS，因为它还能保护 Web 代码分发、认证
 引导和元数据。
 
-这不是零信任转发节点。ECS 会提供 Web 应用，并管理角色 Token 和设备信任。
+这不是零信任转发节点。ECS 会提供 Web 应用，并管理设备信任。
 root 管理员被攻破后，仍可修改后续代码或信任关系、注册攻击者控制的设备，或观察路由元数据。
-应使用自己控制的基础设施、减少管理员和日志、及时打补丁、分离两个角色，并在疑似泄露后撤销设备或
-轮换 Token。
+应使用自己控制的基础设施、减少管理员和日志、及时打补丁，并在疑似泄露后撤销设备或轮换连接器凭据。
 
 ## 1. 网络与主机准备
 
@@ -54,30 +53,26 @@ root 管理员被攻破后，仍可修改后续代码或信任关系、注册攻
 
 ## 2. 转发服务与密钥
 
-在 ECS 克隆仓库，并在仅 root 可读的 `.env` 中创建相互独立的浏览器 Token 和连接器 Token。
-每个 Token 至少使用 32 字节密码学安全随机数据（64 个十六进制字符）。以下命令不会把 Token 写进
-Shell 历史：
+在 ECS 克隆仓库，并在仅 root 可读的 `.env` 中创建至少包含 32 字节密码学安全随机量（64 个十六
+进制字符）的连接器 Token。浏览器不会得到这个 Token。以下命令不会把它写进 Shell 历史：
 
 ```bash
 git clone https://github.com/gaotong132/codex-anywhere.git
 cd codex-anywhere
 umask 077
-BRIDGE_CLIENT_TOKEN_INPUT="$(openssl rand -hex 32)"
 BRIDGE_CONNECTOR_TOKEN_INPUT="$(openssl rand -hex 32)"
-printf 'BRIDGE_CLIENT_TOKEN=%s\n' "$BRIDGE_CLIENT_TOKEN_INPUT" > .env
-printf 'BRIDGE_CONNECTOR_TOKEN=%s\n' "$BRIDGE_CONNECTOR_TOKEN_INPUT" >> .env
+printf 'BRIDGE_CONNECTOR_TOKEN=%s\n' "$BRIDGE_CONNECTOR_TOKEN_INPUT" > .env
 printf 'CODEX_UI_LANGUAGE=zh-CN\n' >> .env
-unset BRIDGE_CLIENT_TOKEN_INPUT BRIDGE_CONNECTOR_TOKEN_INPUT
+unset BRIDGE_CONNECTOR_TOKEN_INPUT
 chmod 600 .env
 docker compose up --build -d
 ```
 
-日常注册浏览器请使用第 5 节的一次性配对流程，不需要把浏览器 Token 复制到每台设备。浏览器 Token
-只作为管理员控制的恢复凭据，建议仅通过加密的管理员会话读取并保存在密码管理器中。本地安装器只接收
-连接器 Token。不要把任何 Token 粘贴到聊天、Issue、截图、源码、Shell 参数或 CI 日志。除非备份已
+浏览器只能使用第 5 节的一次性配对流程。本地安装器只接收连接器 Token，该 Token 不能认证浏览器。
+不要把它粘贴到聊天、Issue、截图、源码、Shell 参数或 CI 日志。除非备份已
 加密并严格控制访问，否则不要把 `.env` 纳入服务器备份。
 
-转发服务要求每个已批准设备密钥提供 Ed25519 签名；一次性注册和恢复 Token 引导还会把 HMAC 证明
+转发服务要求每个已批准设备密钥提供 Ed25519 签名；单次浏览器注册和连接器引导还会把证明
 绑定到新的随机质询。它会拒绝证明重放、临时锁定重复失败，并每小时更新认证连接
 （`BRIDGE_SESSION_MAX_AGE_MS`）。Compose 卷 `bridge-state` 会持久化设备公钥、单向配对校验值和
 配对元数据。浏览器和连接器的设备私钥不会进入转发服务，也不会保存会话或文件内容。
@@ -103,8 +98,7 @@ ss -ltn | grep 3300
 
 | 环境变量 | 默认值 | 用途 |
 | --- | --- | --- |
-| `BRIDGE_CLIENT_TOKEN` | 必填 | 浏览器凭据，至少使用 32 字节随机数据 |
-| `BRIDGE_CONNECTOR_TOKEN` | 必填 | 连接器凭据，必须与浏览器凭据不同 |
+| `BRIDGE_CONNECTOR_TOKEN` | 必填 | 连接器引导凭据，浏览器不会获得它 |
 | `BRIDGE_SESSION_MAX_AGE_MS` | `3600000` | 已认证 WebSocket 重新鉴权前的最长生存期 |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | `data/devices.json` | 已批准公钥和短期待配对记录 |
 | `CODEX_UI_LANGUAGE` | `zh-CN` | Web 界面语言：`zh-CN` 或 `en` |
@@ -164,24 +158,21 @@ Windows 后台任务安装器使用当前用户 DPAPI 保存 Token，而不是�
 
 ```powershell
 $connectorToken = Read-Host 'Connector token' -AsSecureString
-$clientToken = Read-Host 'Browser client token' -AsSecureString
 .\scripts\install-connector.ps1 `
   -ConnectorToken $connectorToken `
-  -ClientToken $clientToken `
   -BridgeUrl 'wss://codex.example.com/ws'
 ```
 
 安装器会注册一个当前用户计划任务，在登录后于交互用户会话中运行轻量守护进程。应用升级或连接器意外
-退出时，它会重新启动唯一的 Node 连接器进程。守护进程不解密也不长期持有 Token；每次重启都通过
+退出时，它会重新启动唯一的 Node 连接器进程。守护进程不长期持有明文 Token；每次重启都通过
 DPAPI 启动器。无法使用任务计划程序时，安装器会自动回退到登录快捷方式。
 
 新会话必须在 Web UI 明确选择项目目录，不存在默认工作区配置。`-AllowedRoots` 可选，默认只包含
 连接器仓库；只有需要选择更多本地目录时才配置。本机位图预览和下载默认限制在这些根目录内。只有在单用户可信电脑上
 明确需要不受限本地下载时才添加 `-AllowAnyFileDownload`。除非任务确实需要，否则保持网络访问关闭。
 
-加密凭据和配置保存在仓库外的 `%USERPROFILE%\.codex-anywhere`。再次运行安装器时可以省略两个 Token，
-只更新设置并保留凭据。`scripts/copy-token.ps1` 只复制单独保存的浏览器 Token，不会暴露
-连接器 Token。在共享电脑上使用后应清除剪贴板历史。
+加密凭据和配置保存在仓库外的 `%USERPROFILE%\.codex-anywhere`。再次运行安装器时可以省略
+`-ConnectorToken`，只更新设置并保留连接器凭据。
 
 连接器配置：
 
@@ -203,7 +194,7 @@ DPAPI 启动器。无法使用任务计划程序时，安装器会自动回退�
 docker compose exec bridge node build/server/device-admin.js
 ```
 
-浏览器优先使用短时、单次配对链接：
+浏览器只能使用短时、单次配对链接：
 
 ```bash
 docker compose exec bridge node build/server/device-admin.js pair https://codex.example.com
@@ -232,17 +223,15 @@ sequenceDiagram
 
 - 链接密钥只放在 URL 片段中，不属于 HTTP 请求；浏览器连接前会从地址栏移除它。转发服务只保存
   校验值和有效期，不保存持有者密钥；配对成功后立即消费该记录。
-- 浏览器设备私钥不会离开浏览器。重连使用新的随机质询和已批准 Ed25519 设备密钥；浏览器 Token
-  只用于管理员恢复。
-- 浏览器 Token 登录仍作为管理员恢复路径；它会创建待批准请求。运行第一条命令，选择匹配请求，
-  无法明确识别时不要批准。
+- 浏览器设备私钥不会离开浏览器。重连使用新的随机质询和已批准 Ed25519 设备密钥；设备被撤销或
+  浏览器数据丢失后，必须使用新的单次链接重新配对。
 - Web UI 不能列出或批准注册设备；批准和撤销仍只能在 ECS 上操作。
 
 设备批准只负责桥接访问认证，与 Codex 的命令执行、文件修改和权限审批是不同的控制。
 
 ## 6. 端到端验证
 
-1. 使用一次性链接完成浏览器配对，重新打开 Web 入口，确认无需共享浏览器 Token 即可重连，并显示
+1. 使用一次性链接完成浏览器配对，重新打开 Web 入口，确认浏览器使用已批准设备密钥重连，并显示
    已批准的连接器在线。
 2. 打开一个已有会话并发送无害测试消息。
 3. 确认 Codex Desktop 和浏览器都能看到消息与回复。

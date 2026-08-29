@@ -1,7 +1,6 @@
 [CmdletBinding()]
 param(
     [Security.SecureString] $ConnectorToken,
-    [Security.SecureString] $ClientToken,
     [string] $BridgeUrl = 'ws://127.0.0.1:3300/ws',
     [string] $DeviceId = 'personal-pc',
     [string[]] $AllowedRoots,
@@ -21,7 +20,6 @@ $stateDirectory = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.code
 $legacyStateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PersonalCodexBridge'
 $secretPath = Join-Path $stateDirectory 'connector-token.dpapi'
 $deviceSecretPath = Join-Path $stateDirectory 'connector-device-key.dpapi'
-$clientSecretPath = Join-Path $stateDirectory 'bridge-client-token.dpapi'
 $configPath = Join-Path $stateDirectory 'connector.json'
 $startupDirectory = [Environment]::GetFolderPath('Startup')
 $shortcutPath = Join-Path $startupDirectory 'Codex Anywhere Connector.lnk'
@@ -43,7 +41,6 @@ New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
 foreach ($stateFileName in @(
     'connector-token.dpapi',
     'connector-device-key.dpapi',
-    'bridge-client-token.dpapi',
     'connector.json'
 )) {
     $legacyStatePath = Join-Path $legacyStateDirectory $stateFileName
@@ -88,10 +85,6 @@ if ($ConnectorToken) {
 elseif (-not (Test-Path -LiteralPath $secretPath -PathType Leaf)) {
     throw 'ConnectorToken is required for the first installation.'
 }
-if ($ClientToken) {
-    Save-ProtectedCredential -Value $ClientToken -Path $clientSecretPath -Name 'Browser client token'
-}
-
 $resolvedAllowedRoots = if ($AllowedRoots -and $AllowedRoots.Count -gt 0) {
     @($AllowedRoots | ForEach-Object { [IO.Path]::GetFullPath($_) })
 }
@@ -152,7 +145,4 @@ catch {
 Write-Output "Installed connector launcher: $backgroundLauncher"
 Write-Output "Connector credential stored with Windows DPAPI: $secretPath"
 Write-Output "Connector device key will be stored with Windows DPAPI: $deviceSecretPath"
-if (Test-Path -LiteralPath $clientSecretPath -PathType Leaf) {
-    Write-Output "Browser credential stored with Windows DPAPI: $clientSecretPath"
-}
 Write-Output "Connector settings stored outside the repository: $configPath"

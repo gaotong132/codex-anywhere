@@ -37,11 +37,11 @@ connector use authenticated application-layer encryption, so the relay routes me
 preview, visualization, and download ciphertext without intentionally persisting it. WSS remains the
 recommended transport because it also protects Web code delivery, authentication bootstrap and metadata.
 
-This is not a zero-trust relay. The ECS serves the Web application and manages role tokens and device trust.
+This is not a zero-trust relay. The ECS serves the Web application and manages device trust.
 A compromised root administrator can change future code or
 trust decisions, register an attacker-controlled device, or observe routing metadata.
-Use infrastructure you control, minimize administrators and logs, keep the host patched, separate the
-two roles, and revoke a device or rotate an affected token after any suspected disclosure.
+Use infrastructure you control, minimize administrators and logs, keep the host patched, and revoke a
+device or rotate the connector credential after any suspected disclosure.
 
 ## 1. Network and host preparation
 
@@ -61,33 +61,29 @@ projects to this ECS.
 
 ## 2. Relay and secret
 
-Clone the repository on the ECS. Create separate browser-client and connector tokens in a root-readable
-`.env`; use at least 32 cryptographically random bytes (64 hexadecimal characters) for each. The
-following avoids putting them in shell history:
+Clone the repository on the ECS. Create a connector Token from at least 32 cryptographically random
+bytes (64 hexadecimal characters) in a root-readable `.env`. Browsers never receive this Token. The
+following avoids putting it in shell history:
 
 ```bash
 git clone https://github.com/gaotong132/codex-anywhere.git
 cd codex-anywhere
 umask 077
-BRIDGE_CLIENT_TOKEN_INPUT="$(openssl rand -hex 32)"
 BRIDGE_CONNECTOR_TOKEN_INPUT="$(openssl rand -hex 32)"
-printf 'BRIDGE_CLIENT_TOKEN=%s\n' "$BRIDGE_CLIENT_TOKEN_INPUT" > .env
-printf 'BRIDGE_CONNECTOR_TOKEN=%s\n' "$BRIDGE_CONNECTOR_TOKEN_INPUT" >> .env
+printf 'BRIDGE_CONNECTOR_TOKEN=%s\n' "$BRIDGE_CONNECTOR_TOKEN_INPUT" > .env
 printf 'CODEX_UI_LANGUAGE=zh-CN\n' >> .env
-unset BRIDGE_CLIENT_TOKEN_INPUT BRIDGE_CONNECTOR_TOKEN_INPUT
+unset BRIDGE_CONNECTOR_TOKEN_INPUT
 chmod 600 .env
 docker compose up --build -d
 ```
 
-Use the one-time browser-pairing flow in section 5 for normal enrollment; it avoids copying the client
-token to each browser. Keep the client token only as an administrator-controlled recovery credential,
-preferably in a password manager reached through an encrypted administrator session. Pass only the
-connector token to the local installer. Never paste either value into a chat, issue, screenshot, source
+Use the one-time browser-pairing flow in section 5. Pass the connector Token only to the local installer;
+it cannot authenticate a browser. Never paste it into a chat, issue, screenshot, source
 file, shell argument, or CI log. Do not include `.env` in server backups unless that backup is encrypted
 and access-controlled.
 
-The relay requires an Ed25519 signature from every approved device key. One-time enrollment and recovery
-Token bootstrap also bind an HMAC proof to a fresh challenge. The relay rejects captured-proof replay,
+The relay requires an Ed25519 signature from every approved device key. One-time browser enrollment and
+connector bootstrap also bind a proof to a fresh challenge. The relay rejects captured-proof replay,
 locks repeated failures, and renews authenticated sockets every hour (`BRIDGE_SESSION_MAX_AGE_MS`). The
 Compose volume `bridge-state` persists public device keys, one-way pairing verifiers, and pairing
 metadata. Browser and connector private device keys never enter the relay. Conversation and file
@@ -114,8 +110,7 @@ Relay configuration:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `BRIDGE_CLIENT_TOKEN` | required | Browser credential; use at least 32 random bytes |
-| `BRIDGE_CONNECTOR_TOKEN` | required | Connector credential; keep it different from the browser credential |
+| `BRIDGE_CONNECTOR_TOKEN` | required | Connector bootstrap credential; browsers never receive it |
 | `BRIDGE_SESSION_MAX_AGE_MS` | `3600000` | Maximum authenticated WebSocket lifetime before fresh authentication |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | `data/devices.json` | Approved public keys and short-lived pairing records |
 | `CODEX_UI_LANGUAGE` | `zh-CN` | Web UI language: `zh-CN` or `en` |
@@ -181,16 +176,14 @@ protects that private key with the same user-scoped DPAPI boundary:
 
 ```powershell
 $connectorToken = Read-Host 'Connector token' -AsSecureString
-$clientToken = Read-Host 'Browser client token' -AsSecureString
 .\scripts\install-connector.ps1 `
   -ConnectorToken $connectorToken `
-  -ClientToken $clientToken `
   -BridgeUrl 'wss://codex.example.com/ws'
 ```
 
 The installer registers a current-user Task Scheduler task that starts after sign-in and runs a lightweight
 watchdog in the interactive user session. It restarts the single Node connector process after an application
-update or unexpected exit. The watchdog does not decrypt or retain either token; each restart goes through
+update or unexpected exit. The watchdog does not retain a plaintext Token; each restart goes through
 the DPAPI-backed launcher. If Task Scheduler is unavailable, the installer falls back to a login shortcut.
 
 New sessions require a project directory selected in the web UI; there is no default-workspace setting.
@@ -200,10 +193,8 @@ roots should be selectable. Local raster previews and downloads are limited to t
 is intentional. Leave network access disabled unless the Codex task actually needs it.
 
 Encrypted credentials and settings are stored outside the checkout under
-`%USERPROFILE%\.codex-anywhere`. Re-run the installer without Tokens to update settings while keeping the
-stored credentials.
-`scripts/copy-token.ps1` copies only the separately stored browser token; it never exposes the connector
-credential. Clear clipboard history afterward on shared computers.
+`%USERPROFILE%\.codex-anywhere`. Re-run the installer without `-ConnectorToken` to update settings while
+keeping the stored connector credential.
 
 Connector configuration:
 
@@ -226,7 +217,7 @@ encrypted ECS administrator session:
 docker compose exec bridge node build/server/device-admin.js
 ```
 
-For a browser, the preferred path is a short-lived, single-use pairing link:
+Browsers can enroll only with a short-lived, single-use pairing link:
 
 ```bash
 docker compose exec bridge node build/server/device-admin.js pair https://codex.example.com
@@ -258,9 +249,7 @@ sequenceDiagram
   from the address bar before connecting. The relay stores only its verifier, expiry, and no bearer
   secret; successful enrollment consumes the record.
 - The device private key never leaves the browser. Reconnects use a fresh challenge and the approved
-  Ed25519 device key; the browser Token is reserved for administrator recovery.
-- Browser Token login remains available as an administrator recovery path. It creates a pending request;
-  run the first command, select the matching request, and do not approve an ambiguous device.
+  Ed25519 device key. A revoked or lost browser must be paired again with a new one-time link.
 - The Web UI cannot list or approve registered devices. Approval and revocation remain ECS-only.
 
 Device approval authenticates access to the bridge. Codex command, file-change, and permission
@@ -268,8 +257,8 @@ approvals remain separate controls.
 
 ## 6. End-to-end validation
 
-1. Pair the browser with the one-time link, reopen the Web endpoint, and verify it reconnects without
-   asking for the shared browser Token and shows the approved connector online.
+1. Pair the browser with the one-time link, reopen the Web endpoint, and verify it reconnects with the
+   approved device key and shows the approved connector online.
 2. Open an existing session and send a harmless test message.
 3. Confirm the message and reply appear in Codex Desktop and the browser.
 4. For the reference TLS setup, confirm HTTP redirects to HTTPS and `http://ECS-IP:3300` is
