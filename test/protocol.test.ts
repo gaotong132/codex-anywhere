@@ -14,6 +14,11 @@ import {
 } from '../src/shared/device-auth.js';
 import { normalizeBridgeUrl, parseFrame, secretMatches } from '../src/shared/protocol.js';
 import {
+  createProtocolOffer,
+  legacyProtocolOffer,
+  negotiateProtocol,
+} from '../src/shared/protocol-negotiation.js';
+import {
   displayAssistantMessage,
   displayUserMessage,
   parseAssistantMessage,
@@ -81,6 +86,22 @@ test('device signatures are key, token proof, role, route and challenge bound', 
 test('frame parser rejects arrays', () => {
   assert.deepEqual(parseFrame('{"type":"ping"}'), { type: 'ping' });
   assert.throws(() => parseFrame('[]'), /invalid_frame/);
+});
+
+test('protocol negotiation selects the highest compatible version and shared capabilities', () => {
+  assert.deepEqual(negotiateProtocol({
+    version: 3,
+    minimumVersion: 2,
+    capabilities: ['approval.v1', 'future.v1', 'approval.v1'],
+  }), {
+    version: 2,
+    capabilities: ['approval.v1'],
+  });
+  assert.deepEqual(negotiateProtocol(legacyProtocolOffer()), { version: 1, capabilities: [] });
+  assert.throws(() => negotiateProtocol({
+    version: 4, minimumVersion: 3, capabilities: [],
+  }), /protocol_version_unsupported/);
+  assert.equal(createProtocolOffer().capabilities.includes('protocol-negotiation.v1'), true);
 });
 
 test('connector supports ws and wss without allowing credentials in the URL', () => {

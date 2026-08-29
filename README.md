@@ -56,7 +56,8 @@ local connector ── outbound WS/WSS ───┘
 ```
 
 Both the browser and the local connector initiate connections to the relay. The relay authenticates
-them and forwards live frames in memory; Codex execution and file access remain local.
+them, negotiates a compatible protocol version and capability set, and forwards live frames in memory;
+Codex execution and file access remain local.
 
 New sessions and eligible idle sessions are owned by the connector through the Codex app-server
 JSON-RPC protocol, enabling native deltas and browser approval prompts. Sessions that are already

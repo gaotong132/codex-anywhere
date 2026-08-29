@@ -11,6 +11,12 @@ import sirv from 'sirv';
 import { WebSocket, WebSocketServer } from 'ws';
 import { createAuthProof, normalizeAuthDeviceId } from '../shared/auth.js';
 import { verifyDeviceAuthProof, type DeviceAuthProof } from '../shared/device-auth.js';
+import {
+  createProtocolOffer,
+  legacyProtocolOffer,
+  negotiateProtocol,
+  type NegotiatedProtocol,
+} from '../shared/protocol-negotiation.js';
 import { DeviceRegistry } from './device-registry.js';
 import {
   VISUALIZATION_PREVIEW_PREFIX,
@@ -39,8 +45,8 @@ type AliveWebSocket = WebSocket & { isAlive?: boolean };
 type StaticHandler = ReturnType<typeof sirv>;
 type AuthenticatedDevice = Pick<DeviceAuthProof, 'id' | 'publicKey'>;
 type SocketMeta =
-  | { role: 'client'; id: string; device: AuthenticatedDevice }
-  | { role: 'connector'; deviceId: string; device: AuthenticatedDevice };
+  | { role: 'client'; id: string; device: AuthenticatedDevice; protocol: NegotiatedProtocol }
+  | { role: 'connector'; deviceId: string; device: AuthenticatedDevice; protocol: NegotiatedProtocol };
 type BridgeServerOptions = {
   clientToken?: unknown;
   connectorToken?: unknown;
@@ -205,7 +211,9 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       if (meta.role === 'connector' && connectors.get(meta.deviceId) === socket) connectors.delete(meta.deviceId);
       broadcastPresence(clients, connectors);
     });
-    safeSend(socket, { type: 'auth.challenge', challenge: authChallenge });
+    safeSend(socket, {
+      type: 'auth.challenge', challenge: authChallenge, protocol: createProtocolOffer(),
+    });
   });
 
   const heartbeat = setInterval(() => {
@@ -328,6 +336,13 @@ function authenticateSocket({
     socket.close(locked ? 4429 : 4003, locked ? 'authentication temporarily locked' : 'authentication failed');
     return false;
   }
+  let protocol: NegotiatedProtocol;
+  try {
+    protocol = negotiateProtocol(message.protocol || legacyProtocolOffer(message.version));
+  } catch {
+    socket.close(4406, 'protocol version unsupported');
+    return false;
+  }
   const device = message.device && typeof message.device === 'object'
     ? message.device as DeviceAuthProof
     : null;
@@ -362,6 +377,7 @@ function authenticateSocket({
     safeSend(socket, {
       type: 'auth.pairing',
       role,
+      protocol,
     });
     socket.close(4403, 'device approval required');
     return false;
@@ -372,19 +388,20 @@ function authenticateSocket({
     if (previous && previous !== socket) previous.close(4004, 'connector replaced');
     connectors.set(deviceId, socket);
     socketMeta.set(socket, {
-      role, deviceId, device: { id: device.id, publicKey: device.publicKey },
+      role, deviceId, device: { id: device.id, publicKey: device.publicKey }, protocol,
     });
-    safeSend(socket, { type: 'auth.ok', role, deviceId });
+    safeSend(socket, { type: 'auth.ok', role, deviceId, protocol });
     return true;
   }
   const id = createId('client');
   clients.set(id, socket);
   socketMeta.set(socket, {
-    role, id, device: { id: device.id, publicKey: device.publicKey },
+    role, id, device: { id: device.id, publicKey: device.publicKey }, protocol,
   });
   safeSend(socket, {
     type: 'auth.ok', role, clientId: id,
     devices: [...connectors.keys()],
+    protocol,
   });
   return true;
 }

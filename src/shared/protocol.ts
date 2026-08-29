@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
+import { BRIDGE_PROTOCOL_VERSION } from './protocol-negotiation.js';
 
-const PROTOCOL_VERSION = 1;
 export const MAX_FRAME_BYTES = 8 * 1024 * 1024;
 export const CLIENT_ACTIONS = new Set([
   'connector.status', 'sessions.list', 'session.read', 'session.turns.list',
@@ -32,7 +32,7 @@ export function parseFrame(data: unknown): BridgeFrame {
 
 export function safeSend(socket: SendableSocket | null | undefined, payload: BridgeFrame) {
   if (!socket || socket.readyState !== socket.OPEN) return false;
-  socket.send(JSON.stringify({ version: PROTOCOL_VERSION, ...payload }));
+  socket.send(JSON.stringify({ ...payload, version: BRIDGE_PROTOCOL_VERSION }));
   return true;
 }
 

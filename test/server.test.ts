@@ -9,6 +9,7 @@ import { createBridgeServer, internals as serverInternals } from '../src/server/
 import { createAuthProof } from '../src/shared/auth.js';
 import { createDeviceAuthProof, createDeviceIdentity, type DeviceIdentity } from '../src/shared/device-auth.js';
 import type { DeviceRegistry } from '../src/server/device-registry.js';
+import { negotiateProtocol } from '../src/shared/protocol-negotiation.js';
 
 const TOKEN = 'test-token-that-is-longer-than-32-characters';
 const CLIENT_TOKEN = 'client-token-that-is-longer-than-32-characters';
@@ -34,11 +35,17 @@ async function openSocket(url: string, options = {}) {
   assert.equal(challenge.type, 'auth.challenge');
   assert.match(challenge.challenge, /^[a-f0-9]{64}$/);
   assert.equal(challenge.deviceAuth, undefined);
-  return { socket, challenge: challenge.challenge as string };
+  return {
+    socket,
+    challenge: challenge.challenge as string,
+    protocol: challenge.protocol,
+    frameVersion: challenge.version,
+  };
 }
 
 async function authenticateSocket({
   url, role, token, deviceId = '', options = {}, registry, identity = createDeviceIdentity(),
+  sendProtocol = true,
 }: {
   url: string;
   role: 'client' | 'connector';
@@ -47,6 +54,7 @@ async function authenticateSocket({
   options?: ConstructorParameters<typeof WebSocket>[1];
   registry: DeviceRegistry;
   identity?: DeviceIdentity;
+  sendProtocol?: boolean;
 }) {
   if (!registry.isApproved(role, identity)) {
     const registered = registry.requestPairing({
@@ -59,6 +67,7 @@ async function authenticateSocket({
   }
   const opened = await openSocket(url, options);
   const proof = createAuthProof(token, opened.challenge, role, deviceId);
+  const protocol = negotiateProtocol(opened.protocol);
   opened.socket.send(JSON.stringify({
     type: 'auth.response',
     role,
@@ -67,9 +76,31 @@ async function authenticateSocket({
     device: createDeviceAuthProof(identity, {
       challenge: opened.challenge, role, routeDeviceId: deviceId, authProof: proof,
     }, 'Test device'),
+    ...(sendProtocol ? { protocol } : {}),
   }));
   return { ...opened, auth: await nextJson(opened.socket), identity };
 }
+
+test('server negotiates protocol capabilities while retaining legacy rolling-upgrade access', async (t) => {
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+
+  const current = await authenticateSocket({
+    url, role: 'client', token: TOKEN, registry: server.deviceRegistry,
+  });
+  assert.equal(current.frameVersion, 2);
+  assert.equal(current.auth.protocol.version, 2);
+  assert.equal(current.auth.protocol.capabilities.includes('protocol-negotiation.v1'), true);
+  current.socket.close();
+
+  const legacy = await authenticateSocket({
+    url, role: 'client', token: TOKEN, registry: server.deviceRegistry, sendProtocol: false,
+  });
+  assert.deepEqual(legacy.auth.protocol, { version: 1, capabilities: [] });
+  legacy.socket.close();
+});
 
 test('server exposes a no-store runtime UI language configuration', async (t) => {
   const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN, uiLanguage: 'en-US' });

@@ -59,6 +59,10 @@ import { DownloadIndicator, MessageBubble, SidebarIcon } from './ui-components';
 import { createAuthProof } from '../../src/shared/auth';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
 import {
+  legacyProtocolOffer,
+  negotiateProtocol,
+} from '../../src/shared/protocol-negotiation';
+import {
   createBrowserDeviceProof,
 } from './device-identity';
 import type {
@@ -653,13 +657,14 @@ export default function App() {
       try {
         const message = JSON.parse(String(incoming.data)) as BridgeMessage;
         if (message.type === 'auth.challenge') {
+          const protocol = negotiateProtocol(message.protocol || legacyProtocolOffer(message.version));
           const proof = createAuthProof(value, String(message.challenge || ''), 'client');
           const device = createBrowserDeviceProof({
             challenge: String(message.challenge || ''),
             role: 'client',
             authProof: proof,
           });
-          socket.send(JSON.stringify({ type: 'auth.response', role: 'client', proof, device }));
+          socket.send(JSON.stringify({ type: 'auth.response', role: 'client', proof, device, protocol }));
           return;
         }
         messageHandlerRef.current(message);

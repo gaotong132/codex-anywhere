@@ -1,4 +1,5 @@
 import type { Turn } from './history-utils';
+import type { NegotiatedProtocol, ProtocolOffer } from '../../src/shared/protocol-negotiation';
 
 export type Session = {
   id: string;
@@ -35,6 +36,8 @@ export type PendingRequest = {
 };
 export type BridgeMessage = {
   type: string;
+  version?: number;
+  protocol?: ProtocolOffer | NegotiatedProtocol;
   challenge?: string;
   requestId?: string;
   ok?: boolean;
