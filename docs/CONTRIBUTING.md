@@ -17,8 +17,9 @@ npm run build
 
 Source and tests use strict TypeScript. Do not commit generated `build/` or `dist/` output. Add focused
 tests for protocol, authentication, reconnect, file access, history mapping, or other behavior affected
-by the change. Keep the relay and connector protocol backward-compatible when practical; otherwise
-document that both ends must be updated together.
+by the change. The network protocol is intentionally strict: do not add plaintext, older-version, or
+missing-capability fallbacks. A protocol change must bump the exact version, update browser, relay, and
+connector together, add rejection tests for outdated peers, and document the coordinated upgrade.
 
 ## Repository map
 
@@ -39,7 +40,7 @@ document that both ends must be updated together.
    material to logs or the Web UI.
 3. Preserve explicit confirmation for file downloads and privileged Codex actions.
 4. Treat relay/connector changes, filesystem paths, XML/history presentation, and reconnect behavior as
-   security- or compatibility-sensitive; add regression coverage.
+   security-sensitive; add regression coverage.
 5. Update English and Simplified Chinese documentation together when user-visible behavior changes.
 
 Keep pull requests small enough to review and explain the user-facing outcome. Avoid unrelated format

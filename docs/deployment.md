@@ -38,8 +38,8 @@ preview, visualization, and download ciphertext without intentionally persisting
 recommended transport because it also protects Web code delivery, authentication bootstrap and metadata.
 
 This is not a zero-trust relay. The ECS serves the Web application, stores role tokens and public trust
-records, and controls protocol negotiation. A compromised root administrator can change future code or
-trust decisions, observe routing metadata, or force a legacy peer onto the plaintext compatibility path.
+records, and enforces the current protocol. A compromised root administrator can change future code or
+trust decisions, register an attacker-controlled device, or observe routing metadata.
 Use infrastructure you control, minimize administrators and logs, keep the host patched, separate the
 two roles, and revoke a device or rotate an affected token after any suspected disclosure.
 
@@ -51,8 +51,8 @@ two roles, and revoke a device or rotate an affected token after any suspected d
 3. Restrict SSH to trusted source addresses or a VPN and prefer SSH keys over passwords.
 4. In the reference reverse-proxy deployment, do **not** allow inbound TCP 3300 in the cloud security
    group or host firewall. If you deliberately choose direct `ws://`, expose only the selected relay
-   port and restrict its source range where practical. End-to-end encrypted frames remain protected,
-   but Web delivery, enrollment, metadata, and legacy-compatible frames do not have transport security.
+   port and restrict its source range where practical. End-to-end encrypted application frames remain
+   protected, but Web delivery, enrollment, metadata, and availability do not have transport security.
 5. For the included reference path, install maintained Docker Engine, Docker Compose v2, Nginx, and
    the certificate tooling appropriate for your environment. Equivalent components may be used.
 
@@ -80,14 +80,14 @@ docker compose up --build -d
 ```
 
 Use the one-time browser-pairing flow in section 5 for normal enrollment; it avoids copying the client
-token to each browser. Keep the client token only as a recovery and legacy-compatibility credential,
+token to each browser. Keep the client token only as an administrator-controlled recovery credential,
 preferably in a password manager reached through an encrypted administrator session. Pass only the
 connector token to the local installer. Never paste either value into a chat, issue, screenshot, source
 file, shell argument, or CI log. Do not include `.env` in server backups unless that backup is encrypted
 and access-controlled.
 
-The relay requires an Ed25519 signature from every approved device key. One-time enrollment and legacy
-token bootstrap also bind an HMAC proof to a fresh challenge. The relay rejects captured-proof replay,
+The relay requires an Ed25519 signature from every approved device key. One-time enrollment and recovery
+Token bootstrap also bind an HMAC proof to a fresh challenge. The relay rejects captured-proof replay,
 locks repeated failures, and renews authenticated sockets every hour (`BRIDGE_SESSION_MAX_AGE_MS`). The
 Compose volume `bridge-state` persists public device keys, one-way pairing verifiers, pairing metadata,
 and optional Web Push state. The relay generates its own VAPID key in that volume; browser and connector
@@ -141,8 +141,8 @@ solely for this project adds migration risk without changing the relay trust bou
 
 Whichever TLS proxy is selected, it must support WebSocket upgrade, overwrite trusted forwarding
 headers, and be the only path to port 3300. Certificate renewal, proxy updates, and host security
-updates remain operator responsibilities. TLS terminates on the ECS/VPS, while the negotiated
-application-layer channel protects current message and file frames between browser and connector.
+updates remain operator responsibilities. TLS terminates on the ECS/VPS, while protocol v3 requires an
+authenticated end-to-end encrypted channel for every application frame between browser and connector.
 
 To use the included Nginx path, obtain a certificate appropriate for the endpoint, then copy
 [`deploy/nginx-example.conf`](../deploy/nginx-example.conf) into the Nginx site configuration. Replace
@@ -203,7 +203,7 @@ roots should be selectable. Local raster previews and downloads are limited to t
 is intentional. Leave network access disabled unless the Codex task actually needs it.
 
 The encrypted credentials and non-secret settings are stored outside the checkout under
-`%USERPROFILE%\.codex-anywhere`. Re-running the installer migrates existing DPAPI records from the legacy
+`%USERPROFILE%\.codex-anywhere`. Re-running the installer migrates existing DPAPI records from the previous
 LocalAppData location without deleting the old copies, so an interrupted upgrade can still be rolled back.
 You may omit both tokens when re-running the installer to update settings while retaining the credentials.
 `scripts/copy-token.ps1` copies only the separately stored browser token; it never exposes the connector
@@ -263,7 +263,7 @@ sequenceDiagram
   secret; successful enrollment consumes the record.
 - The device private key never leaves the browser. After pairing, reconnects use a fresh challenge and
   the approved Ed25519 device key, so the shared browser Token is not needed for daily login.
-- Browser Token login remains available as a compatibility/recovery path. It creates a pending request;
+- Browser Token login remains available as an administrator recovery path. It creates a pending request;
   run the first command, select the matching request, and do not approve an ambiguous device.
 - The Web UI cannot list or approve registered devices. Approval and revocation remain ECS-only.
 
@@ -278,14 +278,15 @@ approvals remain separate controls.
 3. Confirm the message and reply appear in Codex Desktop and the browser.
 4. For the reference TLS setup, confirm HTTP redirects to HTTPS and `http://ECS-IP:3300` is
    unreachable externally. For an intentional direct-WS deployment, verify the firewall exposes only
-   the chosen relay endpoint and accept that Web delivery, enrollment, metadata, and any legacy fallback
-   lack transport protection.
+   the chosen relay endpoint and accept that Web delivery, enrollment, metadata, and availability lack
+   transport protection. Application frames remain end-to-end encrypted.
 5. Check `docker compose ps`; the relay should become `healthy` after its startup period.
 
 ## Updating
 
-Keep the ECS relay and local connector on the same commit because browser pagination and connector
-actions evolve together:
+Protocol v3 deliberately has no rolling-compatibility or plaintext fallback. Keep the ECS relay, served
+Web assets, and local connector on the same commit; an outdated peer is rejected with a protocol error.
+Plan a short offline window and update both runtime components together:
 
 ```bash
 git pull --ff-only
@@ -293,5 +294,6 @@ docker compose up --build -d
 curl -fsS http://127.0.0.1:3300/health
 ```
 
-After connector code changes, restart the local connector too. Review release changes before pulling,
-and do not grant the ECS access to local project directories.
+Restart the local connector immediately after the relay deployment, then fully refresh any browser tab
+that was open during the update. Review release changes before pulling, and do not grant the ECS access
+to local project directories.
