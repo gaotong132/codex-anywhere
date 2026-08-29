@@ -23,6 +23,7 @@ export function TypewriterText({
   as = 'span',
   showCaret = true,
   completeContent,
+  durationMs = 480,
 }: {
   text: string;
   active: boolean;
@@ -30,6 +31,7 @@ export function TypewriterText({
   as?: 'span' | 'strong';
   showCaret?: boolean;
   completeContent?: ReactNode;
+  durationMs?: number;
 }) {
   const [visibleText, setVisibleText] = useState(active ? '' : text);
   const visibleTextRef = useRef(visibleText);
@@ -53,9 +55,9 @@ export function TypewriterText({
     const remaining = characters.length - index;
     if (remaining <= 0) return undefined;
 
-    // Keep each incoming chunk lively without allowing long progress messages
-    // to trail the real execution state by more than roughly half a second.
-    const charactersPerFrame = Math.max(1, Math.ceil(remaining / 20));
+    const frameMs = 30;
+    const frameCount = Math.max(1, Math.round(durationMs / frameMs));
+    const charactersPerFrame = Math.max(1, Math.ceil(remaining / frameCount));
     let timer: ReturnType<typeof setInterval>;
     const reveal = () => {
       index = Math.min(characters.length, index + charactersPerFrame);
@@ -64,10 +66,10 @@ export function TypewriterText({
       setVisibleText(next);
       if (index >= characters.length) clearInterval(timer);
     };
-    timer = setInterval(reveal, 24);
+    timer = setInterval(reveal, frameMs);
     reveal();
     return () => clearInterval(timer);
-  }, [active, text]);
+  }, [active, durationMs, text]);
 
   const typing = active && visibleText !== text;
   const Tag = as;
@@ -129,12 +131,10 @@ export function MessageBubble({
   const [visualizationOpen, setVisualizationOpen] = useState(false);
   const [visualizationSource, setVisualizationSource] = useState('');
   const [visualizationStatus, setVisualizationStatus] = useState<'idle' | 'loading' | 'failed'>('idle');
-  const [summarySettling, setSummarySettling] = useState(false);
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const summarySettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const previousCompletion = useRef<TimelineItem['completedAt']>(null);
   const visualizationHistoryEntry = useRef(false);
   const copyable = item.kind === 'user' || item.kind === 'assistant';
+  const finalReplyArriving = item.kind === 'assistant' && Boolean(item.transient && item.completedAt);
 
   useEffect(() => {
     setCopyState('idle');
@@ -142,19 +142,6 @@ export function MessageBubble({
       if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
     };
   }, [item.text]);
-
-  useEffect(() => {
-    const previous = previousCompletion.current;
-    previousCompletion.current = item.completedAt;
-    if (item.kind !== 'assistant' || !active || !item.completedAt || item.completedAt === previous) return;
-    setSummarySettling(true);
-    if (summarySettleTimer.current) clearTimeout(summarySettleTimer.current);
-    summarySettleTimer.current = setTimeout(() => setSummarySettling(false), 560);
-  }, [active, item.completedAt, item.kind]);
-
-  useEffect(() => () => {
-    if (summarySettleTimer.current) clearTimeout(summarySettleTimer.current);
-  }, []);
 
   useEffect(() => {
     setImageExpanded(false);
@@ -251,7 +238,7 @@ export function MessageBubble({
     return (
       <details className={`progress-card${active ? ' live' : ''}`} open>
         <summary>{t('进度更新', 'Progress update')}</summary>
-        <pre><TypewriterText className="progress-typewriter" text={item.text} active={active} /></pre>
+        <pre><TypewriterText className="progress-typewriter" text={item.text} active={active} durationMs={1_200} /></pre>
       </details>
     );
   }
@@ -262,7 +249,7 @@ export function MessageBubble({
       : t('复制消息', 'Copy message');
   const completedDateTime = dateTimeValue(item.completedAt);
   return (
-    <div className={`message ${item.kind}${copyable ? ' copyable' : ''}${active ? ' live' : ''}${summarySettling ? ' settling' : ''}`}>
+    <div className={`message ${item.kind}${copyable ? ' copyable' : ''}${active ? ' live' : ''}${finalReplyArriving ? ' final-arriving' : ''}`}>
       {item.contexts?.length ? (
         <div className="message-contexts" aria-label={t('消息来源', 'Message context')}>
           {item.contexts.map((context, index) => {

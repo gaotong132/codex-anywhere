@@ -229,6 +229,11 @@ function LiveActivityStatus({
   kind, purpose, progress, startedAt,
 }: { kind: LiveActivityKind; purpose: string; progress: TurnProgress; startedAt: number | null }) {
   const [clock, setClock] = useState(Date.now());
+  const elapsed = elapsedLabel(startedAt, clock);
+  const hasMetrics = Boolean(progress.plan || progress.files);
+  const visiblePurpose = purpose || (!hasMetrics && elapsed
+    ? t(`本轮已持续 ${elapsed}`, `Active for ${elapsed}`)
+    : '');
   useEffect(() => {
     if (!startedAt) return;
     setClock(Date.now());
@@ -237,20 +242,22 @@ function LiveActivityStatus({
   }, [startedAt]);
   return (
     <div
-      className={`tool-purpose${purpose ? ' has-purpose' : ''}${progress.plan || progress.files ? ' has-metrics' : ''}`}
+      className={`tool-purpose${visiblePurpose ? ' has-purpose' : ''}${hasMetrics ? ' has-metrics' : ''}`}
       role="status"
       aria-live="polite"
-      title={purpose || activityLabel(kind)}
+      title={[activityLabel(kind), visiblePurpose].filter(Boolean).join(' · ')}
     >
       <i aria-hidden="true" />
       <span className="activity-kind">{activityLabel(kind)}</span>
-      {purpose && (
+      {visiblePurpose && (
         <>
           <span className="activity-separator" aria-hidden="true">·</span>
-          <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
+          {purpose
+            ? <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
+            : <strong>{visiblePurpose}</strong>}
         </>
       )}
-      {(progress.plan || progress.files) && (
+      {hasMetrics && (
         <span className="activity-metrics">
           {progress.plan && (
             <TypewriterText
@@ -280,7 +287,7 @@ function LiveActivityStatus({
           )}
         </span>
       )}
-      {startedAt && <time>{elapsedLabel(startedAt, clock)}</time>}
+      {startedAt && (purpose || hasMetrics) && <time>{elapsed}</time>}
     </div>
   );
 }

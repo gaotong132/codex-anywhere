@@ -600,6 +600,28 @@ test('only active timeline items receive live motion classes', () => {
   assert.doesNotMatch(historyMarkup, /class="message assistant copyable live"/);
 });
 
+test('only newly completed transient replies receive the final card animation', () => {
+  const props = {
+    onDownloadFile: () => undefined,
+    onReadVisualization: async () => '',
+  };
+  const finalMarkup = renderToStaticMarkup(createElement(MessageBubble, {
+    ...props,
+    item: {
+      id: 'new-final', kind: 'assistant' as const, text: '最终回复', transient: true, completedAt: Date.now(),
+    },
+  }));
+  const historyMarkup = renderToStaticMarkup(createElement(MessageBubble, {
+    ...props,
+    item: {
+      id: 'history-final', kind: 'assistant' as const, text: '历史回复', completedAt: Date.now(),
+    },
+  }));
+
+  assert.match(finalMarkup, /class="message assistant copyable final-arriving"/);
+  assert.doesNotMatch(historyMarkup, /final-arriving/);
+});
+
 test('only progress after the latest user message is treated as the live progress block', () => {
   assert.equal(latestTurnProgressItemId([
     { id: 'old-user', kind: 'user', text: 'first' },

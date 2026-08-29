@@ -310,22 +310,22 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
   background: rgba(20, 26, 37, .75);
 
   &.online {
-    border-color: #245d3d;
-    background: rgba(25, 93, 57, .1);
-    i { background: #39ca79; box-shadow: 0 0 8px rgba(57, 202, 121, .42); }
+    border-color: rgba(75, 126, 225, .55);
+    background: rgba(44, 91, 181, .12);
+    i { background: #6597f5; box-shadow: 0 0 9px rgba(101, 151, 245, .5); }
   }
 
   &.running, &.waiting {
-    border-color: rgba(57, 202, 121, .52);
-    background: rgba(22, 82, 51, .15);
+    border-color: rgba(86, 139, 241, .68);
+    background: rgba(43, 82, 161, .18);
 
     &::before {
       content: "";
       position: absolute;
       inset: 3px;
       border: 1.5px solid transparent;
-      border-top-color: #5cdf91;
-      border-right-color: rgba(92, 223, 145, .24);
+      border-top-color: #77a5ff;
+      border-right-color: rgba(119, 165, 255, .25);
       border-radius: 50%;
       animation: presence-orbit 1.15s linear infinite;
     }
@@ -335,7 +335,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
     content: "";
     position: absolute;
     inset: 7px;
-    border: 1px solid rgba(70, 215, 131, .5);
+    border: 1px solid rgba(105, 156, 255, .52);
     border-radius: 50%;
     animation: presence-breathe 1.5s ease-out infinite;
   }
@@ -538,7 +538,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
   &.live { animation: message-arrive .38s cubic-bezier(.2, .75, .3, 1) both; }
   &.user.live { animation-name: user-message-arrive; box-shadow: 0 12px 28px rgba(32, 79, 183, .18); }
   &.assistant.live { border-color: rgba(73, 105, 164, .52); box-shadow: 0 12px 34px rgba(4, 9, 19, .2); }
-  &.assistant.settling { animation: summary-settle .52s cubic-bezier(.2, .8, .3, 1) both; }
+  &.assistant.final-arriving { animation: final-reply-arrive .7s cubic-bezier(.2, .78, .25, 1) both; }
   &.assistant.live::after {
     position: absolute; inset: 0; pointer-events: none; content: '';
     background: linear-gradient(105deg, transparent 15%, rgba(102, 147, 232, .055) 42%, rgba(120, 101, 218, .05) 55%, transparent 82%);
@@ -549,7 +549,11 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 @keyframes user-message-arrive { from { opacity: 0; transform: translate3d(10px, 8px, 0) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes assistant-sheen { 0%, 46% { transform: translateX(-110%); } 78%, 100% { transform: translateX(110%); } }
 @keyframes summary-arrive { from { opacity: 0; transform: translateY(8px) scale(.992); } to { opacity: 1; transform: none; } }
-@keyframes summary-settle { 0% { border-color: rgba(102, 150, 236, .72); box-shadow: 0 0 0 1px rgba(94, 139, 224, .16), 0 14px 38px rgba(15, 40, 88, .2); } 100% { border-color: rgba(73, 105, 164, .52); box-shadow: 0 12px 34px rgba(4, 9, 19, .2); } }
+@keyframes final-reply-arrive {
+  0% { opacity: .55; border-color: rgba(109, 157, 245, .78); box-shadow: 0 0 0 1px rgba(94, 139, 224, .18), 0 18px 44px rgba(17, 48, 105, .28); transform: translateY(9px) scale(.988); }
+  58% { opacity: 1; border-color: rgba(91, 139, 224, .64); box-shadow: 0 0 0 1px rgba(94, 139, 224, .09), 0 15px 38px rgba(15, 40, 88, .22); transform: translateY(-1px) scale(1); }
+  100% { opacity: 1; border-color: #252e3d; box-shadow: none; transform: none; }
+}
 .message-image { width: min(100%, 420px); margin: 10px 0 0; overflow: hidden; border: 1px solid rgba(255, 255, 255, .12); border-radius: 12px; background: rgba(7, 11, 18, .28); }
 .message-image-preview { display: block; width: 100%; border: 0; padding: 0; background: transparent; cursor: zoom-in; }
 .message-image img { display: block; width: 100%; max-height: 440px; object-fit: contain; background: #080b11; }
@@ -631,7 +635,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 @media (prefers-reduced-motion: reduce) {
   .startup-shell::before, .startup-shell::after, .startup-orbit, .startup-orbit i, .startup-mark i, .startup-pulse i,
   .presence.running::before, .presence.running::after, .presence.waiting::before, .session-running-dot,
-  .message.live, .message.assistant.settling, .message.assistant.live::after, .progress-card.live, .progress-card.live::after,
+  .message.live, .message.assistant.final-arriving, .message.assistant.live::after, .progress-card.live, .progress-card.live::after,
   .away-summary, .tool-purpose, .tool-purpose::before,
   .tool-purpose i::after, .tool-purpose .status-change, .typewriter-caret { animation: none; }
 }
