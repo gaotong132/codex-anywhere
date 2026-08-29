@@ -41,6 +41,7 @@ import { internals as rolloutInternals, readRolloutTail } from '../src/connector
 import { needsDesktopPermissionRecovery } from '../src/connector/session-permissions.js';
 import {
   canStopOwnedTurn,
+  canSteerOwnedTurn,
   friendlyError,
   isNearScrollBottom,
   isConnectionInterruption,
@@ -235,6 +236,13 @@ test('stop control is shown only for the selected Web-owned turn', () => {
   assert.equal(canStopOwnedTurn(true, null, 'thread-1'), false);
   assert.equal(canStopOwnedTurn(true, 'thread-1', 'thread-2'), false);
   assert.equal(canStopOwnedTurn(true, 'thread-1', 'thread-1'), true);
+});
+
+test('steering is available only while the selected Web-owned turn is actively running', () => {
+  assert.equal(canSteerOwnedTurn(true, 'running', 'thread-1', 'thread-1'), true);
+  assert.equal(canSteerOwnedTurn(true, 'waiting', 'thread-1', 'thread-1'), false);
+  assert.equal(canSteerOwnedTurn(true, 'running', 'thread-1', 'thread-2'), false);
+  assert.equal(canSteerOwnedTurn(false, 'running', 'thread-1', 'thread-1'), false);
 });
 
 test('automatic message following tolerates a small mobile bottom offset', () => {

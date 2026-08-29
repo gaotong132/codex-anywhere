@@ -42,6 +42,7 @@ import {
   followLabel,
   formatDate,
   friendlyError,
+  canSteerOwnedTurn,
   canStopOwnedTurn,
   isConnectionInterruption,
   isNearScrollBottom,
@@ -1320,7 +1321,17 @@ export default function App() {
   const sendTurn = useCallback(async () => {
     const text = prompt.trim();
     const image = pendingImage;
-    if ((!text && !image) || running || uploading || sendingRef.current) return;
+    const targetThreadId = threadIdRef.current;
+    const steering = canSteerOwnedTurn(
+      running, executionState, ownedTurnThreadId, targetThreadId,
+    );
+    if (
+      (!text && !image)
+      || uploading
+      || sendingRef.current
+      || (running && !steering)
+      || (steering && Boolean(image))
+    ) return;
     const isExistingSession = Boolean(threadIdRef.current);
     const projectCwd = newSessionCwd.trim();
     if (!isExistingSession && !projectCwd) {
@@ -1368,15 +1379,17 @@ export default function App() {
       composerCleared = true;
       optimisticItemId = addTimeline('user', visibleText, true, true, timelineAttachment);
       streamItemRef.current = null;
-      setRunning(true);
-      setOwnedTurnThreadId(threadIdRef.current || NEW_TURN_KEY);
-      setExecutionState('running');
-      setLiveActivity('starting');
-      setActivityStartedAt(Date.now());
-      const data = await request<TurnStartResult>('turn.start', {
+      if (!steering) {
+        setRunning(true);
+        setOwnedTurnThreadId(threadIdRef.current || NEW_TURN_KEY);
+        setExecutionState('running');
+        setLiveActivity('starting');
+        setActivityStartedAt(Date.now());
+      }
+      const data = await request<TurnStartResult>(steering ? 'turn.steer' : 'turn.start', {
         text: turnText,
         threadId: threadIdRef.current,
-        cwd: isExistingSession ? '' : projectCwd,
+        ...(steering ? {} : { cwd: isExistingSession ? '' : projectCwd }),
       });
       const sentAt = Date.now();
       if (optimisticItemId) {
@@ -1415,11 +1428,13 @@ export default function App() {
       }
     } catch (error) {
       setUploading(false);
-      setRunning(false);
-      setOwnedTurnThreadId(null);
-      setExecutionState('idle');
-      setLiveActivity('working');
-      setActivityStartedAt(null);
+      if (!steering) {
+        setRunning(false);
+        setOwnedTurnThreadId(null);
+        setExecutionState('idle');
+        setLiveActivity('working');
+        setActivityStartedAt(null);
+      }
       if (optimisticItemId) {
         setTimeline((current) => current.filter((item) => item.id !== optimisticItemId));
       }
@@ -1438,7 +1453,10 @@ export default function App() {
     } finally {
       sendingRef.current = false;
     }
-  }, [addTimeline, newSessionCwd, pendingImage, prompt, rememberAttachment, reportTimelineError, request, running, uploading]);
+  }, [
+    addTimeline, executionState, newSessionCwd, ownedTurnThreadId, pendingImage, prompt,
+    rememberAttachment, reportTimelineError, request, running, uploading,
+  ]);
 
   useEffect(() => {
     if (!creatingNewSession || !newSessionAutoSendRef.current || running || uploading) return;
@@ -1621,6 +1639,9 @@ export default function App() {
   const selectedExistingProject = existingProjects.find((project) => (
     project.toLocaleLowerCase() === newSessionCwd.trim().toLocaleLowerCase()
   )) || '';
+  const steeringAvailable = canSteerOwnedTurn(
+    running, executionState, ownedTurnThreadId, threadId,
+  );
 
   if (!authenticated) {
     return (
@@ -1971,21 +1992,36 @@ export default function App() {
               }}
               placeholder={uploading
                 ? t('正在上传图片…', 'Uploading image…')
-                : online ? t('发送给本机 Codex…', 'Send to local Codex…') : t('本机连接器离线', 'Local connector is offline')}
+                : steeringAvailable
+                  ? t('向当前任务追加指令…', 'Steer the current run…')
+                  : online ? t('发送给本机 Codex…', 'Send to local Codex…') : t('本机连接器离线', 'Local connector is offline')}
               disabled={!online || uploading}
             />
-            {canStopOwnedTurn(running, ownedTurnThreadId, threadId || (creatingNewSession ? NEW_TURN_KEY : null))
-              ? <button className="stop-button" onClick={() => void stopTurn()} aria-label={t('停止', 'Stop')}>■</button>
-              : <button
+            <div className="composer-actions">
+              {canStopOwnedTurn(running, ownedTurnThreadId, threadId || (creatingNewSession ? NEW_TURN_KEY : null)) && (
+                <button className="stop-button" onClick={() => void stopTurn()} aria-label={t('停止', 'Stop')}>■</button>
+              )}
+              <button
                   className={`send-button${uploading ? ' uploading' : ''}`}
-                  disabled={!online || running || uploading || (!prompt.trim() && !pendingImage) || (!threadId && !newSessionCwd.trim())}
+                  disabled={
+                    !online
+                    || uploading
+                    || (running && !steeringAvailable)
+                    || (!prompt.trim() && !pendingImage)
+                    || (!threadId && !newSessionCwd.trim())
+                  }
                   onClick={() => void sendTurn()}
-                  aria-label={uploading ? t('正在发送图片', 'Sending image') : t('发送', 'Send')}
+                  aria-label={uploading
+                    ? t('正在发送图片', 'Sending image')
+                    : steeringAvailable ? t('追加指令', 'Steer') : t('发送', 'Send')}
                 >
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Zm3 7h13" /></svg>
-                </button>}
+              </button>
+            </div>
           </div>
-          <small>{t('Ctrl / ⌘ + Enter 发送 · 历史记录按页加载', 'Ctrl / ⌘ + Enter to send · History loads by page')}</small>
+          <small>{steeringAvailable
+            ? t('运行中可继续追加文字指令', 'You can steer this run with another text instruction')
+            : t('Ctrl / ⌘ + Enter 发送 · 历史记录按页加载', 'Ctrl / ⌘ + Enter to send · History loads by page')}</small>
         </footer>}
       </section>
     </main>

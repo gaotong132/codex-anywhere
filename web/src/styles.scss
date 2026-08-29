@@ -543,7 +543,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .image-preview small { margin-top: 3px; color: #738198; font-size: 10px; }
 .image-preview button { width: 30px; height: 30px; border: 0; border-radius: 9px; color: #aeb9c9; background: #1d2533; font-size: 20px; }
 .composer {
-  width: 100%; min-width: 0; max-width: $content-width; display: grid; grid-template-columns: 36px minmax(0, 1fr) 42px; gap: 7px; align-items: end; margin: 0 auto; padding: 8px; overflow: hidden; border: 1px solid #303a4d; border-radius: 17px; background: #111722;
+    width: 100%; min-width: 0; max-width: $content-width; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 7px; align-items: end; margin: 0 auto; padding: 8px; overflow: hidden; border: 1px solid #303a4d; border-radius: 17px; background: #111722;
 
   &:focus-within { border-color: #4777db; box-shadow: 0 0 0 3px rgba(55, 111, 232, .12); }
   textarea {
@@ -553,15 +553,16 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 }
 .image-input { display: none; }
 .attach-button { width: 36px; height: 40px; padding: 0; border: 0; border-radius: 10px; color: #aeb9c9; background: transparent; font-size: 26px; font-weight: 300; }
-.attach-button:hover { color: #dce6f8; background: #1c2534; }
-.attach-button:disabled, .image-preview button:disabled { opacity: .45; }
-.send-button, .stop-button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 12px; padding: 0; color: white; font-size: 22px; font-weight: 800; line-height: 1; }
+  .attach-button:hover { color: #dce6f8; background: #1c2534; }
+  .attach-button:disabled, .image-preview button:disabled { opacity: .45; }
+  .composer-actions { display: flex; align-items: center; gap: 5px; }
+  .send-button, .stop-button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 12px; padding: 0; color: white; font-size: 22px; font-weight: 800; line-height: 1; }
 .send-button { position: relative; background: #356dde; }
 .send-button svg { position: relative; z-index: 1; width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
 .send-button.uploading:disabled { opacity: 1; }
 .send-button.uploading::after { content: ""; position: absolute; inset: 4px; border: 2px solid rgba(255, 255, 255, .22); border-top-color: #fff; border-radius: 50%; animation: send-image-spin .8s linear infinite; }
 .send-button.uploading svg { width: 17px; height: 17px; animation: send-image-pulse 1s ease-in-out infinite; }
-.stop-button { background: #9a343e; font-size: 14px; }
+  .stop-button { width: 34px; background: #9a343e; font-size: 13px; }
 @keyframes send-image-spin { to { transform: rotate(360deg); } }
 @keyframes send-image-pulse { 50% { transform: translate(1px, -1px) scale(.9); opacity: .68; } }
 .mobile-only { display: none; }

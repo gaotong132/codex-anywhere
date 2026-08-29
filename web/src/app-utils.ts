@@ -115,6 +115,15 @@ export function canStopOwnedTurn(running: boolean, ownedThreadId: string | null,
   return running && Boolean(ownedThreadId) && ownedThreadId === selectedThreadId;
 }
 
+export function canSteerOwnedTurn(
+  running: boolean,
+  state: ExecutionState,
+  ownedThreadId: string | null,
+  selectedThreadId: string | null,
+) {
+  return state === 'running' && canStopOwnedTurn(running, ownedThreadId, selectedThreadId);
+}
+
 export function isNearScrollBottom(
   metrics: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
   threshold = 180,
