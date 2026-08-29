@@ -38,6 +38,7 @@ export type BridgeMessage = {
   type: string;
   version?: number;
   protocol?: ProtocolOffer | NegotiatedProtocol;
+  authMode?: 'token' | 'device' | 'pairing';
   challenge?: string;
   requestId?: string;
   ok?: boolean;

@@ -1,6 +1,8 @@
 import {
   FormEvent,
   KeyboardEvent,
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -63,8 +65,20 @@ import {
   negotiateProtocol,
 } from '../../src/shared/protocol-negotiation';
 import {
+  clearBrowserDeviceApproval,
   createBrowserDeviceProof,
+  hasApprovedBrowserDevice,
+  loadOrCreateBrowserDeviceIdentity,
+  markBrowserDeviceApproved,
 } from './device-identity';
+import {
+  DEVICE_KEY_AUTH_CONTEXT,
+  browserPairingVerifier,
+  createBrowserPairingProof,
+  encodeBrowserPairingCredential,
+  parseBrowserPairingCredential,
+  type BrowserPairingCredential,
+} from '../../src/shared/pairing-auth';
 import type {
   Approval,
   AwaitingDesktopTurn,
@@ -94,7 +108,30 @@ const CLIENT_HEARTBEAT_MS = 20_000;
 const CLIENT_STALE_AFTER_MS = 55_000;
 const SESSION_STATUS_REFRESH_MS = 6_000;
 const SESSION_ATTENTION_KEY = 'bridge.sessionAttention.v1';
+const PENDING_PAIRING_KEY = 'bridge.pendingPairing.v1';
 const NEW_TURN_KEY = '__new_turn__';
+const PairingDialog = lazy(() => import('./pairing-dialog').then((module) => ({
+  default: module.PairingDialog,
+})));
+
+function loadInitialBrowserPairing() {
+  let serialized = '';
+  if (location.hash.startsWith('#pair=')) {
+    serialized = location.hash;
+    history.replaceState(history.state, '', `${location.pathname}${location.search}`);
+  } else {
+    try { serialized = sessionStorage.getItem(PENDING_PAIRING_KEY) || ''; } catch { /* blocked store */ }
+  }
+  if (!serialized) return null;
+  try {
+    const credential = parseBrowserPairingCredential(serialized);
+    try { sessionStorage.setItem(PENDING_PAIRING_KEY, encodeBrowserPairingCredential(credential)); } catch { /* memory only */ }
+    return credential;
+  } catch {
+    try { sessionStorage.removeItem(PENDING_PAIRING_KEY); } catch { /* blocked store */ }
+    return null;
+  }
+}
 
 function loadSessionAttention(): SessionAttentionState {
   try {
@@ -182,6 +219,8 @@ function LiveActivityStatus({
 
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem('bridge.token') || '');
+  const [pairingCredential, setPairingCredential] = useState<BrowserPairingCredential | null>(loadInitialBrowserPairing);
+  const [pairingDialogOpen, setPairingDialogOpen] = useState(false);
   const [newSessionCwd, setNewSessionCwd] = useState(() => {
     const stored = localStorage.getItem('bridge.newSessionCwd') || '';
     return isTemporaryProjectPath(stored) ? '' : stored;
@@ -226,6 +265,9 @@ export default function App() {
   const socketRef = useRef<WebSocket | null>(null);
   const pendingRef = useRef(new Map<string, PendingRequest>());
   const tokenRef = useRef(token);
+  const pairingCredentialRef = useRef(pairingCredential);
+  const approvedDeviceRef = useRef(hasApprovedBrowserDevice());
+  const authAttemptModeRef = useRef<'token' | 'device' | 'pairing'>('token');
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const reconnectWantedRef = useRef(false);
@@ -258,6 +300,7 @@ export default function App() {
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
   useEffect(() => { tokenRef.current = token; }, [token]);
+  useEffect(() => { pairingCredentialRef.current = pairingCredential; }, [pairingCredential]);
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { ownedTurnThreadIdRef.current = ownedTurnThreadId; }, [ownedTurnThreadId]);
 
@@ -503,6 +546,16 @@ export default function App() {
       return;
     }
     if (message.type === 'auth.ok') {
+      approvedDeviceRef.current = true;
+      markBrowserDeviceApproved();
+      pairingCredentialRef.current = null;
+      setPairingCredential(null);
+      try {
+        sessionStorage.removeItem(PENDING_PAIRING_KEY);
+        sessionStorage.removeItem('bridge.token');
+      } catch { /* blocked store */ }
+      tokenRef.current = '';
+      setToken('');
       socketAuthenticatedRef.current = true;
       reconnectAttemptRef.current = 0;
       setAuthenticated(true);
@@ -629,8 +682,20 @@ export default function App() {
     reconnectTimerRef.current = null;
   }, []);
 
+  const clearPendingPairing = useCallback(() => {
+    pairingCredentialRef.current = null;
+    setPairingCredential(null);
+    try { sessionStorage.removeItem(PENDING_PAIRING_KEY); } catch { /* blocked store */ }
+  }, []);
+
+  const hasAuthenticationMaterial = useCallback(() => (
+    tokenRef.current.trim().length >= 32
+    || approvedDeviceRef.current
+    || Boolean(pairingCredentialRef.current)
+  ), []);
+
   const openSocket = useCallback((value: string, replaceExisting = false) => {
-    if (!reconnectWantedRef.current || value.length < 32) return;
+    if (!reconnectWantedRef.current || !hasAuthenticationMaterial()) return;
     if (navigator.onLine === false) {
       setConnecting(false);
       setOnline(false);
@@ -658,13 +723,34 @@ export default function App() {
         const message = JSON.parse(String(incoming.data)) as BridgeMessage;
         if (message.type === 'auth.challenge') {
           const protocol = negotiateProtocol(message.protocol || legacyProtocolOffer(message.version));
-          const proof = createAuthProof(value, String(message.challenge || ''), 'client');
-          const device = createBrowserDeviceProof({
-            challenge: String(message.challenge || ''),
-            role: 'client',
-            authProof: proof,
-          });
-          socket.send(JSON.stringify({ type: 'auth.response', role: 'client', proof, device, protocol }));
+          const challenge = String(message.challenge || '');
+          const pairing = pairingCredentialRef.current;
+          if (pairing) {
+            authAttemptModeRef.current = 'pairing';
+            const identity = loadOrCreateBrowserDeviceIdentity();
+            const proof = createBrowserPairingProof({
+              verifier: browserPairingVerifier(pairing.secret),
+              challenge,
+              pairingId: pairing.id,
+              deviceId: identity.id,
+              publicKey: identity.publicKey,
+            });
+            const device = createBrowserDeviceProof({ challenge, role: 'client', authProof: proof });
+            socket.send(JSON.stringify({
+              type: 'auth.enroll', role: 'client', pairingId: pairing.id, proof, device, protocol,
+            }));
+          } else if (approvedDeviceRef.current) {
+            authAttemptModeRef.current = 'device';
+            const device = createBrowserDeviceProof({
+              challenge, role: 'client', authProof: DEVICE_KEY_AUTH_CONTEXT,
+            });
+            socket.send(JSON.stringify({ type: 'auth.device', role: 'client', device, protocol }));
+          } else {
+            authAttemptModeRef.current = 'token';
+            const proof = createAuthProof(value, challenge, 'client');
+            const device = createBrowserDeviceProof({ challenge, role: 'client', authProof: proof });
+            socket.send(JSON.stringify({ type: 'auth.response', role: 'client', proof, device, protocol }));
+          }
           return;
         }
         messageHandlerRef.current(message);
@@ -684,7 +770,12 @@ export default function App() {
       rejectPendingRequests(t('连接已断开', 'Connection closed'));
       if (event.code === 4003) {
         reconnectWantedRef.current = false;
-        sessionStorage.removeItem('bridge.token');
+        if (authAttemptModeRef.current === 'pairing') {
+          clearPendingPairing();
+          setStatusText(t('配对链接无效或已过期', 'Pairing link is invalid or expired'));
+          return;
+        }
+        try { sessionStorage.removeItem('bridge.token'); } catch { /* blocked store */ }
         tokenRef.current = '';
         setToken('');
         setAuthenticated(false);
@@ -693,6 +784,13 @@ export default function App() {
       }
       if (event.code === 4403) {
         setAuthenticated(false);
+        if (authAttemptModeRef.current === 'device') {
+          approvedDeviceRef.current = false;
+          clearBrowserDeviceApproval();
+          reconnectWantedRef.current = false;
+          setStatusText(t('这台设备的授权已失效，请重新配对或输入 Token', 'This device is no longer approved. Pair it again or enter a token.'));
+          return;
+        }
         setStatusText(t('当前设备等待管理员批准…', 'Waiting for administrator approval…'));
         scheduleReconnectRef.current();
         return;
@@ -723,10 +821,10 @@ export default function App() {
     socket.addEventListener('error', () => {
       if (socketRef.current === socket) setStatusText(t('连接失败', 'Connection failed'));
     });
-  }, [clearReconnectTimer, rejectPendingRequests]);
+  }, [clearPendingPairing, clearReconnectTimer, hasAuthenticationMaterial, rejectPendingRequests]);
 
   const scheduleReconnect = useCallback((immediate = false) => {
-    if (!reconnectWantedRef.current || tokenRef.current.trim().length < 32) return;
+    if (!reconnectWantedRef.current || !hasAuthenticationMaterial()) return;
     clearReconnectTimer();
     if (navigator.onLine === false) {
       setConnecting(false);
@@ -747,7 +845,7 @@ export default function App() {
       reconnectTimerRef.current = null;
       openSocket(tokenRef.current.trim(), true);
     }, delay);
-  }, [clearReconnectTimer, openSocket]);
+  }, [clearReconnectTimer, hasAuthenticationMaterial, openSocket]);
 
   useEffect(() => { scheduleReconnectRef.current = scheduleReconnect; }, [scheduleReconnect]);
 
@@ -758,14 +856,31 @@ export default function App() {
       setStatusText(t('Token 长度不足', 'Token is too short'));
       return;
     }
-    sessionStorage.setItem('bridge.token', value);
+    clearPendingPairing();
+    authAttemptModeRef.current = 'token';
+    try { sessionStorage.setItem('bridge.token', value); } catch { /* memory only */ }
     reconnectWantedRef.current = true;
     reconnectAttemptRef.current = 0;
     openSocket(value, true);
+  }, [clearPendingPairing, openSocket]);
+
+  const pairBrowser = useCallback((credential: BrowserPairingCredential) => {
+    const serialized = encodeBrowserPairingCredential(credential);
+    pairingCredentialRef.current = credential;
+    setPairingCredential(credential);
+    approvedDeviceRef.current = false;
+    clearBrowserDeviceApproval();
+    try { sessionStorage.setItem(PENDING_PAIRING_KEY, serialized); } catch { /* memory only */ }
+    authAttemptModeRef.current = 'pairing';
+    reconnectWantedRef.current = true;
+    reconnectAttemptRef.current = 0;
+    setPairingDialogOpen(false);
+    setStatusText(t('正在安全配对…', 'Pairing securely…'));
+    openSocket('', true);
   }, [openSocket]);
 
   useEffect(() => {
-    reconnectWantedRef.current = tokenRef.current.trim().length >= 32;
+    reconnectWantedRef.current = hasAuthenticationMaterial();
     if (reconnectWantedRef.current) scheduleReconnect(true);
 
     const reconnectNow = () => {
@@ -809,7 +924,7 @@ export default function App() {
       socket?.close(1000, 'page closed');
       rejectPendingRequests(t('页面已关闭', 'Page closed'));
     };
-  }, [clearReconnectTimer, rejectPendingRequests, scheduleReconnect]);
+  }, [clearReconnectTimer, hasAuthenticationMaterial, rejectPendingRequests, scheduleReconnect]);
 
   useEffect(() => {
     const heartbeat = setInterval(() => {
@@ -1413,7 +1528,7 @@ export default function App() {
           <div className="brand-mark">C</div>
           <p className="eyebrow">PRIVATE BRIDGE</p>
           <h1>{t('连接本机 Codex', 'Connect to local Codex')}</h1>
-          <p className="login-copy">{t('输入浏览器访问 Token 以继续。', 'Enter the browser access token to continue.')}</p>
+          <p className="login-copy">{t('输入浏览器 Token，或使用单次配对链接。', 'Enter the browser token or use a one-time pairing link.')}</p>
           <form onSubmit={connect}>
             <label htmlFor="token">Access Token</label>
             <input
@@ -1426,8 +1541,21 @@ export default function App() {
             />
             <button className="primary wide" disabled={connecting}>{connecting ? t('连接中…', 'Connecting…') : t('连接', 'Connect')}</button>
           </form>
+          <div className="login-divider"><span>{t('或者', 'or')}</span></div>
+          <button type="button" className="pair-device-button" onClick={() => setPairingDialogOpen(true)}>
+            {t('配对这台设备', 'Pair this device')}
+          </button>
           <div className="login-status">{statusText}</div>
         </section>
+        {pairingDialogOpen && (
+          <Suspense fallback={null}>
+            <PairingDialog
+              open
+              onClose={() => setPairingDialogOpen(false)}
+              onPair={pairBrowser}
+            />
+          </Suspense>
+        )}
       </main>
     );
   }

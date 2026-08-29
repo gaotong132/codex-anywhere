@@ -608,7 +608,7 @@ function setSecurityHeaders(response: ServerResponse, request: IncomingMessage, 
   response.setHeader('cross-origin-resource-policy', 'same-origin');
   response.setHeader('referrer-policy', 'no-referrer');
   response.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
-  response.setHeader('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+  response.setHeader('permissions-policy', 'camera=(self), microphone=(), geolocation=()');
   const webSocketSource = currentWebSocketSource(request, trustProxy);
   response.setHeader('content-security-policy', `default-src 'self'; connect-src 'self'${webSocketSource ? ` ${webSocketSource}` : ''}; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; frame-src 'self'; object-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
 }

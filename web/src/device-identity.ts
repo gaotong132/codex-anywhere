@@ -6,6 +6,7 @@ import {
 import type { AuthRole } from '../../src/shared/auth';
 
 const STORAGE_KEY = 'codex-anywhere.device-identity.v1';
+const APPROVED_KEY = 'codex-anywhere.device-approved.v1';
 let memoryIdentity: DeviceIdentity | null = null;
 
 function validStoredIdentity(value: unknown): value is DeviceIdentity {
@@ -49,4 +50,16 @@ export function createBrowserDeviceProof(params: {
 }) {
   const identity = loadOrCreateBrowserDeviceIdentity();
   return createDeviceAuthProof(identity, params, browserDeviceLabel());
+}
+
+export function hasApprovedBrowserDevice() {
+  try { return localStorage.getItem(APPROVED_KEY) === '1'; } catch { return false; }
+}
+
+export function markBrowserDeviceApproved() {
+  try { localStorage.setItem(APPROVED_KEY, '1'); } catch { /* private mode */ }
+}
+
+export function clearBrowserDeviceApproval() {
+  try { localStorage.removeItem(APPROVED_KEY); } catch { /* private mode */ }
 }

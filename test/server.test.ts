@@ -296,6 +296,7 @@ test('content security policy limits WebSocket connections to the current host',
   assert.equal(connectSources.includes('ws:'), false);
   assert.equal(connectSources.includes('wss:'), false);
   assert.match(policy, /frame-src 'self';/);
+  assert.equal(response.headers.get('permissions-policy'), 'camera=(self), microphone=(), geolocation=()');
   await response.arrayBuffer();
 });
 
