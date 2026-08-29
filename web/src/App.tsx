@@ -465,7 +465,10 @@ export default function App() {
       const frame = requestAnimationFrame(scrollToLatest);
       return () => cancelAnimationFrame(frame);
     }
-  }, [timeline, executionState, attachmentUrls, fileDownload, approval, awaySummary]);
+  }, [
+    timeline, executionState, attachmentUrls, fileDownload, approval, awaySummary,
+    initialBootstrapPending,
+  ]);
 
   useEffect(() => {
     const element = messageListRef.current;
@@ -487,7 +490,7 @@ export default function App() {
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [threadId]);
+  }, [initialBootstrapPending, threadId]);
 
   const updateAutoFollowLatest = useCallback(() => {
     const element = messageListRef.current;
@@ -1393,7 +1396,9 @@ export default function App() {
     if (element && shouldLoadOlderHistory(
       element, nextCursor, initialHistoryLoaded, historyLoading,
     )) loadOlder();
-  }, [historyLoading, initialHistoryLoaded, loadOlder, nextCursor, timeline]);
+  }, [
+    historyLoading, initialBootstrapPending, initialHistoryLoaded, loadOlder, nextCursor, timeline,
+  ]);
 
   const chooseImage = useCallback(async (file?: File) => {
     if (!file) return;
