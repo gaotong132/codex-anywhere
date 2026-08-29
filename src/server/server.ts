@@ -12,6 +12,11 @@ import { WebSocket, WebSocketServer } from 'ws';
 import { createAuthProof, normalizeAuthDeviceId } from '../shared/auth.js';
 import { verifyDeviceAuthProof, type DeviceAuthProof } from '../shared/device-auth.js';
 import {
+  BROWSER_PAIRING_ID_PATTERN,
+  DEVICE_KEY_AUTH_CONTEXT,
+  createBrowserPairingProof,
+} from '../shared/pairing-auth.js';
+import {
   createProtocolOffer,
   legacyProtocolOffer,
   negotiateProtocol,
@@ -322,20 +327,9 @@ function authenticateSocket({
     socket.close(4406, 'client upgrade required');
     return false;
   }
+  const authType = String(message.type || '');
   const role = message.role === 'connector' ? 'connector' : message.role === 'client' ? 'client' : '';
   const deviceId = normalizeAuthDeviceId(message.deviceId);
-  const roleToken = role === 'connector' ? connectorToken : clientToken;
-  let expectedProof = '';
-  try {
-    if (role) expectedProof = createAuthProof(roleToken, authChallenge, role, deviceId);
-  } catch {
-    expectedProof = '';
-  }
-  if (message.type !== 'auth.response' || !role || !secretMatches(message.proof, expectedProof)) {
-    const locked = authLimiter.recordFailure(clientAddress);
-    socket.close(locked ? 4429 : 4003, locked ? 'authentication temporarily locked' : 'authentication failed');
-    return false;
-  }
   let protocol: NegotiatedProtocol;
   try {
     protocol = negotiateProtocol(message.protocol || legacyProtocolOffer(message.version));
@@ -346,6 +340,60 @@ function authenticateSocket({
   const device = message.device && typeof message.device === 'object'
     ? message.device as DeviceAuthProof
     : null;
+  if (!role) {
+    socket.close(4406, 'device authentication required');
+    return false;
+  }
+  let deviceAuthContext = '';
+  let browserPairingVerifier: string | null = null;
+  let authMode: 'token' | 'device' | 'pairing';
+  if (authType === 'auth.response') {
+    const roleToken = role === 'connector' ? connectorToken : clientToken;
+    let expectedProof = '';
+    try {
+      expectedProof = createAuthProof(roleToken, authChallenge, role, deviceId);
+    } catch {
+      expectedProof = '';
+    }
+    if (!secretMatches(message.proof, expectedProof)) {
+      return rejectAuthentication(socket, authLimiter, clientAddress);
+    }
+    deviceAuthContext = String(message.proof || '');
+    authMode = 'token';
+  } else if (!device) {
+    socket.close(4406, 'device authentication required');
+    return false;
+  } else if (authType === 'auth.device' && role === 'client') {
+    deviceAuthContext = DEVICE_KEY_AUTH_CONTEXT;
+    authMode = 'device';
+  } else if (authType === 'auth.enroll' && role === 'client') {
+    const pairingId = String(message.pairingId || '');
+    if (!BROWSER_PAIRING_ID_PATTERN.test(pairingId)) {
+      return rejectAuthentication(socket, authLimiter, clientAddress);
+    }
+    browserPairingVerifier = deviceRegistry.getBrowserPairingVerifier(pairingId);
+    if (!browserPairingVerifier) return rejectAuthentication(socket, authLimiter, clientAddress);
+    let expectedProof = '';
+    try {
+      expectedProof = createBrowserPairingProof({
+        verifier: browserPairingVerifier,
+        challenge: authChallenge,
+        pairingId,
+        deviceId: device.id,
+        publicKey: device.publicKey,
+      });
+    } catch {
+      expectedProof = '';
+    }
+    if (!secretMatches(message.proof, expectedProof)) {
+      return rejectAuthentication(socket, authLimiter, clientAddress);
+    }
+    deviceAuthContext = String(message.proof || '');
+    authMode = 'pairing';
+  } else {
+    socket.close(4406, 'authentication method unsupported');
+    return false;
+  }
   if (!device) {
     socket.close(4406, 'device authentication required');
     return false;
@@ -356,24 +404,32 @@ function authenticateSocket({
       challenge: authChallenge,
       role,
       routeDeviceId: deviceId,
-      authProof: String(message.proof || ''),
+      authProof: deviceAuthContext,
     });
   } catch {
     deviceProofValid = false;
   }
   if (!deviceProofValid) {
-    const locked = authLimiter.recordFailure(clientAddress);
-    socket.close(locked ? 4429 : 4407, locked ? 'authentication temporarily locked' : 'device authentication failed');
-    return false;
+    return rejectAuthentication(socket, authLimiter, clientAddress, 4407, 'device authentication failed');
   }
   authLimiter.recordSuccess(clientAddress);
-  if (!deviceRegistry.isApproved(role, device)) {
-    deviceRegistry.requestPairing({
-      role,
-      routeDeviceId: role === 'connector' ? deviceId : undefined,
+  if (authMode === 'pairing') {
+    const approved = deviceRegistry.approveBrowserPairing({
+      pairingId: String(message.pairingId),
+      verifier: browserPairingVerifier!,
       device,
-      address: clientAddress,
+      label: device.label,
     });
+    if (!approved) return rejectAuthentication(socket, authLimiter, clientAddress);
+  } else if (!deviceRegistry.isApproved(role, device)) {
+    if (authMode === 'token') {
+      deviceRegistry.requestPairing({
+        role,
+        routeDeviceId: role === 'connector' ? deviceId : undefined,
+        device,
+        address: clientAddress,
+      });
+    }
     safeSend(socket, {
       type: 'auth.pairing',
       role,
@@ -390,7 +446,7 @@ function authenticateSocket({
     socketMeta.set(socket, {
       role, deviceId, device: { id: device.id, publicKey: device.publicKey }, protocol,
     });
-    safeSend(socket, { type: 'auth.ok', role, deviceId, protocol });
+    safeSend(socket, { type: 'auth.ok', role, deviceId, protocol, authMode });
     return true;
   }
   const id = createId('client');
@@ -402,8 +458,21 @@ function authenticateSocket({
     type: 'auth.ok', role, clientId: id,
     devices: [...connectors.keys()],
     protocol,
+    authMode,
   });
   return true;
+}
+
+function rejectAuthentication(
+  socket: AliveWebSocket,
+  authLimiter: AuthFailureLimiter,
+  clientAddress: string,
+  code = 4003,
+  reason = 'authentication failed',
+) {
+  const locked = authLimiter.recordFailure(clientAddress);
+  socket.close(locked ? 4429 : code, locked ? 'authentication temporarily locked' : reason);
+  return false;
 }
 
 function routeClientMessage({

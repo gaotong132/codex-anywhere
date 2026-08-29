@@ -10,6 +10,11 @@ import { createAuthProof } from '../src/shared/auth.js';
 import { createDeviceAuthProof, createDeviceIdentity, type DeviceIdentity } from '../src/shared/device-auth.js';
 import type { DeviceRegistry } from '../src/server/device-registry.js';
 import { negotiateProtocol } from '../src/shared/protocol-negotiation.js';
+import {
+  DEVICE_KEY_AUTH_CONTEXT,
+  browserPairingVerifier,
+  createBrowserPairingProof,
+} from '../src/shared/pairing-auth.js';
 
 const TOKEN = 'test-token-that-is-longer-than-32-characters';
 const CLIENT_TOKEN = 'client-token-that-is-longer-than-32-characters';
@@ -93,6 +98,7 @@ test('server negotiates protocol capabilities while retaining legacy rolling-upg
   assert.equal(current.frameVersion, 2);
   assert.equal(current.auth.protocol.version, 2);
   assert.equal(current.auth.protocol.capabilities.includes('protocol-negotiation.v1'), true);
+  assert.equal(current.auth.protocol.capabilities.includes('browser-pairing.v1'), true);
   current.socket.close();
 
   const legacy = await authenticateSocket({
@@ -100,6 +106,94 @@ test('server negotiates protocol capabilities while retaining legacy rolling-upg
   });
   assert.deepEqual(legacy.auth.protocol, { version: 1, capabilities: [] });
   legacy.socket.close();
+});
+
+test('one-time pairing enrolls a browser and approved device-key auth needs no shared token', async (t) => {
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+  const identity = createDeviceIdentity();
+  const pairing = server.deviceRegistry.createBrowserPairing();
+  const verifier = browserPairingVerifier(pairing.credential.secret);
+
+  const enrollment = await openSocket(url);
+  const enrollmentProof = createBrowserPairingProof({
+    verifier,
+    challenge: enrollment.challenge,
+    pairingId: pairing.credential.id,
+    deviceId: identity.id,
+    publicKey: identity.publicKey,
+  });
+  enrollment.socket.send(JSON.stringify({
+    type: 'auth.enroll',
+    role: 'client',
+    pairingId: pairing.credential.id,
+    proof: enrollmentProof,
+    protocol: negotiateProtocol(enrollment.protocol),
+    device: createDeviceAuthProof(identity, {
+      challenge: enrollment.challenge,
+      role: 'client',
+      authProof: enrollmentProof,
+    }, 'Paired phone'),
+  }));
+  const enrolled = await nextJson(enrollment.socket);
+  assert.equal(enrolled.type, 'auth.ok');
+  assert.equal(enrolled.authMode, 'pairing');
+  assert.equal(server.deviceRegistry.isApproved('client', identity), true);
+  enrollment.socket.close();
+
+  const deviceLogin = await openSocket(url);
+  deviceLogin.socket.send(JSON.stringify({
+    type: 'auth.device',
+    role: 'client',
+    protocol: negotiateProtocol(deviceLogin.protocol),
+    device: createDeviceAuthProof(identity, {
+      challenge: deviceLogin.challenge,
+      role: 'client',
+      authProof: DEVICE_KEY_AUTH_CONTEXT,
+    }, 'Paired phone'),
+  }));
+  const authenticated = await nextJson(deviceLogin.socket);
+  assert.equal(authenticated.type, 'auth.ok');
+  assert.equal(authenticated.authMode, 'device');
+  deviceLogin.socket.close();
+
+  const replay = await openSocket(url);
+  const replayClose = once(replay.socket, 'close');
+  const replayProof = createBrowserPairingProof({
+    verifier,
+    challenge: replay.challenge,
+    pairingId: pairing.credential.id,
+    deviceId: identity.id,
+    publicKey: identity.publicKey,
+  });
+  replay.socket.send(JSON.stringify({
+    type: 'auth.enroll', role: 'client', pairingId: pairing.credential.id, proof: replayProof,
+    device: createDeviceAuthProof(identity, {
+      challenge: replay.challenge, role: 'client', authProof: replayProof,
+    }),
+  }));
+  assert.equal((await replayClose)[0], 4003);
+});
+
+test('an unapproved device key cannot sign in or create a pending approval request', async (t) => {
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const identity = createDeviceIdentity();
+  const opened = await openSocket(`ws://127.0.0.1:${address.port}/ws`);
+  const close = once(opened.socket, 'close');
+  opened.socket.send(JSON.stringify({
+    type: 'auth.device', role: 'client',
+    device: createDeviceAuthProof(identity, {
+      challenge: opened.challenge, role: 'client', authProof: DEVICE_KEY_AUTH_CONTEXT,
+    }),
+  }));
+  const pairing = await nextJson(opened.socket);
+  assert.equal(pairing.type, 'auth.pairing');
+  assert.equal((await close)[0], 4403);
+  assert.equal(server.deviceRegistry.list().pending.length, 0);
 });
 
 test('server exposes a no-store runtime UI language configuration', async (t) => {

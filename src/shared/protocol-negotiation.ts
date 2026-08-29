@@ -4,6 +4,8 @@ export const BRIDGE_MIN_PROTOCOL_VERSION = 1;
 export const BRIDGE_PROTOCOL_CAPABILITIES = Object.freeze([
   'protocol-negotiation.v1',
   'device-auth.v1',
+  'device-key-auth.v1',
+  'browser-pairing.v1',
   'request-routing.v1',
   'history-pagination.v1',
   'approval.v1',
