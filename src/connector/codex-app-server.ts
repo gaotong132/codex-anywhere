@@ -8,6 +8,7 @@ import { parseAssistantMessage, parseUserMessage } from '../shared/message-conte
 import { readRolloutTail } from './rollout-tail.js';
 import { extractGeneratedImageAttachment } from './generated-images.js';
 import { needsDesktopPermissionRecovery } from './session-permissions.js';
+import { resolveCodexExecutable } from './codex-executable.js';
 
 const RPC_TIMEOUT_MS = 20_000;
 const SUMMARY_LIMIT = 4_000;
@@ -112,7 +113,21 @@ export class CodexAppServer extends EventEmitter {
   }
 
   async startProcess(): Promise<void> {
-    const child = spawn(this.bin, ['app-server', '--listen', 'stdio://'], {
+    const firstBin = await resolveCodexExecutable(this.bin);
+    try {
+      await this.spawnAndInitialize(firstBin);
+      this.bin = firstBin;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+      const refreshedBin = await resolveCodexExecutable(this.bin);
+      if (refreshedBin === firstBin) throw error;
+      await this.spawnAndInitialize(refreshedBin);
+      this.bin = refreshedBin;
+    }
+  }
+
+  private async spawnAndInitialize(bin: string): Promise<void> {
+    const child = spawn(bin, ['app-server', '--listen', 'stdio://'], {
       cwd: this.runtimeCwd,
       env: { ...process.env, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'Codex Desktop' },
       shell: false,

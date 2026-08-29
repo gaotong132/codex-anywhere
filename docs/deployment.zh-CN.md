@@ -195,7 +195,7 @@ Token，只更新设置并保留凭据。`scripts/copy-token.ps1` 只复制单�
 | `BRIDGE_URL` / `-BridgeUrl` | `ws://127.0.0.1:3300/ws` | 转发服务 WebSocket 地址，支持 `ws://` 和 `wss://` |
 | `BRIDGE_DEVICE_ID` / `-DeviceId` | `personal-pc` | 连接器逻辑路由，不是密码学设备身份 |
 | `BRIDGE_DEVICE_IDENTITY_FILE` | 无 | 前台或非 Windows 环境使用的 0600 密钥文件；Windows 改用 DPAPI |
-| `CODEX_BIN` | `codex` | Codex 可执行文件名或绝对路径 |
+| `CODEX_BIN` | 自动发现 | 可选的 Codex 命令或稳定绝对路径；Codex Desktop 的版本目录变化时会自动重新发现 |
 | `CODEX_ALLOWED_ROOTS` / `-AllowedRoots` | 连接器仓库 | 新会话和普通下载可用的项目根目录，以操作系统路径分隔符分隔 |
 | `CODEX_ALLOW_ANY_FILE_DOWNLOAD` / `-AllowAnyFileDownload` | 关闭 | 允许确认后下载配置根目录之外的文件 |
 | `CODEX_NETWORK_ACCESS` / `-EnableNetworkAccess` | 关闭 | 允许连接器持有的 Codex 轮次申请网络访问 |

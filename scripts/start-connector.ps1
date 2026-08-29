@@ -217,13 +217,10 @@ if (-not $compiledConnector) {
     throw 'Compiled connector is missing. Run npm run build:node.'
 }
 
-$codexPath = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin') -Filter codex.exe -Recurse -File -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1 -ExpandProperty FullName
-if (-not $codexPath) {
-    $codexPath = (Get-Command codex.exe -ErrorAction SilentlyContinue | Select-Object -First 1).Source
-}
-if (-not $codexPath) {
+$desktopCodex = Get-ChildItem -LiteralPath (Join-Path $env:LOCALAPPDATA 'OpenAI\Codex\bin') `
+    -Filter codex.exe -Recurse -File -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+if (-not $desktopCodex -and -not (Get-Command codex.exe -ErrorAction SilentlyContinue)) {
     throw 'Codex CLI executable was not found.'
 }
 
@@ -238,8 +235,6 @@ if (-not $codexPath) {
     $env:CODEX_ALLOWED_ROOTS = $allowedRoots
     $env:CODEX_ALLOW_ANY_FILE_DOWNLOAD = $allowAnyFileDownload
     $env:CODEX_NETWORK_ACCESS = $networkAccess
-    $env:CODEX_BIN = $codexPath
-
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $nodePath
     $startInfo.Arguments = "`"$compiledConnectorPath`""

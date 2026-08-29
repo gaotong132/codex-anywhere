@@ -216,7 +216,7 @@ Connector configuration:
 | `BRIDGE_URL` / `-BridgeUrl` | `ws://127.0.0.1:3300/ws` | Relay WebSocket endpoint; `ws://` and `wss://` are supported |
 | `BRIDGE_DEVICE_ID` / `-DeviceId` | `personal-pc` | Logical connector route, not the cryptographic device identity |
 | `BRIDGE_DEVICE_IDENTITY_FILE` | none | Mode-0600 key file for foreground/non-Windows use; Windows uses DPAPI instead |
-| `CODEX_BIN` | `codex` | Codex executable or absolute path |
+| `CODEX_BIN` | auto-detected | Optional Codex command or stable absolute-path override; versioned Codex Desktop paths are rediscovered automatically |
 | `CODEX_ALLOWED_ROOTS` / `-AllowedRoots` | connector checkout | OS-delimited project roots available to new sessions and normal downloads |
 | `CODEX_ALLOW_ANY_FILE_DOWNLOAD` / `-AllowAnyFileDownload` | off | Allow confirmed downloads outside the configured roots |
 | `CODEX_NETWORK_ACCESS` / `-EnableNetworkAccess` | off | Permit connector-owned Codex turns to request network access |
