@@ -96,20 +96,6 @@ export function MessageBubble({
   const completedDateTime = dateTimeValue(item.completedAt);
   return (
     <div className={`message ${item.kind}${copyable ? ' copyable' : ''}`}>
-      {copyable && (
-        <button
-          className={`message-copy ${copyState}`}
-          type="button"
-          onClick={() => void copyMessage()}
-          aria-label={copyLabel}
-          aria-live="polite"
-          title={copyLabel}
-        >
-          {copyState === 'copied'
-            ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
-            : <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>}
-        </button>
-      )}
       {item.contexts?.length ? (
         <div className="message-contexts" aria-label={t('消息来源', 'Message context')}>
           {item.contexts.map((context, index) => {
@@ -173,9 +159,23 @@ export function MessageBubble({
           </figcaption>
         </figure>
       )}
-      {copyable && item.completedAt && completedDateTime && (
-        <div className="message-time">
-          <time dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
+      {copyable && (
+        <div className="message-meta">
+          {item.completedAt && completedDateTime && (
+            <time className="message-time" dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
+          )}
+          <button
+            className={`message-copy ${copyState}`}
+            type="button"
+            onClick={() => void copyMessage()}
+            aria-label={copyLabel}
+            aria-live="polite"
+            title={copyLabel}
+          >
+            {copyState === 'copied'
+              ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
+              : <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>}
+          </button>
         </div>
       )}
     </div>

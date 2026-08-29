@@ -42,6 +42,7 @@ import {
   friendlyError,
   canStopOwnedTurn,
   isConnectionInterruption,
+  isNearScrollBottom,
   isSessionRunning,
   isTemporaryProjectPath,
   makeId,
@@ -230,6 +231,7 @@ export default function App() {
   const threadIdRef = useRef<string | null>(null);
   const selectedRequestRef = useRef(0);
   const messageListRef = useRef<HTMLDivElement | null>(null);
+  const messageContentRef = useRef<HTMLDivElement | null>(null);
   const preserveScrollHeightRef = useRef<number | null>(null);
   const shouldScrollBottomRef = useRef(false);
   const autoFollowLatestRef = useRef(true);
@@ -299,20 +301,41 @@ export default function App() {
     if (preserveScrollHeightRef.current != null) {
       element.scrollTop += element.scrollHeight - preserveScrollHeightRef.current;
       preserveScrollHeightRef.current = null;
-    } else if (shouldScrollBottomRef.current) {
+    } else if (shouldScrollBottomRef.current || autoFollowLatestRef.current) {
       shouldScrollBottomRef.current = false;
       const scrollToLatest = () => { element.scrollTop = element.scrollHeight; };
       scrollToLatest();
       const frame = requestAnimationFrame(scrollToLatest);
       return () => cancelAnimationFrame(frame);
     }
-  }, [timeline, executionState, attachmentUrls]);
+  }, [timeline, executionState, attachmentUrls, fileDownload, approval]);
+
+  useEffect(() => {
+    const element = messageListRef.current;
+    const content = messageContentRef.current;
+    if (!element || !content || typeof ResizeObserver === 'undefined') return undefined;
+    let frame = 0;
+    const followResizedContent = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (autoFollowLatestRef.current && preserveScrollHeightRef.current == null) {
+          element.scrollTop = element.scrollHeight;
+        }
+      });
+    };
+    const observer = new ResizeObserver(followResizedContent);
+    observer.observe(element);
+    observer.observe(content);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [threadId]);
 
   const updateAutoFollowLatest = useCallback(() => {
     const element = messageListRef.current;
     if (!element) return;
-    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
-    autoFollowLatestRef.current = distanceFromBottom < 180;
+    autoFollowLatestRef.current = isNearScrollBottom(element);
   }, []);
 
   useEffect(() => {
@@ -1596,37 +1619,39 @@ export default function App() {
         <div className="session-context" />
 
         <div className="message-list" ref={messageListRef} onScroll={updateAutoFollowLatest}>
-          {threadId && initialHistoryLoaded && nextCursor && (
-            <button className="load-older" disabled={historyLoading} onClick={loadOlder}>
-              {historyLoading ? t('正在加载…', 'Loading…') : t('加载更早记录', 'Load older messages')}
-            </button>
-          )}
-          {threadId && initialHistoryLoaded && historyTruncated && (
-            <div className="history-tail-notice">{t('该会话记录较大，当前展示最近活动；新输出会继续实时同步。', 'This session is large, so only recent activity is shown. New output will continue to sync live.')}</div>
-          )}
-          {threadId && historyLoading && !initialHistoryLoaded && <div className="history-skeleton">{t('正在加载最近记录…', 'Loading recent messages…')}</div>}
-          {!timeline.length && !historyLoading && (
-            <div className="empty-conversation">
-              <div className="brand-mark small">C</div>
-              <h2>{threadId ? t('这个分页暂无消息', 'No messages on this page') : creatingNewSession ? t('创建一个新会话', 'Create a new session') : t('选择已有会话', 'Choose an existing session')}</h2>
-              <p>{threadId
-                ? t('历史记录按页加载，不再一次拉取整个会话。', 'History loads page by page instead of fetching the entire session.')
-                : creatingNewSession
-                  ? t('选择本机项目目录后，第一条消息将在该目录中运行。', 'Choose a local project directory; the first message will run there.')
-                  : t('打开左上角菜单选择会话；新会话入口也已移入菜单。', 'Open the top-left menu to choose a session or start a new one.')}</p>
-            </div>
-          )}
-          {timeline.map((item) => {
-            const attachment = resolveTimelineAttachment(item, threadId, knownAttachments);
-            return (
-              <MessageBubble
-                key={item.id}
-                item={attachment && !item.attachment ? { ...item, attachment } : item}
-                imageSource={attachment ? attachmentUrls[attachment.path] : undefined}
-                onDownloadFile={downloadLocalFile}
-              />
-            );
-          })}
+          <div className="message-list-content" ref={messageContentRef}>
+            {threadId && initialHistoryLoaded && nextCursor && (
+              <button className="load-older" disabled={historyLoading} onClick={loadOlder}>
+                {historyLoading ? t('正在加载…', 'Loading…') : t('加载更早记录', 'Load older messages')}
+              </button>
+            )}
+            {threadId && initialHistoryLoaded && historyTruncated && (
+              <div className="history-tail-notice">{t('该会话记录较大，当前展示最近活动；新输出会继续实时同步。', 'This session is large, so only recent activity is shown. New output will continue to sync live.')}</div>
+            )}
+            {threadId && historyLoading && !initialHistoryLoaded && <div className="history-skeleton">{t('正在加载最近记录…', 'Loading recent messages…')}</div>}
+            {!timeline.length && !historyLoading && (
+              <div className="empty-conversation">
+                <div className="brand-mark small">C</div>
+                <h2>{threadId ? t('这个分页暂无消息', 'No messages on this page') : creatingNewSession ? t('创建一个新会话', 'Create a new session') : t('选择已有会话', 'Choose an existing session')}</h2>
+                <p>{threadId
+                  ? t('历史记录按页加载，不再一次拉取整个会话。', 'History loads page by page instead of fetching the entire session.')
+                  : creatingNewSession
+                    ? t('选择本机项目目录后，第一条消息将在该目录中运行。', 'Choose a local project directory; the first message will run there.')
+                    : t('打开左上角菜单选择会话；新会话入口也已移入菜单。', 'Open the top-left menu to choose a session or start a new one.')}</p>
+              </div>
+            )}
+            {timeline.map((item) => {
+              const attachment = resolveTimelineAttachment(item, threadId, knownAttachments);
+              return (
+                <MessageBubble
+                  key={item.id}
+                  item={attachment && !item.attachment ? { ...item, attachment } : item}
+                  imageSource={attachment ? attachmentUrls[attachment.path] : undefined}
+                  onDownloadFile={downloadLocalFile}
+                />
+              );
+            })}
+          </div>
         </div>
 
         <div className="execution-strip">

@@ -29,7 +29,10 @@
       i { width: 8px; height: 8px; }
     }
     .message-list { padding: 18px 12px; }
-    .execution-strip { padding: 7px 12px; }
+    .execution-strip { padding: 7px max(12px, env(safe-area-inset-right)) 7px max(12px, env(safe-area-inset-left)); }
+    .tool-purpose { gap: 5px; font-size: 10px; }
+    .tool-purpose .activity-kind { max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tool-purpose time { max-width: 50px; }
     .session-context { padding: 10px 12px; }
     .new-session-overlay { align-items: end; padding: 0; }
     .new-session-dialog { width: 100%; max-height: calc(100dvh - env(safe-area-inset-top) - 12px); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 20px 20px 0 0; }

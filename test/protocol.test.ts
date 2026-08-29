@@ -28,6 +28,7 @@ import { needsDesktopPermissionRecovery } from '../src/connector/session-permiss
 import {
   canStopOwnedTurn,
   friendlyError,
+  isNearScrollBottom,
   isConnectionInterruption,
   markSessionAttentionRead,
   reconcileSessionAttention,
@@ -181,6 +182,11 @@ test('stop control is shown only for the selected Web-owned turn', () => {
   assert.equal(canStopOwnedTurn(true, null, 'thread-1'), false);
   assert.equal(canStopOwnedTurn(true, 'thread-1', 'thread-2'), false);
   assert.equal(canStopOwnedTurn(true, 'thread-1', 'thread-1'), true);
+});
+
+test('automatic message following tolerates a small mobile bottom offset', () => {
+  assert.equal(isNearScrollBottom({ scrollHeight: 1_000, scrollTop: 650, clientHeight: 200 }), true);
+  assert.equal(isNearScrollBottom({ scrollHeight: 1_000, scrollTop: 619, clientHeight: 200 }), false);
 });
 
 test('only transient transport failures are treated as reconnectable connection interruptions', () => {

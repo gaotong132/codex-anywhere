@@ -103,6 +103,13 @@ export function canStopOwnedTurn(running: boolean, ownedThreadId: string | null,
   return running && Boolean(ownedThreadId) && ownedThreadId === selectedThreadId;
 }
 
+export function isNearScrollBottom(
+  metrics: Pick<HTMLElement, 'scrollHeight' | 'scrollTop' | 'clientHeight'>,
+  threshold = 180,
+) {
+  return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight < threshold;
+}
+
 export function sessionUpdatedAt(value: Session['updatedAt']) {
   if (!value) return 0;
   const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1000 : value;
