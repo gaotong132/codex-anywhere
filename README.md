@@ -137,9 +137,9 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
 
 4. Open the relay URL in the phone browser and enter the browser-client token. The browser generates
    its device identity automatically and shows only a generic waiting state.
-5. Approve the new pending record from the ECS/VPS using the one-time operator procedure in the
-   [production deployment guide](docs/deployment.md). Device identity and registry details are never
-   exposed to the browser UI.
+5. Approve each newly installed connector or browser from the ECS/VPS using the operator procedure in
+   the [production deployment guide](docs/deployment.md). Run the command again when another trusted
+   device is added. Device identity and registry internals are never exposed to the browser UI.
 
    ```bash
    docker compose exec bridge node build/server/device-admin.js
@@ -154,6 +154,7 @@ project files onto the ECS/VPS.
 | --- | --- | --- |
 | `BRIDGE_CLIENT_TOKEN` | Relay and browser | Browser-control secret; keep separate from the connector credential |
 | `BRIDGE_CONNECTOR_TOKEN` | Relay and connector | Local connector secret |
+| `BRIDGE_SESSION_MAX_AGE_MS` | Relay | Maximum authenticated WebSocket lifetime; defaults to one hour |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | Relay | Persistent approved/pending public device records; Compose configures this automatically |
 | `BRIDGE_URL` | Connector | Relay WebSocket URL; supports `ws://` and `wss://` |
 | `CODEX_UI_LANGUAGE` | Relay | Web UI language: `zh-CN` or `en` |
@@ -192,12 +193,20 @@ In another terminal:
 ```powershell
 $env:BRIDGE_CONNECTOR_TOKEN = 'replace-with-the-connector-token-above'
 $env:BRIDGE_URL = 'ws://127.0.0.1:3300/ws'
+$env:BRIDGE_DEVICE_IDENTITY_FILE = '.\data\connector-device.json'
 npm run connector
 ```
 
 Open `http://127.0.0.1:3300` and enter the token. Strict device approval still applies in local
-development; approve the pending browser record in `data/devices.json` out of band rather than adding
-an automatic first-device exception. For development checks and builds:
+development. In a third terminal, approve the pending connector and browser through the same
+administrator command used in production (run it once for each); it reads the local
+`data/devices.json` automatically:
+
+```powershell
+node build/server/device-admin.js
+```
+
+Do not add an automatic first-device exception. For development checks and builds:
 
 ```powershell
 npm run check

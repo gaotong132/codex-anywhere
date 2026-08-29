@@ -239,6 +239,28 @@ test('valid tokens cannot sign in from an unapproved device', async (t) => {
   assert.equal(inventory.pending[0].label, 'Unapproved browser');
 });
 
+test('revoking a device closes its active socket on the next relay heartbeat', async (t) => {
+  const server = createBridgeServer({
+    clientToken: TOKEN,
+    connectorToken: TOKEN,
+    heartbeatIntervalMs: 20,
+  });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const connection = await authenticateSocket({
+    url: `ws://127.0.0.1:${address.port}/ws`,
+    role: 'client',
+    token: TOKEN,
+    registry: server.deviceRegistry,
+  });
+  assert.equal(connection.auth.type, 'auth.ok');
+
+  const closed = once(connection.socket, 'close');
+  assert.equal(server.deviceRegistry.remove('client', connection.identity.id), true);
+  const [code] = await closed;
+  assert.equal(code, 4403);
+});
+
 test('authenticated browsers cannot query or modify the device registry', async (t) => {
   const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');

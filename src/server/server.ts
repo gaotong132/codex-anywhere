@@ -33,9 +33,10 @@ const AUTH_SESSION_MAX_AGE_MS = 60 * 60_000;
 type JsonObject = Record<string, any>;
 type AliveWebSocket = WebSocket & { isAlive?: boolean };
 type StaticHandler = ReturnType<typeof sirv>;
+type AuthenticatedDevice = Pick<DeviceAuthProof, 'id' | 'publicKey'>;
 type SocketMeta =
-  | { role: 'client'; id: string }
-  | { role: 'connector'; deviceId: string };
+  | { role: 'client'; id: string; device: AuthenticatedDevice }
+  | { role: 'connector'; deviceId: string; device: AuthenticatedDevice };
 type BridgeServerOptions = {
   clientToken?: unknown;
   connectorToken?: unknown;
@@ -47,6 +48,7 @@ type BridgeServerOptions = {
   authLockMs?: number;
   authMaxEntries?: number;
   sessionMaxAgeMs?: number;
+  heartbeatIntervalMs?: number;
   clock?: () => number;
   deviceRegistryPath?: string | null;
   deviceRegistry?: DeviceRegistry;
@@ -97,6 +99,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
     options.sessionMaxAgeMs ?? Number(process.env.BRIDGE_SESSION_MAX_AGE_MS),
     AUTH_SESSION_MAX_AGE_MS,
   );
+  const heartbeatIntervalMs = positiveInteger(options.heartbeatIntervalMs, 30_000);
   const authLimiter = new AuthFailureLimiter({
     limit: options.authFailureLimit,
     windowMs: options.authFailureWindowMs,
@@ -194,6 +197,11 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   const heartbeat = setInterval(() => {
     for (const rawSocket of webSocketServer.clients) {
       const socket = rawSocket as AliveWebSocket;
+      const meta = socketMeta.get(socket);
+      if (meta && !deviceRegistry.isApproved(meta.role, meta.device)) {
+        socket.close(4403, 'device approval revoked');
+        continue;
+      }
       if (socket.isAlive === false) {
         socket.terminate();
         continue;
@@ -201,7 +209,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       socket.isAlive = false;
       socket.ping();
     }
-  }, 30_000);
+  }, heartbeatIntervalMs);
   heartbeat.unref?.();
 
   return {
@@ -341,13 +349,17 @@ function authenticateSocket({
     const previous = connectors.get(deviceId);
     if (previous && previous !== socket) previous.close(4004, 'connector replaced');
     connectors.set(deviceId, socket);
-    socketMeta.set(socket, { role, deviceId });
+    socketMeta.set(socket, {
+      role, deviceId, device: { id: device.id, publicKey: device.publicKey },
+    });
     safeSend(socket, { type: 'auth.ok', role, deviceId });
     return true;
   }
   const id = createId('client');
   clients.set(id, socket);
-  socketMeta.set(socket, { role, id });
+  socketMeta.set(socket, {
+    role, id, device: { id: device.id, publicKey: device.publicKey },
+  });
   safeSend(socket, {
     type: 'auth.ok', role, clientId: id,
     devices: [...connectors.keys()],

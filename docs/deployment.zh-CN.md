@@ -20,9 +20,9 @@ Desktop/CLI、项目文件、附件和生成文件都保留在连接器电脑上
 不需要数据库、Redis、对象存储、本地电脑公网 IP、路由器端口映射或本地入站防火墙规则。
 
 ```text
-手机/浏览器 ── HTTPS/WSS ──> ECS Nginx :443 ──> 转发服务 127.0.0.1:3300
-                                         ▲
-本地连接器 ────── 出站 WSS ───────────────┘
+手机/浏览器 ── WS/WSS ──> ECS/VPS 入口 ──> 转发服务 127.0.0.1:3300
+                                      ▲
+本地连接器 ── 主动出站 WS/WSS ──────────┘
        │
        └── Codex Desktop/CLI 与项目文件
 ```
@@ -95,6 +95,18 @@ ss -ltn | grep 3300
 
 `ss` 显示的地址必须是 `127.0.0.1:3300`，不能是 `0.0.0.0:3300` 或 `[::]:3300`。
 
+转发服务配置：
+
+| 环境变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `BRIDGE_CLIENT_TOKEN` | 必填 | 浏览器凭据，至少使用 32 字节随机数据 |
+| `BRIDGE_CONNECTOR_TOKEN` | 必填 | 连接器凭据，必须与浏览器凭据不同 |
+| `BRIDGE_SESSION_MAX_AGE_MS` | `3600000` | 已认证 WebSocket 重新鉴权前的最长生存期 |
+| `BRIDGE_DEVICE_REGISTRY_FILE` | `data/devices.json` | 已批准公钥和短期待配对记录 |
+| `CODEX_UI_LANGUAGE` | `zh-CN` | Web 界面语言：`zh-CN` 或 `en` |
+| `HOST` / `PORT` | `127.0.0.1` / `3300` | 直接运行 Node 时的监听地址；Compose 会设置容器内参数 |
+| `BRIDGE_TRUST_PROXY` | `0` | 只有受控代理是唯一入口时才能信任 `X-Real-IP` |
+
 ## 3. 公网访问推荐方案：TLS 反向代理
 
 如果希望直接使用普通手机浏览器通过公网访问，综合安全性、兼容性和维护成本，推荐在 ECS/VPS 上使用
@@ -138,6 +150,7 @@ curl -fsS https://codex.example.com/health
 ```powershell
 $env:BRIDGE_CONNECTOR_TOKEN = Read-Host 'Connector token'
 $env:BRIDGE_URL = 'wss://codex.example.com/ws'
+$env:BRIDGE_DEVICE_IDENTITY_FILE = '.\data\connector-device.json'
 $env:CODEX_NETWORK_ACCESS = '0'
 npm run connector
 ```
@@ -161,14 +174,27 @@ $clientToken = Read-Host 'Browser client token' -AsSecureString
 连接器仓库；只有需要选择更多本地目录时才配置。下载默认限制在这些根目录内。只有在单用户可信电脑上
 明确需要不受限本地下载时才添加 `-AllowAnyFileDownload`。除非任务确实需要，否则保持网络访问关闭。
 
-加密凭据和非敏感配置保存在仓库外的 `%LOCALAPPDATA%\PersonalCodexBridge`。再次运行安装器时可以
+加密凭据和非敏感配置保存在仓库外的 `%LOCALAPPDATA%\PersonalCodexBridge`。为避免升级后丢失已有
+DPAPI 凭据，当前保留了这个兼容旧版本的内部目录名。再次运行安装器时可以
 省略两个 Token，只更新设置并保留凭据。`scripts/copy-token.ps1` 只复制单独保存的浏览器 Token，
 不会暴露连接器 Token。在共享电脑上使用后应清除剪贴板历史。
 
-## 5. 批准首个可信浏览器
+连接器配置：
 
-转发服务不会自动批准设备。打开 Web 页面，输入浏览器 Token，并让页面停留在通用的“等待批准”状态。
-随后在 ECS 部署目录的加密管理员会话中运行一条命令：
+| 环境变量 / 安装参数 | 默认值 | 用途 |
+| --- | --- | --- |
+| `BRIDGE_URL` / `-BridgeUrl` | `ws://127.0.0.1:3300/ws` | 转发服务 WebSocket 地址，支持 `ws://` 和 `wss://` |
+| `BRIDGE_DEVICE_ID` / `-DeviceId` | `personal-pc` | 连接器逻辑路由，不是密码学设备身份 |
+| `BRIDGE_DEVICE_IDENTITY_FILE` | 无 | 前台或非 Windows 环境使用的 0600 密钥文件；Windows 改用 DPAPI |
+| `CODEX_BIN` | `codex` | Codex 可执行文件名或绝对路径 |
+| `CODEX_ALLOWED_ROOTS` / `-AllowedRoots` | 连接器仓库 | 新会话和普通下载可用的项目根目录，以操作系统路径分隔符分隔 |
+| `CODEX_ALLOW_ANY_FILE_DOWNLOAD` / `-AllowAnyFileDownload` | 关闭 | 允许确认后下载配置根目录之外的文件 |
+| `CODEX_NETWORK_ACCESS` / `-EnableNetworkAccess` | 关闭 | 允许连接器持有的 Codex 轮次申请网络访问 |
+
+## 5. 批准可信设备
+
+转发服务不会自动批准连接器或浏览器。先启动连接器，并/或打开 Web 页面输入浏览器 Token，让页面停留
+在通用的“等待批准”状态。随后在 ECS 部署目录的加密管理员会话中运行：
 
 ```mermaid
 sequenceDiagram
@@ -196,16 +222,19 @@ docker compose exec bridge node build/server/device-admin.js
   请求约 15 分钟后过期。
 - Web UI 不能查看或批准设备。命令只显示角色、标签、来源地址和请求时间；输入匹配序号并确认，无法
   明确识别时不要批准。
-- 批准结果直接写入共享设备注册表，无需重启转发服务；浏览器会自动重连并使用新挑战重新认证。
+- 批准结果直接写入共享设备注册表，无需重启转发服务；选中的连接器或浏览器会自动重连并使用新挑战
+  重新认证。每增加一个可信设备，都重新运行一次命令。
 
-这里批准的只是浏览器设备身份，与 Codex 的命令执行、文件修改和权限审批是不同的控制。
+设备批准只负责桥接访问认证，与 Codex 的命令执行、文件修改和权限审批是不同的控制。
 
 ## 6. 端到端验证
 
-1. 打开 `https://codex.example.com`，输入 `BRIDGE_CLIENT_TOKEN`，确认已批准的连接器在线。
+1. 打开实际配置的 Web 入口（例如 `https://codex.example.com`），输入 `BRIDGE_CLIENT_TOKEN`，确认
+   已批准的连接器在线。
 2. 打开一个已有会话并发送无害测试消息。
 3. 确认 Codex Desktop 和浏览器都能看到消息与回复。
-4. 确认 HTTP 会跳转到 HTTPS，并且外网无法访问 `http://ECS-IP:3300`。
+4. 使用参考 TLS 方案时，确认 HTTP 会跳转到 HTTPS，并且外网无法访问 `http://ECS-IP:3300`。
+   如果有意直接使用 WS，则确认防火墙只开放选定入口，并继续把该路径视为明文传输。
 5. 检查 `docker compose ps`，转发服务应在启动期后变为 `healthy`。
 
 ## 更新

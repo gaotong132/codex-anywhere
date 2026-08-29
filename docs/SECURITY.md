@@ -50,7 +50,7 @@ and Codex execution remain local.
 The relay has no conversation database and does not intentionally persist messages, attachment
 previews, or download chunks.
 
-The relay is nevertheless trusted. TLS terminates at the ECS reverse proxy, so Nginx and the relay
+The relay is nevertheless trusted. TLS terminates at the ECS reverse proxy, so the proxy and relay
 see plaintext frames in memory. This project does not provide application-layer end-to-end encryption
 that hides content from the ECS operator or cloud host. Protect process memory, `.env`, proxy error
 logs, backups, DNS and cloud accounts, and every administrator with access to the host.
@@ -75,11 +75,23 @@ client-bound capability. The connector canonicalizes paths, rejects directories 
 holds a stable file handle, detects changes during transfer, rate-limits chunks, and records only
 hashed local audit identifiers. Enabling unrestricted downloads intentionally expands this boundary.
 
+Device administration is deliberately available only from the relay host. The default command lists
+pending requests and asks before approval. These variants list or revoke approved devices without
+printing device IDs, request IDs, or public keys:
+
+```bash
+docker compose exec bridge node build/server/device-admin.js list-approved
+docker compose exec bridge node build/server/device-admin.js revoke
+```
+
+Revocation is observed by the running relay and closes the device's active socket on the next relay
+heartbeat (normally within 30 seconds); no relay restart is required.
+
 ## If a token may have leaked
 
 1. Treat it as compromised; do not wait for evidence of use.
-2. Remove any affected browser or connector identity from the ECS device registry. If a device private
-   key may have leaked, assume that identity is compromised even if its token remains secret. Registry
+2. Run the administrator `revoke` command above and remove any affected browser or connector identity.
+   If a device private key may have leaked, assume that identity is compromised even if its token remains secret. Registry
    identities and pairing metadata are intentionally unavailable to the Web client.
 3. If only `BRIDGE_CLIENT_TOKEN` leaked, replace it with a new random value and restart the relay.
    Existing browser sockets are closed during restart; the connector credential remains valid.

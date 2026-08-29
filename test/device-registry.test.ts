@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import test from 'node:test';
 import { DeviceRegistry } from '../src/server/device-registry.js';
-import { runDeviceAdmin } from '../src/server/device-admin.js';
+import { resolveDeviceAdminRegistryPath, runDeviceAdmin } from '../src/server/device-admin.js';
 import { createDeviceIdentity } from '../src/shared/device-auth.js';
+
+test('device approval command uses the local registry unless a deployment path is configured', () => {
+  assert.equal(resolveDeviceAdminRegistryPath(), resolve('data/devices.json'));
+  assert.equal(resolveDeviceAdminRegistryPath('  custom/devices.json  '), resolve('custom/devices.json'));
+});
 
 test('device registry persists public trust records and reloads external approvals', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'codex-anywhere-devices-'));
@@ -94,5 +99,32 @@ test('device approval command follows the configured Chinese language', async (t
   assert.equal(result, 'approved');
   assert.match(output, /待批准设备/);
   assert.match(output, /已批准浏览器：我的手机/);
+  assert.doesNotMatch(output, new RegExp(identity.publicKey));
+});
+
+test('device administration revokes an approved device without printing identity material', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'codex-anywhere-device-revoke-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const registry = new DeviceRegistry(join(directory, 'devices.json'));
+  const identity = createDeviceIdentity();
+  const pending = registry.requestPairing({
+    role: 'connector', device: { ...identity, signature: '0'.repeat(128), label: 'Office PC' },
+    address: '203.0.113.13',
+  });
+  registry.approve(pending.requestId);
+  let output = '';
+  const result = await runDeviceAdmin({
+    registry,
+    args: ['revoke', '1', '--yes'],
+    io: {
+      question: async (prompt) => { output += prompt; return ''; },
+      write: (text) => { output += text; },
+    },
+  });
+
+  assert.equal(result, 'revoked');
+  assert.equal(registry.isApproved('connector', identity), false);
+  assert.match(output, /Revoked connector: Office PC/);
+  assert.doesNotMatch(output, new RegExp(identity.id));
   assert.doesNotMatch(output, new RegExp(identity.publicKey));
 });

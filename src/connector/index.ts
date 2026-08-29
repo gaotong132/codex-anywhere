@@ -1,8 +1,8 @@
 import { WebSocket } from 'ws';
-import { delimiter } from 'node:path';
 import { CodexAppServer } from './codex-app-server.js';
 import { CodexDesktopClient } from './codex-desktop.js';
 import { readImageAttachment, saveImageAttachment } from './attachments.js';
+import { loadConnectorConfig } from './config.js';
 import { DownloadManager } from './file-downloads.js';
 import { generatedImagesDirectory } from './generated-images.js';
 import { acquireConnectorInstanceLock } from './instance-lock.js';
@@ -12,17 +12,19 @@ import { scheduleReferencedRetry } from './reconnect.js';
 import { createAuthProof } from '../shared/auth.js';
 import { createDeviceAuthProof } from '../shared/device-auth.js';
 import {
-  MAX_FRAME_BYTES, normalizeBridgeUrl, parseFrame, safeSend,
+  MAX_FRAME_BYTES, parseFrame, safeSend,
 } from '../shared/protocol.js';
 
-const token = String(process.env.BRIDGE_CONNECTOR_TOKEN || '');
-if (token.length < 32) throw new Error('BRIDGE_CONNECTOR_TOKEN must contain at least 32 characters');
-const url = normalizeBridgeUrl(process.env.BRIDGE_URL || 'ws://127.0.0.1:3300/ws');
-const deviceId = process.env.BRIDGE_DEVICE_ID || 'personal-pc';
+const {
+  token,
+  url,
+  deviceId,
+  codexBin,
+  allowedRoots,
+  networkAccess,
+  allowAnyFileDownload,
+} = loadConnectorConfig();
 const deviceIdentity = loadOrCreateConnectorDeviceIdentity();
-const configuredAllowedRoots = String(process.env.CODEX_ALLOWED_ROOTS || '')
-  .split(delimiter).map((value) => value.trim()).filter(Boolean);
-const allowedRoots = configuredAllowedRoots.length ? configuredAllowedRoots : [process.cwd()];
 const instanceLock = await acquireConnectorInstanceLock();
 if (!instanceLock) {
   console.log('Codex Anywhere connector is already running.');
@@ -30,13 +32,12 @@ if (!instanceLock) {
 }
 const connectorLock = instanceLock;
 const codex = new CodexAppServer({
-  bin: process.env.CODEX_BIN || 'codex', allowedRoots,
-  networkAccess: process.env.CODEX_NETWORK_ACCESS === '1',
+  bin: codexBin, allowedRoots, networkAccess,
 });
 const desktop = new CodexDesktopClient();
 const downloads = new DownloadManager({
   allowedRoots: [...allowedRoots, generatedImagesDirectory()],
-  allowAnyFileDownload: process.env.CODEX_ALLOW_ANY_FILE_DOWNLOAD === '1',
+  allowAnyFileDownload,
 });
 const handleRequest = createRequestHandler({
   codex,
@@ -73,7 +74,7 @@ function connect() {
       return;
     }
     if (message.type === 'auth.pairing') {
-      console.log(`Connector device approval required: ${deviceIdentity.id}`);
+      console.log('Connector device approval required. Approve the pending connector from the relay host.');
       return;
     }
     if (message.type === 'auth.ok') {
@@ -107,5 +108,5 @@ async function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-console.log(`Connecting device ${deviceId} (${deviceIdentity.id.slice(0, 12)}) to ${new URL(url).origin}`);
+console.log(`Connecting Codex Anywhere connector to ${new URL(url).origin}`);
 connect();

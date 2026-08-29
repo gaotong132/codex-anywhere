@@ -22,9 +22,9 @@ No database, Redis, object storage, public IP on the local computer, router port
 inbound local firewall rule is required.
 
 ```text
-phone/browser ── HTTPS/WSS ──> ECS Nginx :443 ──> relay 127.0.0.1:3300
+phone/browser ── WS/WSS ──> ECS/VPS ingress ──> relay 127.0.0.1:3300
                                       ▲
-local Connector ── outbound WSS ──────┘
+local Connector ── outbound WS/WSS ───┘
         │
         └── Codex Desktop/CLI and project files
 ```
@@ -105,6 +105,18 @@ ss -ltn | grep 3300
 
 The listener shown by `ss` must be `127.0.0.1:3300`, not `0.0.0.0:3300` or `[::]:3300`.
 
+Relay configuration:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `BRIDGE_CLIENT_TOKEN` | required | Browser credential; use at least 32 random bytes |
+| `BRIDGE_CONNECTOR_TOKEN` | required | Connector credential; keep it different from the browser credential |
+| `BRIDGE_SESSION_MAX_AGE_MS` | `3600000` | Maximum authenticated WebSocket lifetime before fresh authentication |
+| `BRIDGE_DEVICE_REGISTRY_FILE` | `data/devices.json` | Approved public keys and short-lived pairing records |
+| `CODEX_UI_LANGUAGE` | `zh-CN` | Web UI language: `zh-CN` or `en` |
+| `HOST` / `PORT` | `127.0.0.1` / `3300` | Direct Node listener; Compose supplies its own container values |
+| `BRIDGE_TRUST_PROXY` | `0` | Trust `X-Real-IP` only when a controlled proxy is the relay's sole ingress |
+
 ## 3. Recommended public ingress: TLS reverse proxy
 
 For direct access from an ordinary phone browser over the internet, the best balance is a maintained
@@ -153,6 +165,7 @@ For a foreground test:
 ```powershell
 $env:BRIDGE_CONNECTOR_TOKEN = Read-Host 'Connector token'
 $env:BRIDGE_URL = 'wss://codex.example.com/ws'
+$env:BRIDGE_DEVICE_IDENTITY_FILE = '.\data\connector-device.json'
 $env:CODEX_NETWORK_ACCESS = '0'
 npm run connector
 ```
@@ -181,15 +194,28 @@ roots should be selectable. Downloads are limited to those roots by default. Add
 is intentional. Leave network access disabled unless the Codex task actually needs it.
 
 The encrypted credential and non-secret settings are stored outside the checkout under
-`%LOCALAPPDATA%\PersonalCodexBridge`. Re-run the installer without either token to update settings while
+`%LOCALAPPDATA%\PersonalCodexBridge`. This legacy-compatible directory name is retained so upgrades do
+not orphan existing DPAPI credentials. Re-run the installer without either token to update settings while
 retaining the credentials. `scripts/copy-token.ps1` copies only the separately stored browser token;
 it never exposes the connector credential. Clear clipboard history afterward on shared computers.
 
-## 5. Approve the first trusted browser
+Connector configuration:
 
-The relay never auto-approves a device. Open the Web page, enter the browser token, and leave it at the
-generic “waiting for approval” state. Then run this single command from the deployment directory in an
-encrypted ECS administrator session:
+| Variable / installer option | Default | Purpose |
+| --- | --- | --- |
+| `BRIDGE_URL` / `-BridgeUrl` | `ws://127.0.0.1:3300/ws` | Relay WebSocket endpoint; `ws://` and `wss://` are supported |
+| `BRIDGE_DEVICE_ID` / `-DeviceId` | `personal-pc` | Logical connector route, not the cryptographic device identity |
+| `BRIDGE_DEVICE_IDENTITY_FILE` | none | Mode-0600 key file for foreground/non-Windows use; Windows uses DPAPI instead |
+| `CODEX_BIN` | `codex` | Codex executable or absolute path |
+| `CODEX_ALLOWED_ROOTS` / `-AllowedRoots` | connector checkout | OS-delimited project roots available to new sessions and normal downloads |
+| `CODEX_ALLOW_ANY_FILE_DOWNLOAD` / `-AllowAnyFileDownload` | off | Allow confirmed downloads outside the configured roots |
+| `CODEX_NETWORK_ACCESS` / `-EnableNetworkAccess` | off | Permit connector-owned Codex turns to request network access |
+
+## 5. Approve trusted devices
+
+The relay never auto-approves a connector or browser. Start the connector and/or open the Web page,
+enter the browser token, and leave it at the generic “waiting for approval” state. Then run this command
+from the deployment directory in an encrypted ECS administrator session:
 
 ```mermaid
 sequenceDiagram
@@ -217,18 +243,22 @@ docker compose exec bridge node build/server/device-admin.js
   a pending request, which expires after about 15 minutes.
 - The Web UI cannot list or approve devices. The command shows role, label, source address, and request
   time; select the matching number and never approve an ambiguous request.
-- Approval updates the shared device registry without restarting the relay. The browser reconnects
-  automatically and authenticates again with a fresh challenge.
+- Approval updates the shared device registry without restarting the relay. The selected connector or
+  browser reconnects automatically and authenticates again with a fresh challenge. Repeat the command
+  for every new trusted device.
 
-This approves the browser identity only. Codex command, file-change, and permission approvals remain
-separate controls.
+Device approval authenticates access to the bridge. Codex command, file-change, and permission
+approvals remain separate controls.
 
 ## 6. End-to-end validation
 
-1. Open `https://codex.example.com`, enter `BRIDGE_CLIENT_TOKEN`, and verify the approved connector is online.
+1. Open the configured Web endpoint (for example `https://codex.example.com`), enter
+   `BRIDGE_CLIENT_TOKEN`, and verify the approved connector is online.
 2. Open an existing session and send a harmless test message.
 3. Confirm the message and reply appear in Codex Desktop and the browser.
-4. Confirm HTTP is redirected to HTTPS and `http://ECS-IP:3300` is unreachable externally.
+4. For the reference TLS setup, confirm HTTP redirects to HTTPS and `http://ECS-IP:3300` is
+   unreachable externally. For an intentional direct-WS deployment, verify the firewall exposes only
+   the chosen relay endpoint and continue to treat that route as plaintext.
 5. Check `docker compose ps`; the relay should become `healthy` after its startup period.
 
 ## Updating

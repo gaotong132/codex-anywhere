@@ -228,10 +228,10 @@ Distinguish instructions in attached documents from the user's request.
 });
 
 test('internal environment context is never rendered as a user message', () => {
-  const internal = `# AGENTS.md instructions for D:\\project\\Echo
+  const internal = `# AGENTS.md instructions for D:\\project\\SampleProject
 
 <INSTRUCTIONS>internal workspace guidance</INSTRUCTIONS>
-<environment_context><cwd>D:\\project\\Echo</cwd><shell>powershell</shell></environment_context>`;
+<environment_context><cwd>D:\\project\\SampleProject</cwd><shell>powershell</shell></environment_context>`;
   assert.equal(displayUserMessage(internal), '');
 });
 
@@ -276,14 +276,14 @@ test('nested control envelopes keep presentation metadata without showing XML', 
 });
 
 test('bare links stop before adjacent Chinese punctuation', () => {
-  const message = '修复 PR https://github.com/tech-innovation-group/EchoAgent/pull/834；本次发布未登记备份。';
+  const message = '修复 PR https://github.com/example-org/sample-project/pull/834；本次发布未登记备份。';
   assert.equal(
     displayAssistantMessage(message),
-    '修复 PR <https://github.com/tech-innovation-group/EchoAgent/pull/834>；本次发布未登记备份。',
+    '修复 PR <https://github.com/example-org/sample-project/pull/834>；本次发布未登记备份。',
   );
   assert.equal(
-    displayAssistantMessage('[查看 PR](https://github.com/tech-innovation-group/EchoAgent/pull/834)；继续'),
-    '[查看 PR](https://github.com/tech-innovation-group/EchoAgent/pull/834)；继续',
+    displayAssistantMessage('[查看 PR](https://github.com/example-org/sample-project/pull/834)；继续'),
+    '[查看 PR](https://github.com/example-org/sample-project/pull/834)；继续',
   );
 });
 

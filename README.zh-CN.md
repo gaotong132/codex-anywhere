@@ -122,8 +122,8 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
 
 4. 在手机浏览器中打开转发服务地址并输入浏览器 Token。浏览器会自动生成设备身份，页面只显示
    通用的等待批准状态。
-5. 在 ECS/VPS 上按[正式部署指南](docs/deployment.zh-CN.md)的一次性运维步骤批准新增记录。Web 界面不会
-   获取或展示设备 ID、请求 ID、公钥、IP 和设备清单。
+5. 在 ECS/VPS 上按[正式部署指南](docs/deployment.zh-CN.md)批准每个新连接器或浏览器。以后增加可信
+   设备时重新运行该命令。Web 界面不会获取或展示设备 ID、请求 ID、公钥、IP 和设备清单。
 
    ```bash
    docker compose exec bridge node build/server/device-admin.js
@@ -140,6 +140,7 @@ ECS/VPS 的作用是避免本机直接暴露到公网，并为浏览器和连接
 | --- | --- | --- |
 | `BRIDGE_CLIENT_TOKEN` | 转发服务和浏览器 | 浏览器控制密钥，应与连接器密钥分开 |
 | `BRIDGE_CONNECTOR_TOKEN` | 转发服务和连接器 | 本机连接器密钥 |
+| `BRIDGE_SESSION_MAX_AGE_MS` | 转发服务 | 已认证 WebSocket 的最长生存期，默认一小时 |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | 转发服务 | 持久化已批准/待批准设备的公开记录；Compose 已自动配置 |
 | `BRIDGE_URL` | 连接器 | 转发服务 WebSocket 地址，支持 `ws://` 和 `wss://` |
 | `CODEX_UI_LANGUAGE` | 转发服务 | Web 界面语言：`zh-CN` 或 `en` |
@@ -176,11 +177,18 @@ npm run server
 ```powershell
 $env:BRIDGE_CONNECTOR_TOKEN = 'replace-with-the-connector-token-above'
 $env:BRIDGE_URL = 'ws://127.0.0.1:3300/ws'
+$env:BRIDGE_DEVICE_IDENTITY_FILE = '.\data\connector-device.json'
 npm run connector
 ```
 
-打开 `http://127.0.0.1:3300` 并输入 Token。本机开发也保持严格设备审批；请在代码外批准
-`data/devices.json` 中的待审批浏览器，不要增加“首设备自动放行”的代码例外。开发检查与构建命令：
+打开 `http://127.0.0.1:3300` 并输入 Token。本机开发也保持严格设备审批。在第三个终端运行与正式
+环境相同的管理员命令，分别批准连接器和浏览器；它会自动读取本机的 `data/devices.json`：
+
+```powershell
+node build/server/device-admin.js
+```
+
+每个设备运行一次，不要增加“首设备自动放行”的代码例外。开发检查与构建命令：
 
 ```powershell
 npm run check
