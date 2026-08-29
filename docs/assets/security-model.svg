@@ -37,7 +37,7 @@
       <g transform="translate(24 98)">
         <rect width="317" height="72" rx="14" fill="#0c1626" stroke="#253d5e"/>
         <text x="18" y="27" fill="#bcd0ed" font-size="13" font-weight="700">One-time pairing credential</text>
-        <text x="18" y="50" fill="#788ca8" font-size="12">Consumed after enrollment · token fallback</text>
+        <text x="18" y="50" fill="#788ca8" font-size="12">Consumed after enrollment · recovery option</text>
       </g>
       <g transform="translate(24 184)">
         <rect width="317" height="72" rx="14" fill="#0c1626" stroke="#253d5e"/>
@@ -64,7 +64,7 @@
         <rect width="317" height="84" rx="14" fill="#0d192b" stroke="#31578a"/>
         <text x="18" y="27" fill="#c9dbf6" font-size="13" font-weight="700">Fresh challenge on every connection</text>
         <text x="18" y="51" fill="#8095b4" font-size="12">Approved Ed25519 device signature</text>
-        <text x="18" y="69" fill="#8095b4" font-size="12">+ HMAC proof during enrollment or fallback</text>
+        <text x="18" y="69" fill="#8095b4" font-size="12">+ HMAC proof during enrollment or recovery</text>
       </g>
       <g transform="translate(24 196)">
         <rect width="317" height="84" rx="14" fill="#0d192b" stroke="#31578a"/>
@@ -112,8 +112,8 @@
     <path d="M889 336h72"/>
   </g>
   <g font-family="Inter,Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" text-anchor="middle">
-    <g transform="translate(471 296)"><rect x="-70" y="-15" width="140" height="26" rx="13" fill="#152743" stroke="#315889"/><text y="3" fill="#a8c3ef">WSS + encrypted frames</text></g>
-    <g transform="translate(925 296)"><rect x="-70" y="-15" width="140" height="26" rx="13" fill="#15302d" stroke="#2e6659"/><text y="3" fill="#a8d8ca">Encrypted frames + WSS</text></g>
+    <g transform="translate(471 296)"><rect x="-70" y="-15" width="140" height="26" rx="13" fill="#152743" stroke="#315889"/><text y="3" fill="#a8c3ef">TLS recommended · E2EE</text></g>
+    <g transform="translate(925 296)"><rect x="-70" y="-15" width="140" height="26" rx="13" fill="#15302d" stroke="#2e6659"/><text y="3" fill="#a8d8ca">E2EE required · WS/WSS</text></g>
   </g>
 
   <g transform="translate(64 606)" font-family="Inter,Segoe UI,Arial,sans-serif">
@@ -121,9 +121,9 @@
     <text x="24" y="36" fill="#f0d1a4" font-size="17" font-weight="750">Honest limits — end-to-end encryption does not make the deployment zero-trust</text>
     <path d="M24 53h1225" stroke="#413a3a"/>
     <g fill="#b7a99b" font-size="13">
-      <text x="24" y="83">• The relay still sees routing metadata, timing and ciphertext size; legacy peers may use a plaintext compatibility path.</text>
+      <text x="24" y="83">• Application frames are always E2EE; the relay still sees routing metadata, timing and ciphertext size.</text>
       <text x="24" y="110">• A compromised ECS can change future Web code or trust records; compromised endpoints retain their user's authority.</text>
-      <text x="24" y="137">• Direct ws:// does not protect Web delivery, enrollment or metadata; use WSS, a VPN or a secure tunnel on untrusted networks.</text>
+      <text x="24" y="137">• Direct ws:// leaves Web delivery, enrollment and metadata unprotected; use WSS, a VPN or a secure tunnel.</text>
     </g>
   </g>
 </svg>

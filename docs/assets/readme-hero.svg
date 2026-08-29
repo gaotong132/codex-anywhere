@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720" role="img" aria-labelledby="title desc">
   <title id="title">Codex Anywhere product overview</title>
-  <desc id="desc">Two mobile screens show recent Codex sessions and a live conversation with progress tracking, image upload, and file download.</desc>
+  <desc id="desc">Two mobile screens show recent Codex sessions and a live conversation with progress tracking, image upload, file download, and mandatory end-to-end encryption.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#07101e"/>
@@ -67,9 +67,9 @@
     <g transform="translate(0 98)">
       <rect width="244" height="82" rx="16" fill="#101c30" stroke="#223a5f"/>
       <circle cx="32" cy="28" r="12" fill="#172f51"/>
-      <path d="M26 23h12M26 28h9M26 33h7" fill="none" stroke="#7ca7f7" stroke-width="2" stroke-linecap="round"/>
-      <text x="55" y="32" fill="#e6edf8" font-size="15" font-weight="700">Fast history</text>
-      <text x="20" y="60" fill="#7f91ab" font-size="12">Incremental loading for long sessions</text>
+      <path d="M32 20l8 3v6c0 6-3 10-8 13-5-3-8-7-8-13v-6zM28 30l3 3 6-7" fill="none" stroke="#7ca7f7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="55" y="32" fill="#e6edf8" font-size="15" font-weight="700">Strict E2EE</text>
+      <text x="20" y="60" fill="#7f91ab" font-size="12">All application frames encrypted</text>
     </g>
     <g transform="translate(260 98)">
       <rect width="244" height="82" rx="16" fill="#101c30" stroke="#223a5f"/>

@@ -26,7 +26,7 @@
   <circle cx="707" cy="332" r="270" fill="#2e6bd0" opacity=".055"/>
 
   <text x="70" y="78" fill="#f2f6fc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="750">How it works</text>
-  <text x="70" y="111" fill="#8091aa" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">A tiny relay joins your browser to Codex without opening an inbound port on your computer.</text>
+  <text x="70" y="111" fill="#8091aa" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">Protocol v3 requires E2EE while a tiny relay joins your browser to Codex without a local inbound port.</text>
 
   <g font-family="Inter,Segoe UI,Arial,sans-serif" filter="url(#shadow2)">
     <g transform="translate(70 205)">
@@ -43,7 +43,7 @@
       <path d="M85 83c0-22 17-40 39-40 17 0 31 10 37 24 19 1 34 16 34 35 0 20-16 36-36 36H91c-20 0-36-16-36-36 0-17 13-32 30-35" fill="#17345c" stroke="#5f91e9" stroke-width="2"/>
       <path d="M98 95h53M108 111h33" stroke="#8db1f4" stroke-width="3" stroke-linecap="round"/>
       <text x="122" y="158" text-anchor="middle" fill="#eef4fd" font-size="17" font-weight="700">Self-hosted relay</text>
-      <text x="122" y="178" text-anchor="middle" fill="#71849f" font-size="11">Auth + in-memory forwarding</text>
+      <text x="122" y="178" text-anchor="middle" fill="#71849f" font-size="11">Auth + ciphertext routing</text>
     </g>
 
     <g transform="translate(750 205)">
@@ -71,8 +71,8 @@
     <path d="M1000 300h74"/>
   </g>
   <g font-family="Inter,Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" text-anchor="middle">
-    <g transform="translate(357 266)"><rect x="-62" y="-15" width="124" height="25" rx="12" fill="#152743" stroke="#2f5386"/><text y="3" fill="#9bb9e8">WSS + encrypted</text></g>
-    <g transform="translate(697 266)"><rect x="-62" y="-15" width="124" height="25" rx="12" fill="#152743" stroke="#2f5386"/><text y="3" fill="#9bb9e8">encrypted + WSS</text></g>
+    <g transform="translate(357 266)"><rect x="-62" y="-15" width="124" height="25" rx="12" fill="#152743" stroke="#2f5386"/><text y="3" fill="#9bb9e8">WS/WSS + E2EE</text></g>
+    <g transform="translate(697 266)"><rect x="-62" y="-15" width="124" height="25" rx="12" fill="#152743" stroke="#2f5386"/><text y="3" fill="#9bb9e8">E2EE + WS/WSS</text></g>
     <g transform="translate(1042 266)"><rect x="-50" y="-15" width="100" height="25" rx="12" fill="#1a263d" stroke="#465777"/><text y="3" fill="#a9b8cf">Local IPC</text></g>
   </g>
 
@@ -102,7 +102,7 @@
       <circle cx="30" cy="82" r="4" fill="#55dda1"/>
       <text x="44" y="87" fill="#94a4ba" font-size="12">Files and execution stay local</text>
       <circle cx="30" cy="109" r="4" fill="#55dda1"/>
-      <text x="44" y="114" fill="#94a4ba" font-size="12">No ACP · no remote shell</text>
+      <text x="44" y="114" fill="#94a4ba" font-size="12">Protocol v3 · E2EE required</text>
     </g>
   </g>
 </svg>
