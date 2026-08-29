@@ -19,27 +19,24 @@ computer; a lightweight relay on your own ECS/VPS provides the remote entry poin
 
 ## Features and highlights
 
-- **Continue existing sessions** — browse recent Codex sessions, open Markdown history, preview linked
-  project images, and send new text or image messages from a phone.
-- **Follow work in progress** — see running state and automatically refresh useful assistant progress
-  without exposing internal reasoning or tool-call noise.
-- **Approve from your phone** — command, file-change, and permission prompts from Web-owned turns can
-  be accepted or rejected in the browser, and pending prompts survive a reconnect.
-- **Download local files** — after confirmation, download local files linked in assistant replies to a
-  phone or browser without an extension allowlist or persistent storage on the relay.
-- **Preview Codex visualizations** — open Codex-generated local HTML concepts in a full-screen,
-  network-blocked browser sandbox, or download the original artifact.
-- **Fast on long histories** — session lists and conversation history are loaded incrementally instead
-  of downloading every session in full.
+- **Continue existing sessions** — browse recent work, read Markdown history, and send new text or image
+  messages from a phone.
+- **Follow work in progress** — see which sessions are running and follow useful progress as it happens.
+- **Approve from your phone** — accept or reject supported command, file-change, and permission
+  requests in the browser, even after reconnecting.
+- **Bring results back with you** — preview images and download files linked in assistant replies after
+  a clear confirmation.
+- **Preview Codex visualizations** — open Codex-generated interactive concepts full-screen or download
+  the original artifact.
+- **Fast on long histories** — open recent sessions quickly and load older messages only when needed.
 - **Mobile-oriented controls** — create a session in an existing project, search recent sessions, open
   attachments, and keep common actions within easy reach.
-- **Resilient connection** — the browser and connector recover automatically from transient disconnects
-  and network switches.
-- **Device-bound access** — tokens are only the first factor; every browser and connector also signs
-  in with its own operator-approved Ed25519 device key, while identity details stay off the Web UI.
-- **Self-hosted and private by design** — the local computer accepts no public inbound connection; the
-  relay does not persist conversations, attachments, or downloaded files.
-- **Chinese and English UI** — select `zh-CN` or `en` through runtime configuration.
+- **Resilient connection** — your phone and connected computer recover automatically from transient
+  disconnects and network switches.
+- **Approve every device** — each phone, browser, and connected computer must be trusted by the owner
+  before it can open any session; a copied token alone is not enough.
+- **Keep work on your own computer** — Codex execution and project files stay local, while a relay you
+  control provides the remote entry point.
 
 Codex Anywhere is intentionally a personal bridge. It does not provide automatic session forks, a
 general remote shell, or a multi-user gateway.
@@ -80,7 +77,7 @@ Security is layered rather than delegated to a single bearer token:
 | Device access | Uses separate browser and connector tokens, a fresh 256-bit challenge, an HMAC-SHA-256 proof, and an Ed25519 signature from an explicitly approved device. A token alone cannot open a session. |
 | Session controls | Rejects replayed proofs, expires authenticated connections after one hour by default, rate-limits repeated failures, validates browser origins, and limits WebSocket frame size. |
 | Local computer | Accepts no inbound public connection. On Windows, the connector token and device private key are protected with current-user DPAPI. Codex execution and project files remain local. |
-| File access | Raster previews are restricted to configured roots, content-validated, resized, and converted to WebP; SVG remains download-only. Codex HTML visualizations are size-limited and run in an isolated, network-blocked frame. Original-file downloads require explicit confirmation and a random, client-bound, short-lived capability. |
+| File access | Raster previews are restricted to configured roots, content-validated, resized, and converted to WebP; SVG remains download-only. Codex HTML visualizations are size-limited, held briefly in relay memory, and run in an isolated, network-blocked frame. Original-file downloads require explicit confirmation and a random, client-bound, short-lived capability. |
 | Relay deployment | The reference Compose service binds only to ECS loopback, runs as a non-root user with a read-only filesystem and no Linux capabilities, and persists public device keys plus approval metadata—not conversations or file content. |
 | Browser hardening | Keeps the browser token in `sessionStorage`, enforces same-origin WebSocket access, and serves a restrictive CSP and other browser security headers. |
 

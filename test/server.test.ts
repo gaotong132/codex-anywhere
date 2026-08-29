@@ -170,7 +170,7 @@ test('content security policy limits WebSocket connections to the current host',
     .trim().split(/\s+/).slice(1);
   assert.equal(connectSources.includes('ws:'), false);
   assert.equal(connectSources.includes('wss:'), false);
-  assert.match(policy, /frame-src data:;/);
+  assert.match(policy, /frame-src 'self';/);
   await response.arrayBuffer();
 });
 
@@ -212,6 +212,53 @@ test('server authenticates and relays client requests to connector', async (t) =
   assert.deepEqual(response.data, { online: true });
   connector.close();
   client.close();
+});
+
+test('visualization previews use a short-lived same-origin sandbox capability', async (t) => {
+  const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const origin = `http://127.0.0.1:${address.port}`;
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+
+  const connector = await authenticateSocket({
+    url, role: 'connector', token: TOKEN, deviceId: 'personal-pc', registry: server.deviceRegistry,
+  });
+  const client = await authenticateSocket({
+    url, role: 'client', token: TOKEN, registry: server.deviceRegistry,
+  });
+  client.socket.send(JSON.stringify({
+    type: 'request', requestId: 'visualization-1', action: 'visualization.read',
+    deviceId: 'personal-pc', payload: { path: 'C:\\example.html' },
+  }));
+  const forwarded = await nextJson(connector.socket);
+  connector.socket.send(JSON.stringify({
+    type: 'response', clientId: forwarded.clientId, requestId: forwarded.requestId, ok: true,
+    data: {
+      name: 'example.html', size: 73,
+      content: '<style>body{color:green}</style><main>Interactive preview</main><script>document.body.dataset.ready="1"</script>',
+    },
+  }));
+  const relayed = await nextJson(client.socket);
+  assert.match(relayed.data.previewUrl, /^\/visualization-preview\/[A-Za-z0-9_-]{43}$/);
+  assert.equal(relayed.data.content, undefined);
+
+  const preview = await fetch(`${origin}${relayed.data.previewUrl}`);
+  assert.equal(preview.status, 200);
+  assert.equal(preview.headers.get('cache-control'), 'no-store');
+  assert.equal(preview.headers.get('x-frame-options'), 'SAMEORIGIN');
+  const policy = preview.headers.get('content-security-policy');
+  assert.match(policy, /script-src 'unsafe-inline'/);
+  assert.match(policy, /style-src 'unsafe-inline'/);
+  assert.match(policy, /connect-src 'none'/);
+  assert.match(policy, /frame-ancestors 'self'/);
+  const previewBody = await preview.text();
+  assert.match(previewBody, /name="viewport"/);
+  assert.match(previewBody, /Interactive preview/);
+  assert.equal((await fetch(`${origin}/visualization-preview/${'x'.repeat(43)}`)).status, 404);
+
+  connector.socket.close();
+  client.socket.close();
 });
 
 test('valid tokens cannot sign in from an unapproved device', async (t) => {

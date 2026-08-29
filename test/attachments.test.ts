@@ -158,6 +158,7 @@ test('interactive visualizations load only bounded HTML from the Codex visualiza
   const directory = await mkdtemp(join(tmpdir(), 'bridge-visualization-test-'));
   const outsideDirectory = await mkdtemp(join(tmpdir(), 'bridge-visualization-outside-'));
   const visualization = join(directory, 'concept.html');
+  const renderedPreview = join(directory, 'concept-preview.html');
   const wrongType = join(directory, 'concept.svg');
   const tooLarge = join(directory, 'too-large.html');
   const outside = join(outsideDirectory, 'outside.html');
@@ -173,6 +174,10 @@ test('interactive visualizations load only bounded HTML from the Codex visualiza
   const result = await readVisualization({ path: visualization }, { directory });
   assert.equal(result.name, 'concept.html');
   assert.match(result.content, /Safe concept/);
+  await writeFile(renderedPreview, '<!doctype html><main>Rendered concept shell</main>');
+  const preferred = await readVisualization({ path: visualization }, { directory });
+  assert.equal(preferred.name, 'concept.html');
+  assert.match(preferred.content, /Rendered concept shell/);
   await assert.rejects(() => readVisualization({ path: wrongType }, { directory }), /visualization_path_invalid/);
   await assert.rejects(() => readVisualization({ path: tooLarge }, { directory }), /visualization_too_large/);
   await assert.rejects(() => readVisualization({ path: outside }, { directory }), /visualization_path_not_allowed/);

@@ -79,10 +79,11 @@ rate-limits chunks, and records only hashed local audit identifiers. Enabling un
 intentionally expands the download boundary, not the automatic preview roots.
 
 Codex-generated `.html` files are previewed only from the canonical `.codex/visualizations` directory
-and are capped at 2 MiB. The browser runs them in a sandboxed, opaque-origin frame without access to
-the parent page, storage, forms, popups, top navigation, or network connections. Inline script is
-allowed inside that isolated frame so the artifact remains interactive. The original file still uses
-the confirmed, short-lived download capability.
+and are capped at 2 MiB. A preview is held only in relay memory for up to five minutes behind a random
+capability URL; it is never written to relay storage. The browser runs it in a sandboxed, opaque-origin
+frame without access to the parent page, storage, forms, popups, top navigation, or network connections.
+Inline script is allowed inside that isolated frame so the artifact remains interactive. The original
+file still uses the confirmed, short-lived download capability.
 
 Device administration is deliberately available only from the relay host. The default command lists
 pending requests and asks before approval. These variants list or revoke approved devices without

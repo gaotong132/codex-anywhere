@@ -1366,10 +1366,10 @@ export default function App() {
 
   const readVisualization = useCallback(async (path: string) => {
     const result = await request<VisualizationDocument>('visualization.read', { path });
-    if (!result || typeof result.content !== 'string' || result.content.length > 2 * 1024 * 1024) {
+    if (!result || !/^\/visualization-preview\/[A-Za-z0-9_-]{43}$/.test(result.previewUrl || '')) {
       throw new Error('visualization_content_invalid');
     }
-    return result.content;
+    return result.previewUrl;
   }, [request]);
 
   const cancelFileDownload = useCallback(() => {

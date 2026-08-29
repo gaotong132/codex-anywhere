@@ -16,17 +16,6 @@ function dateTimeValue(value: TimelineItem['completedAt']) {
   return Number.isFinite(date.getTime()) ? date.toISOString() : '';
 }
 
-function sandboxedVisualizationUrl(content: string) {
-  const policy = "default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:; connect-src 'none'; media-src data: blob:; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'";
-  const document = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="${policy}"><style>html,body{margin:0;min-height:100%;background:#fff}</style></head><body>${content}</body></html>`;
-  const bytes = new TextEncoder().encode(document);
-  let binary = '';
-  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
-  }
-  return `data:text/html;charset=utf-8;base64,${btoa(binary)}`;
-}
-
 export function SidebarIcon({ name }: { name: SidebarIconName }) {
   if (name === 'plus') {
     return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>;
@@ -76,6 +65,7 @@ export function MessageBubble({
   const [visualizationSource, setVisualizationSource] = useState('');
   const [visualizationStatus, setVisualizationStatus] = useState<'idle' | 'loading' | 'failed'>('idle');
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visualizationHistoryEntry = useRef(false);
   const copyable = item.kind === 'user' || item.kind === 'assistant';
 
   useEffect(() => {
@@ -100,25 +90,54 @@ export function MessageBubble({
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setImageExpanded(false);
-        setVisualizationOpen(false);
+        if (visualizationOpen) closeVisualization();
       }
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [imageExpanded, visualizationOpen]);
 
+  useEffect(() => {
+    if (!visualizationOpen) return undefined;
+    const closeOnBack = () => {
+      visualizationHistoryEntry.current = false;
+      setVisualizationOpen(false);
+      setVisualizationSource('');
+    };
+    window.addEventListener('popstate', closeOnBack);
+    return () => window.removeEventListener('popstate', closeOnBack);
+  }, [visualizationOpen]);
+
+  function showVisualization() {
+    if (!visualizationHistoryEntry.current) {
+      const currentState = window.history.state && typeof window.history.state === 'object'
+        ? window.history.state : {};
+      window.history.pushState({ ...currentState, codexAnywhereOverlay: 'visualization' }, '');
+      visualizationHistoryEntry.current = true;
+    }
+    setVisualizationOpen(true);
+  }
+
+  function closeVisualization() {
+    setVisualizationOpen(false);
+    setVisualizationSource('');
+    if (!visualizationHistoryEntry.current) return;
+    visualizationHistoryEntry.current = false;
+    window.history.back();
+  }
+
   async function openVisualization() {
     if (!item.visualization || visualizationStatus === 'loading') return;
     if (visualizationSource) {
-      setVisualizationOpen(true);
+      showVisualization();
       return;
     }
     setVisualizationStatus('loading');
     try {
-      const content = await onReadVisualization(item.visualization.path);
-      setVisualizationSource(sandboxedVisualizationUrl(content));
+      const previewUrl = await onReadVisualization(item.visualization.path);
+      setVisualizationSource(previewUrl);
       setVisualizationStatus('idle');
-      setVisualizationOpen(true);
+      showVisualization();
     } catch {
       setVisualizationStatus('failed');
     }
@@ -283,7 +302,7 @@ export function MessageBubble({
         >
           <header>
             <span>{item.visualization.name}</span>
-            <button type="button" onClick={() => setVisualizationOpen(false)} aria-label={t('关闭预览', 'Close preview')}>
+            <button type="button" onClick={closeVisualization} aria-label={t('关闭预览', 'Close preview')}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
             </button>
           </header>
