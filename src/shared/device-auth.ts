@@ -29,6 +29,8 @@ export type DeviceAuthProof = {
   label?: string;
 };
 
+export type DevicePublicIdentity = Pick<DeviceIdentity, 'id' | 'publicKey'>;
+
 export function deviceIdFromPublicKey(publicKey: string) {
   if (!DEVICE_PUBLIC_KEY_PATTERN.test(publicKey)) throw new Error('invalid_device_public_key');
   return bytesToHex(sha256(hexToBytes(publicKey)));
@@ -86,27 +88,38 @@ export function createDeviceAuthProof(
   return {
     id: identity.id,
     publicKey: identity.publicKey,
-    signature: bytesToHex(sign(utf8ToBytes(payload), hexToBytes(identity.privateKey))),
+    signature: signDevicePayload(identity, payload),
     ...(label?.trim() ? { label: label.trim().slice(0, 80) } : {}),
   };
+}
+
+export function signDevicePayload(identity: DeviceIdentity, payload: string | Uint8Array) {
+  if (deviceIdFromPublicKey(identity.publicKey) !== identity.id) throw new Error('invalid_device_identity');
+  const bytes = typeof payload === 'string' ? utf8ToBytes(payload) : payload;
+  return bytesToHex(sign(bytes, hexToBytes(identity.privateKey)));
+}
+
+export function verifyDevicePayload(
+  identity: DevicePublicIdentity,
+  signature: string,
+  payload: string | Uint8Array,
+) {
+  if (!DEVICE_ID_PATTERN.test(identity.id)
+    || !DEVICE_PUBLIC_KEY_PATTERN.test(identity.publicKey)
+    || !DEVICE_SIGNATURE_PATTERN.test(signature)) return false;
+  if (deviceIdFromPublicKey(identity.publicKey) !== identity.id) return false;
+  const bytes = typeof payload === 'string' ? utf8ToBytes(payload) : payload;
+  return verify(hexToBytes(signature), bytes, hexToBytes(identity.publicKey));
 }
 
 export function verifyDeviceAuthProof(
   device: DeviceAuthProof,
   params: Omit<Parameters<typeof createDeviceAuthPayload>[0], 'deviceId' | 'publicKey'>,
 ) {
-  if (!DEVICE_ID_PATTERN.test(device.id)
-    || !DEVICE_PUBLIC_KEY_PATTERN.test(device.publicKey)
-    || !DEVICE_SIGNATURE_PATTERN.test(device.signature)) return false;
-  if (deviceIdFromPublicKey(device.publicKey) !== device.id) return false;
   const payload = createDeviceAuthPayload({
     ...params,
     deviceId: device.id,
     publicKey: device.publicKey,
   });
-  return verify(
-    hexToBytes(device.signature),
-    utf8ToBytes(payload),
-    hexToBytes(device.publicKey),
-  );
+  return verifyDevicePayload(device, device.signature, payload);
 }
