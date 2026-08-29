@@ -97,7 +97,9 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
     etag: true,
     single: true,
     setHeaders(response, pathname) {
-      const cacheableAsset = /\.[^/]+$/.test(pathname) && !pathname.endsWith('.html');
+      const cacheableAsset = /\.[^/]+$/.test(pathname)
+        && !pathname.endsWith('.html')
+        && !pathname.endsWith('/service-worker.js');
       response.setHeader('cache-control', cacheableAsset ? 'public, max-age=3600' : 'no-store');
     },
   });

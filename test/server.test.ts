@@ -250,6 +250,7 @@ test('static middleware serves assets and preserves SPA fallback caching', async
   await mkdir(publicDir);
   await writeFile(join(publicDir, 'index.html'), '<main>Codex Anywhere</main>');
   await writeFile(join(publicDir, 'app.css'), 'body { color: white; }');
+  await writeFile(join(publicDir, 'service-worker.js'), 'self.skipWaiting();');
   await writeFile(join(fixtureDir, 'private.txt'), 'must not be served');
   const server = createBridgeServer({ clientToken: TOKEN, connectorToken: TOKEN, publicDir });
   const address = await server.listen(0, '127.0.0.1');
@@ -271,6 +272,10 @@ test('static middleware serves assets and preserves SPA fallback caching', async
   assert.match(asset.headers.get('content-type'), /^text\/css/);
   assert.equal(asset.headers.get('cache-control'), 'public, max-age=3600');
   assert.match(await asset.text(), /color: white/);
+
+  const serviceWorker = await fetchOnce('/service-worker.js');
+  assert.equal(serviceWorker.status, 200);
+  assert.equal(serviceWorker.headers.get('cache-control'), 'no-store');
 
   const missingAsset = await fetchOnce('/missing.js');
   assert.equal(missingAsset.status, 404);
