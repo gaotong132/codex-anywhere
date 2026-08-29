@@ -56,8 +56,10 @@ local connector ── outbound WS/WSS ───┘
 ```
 
 Both the browser and the local connector initiate connections to the relay. The relay authenticates
-them, negotiates a compatible protocol version and capability set, and forwards live frames in memory;
-Codex execution and file access remain local.
+them and negotiates a compatible protocol version and capability set. Current peers establish an
+authenticated end-to-end encrypted channel, so the relay routes ciphertext while Codex execution and
+file access remain local. Rolling upgrades keep a legacy plaintext path only when one peer does not yet
+advertise end-to-end encryption.
 
 New sessions and eligible idle sessions are owned by the connector through the Codex app-server
 JSON-RPC protocol, enabling native deltas and browser approval prompts. Sessions that are already
@@ -76,20 +78,21 @@ Security is layered rather than delegated to a single bearer token:
 | Layer | What the current implementation does |
 | --- | --- |
 | Device access | Uses one-time, ten-minute browser pairing links and persistent Ed25519 device keys. The relay stores only a verifier for each unused pairing link; after enrollment, the browser reconnects with its approved device key instead of a shared token. Connector and legacy browser token flows remain challenge-bound and separately scoped. |
+| Content protection | Current browser and connector peers authenticate an ephemeral X25519 handshake with their approved Ed25519 identities, then encrypt ordered application frames with XChaCha20-Poly1305. The relay sees routing metadata, timing and ciphertext size, but not message or file content. |
 | Session controls | Rejects replayed proofs, expires authenticated connections after one hour by default, rate-limits repeated failures, validates browser origins, and limits WebSocket frame size. |
 | Local computer | Accepts no inbound public connection. On Windows, the connector token and device private key are protected with current-user DPAPI. Codex execution and project files remain local. |
-| File access | Raster previews are restricted to configured roots, content-validated, resized, and converted to WebP; SVG remains download-only. Codex HTML visualizations are size-limited, held briefly in relay memory, and run in an isolated, network-blocked frame. Original-file downloads require explicit confirmation and a random, client-bound, short-lived capability. |
+| File access | Raster previews are restricted to configured roots, content-validated, resized, and converted to WebP; SVG remains download-only. Codex HTML visualizations are size-limited, decrypted in the browser, and run in an isolated, network-blocked frame. Original-file downloads require explicit confirmation and a random, client-bound, short-lived capability. |
 | Relay deployment | The reference Compose service binds only to ECS loopback, runs as a non-root user with a read-only filesystem and no Linux capabilities, and persists public device keys plus approval metadata—not conversations or file content. |
 | Browser hardening | Removes the one-time secret from the URL fragment before connecting, clears temporary pairing/token material after approval, enforces same-origin WebSocket access, and serves a restrictive CSP and other browser security headers. |
 
-The limits matter just as much. Codex Anywhere does **not** provide application-layer end-to-end
-encryption across the relay: WSS protects traffic on the network, but TLS terminates at the ECS/VPS and
-the relay can see forwarded messages, previews, and file chunks in memory. The relay deliberately has no
-conversation database and does not intentionally persist those frames, but the ECS administrator and
-host remain trusted. Browser device keys live in that browser profile rather than hardware-backed
-storage, so a compromised profile or malicious extension can act as that approved browser. A compromised
-local computer can access everything available to Codex. Plain `ws://` remains supported by operator
-choice but offers no confidentiality.
+The limits matter just as much. End-to-end encryption prevents the normal relay process from reading
+current application frames, but it does not make the deployment zero-trust. The ECS serves the Web app
+and administers the device trust registry; a compromised host or root administrator could serve changed
+browser code, alter future trust decisions, observe metadata, or force a legacy downgrade. Browser keys
+live in that browser profile rather than hardware-backed storage, so a compromised profile or extension
+can act as the approved browser. A compromised local computer can access everything available to Codex.
+Plain `ws://` remains supported, but does not protect Web delivery, authentication bootstrap, or metadata
+from the network; use WSS, a VPN, or a secure tunnel on untrusted networks.
 
 This is a single-user personal bridge, not a multi-tenant identity system, a zero-trust gateway, or a
 replacement for Codex permission review. Use an ECS/VPS you control, prefer WSS/VPN/a secure tunnel on

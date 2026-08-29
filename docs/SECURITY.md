@@ -51,10 +51,19 @@ and Codex execution remain local.
 The relay has no conversation database and does not intentionally persist messages, attachment
 previews, or download chunks.
 
-The relay is nevertheless trusted. TLS terminates at the ECS reverse proxy, so the proxy and relay
-see plaintext frames in memory. This project does not provide application-layer end-to-end encryption
-that hides content from the ECS operator or cloud host. Protect process memory, `.env`, proxy error
-logs, backups, DNS and cloud accounts, and every administrator with access to the host.
+Current browser and connector peers establish an application-layer encrypted channel after WebSocket
+authentication. They authenticate ephemeral X25519 keys with their approved Ed25519 identities, derive
+directional keys with HKDF-SHA-256, and protect ordered JSON frames with XChaCha20-Poly1305. Message text,
+image previews, visualization HTML, and download chunks cross the relay as ciphertext. The relay still
+sees public device identities, route IDs, connection timing, frame direction and approximate size.
+
+The relay host remains a trust boundary rather than a zero-trust component. It serves the browser code,
+holds role tokens and the device trust registry, and controls protocol negotiation. A compromised ECS or
+root administrator could change future browser code, replace trust records, force a legacy downgrade, or
+deny service. Existing end-to-end encryption protects against routine relay inspection and accidental
+logging, not a malicious host that controls enrollment and code delivery. Protect `.env`, the registry,
+proxy logs, backups, DNS and cloud accounts, and every administrator with host access. During rolling
+upgrades, a peer without `e2ee-channel.v1` uses the legacy plaintext application-frame path.
 
 The preferred browser bootstrap is a random, ten-minute, single-use pairing link. Its secret is carried
 in a URL fragment, removed from the address bar before the WebSocket is opened, and retained only in
@@ -85,11 +94,12 @@ rate-limits chunks, and records only hashed local audit identifiers. Enabling un
 intentionally expands the download boundary, not the automatic preview roots.
 
 Codex-generated `.html` files are previewed only from the canonical `.codex/visualizations` directory
-and are capped at 2 MiB. A preview is held only in relay memory for up to five minutes behind a random
-capability URL; it is never written to relay storage. The browser runs it in a sandboxed, opaque-origin
-frame without access to the parent page, storage, forms, popups, top navigation, or network connections.
-Inline script is allowed inside that isolated frame so the artifact remains interactive. The original
-file still uses the confirmed, short-lived download capability.
+and are capped at 2 MiB. On the encrypted path, HTML reaches the browser as ciphertext and becomes a
+short-lived local Blob URL; the legacy path retains a five-minute in-memory relay capability for rolling
+compatibility. The browser runs either form in a sandboxed, opaque-origin frame without access to the
+parent page, storage, forms, popups, top navigation, or network connections. Inline script is allowed
+inside that isolated frame so the artifact remains interactive. The original file still uses the
+confirmed, short-lived download capability.
 
 Device administration is deliberately available only from the relay host. Create a browser pairing,
 or use the default command to approve a connector or fallback Token request. These variants list or
