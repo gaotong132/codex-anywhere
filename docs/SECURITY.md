@@ -32,6 +32,21 @@ Never put tokens, private addresses, conversation content, or local paths in a p
 The pairing secret stays in the URL fragment, is removed before connecting, and is stored by the relay
 only as a one-way verifier until it expires or is consumed.
 
+```mermaid
+sequenceDiagram
+    participant A as ECS administrator
+    participant R as Relay
+    participant B as Browser
+    A->>R: Create one-time pairing link
+    R-->>A: URL fragment + QR code (10 min)
+    A-->>B: Open, paste, scan, or upload QR screenshot
+    B->>B: Create device key and remove URL secret
+    R-->>B: Fresh challenge
+    B->>R: One-time proof + signed device key
+    R->>R: Consume pairing and approve public key
+    Note over B,R: Reconnects use the approved key and fresh challenges
+```
+
 Image previews are limited to configured roots, validated by content, resized, and converted to WebP.
 Original downloads require confirmation and a short-lived capability bound to one client and file.
 Interactive HTML is restricted to Codex visualizations and runs in a network-blocked, opaque-origin
@@ -69,9 +84,9 @@ secure tunnel on untrusted networks.
 Device approval and revocation are available only from the relay host:
 
 ```bash
-docker compose exec bridge node build/server/device-admin.js pair https://codex.example.com
-docker compose exec bridge node build/server/device-admin.js list-approved
-docker compose exec bridge node build/server/device-admin.js revoke
+./scripts/relay.sh pair https://codex.example.com
+./scripts/relay.sh devices
+./scripts/relay.sh revoke
 ```
 
 The running relay applies revocation and closes the device connection, normally within 30 seconds.

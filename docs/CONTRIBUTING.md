@@ -30,7 +30,7 @@ connector together, add rejection tests for outdated peers, and document the coo
 | `src/connector` | Local Codex/Desktop integration, attachments, downloads, and reconnect logic |
 | `src/shared` | Frames and authentication primitives shared by relay and connector |
 | `test` | Node integration and behavior tests |
-| `scripts` | Windows installation, DPAPI credential handling, and connector watchdog |
+| `scripts` | Relay administration plus Windows installation, DPAPI credentials, and connector watchdog |
 | `docs` / `deploy` | Operator documentation and reference ingress configuration |
 
 ## Project rules
@@ -46,6 +46,9 @@ connector together, add rejection tests for outdated peers, and document the coo
 Keep pull requests small enough to review and explain the user-facing outcome. Avoid unrelated format
 or dependency churn. A dependency should replace meaningful maintenance burden, be actively maintained,
 and not weaken the browser or local-machine trust boundary.
+
+When changing `scripts/relay.sh`, run `sh -n scripts/relay.sh` on a POSIX shell in addition to the normal
+TypeScript checks. Deployment documentation and helper commands must describe the same workflow.
 
 ## Security and test data
 

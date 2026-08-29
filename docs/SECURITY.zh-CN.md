@@ -25,6 +25,21 @@
 
 配对密钥位于 URL 片段中，连接前会从地址栏移除；转发服务只保存单向校验值，过期或使用后即删除。
 
+```mermaid
+sequenceDiagram
+    participant A as ECS 管理员
+    participant R as 转发服务
+    participant B as 浏览器
+    A->>R: 创建一次性配对链接
+    R-->>A: URL 片段和二维码（10 分钟）
+    A-->>B: 打开、粘贴、扫描或上传二维码截图
+    B->>B: 创建设备密钥并移除 URL 密钥
+    R-->>B: 返回新的随机质询
+    B->>R: 单次证明和设备签名
+    R->>R: 消费配对记录并批准公钥
+    Note over B,R: 后续重连使用已批准密钥和新的随机质询
+```
+
 图片预览限制在配置根目录内，并进行内容校验、缩放和 WebP 转换。原文件下载必须确认，并使用绑定
 单个客户端和文件的短时凭证。交互式 HTML 只允许来自 Codex 可视化目录，并在浏览器的隔离、断网沙箱中运行。
 
@@ -53,9 +68,9 @@ ECS/VPS 仍属于可信基础设施，因为它负责提供 Web 应用和管理�
 设备批准和撤销只能在转发服务主机执行：
 
 ```bash
-docker compose exec bridge node build/server/device-admin.js pair https://codex.example.com
-docker compose exec bridge node build/server/device-admin.js list-approved
-docker compose exec bridge node build/server/device-admin.js revoke
+./scripts/relay.sh pair https://codex.example.com
+./scripts/relay.sh devices
+./scripts/relay.sh revoke
 ```
 
 转发服务会自动应用撤销并关闭对应连接，通常不超过 30 秒。

@@ -23,14 +23,16 @@ computer; a lightweight relay on your own ECS/VPS provides the remote entry poin
   messages from a phone.
 - **Guide the next step** — send follow-up instructions directly to a running task without creating
   another session.
-- **Follow work in progress** — see which sessions are running and follow useful progress as it happens.
+- **Follow real progress** — see running and unread-complete tasks, live activity, plan steps, and file
+  change totals without exposing raw tool output.
 - **Approve from your phone** — accept or reject supported command, file-change, and permission
   requests in the browser, even after reconnecting.
 - **Bring results back with you** — preview images and download files linked in assistant replies after
   a clear confirmation.
 - **Preview Codex visualizations** — open Codex-generated interactive concepts full-screen or download
   the original artifact.
-- **Fast on long histories** — open recent sessions quickly and load older messages only when needed.
+- **Fast on long histories** — open recent sessions quickly, load older messages as you scroll upward,
+  and copy timestamped messages when needed.
 - **Mobile-oriented controls** — create a session in an existing project, search recent sessions, open
   attachments, and keep common actions within easy reach.
 - **Resilient connection** — your phone and connected computer recover automatically from transient
@@ -96,81 +98,26 @@ and [production deployment guide](docs/deployment.md).
 
 ## Deployment
 
-### What you need
+You need a reachable Linux ECS/VPS and a Windows computer already running Codex Desktop/CLI. A small
+relay host is enough; no database, public IP on the local computer, or inbound home-network port is
+required. A domain, certificate, and reverse proxy are optional choices. WS and WSS are supported, but
+prefer WSS, a VPN, or a secure tunnel on an untrusted network.
 
-| Resource | Requirement |
-| --- | --- |
-| Reachable ECS/VPS | Required. A small Linux host (about 1 vCPU, 1 GB RAM, and 10–20 GB disk) is enough for the relay. |
-| Connector computer | Required. Runs Codex Desktop/CLI, Node.js 22+, the connector, and your local projects. |
-| Public ingress | Optional components. Choose an address, domain, reverse proxy, VPN, or secure tunnel that fits your environment. |
+Start the relay on the ECS:
 
-No database, Redis, object storage, public IP on the connector computer, or inbound home-network port
-is required. The ECS/VPS exists to keep the connector computer off the public network and to give the
-browser and connector a stable meeting point.
+```bash
+git clone https://github.com/gaotong132/codex-anywhere.git
+cd codex-anywhere
+./scripts/relay.sh setup
+```
 
-The code supports both `ws://` and `wss://`. You choose the transport; `wss://` or an equivalent secure
-tunnel is strongly recommended whenever traffic crosses a public or untrusted network.
+Install the connector on the Codex computer, approve it with `./scripts/relay.sh approve`, then create a
+browser link with `./scripts/relay.sh pair <public-url>`. The streamlined
+[deployment guide](docs/deployment.md) covers the complete four-step flow, ingress choices, updates, and
+the few supported options.
 
-### Set it up
-
-1. Deploy the relay to your ECS/VPS and choose how it will be reachable. Follow the complete
-   [production deployment guide](docs/deployment.md).
-2. Generate a connector secret from at least 32 random bytes. Configure it on the relay and install the
-   same value on the connector computer. Browsers do not use this secret.
-3. On the computer that runs Codex, install the connector. On Windows this registers a current-user
-   background task that starts after sign-in:
-
-   ```powershell
-   $connectorToken = Read-Host 'Connector token' -AsSecureString
-   .\scripts\install-connector.ps1 `
-     -ConnectorToken $connectorToken `
-     -BridgeUrl 'wss://codex.example.com/ws'
-   ```
-
-   A lightweight watchdog restarts the single Node connector process after an application update or
-   unexpected exit, without retaining a plaintext token. If Task Scheduler is unavailable, installation
-   falls back to a login shortcut.
-
-4. Start the connector, then approve that connector from the ECS/VPS. Device identity and registry
-   internals are never exposed to the browser UI.
-
-   ```bash
-   docker compose exec bridge node build/server/device-admin.js
-   ```
-
-5. Create a single-use browser pairing link, replacing the example URL with your actual Web endpoint:
-
-   ```bash
-   docker compose exec bridge node build/server/device-admin.js pair https://codex.example.com
-   ```
-
-   Open the printed link or scan its QR code within ten minutes. A camera is optional: the Web page
-   also accepts the link directly or decodes an uploaded QR screenshot locally.
-
-Read the [security policy](docs/SECURITY.md) before exposing the relay to the internet. Do not install Codex or copy
-project files onto the ECS/VPS.
-
-### Essential configuration
-
-| Variable | Used by | Purpose |
-| --- | --- | --- |
-| `BRIDGE_CONNECTOR_TOKEN` | Relay and connector | Local connector secret |
-| `BRIDGE_SESSION_MAX_AGE_MS` | Relay | Maximum authenticated WebSocket lifetime; defaults to one hour |
-| `BRIDGE_DEVICE_REGISTRY_FILE` | Relay | Persistent approved/pending public device records; Compose configures this automatically |
-| `BRIDGE_URL` | Connector | Relay WebSocket URL; supports `ws://` and `wss://` |
-| `CODEX_UI_LANGUAGE` | Relay | Web UI language: `zh-CN` or `en` |
-
-After pairing, the browser signs a fresh challenge with its approved device key. Captured proofs cannot
-be replayed. Application traffic is end-to-end encrypted over WS and WSS; WSS also protects Web delivery,
-pairing, and metadata from the network.
-
-New sessions require an explicit project directory selected in the web UI; there is no default workspace.
-`-AllowedRoots` is optional and limits which local directories may be
-selected. When omitted, the connector checkout is the only allowed root. The installer stores this
-optional setting outside the repository, so it does not belong in the relay `.env` file.
-
-See [.env.example](.env.example) and [docs/deployment.md](docs/deployment.md) for all options, including
-proxy trust, network access, and unrestricted file-download settings.
+Do not expose the reference port 3300 to the internet or copy projects to the ECS. Read the
+[security policy](docs/SECURITY.md) before publishing the relay.
 
 ## Local development
 

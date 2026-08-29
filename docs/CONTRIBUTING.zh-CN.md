@@ -29,7 +29,7 @@ npm run build
 | `src/connector` | 本机 Codex/Desktop 集成、附件、下载和重连逻辑 |
 | `src/shared` | 转发服务与连接器共用的消息帧和鉴权基础能力 |
 | `test` | Node 集成测试与行为回归测试 |
-| `scripts` | Windows 安装、DPAPI 凭据处理和连接器守护进程 |
+| `scripts` | 转发服务管理，以及 Windows 安装、DPAPI 凭据处理和连接器守护进程 |
 | `docs` / `deploy` | 运维文档和参考入口配置 |
 
 ## 项目约束
@@ -42,6 +42,9 @@ npm run build
 
 Pull Request 应足够聚焦，便于审阅和说明用户价值，避免无关格式化或依赖升级。只有成熟依赖能够明显
 减少维护负担、且不会削弱浏览器或本机信任边界时，才应引入。
+
+修改 `scripts/relay.sh` 时，除常规 TypeScript 检查外，还要在 POSIX shell 中执行
+`sh -n scripts/relay.sh`。部署文档与辅助命令必须保持同一套流程。
 
 ## 安全与测试数据
 
