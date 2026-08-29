@@ -622,6 +622,19 @@ test('only newly completed transient replies receive the final card animation', 
   assert.doesNotMatch(historyMarkup, /final-arriving/);
 });
 
+test('message time and copy action render outside the message card', () => {
+  const markup = renderToStaticMarkup(createElement(MessageBubble, {
+    item: {
+      id: 'compact-meta', kind: 'assistant' as const, text: '回复', completedAt: Date.now(),
+    },
+    onDownloadFile: () => undefined,
+    onReadVisualization: async () => '',
+  }));
+
+  assert.match(markup, /class="message-block assistant"/);
+  assert.match(markup, /<\/div><div class="message-meta">/);
+});
+
 test('only progress after the latest user message is treated as the live progress block', () => {
   assert.equal(latestTurnProgressItemId([
     { id: 'old-user', kind: 'user', text: 'first' },
