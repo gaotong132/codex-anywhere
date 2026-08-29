@@ -36,6 +36,7 @@ import {
   summarizePatchChanges,
   summarizeUnifiedDiff,
 } from '../src/shared/turn-progress.js';
+import { summarizeToolActivity } from '../src/shared/activity-detail.js';
 import { CodexAppServer, internals } from '../src/connector/codex-app-server.js';
 import {
   CodexDesktopClient,
@@ -571,6 +572,21 @@ test('history merge carries unpublished progress into its turn when a later turn
   assert.equal(merged[1], current[1]);
 });
 
+test('history merge preserves a growing progress block identity for incremental animation', () => {
+  const current = [{
+    id: 'stable-progress', kind: 'progress' as const, text: '已完成检查。', historyTurnId: 'turn-live',
+  }];
+  const latest = [{
+    id: 'history:turn-live:8', kind: 'progress' as const,
+    text: '已完成检查。\n\n正在执行测试。', historyTurnId: 'turn-live',
+  }];
+
+  const merged = mergeHistorySnapshot(current, latest, new Set(['turn-live']));
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].id, 'stable-progress');
+  assert.equal(merged[0].text, latest[0].text);
+});
+
 test('image previews open in the page instead of navigating to a data URL', () => {
   const markup = renderToStaticMarkup(createElement(MessageBubble, {
     item: {
@@ -631,7 +647,7 @@ test('message time and copy action render outside the message card', () => {
     onReadVisualization: async () => '',
   }));
 
-  assert.match(markup, /class="message-block assistant"/);
+  assert.match(markup, /class="message-block assistant copyable"/);
   assert.match(markup, /<\/div><div class="message-meta">/);
 });
 
@@ -786,7 +802,7 @@ test('rollout activity requires an explicit task completion marker', () => {
   });
 });
 
-test('rollout activity exposes changing safe categories without tool details', () => {
+test('rollout activity exposes changing categories for actual tool events', () => {
   assert.equal(rolloutInternals.activityKind({
     type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', input: 'private command' },
   }), 'command');
@@ -870,6 +886,7 @@ test('rollout tail exposes active plan and aggregate file progress', async () =>
       plan: { current: 2, total: 2 },
       files: { changed: 1, additions: 1, deletions: 1 },
     });
+    assert.equal(result.toolPurpose, '✓ apply_patch · a.ts');
   } finally {
     rolloutInternals.rolloutCache.delete(filePath);
     await rm(directory, { recursive: true, force: true });
@@ -971,11 +988,20 @@ test('history mapping keeps user-visible messages and hides internal work', () =
   assert.equal(turns[0].items[2].text, 'world');
 });
 
-test('live tool activity never forwards commands, arguments, paths, or output', () => {
+test('live tool activity forwards a bounded useful summary without raw arguments or output', () => {
   assert.deepEqual(internals.summarizeItem({
     id: 'private-id', type: 'commandExecution', name: 'exec', command: 'private command',
     path: 'C:\\private', aggregatedOutput: 'private output', status: 'completed',
-  }), { type: 'commandExecution', status: 'completed' });
+  }), { type: 'commandExecution', status: 'completed', detail: 'command' });
+  const summary = summarizeToolActivity({
+    type: 'custom_tool_call', name: 'exec', input: String.raw`const r = await tools.exec_command({ cmd: "git status; npm run check; echo secret-token" });`,
+  });
+  assert.equal(summary, 'exec_command · git status + npm run check');
+  assert.equal(summary.includes('secret-token'), false);
+  assert.equal(summarizeToolActivity({
+    type: 'custom_tool_call', name: 'exec',
+    input: 'const patch = `*** Begin Patch\n*** Update File: D:\\project\\src\\app.ts\n*** End Patch`; await tools.apply_patch(patch);',
+  }), 'apply_patch · app.ts');
 });
 
 test('app-server forwards only aggregate plan and diff progress', async () => {

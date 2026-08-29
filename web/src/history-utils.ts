@@ -207,9 +207,21 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
   const transientAttachments = new Map(current
     .filter((item) => item.transient && item.attachment)
     .map((item) => [messageContentIdentity(item), item.attachment]));
-  const hydratedLatest = latest.map((item) => item.attachment ? item : {
-    ...item,
-    attachment: transientAttachments.get(messageContentIdentity(item)),
+  const hydratedLatest = latest.map((item) => {
+    const hydrated = item.attachment ? item : {
+      ...item,
+      attachment: transientAttachments.get(messageContentIdentity(item)),
+    };
+    if (hydrated.kind !== 'progress' || !hydrated.historyTurnId) return hydrated;
+    for (let index = current.length - 1; index >= 0; index -= 1) {
+      const previous = current[index];
+      if (previous.transient
+        || previous.kind !== 'progress'
+        || previous.historyTurnId !== hydrated.historyTurnId) continue;
+      if (hydrated.text.startsWith(previous.text)) return { ...hydrated, id: previous.id };
+      break;
+    }
+    return hydrated;
   });
   const persistedItems = new Set(hydratedLatest.map(messageIdentity));
   const carriedProgress = current.filter((item) => item.transient

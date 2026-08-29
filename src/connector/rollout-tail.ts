@@ -2,6 +2,7 @@ import { open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { normalizeToolPurpose, parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
 import type { MessageContext } from '../shared/message-content.js';
+import { summarizeToolActivity } from '../shared/activity-detail.js';
 import {
   extractPlanProgressFromToolInput,
   summarizePatchChanges,
@@ -293,6 +294,13 @@ function updateToolPurpose(current: string, rows: RolloutRow[], status: RolloutS
       purpose = '';
     } else if (type === 'agent_reasoning') {
       purpose = normalizeToolPurpose(payload.text);
+    } else {
+      const detail = summarizeToolActivity(payload);
+      if (detail) {
+        purpose = /(?:_end|completed)$/i.test(type) ? `✓ ${detail}` : detail;
+      } else if (/custom_tool_call_output|function_call_output/i.test(type) && purpose && !purpose.startsWith('✓ ')) {
+        purpose = `✓ ${purpose}`;
+      }
     }
   }
   return status === 'inProgress' ? purpose : '';

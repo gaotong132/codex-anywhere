@@ -231,9 +231,6 @@ function LiveActivityStatus({
   const [clock, setClock] = useState(Date.now());
   const elapsed = elapsedLabel(startedAt, clock);
   const hasMetrics = Boolean(progress.plan || progress.files);
-  const visiblePurpose = purpose || (!hasMetrics && elapsed
-    ? t(`本轮已持续 ${elapsed}`, `Active for ${elapsed}`)
-    : '');
   useEffect(() => {
     if (!startedAt) return;
     setClock(Date.now());
@@ -242,52 +239,55 @@ function LiveActivityStatus({
   }, [startedAt]);
   return (
     <div
-      className={`tool-purpose${visiblePurpose ? ' has-purpose' : ''}${hasMetrics ? ' has-metrics' : ''}`}
+      className={`tool-purpose${purpose ? ' has-purpose' : ''}${hasMetrics ? ' has-metrics' : ''}`}
       role="status"
       aria-live="polite"
-      title={[activityLabel(kind), visiblePurpose].filter(Boolean).join(' · ')}
+      aria-label={[activityLabel(kind), purpose, elapsed].filter(Boolean).join(' · ')}
+      title={[purpose, elapsed].filter(Boolean).join(' · ')}
     >
       <i aria-hidden="true" />
-      <span className="activity-kind">{activityLabel(kind)}</span>
-      {visiblePurpose && (
-        <>
-          <span className="activity-separator" aria-hidden="true">·</span>
-          {purpose
-            ? <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
-            : <strong>{visiblePurpose}</strong>}
-        </>
-      )}
-      {hasMetrics && (
-        <span className="activity-metrics">
-          {progress.plan && (
-            <TypewriterText
-              active
-              className="status-change"
-              key={`plan:${progress.plan.current}:${progress.plan.total}`}
-              showCaret={false}
-              text={t(`第 ${progress.plan.current} / ${progress.plan.total} 步`, `Step ${progress.plan.current} / ${progress.plan.total}`)}
-            />
+      <div className="activity-content">
+        <div className="activity-primary">
+          {purpose ? (
+            <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
+          ) : (
+            <span className="activity-elapsed-label">{t('本轮已持续', 'Active')}</span>
           )}
-          {progress.files && (
-            <TypewriterText
-              active
-              className="status-change"
-              completeContent={<>
-                {t(`${progress.files.changed} 个文件已更改`, `${progress.files.changed} files changed`)}
-                {' '}<b className="additions">+{progress.files.additions}</b>
-                {' '}<b className="deletions">-{progress.files.deletions}</b>
-              </>}
-              key={`files:${progress.files.changed}:${progress.files.additions}:${progress.files.deletions}`}
-              showCaret={false}
-              text={t(
-                `${progress.files.changed} 个文件已更改 +${progress.files.additions} -${progress.files.deletions}`,
-                `${progress.files.changed} files changed +${progress.files.additions} -${progress.files.deletions}`,
+          {startedAt && <time>{elapsed}</time>}
+        </div>
+        {hasMetrics && (
+          <div className="activity-secondary">
+            <span className="activity-metrics">
+              {progress.files && (
+                <TypewriterText
+                  active
+                  className="status-change"
+                  completeContent={<>
+                    {t(`${progress.files.changed} 个文件已更改`, `${progress.files.changed} files changed`)}
+                    {' '}<b className="additions">+{progress.files.additions}</b>
+                    {' '}<b className="deletions">-{progress.files.deletions}</b>
+                  </>}
+                  key={`files:${progress.files.changed}:${progress.files.additions}:${progress.files.deletions}`}
+                  showCaret={false}
+                  text={t(
+                    `${progress.files.changed} 个文件已更改 +${progress.files.additions} -${progress.files.deletions}`,
+                    `${progress.files.changed} files changed +${progress.files.additions} -${progress.files.deletions}`,
+                  )}
+                />
               )}
-            />
-          )}
-        </span>
-      )}
-      {startedAt && (purpose || hasMetrics) && <time>{elapsed}</time>}
+              {progress.plan && (
+                <TypewriterText
+                  active
+                  className="status-change"
+                  key={`plan:${progress.plan.current}:${progress.plan.total}`}
+                  showCaret={false}
+                  text={t(`第 ${progress.plan.current} / ${progress.plan.total} 步`, `Step ${progress.plan.current} / ${progress.plan.total}`)}
+                />
+              )}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -843,8 +843,12 @@ export default function App() {
       setTurnProgress((current) => ({ ...current, ...progress }));
     } else if (message.event === 'tool.started') {
       setLiveActivity(liveEventActivity(payload));
+      const detail = normalizeToolPurpose(payload.detail);
+      if (detail) setToolPurpose(detail);
     } else if (message.event === 'tool.completed') {
       setLiveActivity('checking');
+      const detail = normalizeToolPurpose(payload.detail);
+      if (detail) setToolPurpose(`✓ ${detail}`);
     } else if (message.event === 'turn.final') {
       setLiveActivity('responding');
       const text = String(payload.text || '');

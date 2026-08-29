@@ -249,7 +249,7 @@ export function MessageBubble({
       : t('复制消息', 'Copy message');
   const completedDateTime = dateTimeValue(item.completedAt);
   return (
-    <div className={`message-block ${item.kind}`}>
+    <div className={`message-block ${item.kind}${copyable ? ' copyable' : ''}`}>
       <div className={`message ${item.kind}${copyable ? ' copyable' : ''}${active ? ' live' : ''}${finalReplyArriving ? ' final-arriving' : ''}`}>
       {item.contexts?.length ? (
         <div className="message-contexts" aria-label={t('消息来源', 'Message context')}>

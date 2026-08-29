@@ -10,6 +10,7 @@ import { extractGeneratedImageAttachment } from './generated-images.js';
 import { needsDesktopPermissionRecovery } from './session-permissions.js';
 import { resolveCodexExecutable } from './codex-executable.js';
 import { summarizePlanSteps, summarizeUnifiedDiff } from '../shared/turn-progress.js';
+import { summarizeToolActivity } from '../shared/activity-detail.js';
 
 const RPC_TIMEOUT_MS = 20_000;
 const SUMMARY_LIMIT = 4_000;
@@ -656,9 +657,11 @@ function filterAllowedPaths(values: unknown, allowedRoots: string[]) {
 }
 
 function summarizeItem(item: JsonObject) {
+  const detail = summarizeToolActivity(item);
   return {
     type: item.type || '',
     status: item.status || '',
+    ...(detail ? { detail } : {}),
   };
 }
 

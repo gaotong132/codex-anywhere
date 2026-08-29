@@ -473,17 +473,16 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .new-session-dialog-actions .primary-action { border-color: #3970dc; color: #fff; background: #3267d8; }
 .new-session-dialog-actions .primary-action:hover:not(:disabled) { border-color: #5689ef; background: #3c74e4; }
 .message-block {
+  position: relative;
   width: fit-content;
   min-width: 0;
   max-width: min(84%, 760px);
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  margin: 0 0 11px;
+  margin: 0 0 7px;
 
-  &.user { margin-left: auto; align-items: flex-end; }
+  &.copyable { padding-bottom: 21px; }
+  &.user { margin-left: auto; }
 }
-.message-meta { min-width: 0; display: flex; align-items: center; gap: 3px; margin: 3px 4px 0; color: #687589; }
+.message-meta { position: absolute; right: 4px; bottom: 1px; min-width: 0; display: flex; align-items: center; gap: 3px; color: #687589; }
 .message-time { font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .message-copy {
     width: 18px;
@@ -602,15 +601,18 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .typewriter-caret { display: inline-block; width: 1.5px; height: 1.05em; margin-left: 2px; border-radius: 1px; vertical-align: -.15em; background: #82a9f4; box-shadow: 0 0 7px rgba(130, 169, 244, .48); animation: typewriter-caret .78s steps(1, end) infinite; }
 .execution-strip { min-width: 0; width: 100%; padding: 8px max(22px, calc((100% - 860px) / 2)); overflow: hidden; border-top: 1px solid $panel-divider; background: #0d121c; }
 .execution-strip:empty { display: none; }
-.tool-purpose { position: relative; isolation: isolate; width: 100%; min-width: 0; max-width: $content-width; display: flex; align-items: center; gap: 7px; margin: 0 auto; overflow: hidden; color: #8491a5; font-size: 11px; animation: activity-strip-arrive .25s ease-out both; }
+.tool-purpose { position: relative; isolation: isolate; width: 100%; min-width: 0; max-width: $content-width; display: grid; grid-template-columns: 12px minmax(0, 1fr); align-items: center; gap: 7px; margin: 0 auto; overflow: hidden; color: #8491a5; font-size: 11px; animation: activity-strip-arrive .25s ease-out both; }
 .tool-purpose::before { position: absolute; z-index: -1; inset: -8px -20%; pointer-events: none; content: ''; background: linear-gradient(90deg, transparent 18%, rgba(75, 112, 183, .08), transparent 82%); transform: translateX(-80%); animation: activity-strip-scan 4.2s ease-in-out infinite; }
 .tool-purpose i { position: relative; width: 12px; height: 12px; flex: 0 0 12px; }
 .tool-purpose i::before, .tool-purpose i::after { position: absolute; border-radius: 50%; content: ''; }
 .tool-purpose i::before { inset: 3px; background: #6f8fd3; }
 .tool-purpose i::after { inset: 1px; border: 1px solid rgba(111, 143, 211, .55); animation: purpose-pulse 1.8s ease-out infinite; }
-.tool-purpose .activity-kind { flex: 0 0 auto; color: #9eacc1; font-weight: 650; }
-.tool-purpose .activity-separator { flex: 0 0 auto; color: #526077; }
-.tool-purpose strong { width: 0; min-width: 0; flex: 1 1 0; @include truncate; color: #aab6c8; font-weight: 500; }
+.activity-content { min-width: 0; display: grid; gap: 3px; }
+.activity-primary { min-width: 0; display: flex; align-items: center; gap: 7px; }
+.activity-primary strong { min-width: 0; flex: 1 1 auto; @include truncate; color: #aab6c8; font-weight: 500; }
+.activity-elapsed-label { min-width: 0; @include truncate; color: #8d9bb0; }
+.activity-secondary { min-width: 0; color: #aab6c8; }
+.activity-secondary strong { display: block; min-width: 0; @include truncate; font-weight: 500; }
 .activity-metrics { min-width: 0; flex: 0 1 auto; display: flex; gap: 7px; overflow: hidden; color: #96a4b8; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .activity-metrics > span { min-width: 0; flex: 0 1 auto; @include truncate; }
 .activity-metrics > span:first-child { flex-shrink: 0; }
@@ -619,8 +621,8 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .activity-metrics .additions { color: #34d17b; }
 .activity-metrics .deletions { color: #ff5d68; }
 .activity-metrics .typewriter-copy { white-space: nowrap; }
-.tool-purpose strong .typewriter-caret { flex: 0 0 auto; }
-.tool-purpose time { max-width: 54px; flex: 0 0 auto; margin-left: auto; overflow: hidden; color: #637187; font-variant-numeric: tabular-nums; line-height: 1; text-align: right; white-space: nowrap; }
+.activity-primary strong .typewriter-caret { flex: 0 0 auto; }
+.activity-primary time { max-width: 54px; flex: 0 0 auto; margin-left: auto; overflow: hidden; color: #637187; font-variant-numeric: tabular-nums; line-height: 1; text-align: right; white-space: nowrap; }
 .tool-purpose .status-change { animation: status-change .3s cubic-bezier(.2, .75, .3, 1) both; }
 @keyframes purpose-pulse {
   0% { opacity: .9; transform: scale(.65); }
@@ -647,25 +649,6 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
   .away-summary, .tool-purpose, .tool-purpose::before,
   .tool-purpose i::after, .tool-purpose .status-change, .typewriter-caret { animation: none; }
 }
-@media (max-width: 480px) {
-  .tool-purpose.has-metrics {
-    display: grid;
-    grid-template-columns: 12px minmax(0, 1fr) auto;
-    grid-template-areas:
-      'indicator purpose purpose'
-      'indicator metrics elapsed';
-    gap: 5px 7px;
-    overflow: visible;
-  }
-  .tool-purpose.has-metrics i { grid-area: indicator; }
-  .tool-purpose.has-metrics .activity-kind { grid-area: purpose; }
-  .tool-purpose.has-metrics.has-purpose .activity-kind { display: none; }
-  .tool-purpose.has-metrics .activity-separator { display: none; }
-  .tool-purpose.has-metrics strong { width: auto; grid-area: purpose; }
-  .tool-purpose.has-metrics .activity-metrics { width: 100%; grid-area: metrics; }
-  .tool-purpose.has-metrics time { grid-area: elapsed; margin-left: 0; }
-}
-
 .approval-card { margin: 0 max(18px, calc((100% - 860px) / 2)) 10px; padding: 14px; border: 1px solid #79511e; border-radius: 14px; background: #2a1d0c; }
 .approval-card > div:first-child { display: flex; justify-content: space-between; gap: 10px; }
 .approval-card span { color: #cfaa70; font-size: 12px; }
