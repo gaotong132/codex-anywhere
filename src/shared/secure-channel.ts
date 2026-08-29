@@ -37,6 +37,19 @@ export type SecureChannelTranscript = {
   responder: SecureChannelParticipant;
 };
 
+export type SecureChannelOffer = {
+  protocol: typeof SECURE_CHANNEL_PROTOCOL;
+  channelId: string;
+  routeDeviceId: string;
+  initiator: SecureChannelParticipant;
+  signature: string;
+};
+
+export type SecureChannelAcceptance = {
+  transcript: SecureChannelTranscript;
+  signature: string;
+};
+
 export type SecureChannelEphemeralKeyPair = {
   secretKey: Uint8Array;
   publicKey: string;
@@ -72,7 +85,7 @@ export function secureChannelParticipant(
   identity: DevicePublicIdentity,
   ephemeralPublicKey: string,
 ): SecureChannelParticipant {
-  const participant = { ...identity, ephemeralPublicKey };
+  const participant = { id: identity.id, publicKey: identity.publicKey, ephemeralPublicKey };
   assertSecureChannelParticipant(participant);
   return participant;
 }
@@ -82,11 +95,82 @@ export function createSecureChannelTranscript(input: Omit<SecureChannelTranscrip
     protocol: SECURE_CHANNEL_PROTOCOL,
     channelId: input.channelId,
     routeDeviceId: input.routeDeviceId.trim(),
-    initiator: input.initiator,
-    responder: input.responder,
+    initiator: secureChannelParticipant(input.initiator, input.initiator.ephemeralPublicKey),
+    responder: secureChannelParticipant(input.responder, input.responder.ephemeralPublicKey),
   };
   assertSecureChannelTranscript(transcript);
   return transcript;
+}
+
+export function createSecureChannelOffer({
+  identity,
+  routeDeviceId,
+  ephemeralPublicKey,
+  channelId = createSecureChannelId(),
+}: {
+  identity: DeviceIdentity;
+  routeDeviceId: string;
+  ephemeralPublicKey: string;
+  channelId?: string;
+}): SecureChannelOffer {
+  const unsigned: Omit<SecureChannelOffer, 'signature'> = {
+    protocol: SECURE_CHANNEL_PROTOCOL,
+    channelId,
+    routeDeviceId: routeDeviceId.trim(),
+    initiator: secureChannelParticipant(identity, ephemeralPublicKey),
+  };
+  assertSecureChannelOffer(unsigned);
+  return { ...unsigned, signature: signDevicePayload(identity, encodeSecureChannelOffer(unsigned)) };
+}
+
+export function verifySecureChannelOffer(offer: SecureChannelOffer) {
+  try {
+    assertSecureChannelOffer(offer);
+    return verifyDevicePayload(offer.initiator, offer.signature, encodeSecureChannelOffer(offer));
+  } catch {
+    return false;
+  }
+}
+
+export function acceptSecureChannelOffer({
+  identity,
+  offer,
+  ephemeralPublicKey,
+}: {
+  identity: DeviceIdentity;
+  offer: SecureChannelOffer;
+  ephemeralPublicKey: string;
+}): SecureChannelAcceptance {
+  if (!verifySecureChannelOffer(offer)) throw new Error('secure_channel_offer_invalid');
+  const transcript = createSecureChannelTranscript({
+    channelId: offer.channelId,
+    routeDeviceId: offer.routeDeviceId,
+    initiator: offer.initiator,
+    responder: secureChannelParticipant(identity, ephemeralPublicKey),
+  });
+  return { transcript, signature: signSecureChannelTranscript(identity, transcript) };
+}
+
+export function verifySecureChannelAcceptance(
+  acceptance: SecureChannelAcceptance,
+  offer: SecureChannelOffer,
+) {
+  try {
+    const { transcript } = acceptance;
+    assertSecureChannelTranscript(transcript);
+    if (transcript.channelId !== offer.channelId
+      || transcript.routeDeviceId !== offer.routeDeviceId
+      || transcript.initiator.id !== offer.initiator.id
+      || transcript.initiator.publicKey !== offer.initiator.publicKey
+      || transcript.initiator.ephemeralPublicKey !== offer.initiator.ephemeralPublicKey) return false;
+    return verifySecureChannelTranscriptSignature(
+      transcript.responder,
+      acceptance.signature,
+      transcript,
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function encodeSecureChannelTranscript(transcript: SecureChannelTranscript) {
@@ -233,6 +317,28 @@ export function openSecureChannelEnvelope({
 
 function secureChannelEnvelopeAad(channelId: string, sender: SecureChannelSide, sequence: number) {
   return utf8ToBytes([SECURE_CHANNEL_PROTOCOL, channelId, sender, String(sequence)].join('\n'));
+}
+
+function encodeSecureChannelOffer(offer: Omit<SecureChannelOffer, 'signature'>) {
+  return [
+    offer.protocol,
+    offer.channelId,
+    offer.routeDeviceId,
+    offer.initiator.id,
+    offer.initiator.publicKey,
+    offer.initiator.ephemeralPublicKey,
+  ].join('\n');
+}
+
+function assertSecureChannelOffer(offer: Omit<SecureChannelOffer, 'signature'> & { signature?: string }) {
+  if (offer.protocol !== SECURE_CHANNEL_PROTOCOL
+    || !SECURE_CHANNEL_ID_PATTERN.test(offer.channelId)
+    || !offer.routeDeviceId
+    || offer.routeDeviceId.length > 128
+    || (offer.signature !== undefined && !DEVICE_SIGNATURE_PATTERN.test(offer.signature))) {
+    throw new Error('secure_channel_offer_invalid');
+  }
+  assertSecureChannelParticipant(offer.initiator);
 }
 
 function assertSecureChannelParticipant(participant: SecureChannelParticipant) {

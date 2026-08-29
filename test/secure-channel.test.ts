@@ -3,6 +3,8 @@ import test from 'node:test';
 import { utf8ToBytes } from '@noble/hashes/utils.js';
 import { createDeviceIdentity } from '../src/shared/device-auth.js';
 import {
+  acceptSecureChannelOffer,
+  createSecureChannelOffer,
   createSecureChannelEphemeralKeyPair,
   createSecureChannelId,
   createSecureChannelTranscript,
@@ -11,6 +13,8 @@ import {
   sealSecureChannelEnvelope,
   secureChannelParticipant,
   signSecureChannelTranscript,
+  verifySecureChannelAcceptance,
+  verifySecureChannelOffer,
   verifySecureChannelTranscriptSignature,
   type SecureChannelEnvelope,
 } from '../src/shared/secure-channel.js';
@@ -34,6 +38,32 @@ function createFixture() {
     transcript,
   };
 }
+
+test('secure channel offers authenticate both endpoints without serializing private keys', () => {
+  const initiatorIdentity = createDeviceIdentity();
+  const responderIdentity = createDeviceIdentity();
+  const initiatorEphemeral = createSecureChannelEphemeralKeyPair();
+  const responderEphemeral = createSecureChannelEphemeralKeyPair();
+  const offer = createSecureChannelOffer({
+    identity: initiatorIdentity,
+    routeDeviceId: 'personal-pc',
+    ephemeralPublicKey: initiatorEphemeral.publicKey,
+  });
+  assert.equal(verifySecureChannelOffer(offer), true);
+  assert.equal(JSON.stringify(offer).includes(initiatorIdentity.privateKey), false);
+
+  const acceptance = acceptSecureChannelOffer({
+    identity: responderIdentity,
+    offer,
+    ephemeralPublicKey: responderEphemeral.publicKey,
+  });
+  assert.equal(verifySecureChannelAcceptance(acceptance, offer), true);
+  assert.equal(JSON.stringify(acceptance).includes(responderIdentity.privateKey), false);
+  assert.equal(verifySecureChannelAcceptance({
+    ...acceptance,
+    transcript: { ...acceptance.transcript, routeDeviceId: 'other-pc' },
+  }, offer), false);
+});
 
 test('secure channel transcript signatures bind identities and both ephemeral keys', () => {
   const fixture = createFixture();
