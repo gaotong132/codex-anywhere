@@ -155,16 +155,35 @@ $clientToken = Read-Host 'Browser client token' -AsSecureString
 转发服务不会自动批准设备。打开 Web 页面，输入浏览器 Token，并让页面停留在通用的“等待批准”状态。
 随后在 ECS 部署目录的加密管理员会话中运行一条命令：
 
+```mermaid
+sequenceDiagram
+    participant B as 浏览器
+    participant R as 自托管转发服务
+    participant A as ECS 管理员
+    B->>R: 建立 WebSocket
+    R-->>B: 返回新的 256 位随机挑战
+    B->>R: HMAC Token 证明 + Ed25519 签名
+    R->>R: 验证证明和已批准设备公钥
+    alt 设备尚未批准
+        R-->>B: 要求配对并关闭连接
+        A->>R: 运行 device-admin 并确认请求
+        R->>R: 将设备公钥移入已批准列表
+        B->>R: 使用新证明自动重连
+    end
+    R-->>B: 建立已认证会话
+```
+
 ```bash
 docker compose exec bridge node build/server/device-admin.js
 ```
 
-命令只显示管理员识别设备所需的信息。输入匹配的序号并确认。请求不明确时不要批准。Web UI 不会获得
-设备 ID、请求 ID、公钥或注册表，源码中也不会产生绕过逻辑。
+- 原始 Token 和设备私钥不会发送到转发服务。有效 Token 配合未批准密钥只能创建一条待批准请求，
+  请求约 15 分钟后过期。
+- Web UI 不能查看或批准设备。命令只显示角色、标签、来源地址和请求时间；输入匹配序号并确认，无法
+  明确识别时不要批准。
+- 批准结果直接写入共享设备注册表，无需重启转发服务；浏览器会自动重连并使用新挑战重新认证。
 
-等待中的浏览器或连接器会自动重连。每个新终端都重复相同的 ECS 操作。直接在注册表中删除陌生的待
-批准记录，并撤销丢失设备；这些管理细节不会通过 WebSocket API 暴露。转发服务无需重启即可重新读取
-带外注册表修改。
+这里批准的只是浏览器设备身份，与 Codex 的命令执行、文件修改和权限审批是不同的控制。
 
 ## 6. 端到端验证
 

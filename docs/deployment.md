@@ -174,18 +174,37 @@ The relay never auto-approves a device. Open the Web page, enter the browser tok
 generic “waiting for approval” state. Then run this single command from the deployment directory in an
 encrypted ECS administrator session:
 
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant R as Self-hosted relay
+    participant A as ECS administrator
+    B->>R: Open WebSocket
+    R-->>B: Fresh 256-bit challenge
+    B->>R: HMAC token proof + Ed25519 signature
+    R->>R: Verify proof and approved device key
+    alt Device is not approved
+        R-->>B: Pairing required; close connection
+        A->>R: Run device-admin and confirm request
+        R->>R: Move public key to approved registry
+        B->>R: Reconnect with a fresh proof
+    end
+    R-->>B: Authenticated session
+```
+
 ```bash
 docker compose exec bridge node build/server/device-admin.js
 ```
 
-The command shows only the identification details needed by the operator. Select the matching number
-and confirm it. Do not approve an ambiguous request. Device IDs, request IDs and public keys remain out
-of the Web UI, and no source-code bypass is created.
+- The raw token and device private key are never sent. A valid token from an unapproved key creates only
+  a pending request, which expires after about 15 minutes.
+- The Web UI cannot list or approve devices. The command shows role, label, source address, and request
+  time; select the matching number and never approve an ambiguous request.
+- Approval updates the shared device registry without restarting the relay. The browser reconnects
+  automatically and authenticates again with a fresh challenge.
 
-The waiting browser or connector reconnects automatically. Repeat the same ECS-only procedure for each
-new endpoint. Remove unfamiliar pending records and revoke lost devices directly in the registry; these
-administrative details are intentionally not exposed through WebSocket APIs. The relay reloads
-out-of-band registry changes without a restart.
+This approves the browser identity only. Codex command, file-change, and permission approvals remain
+separate controls.
 
 ## 6. End-to-end validation
 
