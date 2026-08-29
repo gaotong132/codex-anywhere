@@ -12,7 +12,8 @@ services:
       BRIDGE_DEVICE_REGISTRY_FILE: /data/devices.json
       BRIDGE_PUSH_PUBLIC_KEY: ${BRIDGE_PUSH_PUBLIC_KEY:-}
       BRIDGE_PUSH_PRIVATE_KEY: ${BRIDGE_PUSH_PRIVATE_KEY:-}
-      BRIDGE_PUSH_SUBJECT: ${BRIDGE_PUSH_SUBJECT:-}
+      BRIDGE_PUSH_SUBJECT: ${BRIDGE_PUSH_SUBJECT:-https://codex-anywhere.local}
+      BRIDGE_PUSH_VAPID_FILE: /data/vapid.json
       BRIDGE_PUSH_SUBSCRIPTIONS_FILE: /data/push-subscriptions.json
       CODEX_UI_LANGUAGE: ${CODEX_UI_LANGUAGE:-zh-CN}
     ports:

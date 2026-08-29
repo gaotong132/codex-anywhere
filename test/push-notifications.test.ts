@@ -57,3 +57,24 @@ test('Web Push remains disabled when VAPID is not configured', () => {
   assert.equal(service.publicKey, '');
   assert.equal(service.subscribe(DEVICE, SUBSCRIPTION), false);
 });
+
+test('Web Push creates and reuses a protected VAPID key file', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'codex-vapid-'));
+  const vapidFilePath = join(directory, 'vapid.json');
+  const subscriptionsFilePath = join(directory, 'push.json');
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const create = () => new PushNotificationService({
+    subject: 'https://codex-anywhere.local',
+    vapidFilePath,
+    filePath: subscriptionsFilePath,
+    isApproved: () => true,
+  });
+
+  const first = create();
+  const second = create();
+  assert.match(first.publicKey, /^[A-Za-z0-9_-]+$/);
+  assert.equal(second.publicKey, first.publicKey);
+  const stored = JSON.parse(await readFile(vapidFilePath, 'utf8')) as Record<string, string>;
+  assert.equal(stored.publicKey, first.publicKey);
+  assert.ok(stored.privateKey);
+});

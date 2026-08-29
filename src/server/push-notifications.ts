@@ -32,6 +32,7 @@ type PushNotificationServiceOptions = {
   publicKey?: unknown;
   privateKey?: unknown;
   subject?: unknown;
+  vapidFilePath?: string | null;
   filePath?: string | null;
   isApproved: (device: PushDevice) => boolean;
   sendNotification?: typeof webPush.sendNotification;
@@ -47,11 +48,18 @@ export class PushNotificationService implements PushNotifier {
   private state: PushState = { version: 1, subscriptions: [] };
 
   constructor(options: PushNotificationServiceOptions) {
-    this.publicKey = String(options.publicKey || '').trim();
-    this.privateKey = String(options.privateKey || '').trim();
     this.subject = String(options.subject || '').trim();
-    const configured = [this.publicKey, this.privateKey, this.subject].filter(Boolean).length;
-    if (configured !== 0 && configured !== 3) throw new Error('web_push_configuration_incomplete');
+    const directPublicKey = String(options.publicKey || '').trim();
+    const directPrivateKey = String(options.privateKey || '').trim();
+    const directConfigured = [directPublicKey, directPrivateKey].filter(Boolean).length;
+    if (directConfigured === 1 || (directConfigured > 0 && !this.subject)) {
+      throw new Error('web_push_configuration_incomplete');
+    }
+    const generated = directConfigured === 0 && this.subject && options.vapidFilePath?.trim()
+      ? loadOrCreateVapidKeys(options.vapidFilePath)
+      : null;
+    this.publicKey = directPublicKey || generated?.publicKey || '';
+    this.privateKey = directPrivateKey || generated?.privateKey || '';
     this.filePath = this.publicKey && options.filePath?.trim() ? resolve(options.filePath) : null;
     this.isApproved = options.isApproved;
     this.sendNotification = options.sendNotification || webPush.sendNotification;
@@ -172,4 +180,23 @@ function isStoredSubscription(value: unknown): value is StoredPushSubscription {
   } catch {
     return false;
   }
+}
+
+function loadOrCreateVapidKeys(filePath: string) {
+  const target = resolve(filePath);
+  if (existsSync(target)) {
+    const parsed = JSON.parse(readFileSync(target, 'utf8')) as { publicKey?: unknown; privateKey?: unknown };
+    const publicKey = String(parsed.publicKey || '').trim();
+    const privateKey = String(parsed.privateKey || '').trim();
+    if (!publicKey || !privateKey) throw new Error('web_push_vapid_registry_invalid');
+    return { publicKey, privateKey };
+  }
+  const generated = webPush.generateVAPIDKeys();
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+  const temporary = `${target}.${process.pid}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(generated, null, 2)}\n`, {
+    encoding: 'utf8', mode: 0o600,
+  });
+  renameSync(temporary, target);
+  return generated;
 }

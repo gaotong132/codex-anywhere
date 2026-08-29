@@ -121,6 +121,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
     publicKey: process.env.BRIDGE_PUSH_PUBLIC_KEY,
     privateKey: process.env.BRIDGE_PUSH_PRIVATE_KEY,
     subject: process.env.BRIDGE_PUSH_SUBJECT,
+    vapidFilePath: process.env.BRIDGE_PUSH_VAPID_FILE,
     filePath: process.env.BRIDGE_PUSH_SUBSCRIPTIONS_FILE || (
       configuredRegistryPath ? resolve(dirname(configuredRegistryPath), 'push-subscriptions.json') : null
     ),
