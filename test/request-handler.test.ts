@@ -11,6 +11,7 @@ function createDependencies(overrides = {}) {
       readSession: async () => ({}),
       listSessionTurns: async () => ({}),
       startTurn: async () => ({ threadId: 'started-thread' }),
+      steerTurn: async ({ threadId }) => ({ threadId, turnId: 'turn-1', steered: true }),
       stopTurn: async () => ({ stopped: true }),
       listApprovals: () => ({ approvals: [] }),
       respondApproval: async () => ({}),
@@ -105,6 +106,23 @@ test('idle existing sessions use app-server so Web can receive approval requests
   });
   assert.equal(response.ok, true);
   assert.equal(response.data.delivery, 'appServer');
+});
+
+test('active Web-owned sessions steer the in-flight app-server turn', async () => {
+  let steered;
+  const handle = createRequestHandler(createDependencies({
+    codex: { steerTurn: async (message) => {
+      steered = message;
+      return { threadId: message.threadId, turnId: 'turn-1', steered: true };
+    } },
+  }));
+  const response = await handle(request('turn.steer', { threadId: 'target-thread', text: 'focus tests' }));
+  assert.deepEqual(steered, {
+    threadId: 'target-thread', text: 'focus tests', requestId: 'request-1', clientId: 'client-1',
+  });
+  assert.deepEqual(response.data, {
+    threadId: 'target-thread', turnId: 'turn-1', steered: true, delivery: 'appServer',
+  });
 });
 
 test('a legacy bridge permission override is handed back to Desktop once', async () => {

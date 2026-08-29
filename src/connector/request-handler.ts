@@ -15,6 +15,7 @@ type CodexGateway = {
   readSession(threadId: string): Promise<any>;
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
   startTurn(options: Payload): Promise<Record<string, any>>;
+  steerTurn(options: Payload): Promise<Record<string, any>>;
   stopTurn(): Promise<any>;
   listApprovals(threadId: unknown, clientId?: string): any;
   respondApproval(approvalId: unknown, approved: boolean, threadId?: unknown): Promise<any>;
@@ -97,6 +98,12 @@ async function dispatchAction({
   if (action === 'file.download.chunk') return downloads.read(payload, clientId);
   if (action === 'file.download.close') return downloads.close(payload, clientId);
   if (action === 'turn.start') return startTurn({ codex, desktop, payload, clientId, requestId });
+  if (action === 'turn.steer') {
+    return {
+      ...await codex.steerTurn({ ...payload, clientId, requestId }),
+      delivery: 'appServer',
+    };
+  }
   if (action === 'turn.stop') return codex.stopTurn();
   if (action === 'approval.pending') {
     const pending = await codex.listApprovals(payload.threadId, clientId);

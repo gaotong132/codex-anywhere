@@ -22,7 +22,7 @@ type CachedRequest = { fingerprint: string; response: Promise<JsonObject> };
 const DEDUPLICATED_ACTIONS = new Set([
   'attachment.upload',
   'file.download.open', 'file.download.chunk', 'file.download.close',
-  'turn.start', 'turn.stop', 'approval.respond',
+  'turn.start', 'turn.steer', 'turn.stop', 'approval.respond',
 ]);
 
 export class ConnectorSecureChannels {

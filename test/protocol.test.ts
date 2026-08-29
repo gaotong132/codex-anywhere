@@ -800,9 +800,9 @@ test('active desktop writer waits and resumes the original thread without forkin
     if (method === 'thread/resume' && calls.filter((call) => call.method === 'thread/resume').length === 1) {
       throw new Error('thread original already has an active writer');
     }
+    if (method === 'turn/start') return { turn: { id: 'turn-1' } };
     return { thread: { id: 'original' } };
   };
-  codex.sendRpcNotification = (method, params) => calls.push({ method, params });
   const result = await codex.startTurn({
     text: 'continue', threadId: 'original', cwd: join(process.cwd(), 'wrong-directory'),
     clientId: 'client', requestId: 'request',
@@ -864,9 +864,9 @@ test('new Web sessions retain the restricted approval and sandbox defaults', asy
   const calls = [];
   codex.rpcRaw = async (method, params) => {
     calls.push({ method, params });
+    if (method === 'turn/start') return { turn: { id: 'turn-1' } };
     return { thread: { id: 'new-thread' } };
   };
-  codex.sendRpcNotification = (method, params) => calls.push({ method, params });
   await codex.startTurn({ text: 'hello', cwd: process.cwd() });
   assert.equal(calls[0].method, 'thread/start');
   assert.equal(calls[0].params.approvalPolicy, 'untrusted');
@@ -874,6 +874,35 @@ test('new Web sessions retain the restricted approval and sandbox defaults', asy
   assert.equal(calls[0].params.config.sandbox_mode, 'workspace-write');
   assert.equal(calls[1].method, 'turn/start');
   assert.equal(calls[1].params.approvalPolicy, 'untrusted');
+});
+
+test('active app-server turns accept steering only for the matching turn', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  codex.ensureStarted = async () => {};
+  const calls = [];
+  codex.rpcRaw = async (method, params) => {
+    calls.push({ method, params });
+    if (method === 'thread/read') return { thread: { id: 'thread-1', cwd: process.cwd() } };
+    if (method === 'thread/resume') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: 'turn-1' } };
+    if (method === 'turn/steer') return { turnId: 'turn-1' };
+    return {};
+  };
+  await codex.startTurn({ text: 'start', threadId: 'thread-1', clientId: 'client-1' });
+  const result = await codex.steerTurn({
+    text: 'focus tests', threadId: 'thread-1', clientId: 'client-2', requestId: 'request-2',
+  });
+  assert.deepEqual(result, { threadId: 'thread-1', turnId: 'turn-1', steered: true });
+  assert.deepEqual(calls.at(-1), {
+    method: 'turn/steer',
+    params: {
+      threadId: 'thread-1', input: [{ type: 'text', text: 'focus tests' }], expectedTurnId: 'turn-1',
+    },
+  });
+  await assert.rejects(
+    () => codex.steerTurn({ text: 'wrong', threadId: 'thread-2' }),
+    /turn_not_active/,
+  );
 });
 
 test('active desktop writer wait has a bounded timeout', async () => {

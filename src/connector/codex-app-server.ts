@@ -46,6 +46,7 @@ type TurnContext = {
   clientId?: string;
   requestId?: string;
   threadId: string;
+  turnId: string;
   cwd: string;
   state: string;
 };
@@ -272,7 +273,9 @@ export class CodexAppServer extends EventEmitter {
     const isNewThread = !resolvedThreadId;
     if (!resolvedThreadId && !String(cwd || '').trim()) throw new Error('project_directory_required');
     let turnCwd = '';
-    const turnContext = { clientId, requestId, threadId: resolvedThreadId, cwd: turnCwd, state: 'starting' };
+    const turnContext = {
+      clientId, requestId, threadId: resolvedThreadId, turnId: '', cwd: turnCwd, state: 'starting',
+    };
     this.activeTurn = turnContext;
     try {
       await this.ensureStarted();
@@ -315,10 +318,7 @@ export class CodexAppServer extends EventEmitter {
         if (!resolvedThreadId) throw new Error('codex_did_not_return_thread_id');
       }
       if (this.activeTurn !== turnContext) throw new Error('turn_cancelled');
-      turnContext.threadId = resolvedThreadId;
-      turnContext.state = 'running';
-      this.emitTurn('turn.started', { threadId: resolvedThreadId });
-      this.sendRpcNotification('turn/start', {
+      const startResult = await this.rpcRaw('turn/start', {
         threadId: resolvedThreadId,
         input: [{ type: 'text', text: String(text || '') }],
         cwd: turnCwd,
@@ -326,12 +326,45 @@ export class CodexAppServer extends EventEmitter {
           approvalPolicy: secureDefaults.approvalPolicy,
           approvalsReviewer: secureDefaults.approvalsReviewer,
         } : {}),
-      }, true);
+      });
+      if (this.activeTurn !== turnContext) throw new Error('turn_cancelled');
+      const turnId = String(startResult?.turn?.id || startResult?.turnId || '').trim();
+      if (!turnId) throw new Error('codex_did_not_return_turn_id');
+      turnContext.threadId = resolvedThreadId;
+      turnContext.turnId = turnId;
+      turnContext.state = 'running';
+      this.emitTurn('turn.started', { threadId: resolvedThreadId, turnId });
       return { threadId: resolvedThreadId };
     } catch (error) {
       if (this.activeTurn === turnContext) this.activeTurn = null;
       throw error;
     }
+  }
+
+  async steerTurn({ text, threadId, clientId, requestId }: StartTurnOptions) {
+    const targetThreadId = String(threadId || '').trim();
+    const prompt = String(text || '').trim();
+    if (!targetThreadId) throw new Error('thread_id_required');
+    if (!prompt) throw new Error('message_required');
+    const turnContext = this.activeTurn;
+    if (
+      !turnContext
+      || turnContext.threadId !== targetThreadId
+      || turnContext.state !== 'running'
+      || !turnContext.turnId
+    ) {
+      throw new Error('turn_not_active');
+    }
+    turnContext.clientId = clientId;
+    turnContext.requestId = requestId;
+    const result = await this.rpcRaw('turn/steer', {
+      threadId: targetThreadId,
+      input: [{ type: 'text', text: prompt }],
+      expectedTurnId: turnContext.turnId,
+    });
+    const acceptedTurnId = String(result?.turnId || '').trim();
+    if (acceptedTurnId && acceptedTurnId !== turnContext.turnId) throw new Error('turn_id_mismatch');
+    return { threadId: targetThreadId, turnId: turnContext.turnId, steered: true };
   }
 
   async resumeWhenWritable(
