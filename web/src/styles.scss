@@ -502,6 +502,13 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .tool-purpose .activity-kind { flex: 0 0 auto; color: #9eacc1; font-weight: 650; }
 .tool-purpose strong { width: 0; min-width: 0; flex: 1 1 0; @include truncate; color: #aab6c8; font-weight: 500; }
 .tool-purpose strong::before { margin-right: 7px; color: #526077; content: '·'; }
+.activity-metrics { min-width: 0; flex: 0 1 auto; display: flex; gap: 7px; overflow: hidden; color: #96a4b8; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.activity-metrics > span { min-width: 0; flex: 0 1 auto; @include truncate; }
+.activity-metrics > span:first-child { flex-shrink: 0; }
+.activity-metrics > span + span::before { margin-right: 7px; color: #526077; content: '·'; }
+.activity-metrics b { font-weight: 650; }
+.activity-metrics .additions { color: #34d17b; }
+.activity-metrics .deletions { color: #ff5d68; }
 .tool-purpose time { max-width: 54px; flex: 0 0 auto; margin-left: auto; overflow: hidden; color: #637187; font-variant-numeric: tabular-nums; line-height: 1; text-align: right; white-space: nowrap; }
 @keyframes purpose-pulse { 70%, 100% { box-shadow: 0 0 0 5px rgba(111, 143, 211, 0); } }
 .download-status { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: center; max-width: $content-width; color: #aebbd0; font-size: 11px; }
@@ -513,6 +520,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .download-status progress::-moz-progress-bar { border-radius: 999px; background: #477ee5; }
 .download-status button { grid-column: 1 / -1; justify-self: end; border: 0; padding: 2px 0; color: #9fb9e8; background: transparent; font: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .presence.running::before, .presence.running::after, .presence.waiting::before, .session-running-dot, .tool-purpose i { animation: none; } }
+@media (max-width: 480px) { .tool-purpose.has-metrics .activity-kind { display: none; } }
 
 .approval-card { margin: 0 max(18px, calc((100% - 860px) / 2)) 10px; padding: 14px; border: 1px solid #79511e; border-radius: 14px; background: #2a1d0c; }
 .approval-card > div:first-child { display: flex; justify-content: space-between; gap: 10px; }

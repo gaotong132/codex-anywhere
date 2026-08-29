@@ -62,6 +62,7 @@ import {
 import { DownloadIndicator, MessageBubble, SidebarIcon } from './ui-components';
 import { BrowserSecureChannel } from './secure-channel-client';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
+import { normalizeTurnProgress, type TurnProgress } from '../../src/shared/turn-progress';
 import { requireCurrentProtocol } from '../../src/shared/protocol-contract';
 import {
   clearBrowserDeviceApproval,
@@ -197,8 +198,8 @@ function elapsedLabel(startedAt: number | null, now: number) {
 }
 
 function LiveActivityStatus({
-  kind, purpose, startedAt,
-}: { kind: LiveActivityKind; purpose: string; startedAt: number | null }) {
+  kind, purpose, progress, startedAt,
+}: { kind: LiveActivityKind; purpose: string; progress: TurnProgress; startedAt: number | null }) {
   const [clock, setClock] = useState(Date.now());
   useEffect(() => {
     if (!startedAt) return;
@@ -207,10 +208,29 @@ function LiveActivityStatus({
     return () => clearInterval(timer);
   }, [startedAt]);
   return (
-    <div className="tool-purpose" role="status" aria-live="polite" title={purpose || activityLabel(kind)}>
+    <div
+      className={`tool-purpose${progress.plan || progress.files ? ' has-metrics' : ''}`}
+      role="status"
+      aria-live="polite"
+      title={purpose || activityLabel(kind)}
+    >
       <i aria-hidden="true" />
       <span className="activity-kind">{activityLabel(kind)}</span>
       {purpose && <strong>{purpose}</strong>}
+      {(progress.plan || progress.files) && (
+        <span className="activity-metrics">
+          {progress.plan && (
+            <span>{t(`第 ${progress.plan.current} / ${progress.plan.total} 步`, `Step ${progress.plan.current} / ${progress.plan.total}`)}</span>
+          )}
+          {progress.files && (
+            <span>
+              {t(`${progress.files.changed} 个文件已更改`, `${progress.files.changed} files changed`)}
+              {' '}<b className="additions">+{progress.files.additions}</b>
+              {' '}<b className="deletions">-{progress.files.deletions}</b>
+            </span>
+          )}
+        </span>
+      )}
       {startedAt && <time>{elapsedLabel(startedAt, clock)}</time>}
     </div>
   );
@@ -252,6 +272,7 @@ export default function App() {
   const [toolPurpose, setToolPurpose] = useState('');
   const [liveActivity, setLiveActivity] = useState<LiveActivityKind>('working');
   const [activityStartedAt, setActivityStartedAt] = useState<number | null>(null);
+  const [turnProgress, setTurnProgress] = useState<TurnProgress>({});
   const [fileDownload, setFileDownload] = useState<FileDownloadState | null>(null);
   const [creatingNewSession, setCreatingNewSession] = useState(false);
   const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
@@ -651,6 +672,7 @@ export default function App() {
     const payload = message.payload || {};
     if (message.event === 'turn.started') {
       setToolPurpose('');
+      setTurnProgress({});
       setLiveActivity('starting');
       setActivityStartedAt(Date.now());
       const nextThreadId = String(payload.threadId || '');
@@ -669,6 +691,9 @@ export default function App() {
     } else if (message.event === 'turn.reasoning') {
       setLiveActivity('planning');
       setToolPurpose(normalizeToolPurpose(payload.text));
+    } else if (message.event === 'turn.progress') {
+      const progress = normalizeTurnProgress(payload);
+      setTurnProgress((current) => ({ ...current, ...progress }));
     } else if (message.event === 'tool.started') {
       setLiveActivity(liveEventActivity(payload));
     } else if (message.event === 'tool.completed') {
@@ -701,6 +726,7 @@ export default function App() {
       setToolPurpose('');
       setLiveActivity('working');
       setActivityStartedAt(null);
+      setTurnProgress({});
       setRunning(false);
       setOwnedTurnThreadId(null);
       setExecutionState('failed');
@@ -711,6 +737,7 @@ export default function App() {
       setToolPurpose('');
       setLiveActivity('working');
       setActivityStartedAt(null);
+      setTurnProgress({});
       setRunning(false);
       setOwnedTurnThreadId(null);
       setExecutionState((current) => current === 'failed' ? current : 'completed');
@@ -1022,6 +1049,7 @@ export default function App() {
         setActivityStartedAt(active
           ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || Date.now()
           : null);
+        setTurnProgress(active ? normalizeTurnProgress(page.turnProgress) : {});
       }
       setNextCursor(page.nextCursor || null);
       if (!cursor) setHistoryTruncated(Boolean(page.truncated));
@@ -1070,6 +1098,7 @@ export default function App() {
         setActivityStartedAt((current) => (inProgress
           ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || current || Date.now()
           : null));
+        setTurnProgress(inProgress ? normalizeTurnProgress(page.turnProgress) : {});
         const latestItems = historyItems(page.turns);
         const awaitingDesktopTurn = awaitingDesktopTurnRef.current;
         const awaitedMessageSeen = Boolean(awaitingDesktopTurn
@@ -1155,6 +1184,7 @@ export default function App() {
     setToolPurpose('');
     setLiveActivity('working');
     setActivityStartedAt(null);
+    setTurnProgress({});
     setApproval(null);
     autoFollowLatestRef.current = true;
     streamItemRef.current = null;
@@ -1326,6 +1356,7 @@ export default function App() {
         setExecutionState('running');
         setLiveActivity('starting');
         setActivityStartedAt(Date.now());
+        setTurnProgress({});
       }
       const action = steering ? 'turn.steer' : 'turn.start';
       const data = await request<TurnStartResult>(action, {
@@ -1379,6 +1410,7 @@ export default function App() {
         setExecutionState('idle');
         setLiveActivity('working');
         setActivityStartedAt(null);
+        setTurnProgress({});
       }
       if (optimisticItemId) {
         setTimeline((current) => current.filter((item) => item.id !== optimisticItemId));
@@ -1417,6 +1449,7 @@ export default function App() {
     setExecutionState('idle');
     setLiveActivity('working');
     setActivityStartedAt(null);
+    setTurnProgress({});
   }, [reportTimelineError, request]);
 
   const answerApproval = useCallback(async (approved: boolean) => {
@@ -1853,7 +1886,12 @@ export default function App() {
 
         <div className="execution-strip">
           {(executionState === 'running' || executionState === 'waiting') && (
-            <LiveActivityStatus kind={liveActivity} purpose={toolPurpose} startedAt={activityStartedAt} />
+            <LiveActivityStatus
+              kind={liveActivity}
+              purpose={toolPurpose}
+              progress={turnProgress}
+              startedAt={activityStartedAt}
+            />
           )}
           <DownloadIndicator download={fileDownload} onCancel={cancelFileDownload} />
         </div>

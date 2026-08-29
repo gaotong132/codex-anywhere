@@ -9,6 +9,7 @@ import { readRolloutTail } from './rollout-tail.js';
 import { extractGeneratedImageAttachment } from './generated-images.js';
 import { needsDesktopPermissionRecovery } from './session-permissions.js';
 import { resolveCodexExecutable } from './codex-executable.js';
+import { summarizePlanSteps, summarizeUnifiedDiff } from '../shared/turn-progress.js';
 
 const RPC_TIMEOUT_MS = 20_000;
 const SUMMARY_LIMIT = 4_000;
@@ -504,6 +505,16 @@ export class CodexAppServer extends EventEmitter {
   }
 
   handleNotification(method: string, params: JsonObject) {
+    if (method === 'turn/plan/updated') {
+      const plan = summarizePlanSteps(params.plan);
+      if (plan) this.emitTurn('turn.progress', { plan });
+      return;
+    }
+    if (method === 'turn/diff/updated') {
+      const files = summarizeUnifiedDiff(params.diff);
+      if (files) this.emitTurn('turn.progress', { files });
+      return;
+    }
     if (isReasoningMethod(method)) {
       const text = extractText(params);
       if (text) this.emitTurn('turn.reasoning', { text });

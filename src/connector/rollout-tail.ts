@@ -3,6 +3,14 @@ import type { FileHandle } from 'node:fs/promises';
 import { normalizeToolPurpose, parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
 import type { MessageContext } from '../shared/message-content.js';
 import {
+  extractPlanProgressFromToolInput,
+  summarizePatchChanges,
+  summarizePlanSteps,
+  summarizeUnifiedDiff,
+  type TurnFileProgress,
+  type TurnPlanProgress,
+} from '../shared/turn-progress.js';
+import {
   extractGeneratedImageAttachment,
   type GeneratedImageAttachment,
 } from './generated-images.js';
@@ -12,12 +20,19 @@ const DEFAULT_MAX_ITEMS = 80;
 const MAX_TEXT_LENGTH = 4_000;
 const ACTIVITY_SCAN_CHUNK_BYTES = 4 * 1024 * 1024;
 const ACTIVITY_SCAN_OVERLAP_BYTES = 1_024;
+const PLAN_SCAN_MAX_BYTES = 24 * 1024 * 1024;
+const PLAN_SCAN_OVERLAP_BYTES = 64 * 1024;
 const MAX_CACHED_ROLLOUTS = 12;
 type RolloutStatus = 'unknown' | 'inProgress' | 'completed' | 'failed';
 type RolloutActivity = { status: RolloutStatus; id: string; startedAt: number | null };
 type LiveActivityKind = 'starting' | 'planning' | 'command' | 'editing' | 'searching'
   | 'connectedTool' | 'generating' | 'waiting' | 'checking' | 'working';
 type LiveActivity = { kind: LiveActivityKind; updatedAt: number | null };
+type RolloutProgress = {
+  plan?: TurnPlanProgress;
+  files?: TurnFileProgress;
+  patchFiles: Set<string>;
+};
 type RolloutRow = Record<string, any>;
 type RolloutItem = {
   type: string;
@@ -40,6 +55,7 @@ type RolloutSnapshot = SnapshotOptions & {
   activity: RolloutActivity;
   liveActivity: LiveActivity;
   toolPurpose: string;
+  progress: RolloutProgress;
 };
 type CompleteRows = { rows: RolloutRow[]; parsedOffset: number; firstCompleteOffset: number };
 const activityMarkers = [
@@ -89,6 +105,9 @@ export async function readRolloutTail(options: RolloutOptions) {
       activityStartedAt: snapshot.activity.status === 'inProgress' ? snapshot.activity.startedAt : null,
       activityUpdatedAt: snapshot.activity.status === 'inProgress' ? snapshot.liveActivity.updatedAt : null,
       toolPurpose: snapshot.activity.status === 'inProgress' ? snapshot.toolPurpose : '',
+      turnProgress: snapshot.activity.status === 'inProgress'
+        ? { plan: snapshot.progress.plan, files: snapshot.progress.files }
+        : {},
     };
   } finally {
     await handle.close();
@@ -102,6 +121,10 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
   if (activity.status === 'unknown' && window.firstCompleteOffset > 0) {
     activity = await findLatestActivityBefore(handle, window.firstCompleteOffset);
   }
+  const progress = updateTurnProgress({ patchFiles: new Set() }, window.rows, activity.status);
+  if (activity.status === 'inProgress' && !progress.plan && window.firstCompleteOffset > 0) {
+    progress.plan = await findLatestPlanBefore(handle, window.firstCompleteOffset);
+  }
   return {
     ...options,
     fileSize,
@@ -110,6 +133,7 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
     activity,
     liveActivity: updateLiveActivity({ kind: 'working', updatedAt: activity.startedAt }, window.rows, activity.status),
     toolPurpose: updateToolPurpose('', window.rows, activity.status),
+    progress,
   };
 }
 
@@ -132,6 +156,7 @@ async function updateSnapshot(handle: FileHandle, fileSize: number, cached: Roll
     activity,
     liveActivity: updateLiveActivity(cached.liveActivity, appended.rows, activity.status),
     toolPurpose: updateToolPurpose(cached.toolPurpose, appended.rows, activity.status),
+    progress: updateTurnProgress(cached.progress, appended.rows, activity.status),
   };
 }
 
@@ -188,6 +213,41 @@ async function findLatestActivityBefore(handle: FileHandle, endOffset: number): 
     cursor = start;
   }
   return { status: 'unknown', id: '', startedAt: null };
+}
+
+async function findLatestPlanBefore(handle: FileHandle, endOffset: number): Promise<TurnPlanProgress | undefined> {
+  const lowerBound = Math.max(0, endOffset - PLAN_SCAN_MAX_BYTES);
+  const planNeedle = Buffer.from('tools.update_plan');
+  const taskNeedle = Buffer.from('"type":"task_started"');
+  let cursor = endOffset;
+  while (cursor > lowerBound) {
+    const start = Math.max(lowerBound, cursor - ACTIVITY_SCAN_CHUNK_BYTES);
+    const readEnd = Math.min(endOffset, cursor + PLAN_SCAN_OVERLAP_BYTES);
+    const buffer = Buffer.alloc(readEnd - start);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
+    const data = bytesRead === buffer.length ? buffer : buffer.subarray(0, bytesRead);
+    const taskIndex = data.lastIndexOf(taskNeedle);
+    let planIndex = data.lastIndexOf(planNeedle);
+    while (planIndex >= 0) {
+      const prefix = data.subarray(Math.max(0, planIndex - 96), planIndex).toString('utf8');
+      if (!/"input":"const\s+\w+\s*=\s*await\s*$/.test(prefix)) {
+        planIndex = data.lastIndexOf(planNeedle, planIndex - 1);
+        continue;
+      }
+      const lineStart = data.lastIndexOf(0x0a, Math.max(0, planIndex - 1)) + 1;
+      const nextNewline = data.indexOf(0x0a, planIndex);
+      const lineEnd = nextNewline < 0 ? data.length : nextNewline;
+      const plan = planProgressFromRow(parseRow(data.subarray(lineStart, lineEnd).toString('utf8')));
+      if (plan) {
+        if (taskIndex > planIndex) return undefined;
+        return plan;
+      }
+      planIndex = data.lastIndexOf(planNeedle, planIndex - 1);
+    }
+    if (taskIndex >= 0) return undefined;
+    cursor = start;
+  }
+  return undefined;
 }
 
 function appendItems(current: RolloutItem[], appended: RolloutItem[], maxItems: number) {
@@ -248,6 +308,57 @@ function updateLiveActivity(current: LiveActivity, rows: RolloutRow[], status: R
     activity = { kind, updatedAt: epochMillis(row.timestamp) || activity.updatedAt };
   }
   return status === 'inProgress' ? activity : { kind: 'working', updatedAt: null };
+}
+
+function updateTurnProgress(current: RolloutProgress, rows: RolloutRow[], status: RolloutStatus): RolloutProgress {
+  let progress: RolloutProgress = {
+    plan: current.plan,
+    files: current.files,
+    patchFiles: new Set(current.patchFiles),
+  };
+  for (const row of rows) {
+    const payload = row?.payload || {};
+    const type = String(payload.type || '');
+    if (type === 'task_started') {
+      progress = { patchFiles: new Set() };
+      continue;
+    }
+    if (/task_complete|task_failed|turn_aborted|turn_error/.test(type)) {
+      progress = { patchFiles: new Set() };
+      continue;
+    }
+    const structuredPlan = summarizePlanSteps(payload.plan);
+    if (structuredPlan) progress.plan = structuredPlan;
+    const structuredDiff = summarizeUnifiedDiff(payload.diff);
+    if (structuredDiff) {
+      progress.files = structuredDiff;
+      progress.patchFiles.clear();
+    }
+    const patch = type === 'patch_apply_end' && payload.success !== false
+      ? summarizePatchChanges(payload.changes) : undefined;
+    if (patch) {
+      for (const path of patch.paths) progress.patchFiles.add(path);
+      progress.files = {
+        changed: progress.patchFiles.size || patch.changed,
+        additions: (progress.files?.additions || 0) + patch.additions,
+        deletions: (progress.files?.deletions || 0) + patch.deletions,
+      };
+    }
+    const plan = planProgressFromRow(row);
+    if (plan) progress.plan = plan;
+  }
+  return status === 'inProgress' ? progress : { patchFiles: new Set() };
+}
+
+function planProgressFromRow(row: RolloutRow | null) {
+  const payload = row?.payload || {};
+  const type = String(payload.type || '');
+  if (row?.type !== 'response_item' || !/custom_tool_call|function_call/.test(type)) return undefined;
+  const name = String(payload.name || '').toLowerCase();
+  const input = String(payload.input || payload.arguments || '');
+  const isPlanCall = name === 'update_plan'
+    || (name === 'exec' && /^\s*const\s+\w+\s*=\s*await\s+tools\.update_plan\s*\(/.test(input));
+  return isPlanCall ? extractPlanProgressFromToolInput(input) : undefined;
 }
 
 function activityKind(row: RolloutRow): LiveActivityKind | null {
@@ -368,7 +479,9 @@ function capText(value: unknown, limit = MAX_TEXT_LENGTH) {
 }
 
 export const internals = {
-  activityKind, capText, epochMillis, extractContent, findLatestActivityBefore, inferRolloutActivity,
+  activityKind, capText, epochMillis, extractContent, findLatestActivityBefore, findLatestPlanBefore,
+  inferRolloutActivity,
   inferRolloutStatus, mapRolloutRows, recoverGeneratedImageRows, rolloutCache, updateLiveActivity,
   updateToolPurpose,
+  updateTurnProgress,
 };

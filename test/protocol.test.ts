@@ -30,6 +30,12 @@ import {
   parseAssistantMessage,
   parseUserMessage,
 } from '../src/shared/message-content.js';
+import {
+  extractPlanProgressFromToolInput,
+  normalizeTurnProgress,
+  summarizePatchChanges,
+  summarizeUnifiedDiff,
+} from '../src/shared/turn-progress.js';
 import { CodexAppServer, internals } from '../src/connector/codex-app-server.js';
 import {
   CodexDesktopClient,
@@ -574,6 +580,11 @@ test('large rollout keeps activity across an incremental tail read', async () =>
   try {
     await writeFile(filePath, [
       row({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-large' } }),
+      row({ type: 'response_item', payload: {
+        type: 'custom_tool_call', name: 'exec', input: `const result = await tools.update_plan({plan:[
+          {step:"inspect",status:"completed"},{step:"verify",status:"in_progress"}
+        ]});`,
+      } }),
       row({ type: 'response_item', payload: { type: 'custom_tool_call_output', output: 'x'.repeat(80 * 1024) } }),
       row({ type: 'event_msg', payload: { type: 'agent_reasoning', text: '**Checking persistent state**' } }),
       row({ type: 'response_item', payload: { type: 'message', role: 'assistant', phase: 'commentary', content: [
@@ -585,6 +596,7 @@ test('large rollout keeps activity across an incremental tail read', async () =>
     assert.equal(running.turns[0].items.at(-1).text, 'still running');
     assert.equal(running.toolPurpose, 'Checking persistent state');
     assert.equal(running.activityKind, 'planning');
+    assert.deepEqual(running.turnProgress.plan, { current: 2, total: 2 });
 
     await appendFile(filePath, row({
       type: 'event_msg', payload: { type: 'agent_reasoning', text: '**Verifying the final result**' },
@@ -635,6 +647,78 @@ test('rollout activity exposes changing safe categories without tool details', (
   assert.equal(rolloutInternals.activityKind({
     type: 'response_item', payload: { type: 'function_call', name: 'wait', arguments: '{}' },
   }), 'waiting');
+});
+
+test('turn progress safely summarizes structured plans and diffs', () => {
+  assert.deepEqual(extractPlanProgressFromToolInput(`
+    const result = await tools.update_plan({ plan: [
+      { step: "inspect", status: "completed" },
+      { step: "implement", status: "in_progress" },
+      { step: "verify", status: "pending" }
+    ] });
+  `), { current: 2, total: 3 });
+  assert.deepEqual(summarizeUnifiedDiff([
+    'diff --git a/src/a.ts b/src/a.ts',
+    '--- a/src/a.ts',
+    '+++ b/src/a.ts',
+    '@@ -1 +1,2 @@',
+    '-old',
+    '+new',
+    '+next',
+    'diff --git a/src/b.ts b/src/b.ts',
+    '--- /dev/null',
+    '+++ b/src/b.ts',
+    '@@ -0,0 +1 @@',
+    '+created',
+  ].join('\n')), { changed: 2, additions: 3, deletions: 1 });
+  assert.deepEqual(normalizeTurnProgress({
+    plan: { current: 2, total: 3 }, files: { changed: 2, additions: 3, deletions: 1 },
+  }), {
+    plan: { current: 2, total: 3 }, files: { changed: 2, additions: 3, deletions: 1 },
+  });
+  assert.deepEqual(normalizeTurnProgress({ plan: { current: 0, total: 3 } }), {});
+});
+
+test('turn progress extracts only aggregate patch statistics', () => {
+  const result = summarizePatchChanges({
+    'src/a.ts': { type: 'update', unified_diff: '@@ -1 +1 @@\n-old\n+new' },
+    'src/b.ts': { type: 'add', content: 'created\n' },
+  });
+  assert.deepEqual(result, {
+    changed: 2, additions: 2, deletions: 1, paths: ['src/a.ts', 'src/b.ts'],
+  });
+});
+
+test('rollout tail exposes active plan and aggregate file progress', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-progress-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const row = (value) => `${JSON.stringify(value)}\n`;
+  try {
+    await writeFile(filePath, [
+      row({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-progress' } }),
+      row({ type: 'response_item', payload: {
+        type: 'custom_tool_call', name: 'exec', input: `const result = await tools.update_plan({plan:[
+          {step:"inspect",status:"completed"},{step:"implement",status:"in_progress"}
+        ]});`,
+      } }),
+      row({ type: 'response_item', payload: {
+        type: 'custom_tool_call', name: 'exec', input: 'const r = await tools.exec_command({ cmd: "verify" });',
+      } }),
+      row({ type: 'event_msg', payload: {
+        type: 'patch_apply_end', success: true, changes: {
+          'src/a.ts': { type: 'update', unified_diff: '@@ -1 +1 @@\n-old\n+new' },
+        },
+      } }),
+    ].join(''));
+    const result = await readRolloutTail({ filePath, threadId: 'thread-progress' });
+    assert.deepEqual(result.turnProgress, {
+      plan: { current: 2, total: 2 },
+      files: { changed: 1, additions: 1, deletions: 1 },
+    });
+  } finally {
+    rolloutInternals.rolloutCache.delete(filePath);
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('both history readers hide the desktop delegation envelope', () => {
@@ -737,6 +821,34 @@ test('live tool activity never forwards commands, arguments, paths, or output', 
     id: 'private-id', type: 'commandExecution', name: 'exec', command: 'private command',
     path: 'C:\\private', aggregatedOutput: 'private output', status: 'completed',
   }), { type: 'commandExecution', status: 'completed' });
+});
+
+test('app-server forwards only aggregate plan and diff progress', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  codex.activeTurn = {
+    clientId: 'client', requestId: 'request', threadId: 'thread-1',
+    turnId: 'turn-1', cwd: process.cwd(), state: 'running',
+  };
+  const planEvent = once(codex, 'turn-event');
+  codex.handleNotification('turn/plan/updated', {
+    threadId: 'thread-1', turnId: 'turn-1', plan: [
+      { step: 'private first step', status: 'completed' },
+      { step: 'private current step', status: 'inProgress' },
+    ],
+  });
+  const [plan] = await planEvent;
+  assert.equal(plan.event, 'turn.progress');
+  assert.deepEqual(plan.payload, { plan: { current: 2, total: 2 } });
+
+  const diffEvent = once(codex, 'turn-event');
+  codex.handleNotification('turn/diff/updated', {
+    threadId: 'thread-1', turnId: 'turn-1',
+    diff: 'diff --git a/private.ts b/private.ts\n--- a/private.ts\n+++ b/private.ts\n@@ -1 +1 @@\n-old\n+new',
+  });
+  const [diff] = await diffEvent;
+  assert.equal(diff.event, 'turn.progress');
+  assert.deepEqual(diff.payload, { files: { changed: 1, additions: 1, deletions: 1 } });
+  assert.equal(JSON.stringify(diff.payload).includes('private.ts'), false);
 });
 
 test('conversation history uses a lightweight bounded descending cursor page', async () => {
