@@ -52,6 +52,7 @@ import {
   presenceLabel,
   projectLabel,
   reconcileSessionAttention,
+  replayPendingFrames,
   sessionProjectName,
   sessionUpdatedAt,
   shortId,
@@ -478,11 +479,11 @@ export default function App() {
         pendingRef.current.delete(requestId);
         reject(new Error(action === 'turn.start' ? 'turn_start_timeout' : 'request_timeout'));
       }, timeoutMs);
+      const frame = { type: 'request', requestId, action, payload, deviceId: DEVICE_ID };
       pendingRef.current.set(requestId, {
-        resolve: (value) => resolve(value as T), reject, timer,
+        resolve: (value) => resolve(value as T), reject, timer, frame, acknowledged: false,
       });
       try {
-        const frame = { type: 'request', requestId, action, payload, deviceId: DEVICE_ID };
         if (secureRequiredRef.current) {
           if (!secureChannelRef.current?.sendFrame(frame)) throw new Error('secure_channel_not_ready');
         } else {
@@ -494,6 +495,15 @@ export default function App() {
         reject(new Error(t('连接已断开', 'Connection closed')));
       }
     });
+  }, []);
+
+  const replayPendingRequests = useCallback(() => {
+    const channel = secureChannelRef.current;
+    if (!channel?.isReady()) return 0;
+    return replayPendingFrames(
+      pendingRef.current.values(),
+      (frame) => channel.sendFrame(frame),
+    );
   }, []);
 
   useEffect(() => {
@@ -568,6 +578,7 @@ export default function App() {
         connectorOnlineRef.current = true;
         setOnline(true);
         setStatusText(t('电脑在线', 'Computer online'));
+        replayPendingRequests();
         void refreshSessions();
       },
       onError: () => {
@@ -580,7 +591,7 @@ export default function App() {
     });
     secureChannelRef.current = channel;
     return channel.start();
-  }, [refreshSessions]);
+  }, [refreshSessions, replayPendingRequests]);
 
   const handleBridgeMessage = useCallback((message: BridgeMessage) => {
     if (message.type === 'auth.pairing') {
@@ -621,6 +632,11 @@ export default function App() {
       return;
     }
     if (message.type === 'pong') return;
+    if (message.type === 'ack' && message.requestId) {
+      const pending = pendingRef.current.get(message.requestId);
+      if (pending) pending.acknowledged = true;
+      return;
+    }
     if (message.type === 'presence') {
       const wasConnected = connectorOnlineRef.current;
       const connected = Boolean(message.devices?.includes(DEVICE_ID));
@@ -833,6 +849,9 @@ export default function App() {
     });
     socket.addEventListener('close', (event) => {
       if (socketRef.current !== socket) return;
+      const replayPending = secureRequiredRef.current
+        && reconnectWantedRef.current
+        && ![4003, 4403, 4406, 4407, 4429].includes(event.code);
       socketRef.current = null;
       socketAuthenticatedRef.current = false;
       connectorOnlineRef.current = false;
@@ -843,7 +862,7 @@ export default function App() {
       setOnline(false);
       setRunning(false);
       setOwnedTurnThreadId(null);
-      rejectPendingRequests(t('连接已断开', 'Connection closed'));
+      if (!replayPending) rejectPendingRequests(t('连接已断开', 'Connection closed'));
       if (event.code === 4003) {
         reconnectWantedRef.current = false;
         if (authAttemptModeRef.current === 'pairing') {

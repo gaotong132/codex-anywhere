@@ -62,6 +62,18 @@ export function isConnectionInterruption(error: unknown) {
   return /^(?:连接已断开|连接未建立|Connection closed|Connection is not established)$/i.test(message.trim());
 }
 
+export function replayPendingFrames(
+  pending: Iterable<{ frame: Record<string, unknown> }>,
+  send: (frame: Record<string, unknown>) => boolean,
+) {
+  let replayed = 0;
+  for (const item of pending) {
+    if (!send(item.frame)) break;
+    replayed += 1;
+  }
+  return replayed;
+}
+
 export function shortId(value: string) {
   return value.length > 20 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value;
 }

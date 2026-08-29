@@ -46,6 +46,7 @@ import {
   isConnectionInterruption,
   markSessionAttentionRead,
   reconcileSessionAttention,
+  replayPendingFrames,
 } from '../web/src/app-utils.js';
 import { historyItems, mergeHistorySnapshot } from '../web/src/history-utils.js';
 import { MessageBubble } from '../web/src/ui-components.js';
@@ -247,6 +248,20 @@ test('only transient transport failures are treated as reconnectable connection 
   assert.equal(isConnectionInterruption(new Error('turn_start_timeout')), false);
   assert.equal(isConnectionInterruption(new Error('desktop_delivery_failed')), false);
   assert.equal(friendlyError(new Error('request_timeout')).includes('恢复到输入框'), false);
+});
+
+test('pending secure requests replay in order and stop when the channel becomes unavailable', () => {
+  const sent: Record<string, unknown>[] = [];
+  const pending = [
+    { frame: { type: 'request', requestId: 'r1' } },
+    { frame: { type: 'request', requestId: 'r2' } },
+    { frame: { type: 'request', requestId: 'r3' } },
+  ];
+  assert.equal(replayPendingFrames(pending, (frame) => {
+    sent.push(frame);
+    return frame.requestId !== 'r2';
+  }), 1);
+  assert.deepEqual(sent.map((frame) => frame.requestId), ['r1', 'r2']);
 });
 
 test('delegated desktop messages display only their user input', () => {

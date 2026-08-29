@@ -33,6 +33,8 @@ export type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
   timer: ReturnType<typeof setTimeout>;
+  frame: Record<string, unknown>;
+  acknowledged: boolean;
 };
 export type BridgeMessage = {
   type: string;
