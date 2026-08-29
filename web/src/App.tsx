@@ -233,7 +233,7 @@ function LiveActivityStatus({
   }, [startedAt]);
   return (
     <div
-      className={`tool-purpose${progress.plan || progress.files ? ' has-metrics' : ''}`}
+      className={`tool-purpose${purpose ? ' has-purpose' : ''}${progress.plan || progress.files ? ' has-metrics' : ''}`}
       role="status"
       aria-live="polite"
       title={purpose || activityLabel(kind)}

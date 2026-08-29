@@ -548,8 +548,22 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .download-status button { grid-column: 1 / -1; justify-self: end; border: 0; padding: 2px 0; color: #9fb9e8; background: transparent; font: inherit; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { .presence.running::before, .presence.running::after, .presence.waiting::before, .session-running-dot, .tool-purpose i::after { animation: none; } }
 @media (max-width: 480px) {
-  .tool-purpose.has-metrics .activity-kind { display: none; }
+  .tool-purpose.has-metrics {
+    display: grid;
+    grid-template-columns: 12px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'indicator purpose purpose'
+      '. metrics elapsed';
+    gap: 5px 7px;
+    overflow: visible;
+  }
+  .tool-purpose.has-metrics i { grid-area: indicator; }
+  .tool-purpose.has-metrics .activity-kind { grid-area: purpose; }
+  .tool-purpose.has-metrics.has-purpose .activity-kind { display: none; }
+  .tool-purpose.has-metrics strong { width: auto; grid-area: purpose; }
   .tool-purpose.has-metrics strong::before { content: none; }
+  .tool-purpose.has-metrics .activity-metrics { width: 100%; grid-area: metrics; }
+  .tool-purpose.has-metrics time { grid-area: elapsed; margin-left: 0; }
 }
 
 .approval-card { margin: 0 max(18px, calc((100% - 860px) / 2)) 10px; padding: 14px; border: 1px solid #79511e; border-radius: 14px; background: #2a1d0c; }
