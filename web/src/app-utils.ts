@@ -115,6 +115,10 @@ export function canStopOwnedTurn(running: boolean, ownedThreadId: string | null,
   return running && Boolean(ownedThreadId) && ownedThreadId === selectedThreadId;
 }
 
+export function composerPrimaryAction(canStop: boolean, prompt: string, hasAttachment: boolean) {
+  return canStop && !prompt.trim() && !hasAttachment ? 'stop' : 'send';
+}
+
 export function canSteerOwnedTurn(
   running: boolean,
   state: ExecutionState,

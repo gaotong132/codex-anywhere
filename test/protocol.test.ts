@@ -48,6 +48,7 @@ import {
   canSendToActiveDesktopTurn,
   canStopOwnedTurn,
   canSteerOwnedTurn,
+  composerPrimaryAction,
   friendlyError,
   initialBootstrapReady,
   isNearScrollBottom,
@@ -244,6 +245,13 @@ test('stop control is shown only for the selected Web-owned turn', () => {
   assert.equal(canStopOwnedTurn(true, null, 'thread-1'), false);
   assert.equal(canStopOwnedTurn(true, 'thread-1', 'thread-2'), false);
   assert.equal(canStopOwnedTurn(true, 'thread-1', 'thread-1'), true);
+});
+
+test('the primary composer action stops only when an owned run has no pending input', () => {
+  assert.equal(composerPrimaryAction(true, '', false), 'stop');
+  assert.equal(composerPrimaryAction(true, '追加指令', false), 'send');
+  assert.equal(composerPrimaryAction(true, '', true), 'send');
+  assert.equal(composerPrimaryAction(false, '', false), 'send');
 });
 
 test('steering is available only while the selected Web-owned turn is actively running', () => {

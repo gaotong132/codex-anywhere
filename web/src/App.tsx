@@ -45,6 +45,7 @@ import {
   canSendToActiveDesktopTurn,
   canSteerOwnedTurn,
   canStopOwnedTurn,
+  composerPrimaryAction,
   initialBootstrapReady,
   isConnectionInterruption,
   isNearScrollBottom,
@@ -244,7 +245,10 @@ function LiveActivityStatus({
       <i aria-hidden="true" />
       <span className="activity-kind">{activityLabel(kind)}</span>
       {purpose && (
-        <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
+        <>
+          <span className="activity-separator" aria-hidden="true">·</span>
+          <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
+        </>
       )}
       {(progress.plan || progress.files) && (
         <span className="activity-metrics">
@@ -386,6 +390,7 @@ export default function App() {
   const [newSessionImage, setNewSessionImage] = useState<PendingImage | null>(null);
   const [newSessionError, setNewSessionError] = useState('');
   const [connectionEpoch, setConnectionEpoch] = useState(0);
+  const [stopConfirmationArmed, setStopConfirmationArmed] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
   const pendingRef = useRef(new Map<string, PendingRequest>());
@@ -433,6 +438,14 @@ export default function App() {
   useEffect(() => { pairingCredentialRef.current = pairingCredential; }, [pairingCredential]);
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { ownedTurnThreadIdRef.current = ownedTurnThreadId; }, [ownedTurnThreadId]);
+  useEffect(() => {
+    if (!stopConfirmationArmed) return;
+    const timer = setTimeout(() => setStopConfirmationArmed(false), 4_000);
+    return () => clearTimeout(timer);
+  }, [stopConfirmationArmed]);
+  useEffect(() => {
+    setStopConfirmationArmed(false);
+  }, [executionState, online, pendingImage, prompt, threadId]);
 
   const finishInitialBootstrap = useCallback(() => {
     setInitialBootstrapPending(false);
@@ -1826,6 +1839,11 @@ export default function App() {
   const directDesktopDeliveryAvailable = canSendToActiveDesktopTurn(
     running, executionState, ownedTurnThreadId, threadId,
   );
+  const stopAvailable = canStopOwnedTurn(
+    running, ownedTurnThreadId, threadId || (creatingNewSession ? NEW_TURN_KEY : null),
+  );
+  const primaryAction = composerPrimaryAction(stopAvailable, prompt, Boolean(pendingImage));
+  const primaryStopsRun = primaryAction === 'stop';
   const executionActive = executionState === 'running' || executionState === 'waiting';
   const liveProgressItemId = executionActive ? latestTurnProgressItemId(timeline) : null;
 
@@ -2187,26 +2205,48 @@ export default function App() {
               disabled={!online || uploading}
             />
             <div className="composer-actions">
-              {canStopOwnedTurn(running, ownedTurnThreadId, threadId || (creatingNewSession ? NEW_TURN_KEY : null)) && (
-                <button className="stop-button" onClick={() => void stopTurn()} aria-label={t('停止', 'Stop')}>■</button>
+              {primaryStopsRun && stopConfirmationArmed && (
+                <span className="stop-confirmation" role="status">
+                  {t('再次点击确认停止', 'Tap again to stop')}
+                </span>
               )}
               <button
-                  className={`send-button${uploading ? ' uploading' : ''}`}
+                  className={`send-button${uploading ? ' uploading' : ''}${primaryStopsRun ? ' stop-mode' : ''}${stopConfirmationArmed ? ' confirm-stop' : ''}`}
                   disabled={
                     !online
                     || uploading
-                    || (running && !steeringAvailable)
-                    || (!prompt.trim() && !pendingImage)
-                    || (!threadId && !newSessionCwd.trim())
+                    || (!primaryStopsRun && (
+                      (running && !steeringAvailable)
+                      || (!prompt.trim() && !pendingImage)
+                      || (!threadId && !newSessionCwd.trim())
+                    ))
                   }
-                  onClick={() => void sendTurn()}
-                  aria-label={uploading
-                    ? t('正在发送图片', 'Sending image')
-                    : steeringAvailable
-                      ? t('追加指令', 'Steer')
-                      : t('发送', 'Send')}
+                  onClick={() => {
+                    if (!primaryStopsRun) {
+                      setStopConfirmationArmed(false);
+                      void sendTurn();
+                      return;
+                    }
+                    if (!stopConfirmationArmed) {
+                      setStopConfirmationArmed(true);
+                      return;
+                    }
+                    setStopConfirmationArmed(false);
+                    void stopTurn();
+                  }}
+                  aria-label={primaryStopsRun
+                    ? stopConfirmationArmed
+                      ? t('再次点击确认停止', 'Tap again to stop')
+                      : t('停止当前任务', 'Stop current run')
+                    : uploading
+                      ? t('正在发送图片', 'Sending image')
+                      : steeringAvailable
+                        ? t('追加指令', 'Steer')
+                        : t('发送', 'Send')}
                 >
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Zm3 7h13" /></svg>
+                  {primaryStopsRun
+                    ? <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" /></svg>
+                    : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Zm3 7h13" /></svg>}
               </button>
             </div>
           </div>

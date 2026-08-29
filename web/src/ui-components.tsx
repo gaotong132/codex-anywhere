@@ -251,7 +251,7 @@ export function MessageBubble({
     return (
       <details className={`progress-card${active ? ' live' : ''}`} open>
         <summary>{t('进度更新', 'Progress update')}</summary>
-        <pre><TypewriterText text={item.text} active={active} /></pre>
+        <pre><TypewriterText className="progress-typewriter" text={item.text} active={active} /></pre>
       </details>
     );
   }
