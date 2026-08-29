@@ -43,7 +43,11 @@ import {
   internals as desktopInternals,
   mergeDesktopSessionStatuses,
 } from '../src/connector/codex-desktop.js';
-import { internals as rolloutInternals, readRolloutTail } from '../src/connector/rollout-tail.js';
+import {
+  internals as rolloutInternals,
+  readRolloutModelSettings,
+  readRolloutTail,
+} from '../src/connector/rollout-tail.js';
 import { needsDesktopPermissionRecovery } from '../src/connector/session-permissions.js';
 import {
   canSendToActiveDesktopTurn,
@@ -171,11 +175,13 @@ test('desktop follow-up includes the caller required by the native app protocol'
   });
   assert.deepEqual(await desktop.sendMessage({
     threadId: 'target-thread', text: '普通用户消息', requestId: 'request-1',
-    callerThreadId: 'controller-thread',
+    callerThreadId: 'controller-thread', model: 'gpt-5.6-sol', thinking: 'high',
   }), { threadId: 'target-thread', delivery: 'desktop' });
   assert.equal(call.method, 'tools/call');
   assert.equal(call.params.arguments.threadId, 'target-thread');
   assert.equal(call.params.arguments.prompt, '普通用户消息');
+  assert.equal(call.params.arguments.model, 'gpt-5.6-sol');
+  assert.equal(call.params.arguments.thinking, 'high');
   assert.equal(call.params.threadId, 'controller-thread');
 });
 
@@ -835,6 +841,26 @@ test('large active rollout restores purpose and plan from before the visible tai
   }
 });
 
+test('rollout model settings use the latest persisted thread configuration', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-model-settings-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const row = (value) => `${JSON.stringify(value)}\n`;
+  try {
+    await writeFile(filePath, [
+      row({ type: 'turn_context', payload: { model: 'gpt-old', effort: 'medium' } }),
+      row({ type: 'event_msg', payload: { type: 'thread_settings_applied', thread_settings: {
+        model: 'gpt-5.6-sol', reasoning_effort: 'xhigh', service_tier: 'fast',
+      } } }),
+      row({ type: 'turn_context', payload: { model: 'gpt-5.6-sol', effort: 'xhigh' } }),
+    ].join(''));
+    assert.deepEqual(await readRolloutModelSettings(filePath), {
+      model: 'gpt-5.6-sol', reasoningEffort: 'xhigh', serviceTier: 'fast',
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('rollout activity requires an explicit task completion marker', () => {
   const started = { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-1' } };
   const completed = { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn-1' } };
@@ -1240,6 +1266,73 @@ test('live history restores rollout metadata after a connector restart', async (
   codex.readSessionTail = async (threadId, filePath) => ({ threadId, filePath, turns: [] });
   const result = await codex.listSessionTurns('thread-1', { mode: 'live' });
   assert.equal(result.filePath, 'restored-rollout.jsonl');
+});
+
+test('session model settings are catalog-backed and update subsequent turns', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-model-config-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  try {
+    await writeFile(filePath, `${JSON.stringify({
+      type: 'event_msg', payload: { type: 'thread_settings_applied', thread_settings: {
+        model: 'gpt-5.6-sol', reasoning_effort: 'high', service_tier: 'default',
+      } },
+    })}\n`);
+    const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+    codex.ensureStarted = async () => {};
+    codex.sessionMetadata.set('thread-1', {
+      path: filePath, cwd: process.cwd(), canAcceptDirectInput: true,
+    });
+    const calls = [];
+    let settingsUpdates = 0;
+    codex.rpcRaw = async (method, params) => {
+      calls.push({ method, params });
+      if (method === 'model/list') return { data: [{
+        id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol', description: 'Frontier',
+        supportedReasoningEfforts: [
+          { reasoningEffort: 'high', description: 'High' },
+          { reasoningEffort: 'xhigh', description: 'Extra high' },
+        ],
+        defaultReasoningEffort: 'high',
+        serviceTiers: [
+          { id: 'default', name: 'Standard', description: 'Standard' },
+          { id: 'fast', name: 'Fast', description: 'Low latency' },
+        ],
+        defaultServiceTier: 'default', isDefault: true,
+      }] };
+      if (method === 'config/read') return { config: {} };
+      if (method === 'thread/settings/update') {
+        settingsUpdates += 1;
+        if (settingsUpdates === 1) throw new Error('thread not found: thread-1');
+        return {};
+      }
+      if (method === 'thread/resume') return { thread: { id: 'thread-1' } };
+      if (method === 'thread/unsubscribe') return { status: 'unsubscribed' };
+      throw new Error(`unexpected method ${method}`);
+    };
+
+    const current = await codex.readModelConfig('thread-1');
+    assert.equal(current.model, 'gpt-5.6-sol');
+    assert.equal(current.reasoningEffort, 'high');
+    assert.equal(current.fastMode, false);
+    const updated = await codex.updateModelConfig('thread-1', {
+      model: 'gpt-5.6-sol', reasoningEffort: 'xhigh', fastMode: true,
+    });
+    assert.equal(updated.fastMode, true);
+    assert.deepEqual(calls.filter((call) => call.method === 'thread/settings/update').at(-1), {
+      method: 'thread/settings/update',
+      params: {
+        threadId: 'thread-1', model: 'gpt-5.6-sol', effort: 'xhigh', serviceTier: 'fast',
+      },
+    });
+    assert.deepEqual(calls.slice(-3).map((call) => call.method), [
+      'thread/resume', 'thread/settings/update', 'thread/unsubscribe',
+    ]);
+    await assert.rejects(() => codex.updateModelConfig('thread-1', {
+      model: 'gpt-5.6-sol', reasoningEffort: 'ultra', fastMode: false,
+    }), /reasoning_effort_not_available/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('active Desktop writers return a conflict immediately without forking', async () => {

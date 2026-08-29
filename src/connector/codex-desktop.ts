@@ -8,7 +8,14 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 
 type JsonObject = Record<string, any>;
 type DesktopClientOptions = { timeoutMs?: number };
-type DesktopMessage = { threadId: unknown; text: unknown; requestId: unknown; callerThreadId?: unknown };
+type DesktopMessage = {
+  threadId: unknown;
+  text: unknown;
+  requestId: unknown;
+  callerThreadId?: unknown;
+  model?: unknown;
+  thinking?: unknown;
+};
 type DesktopThread = { id: string; status: string };
 type ToolCall = { tool: string; arguments: JsonObject; callerThreadId: string; callId: string };
 type PendingNativeRequest = {
@@ -28,7 +35,7 @@ export class CodexDesktopClient {
     this.client = null;
   }
 
-  async sendMessage({ threadId, text, requestId, callerThreadId }: DesktopMessage) {
+  async sendMessage({ threadId, text, requestId, callerThreadId, model, thinking }: DesktopMessage) {
     const targetThreadId = String(threadId || '').trim();
     const prompt = String(text || '').trim();
     if (!targetThreadId) throw new Error('thread_id_required');
@@ -37,7 +44,12 @@ export class CodexDesktopClient {
     try {
       result = await this.callTool({
         tool: 'send_message_to_thread',
-        arguments: { threadId: targetThreadId, prompt },
+        arguments: {
+          threadId: targetThreadId,
+          prompt,
+          ...(String(model || '').trim() ? { model: String(model).trim() } : {}),
+          ...(String(thinking || '').trim() ? { thinking: String(thinking).trim() } : {}),
+        },
         callerThreadId: String(callerThreadId || targetThreadId),
         callId: `bridge-${requestId}`,
       });

@@ -56,6 +56,11 @@ type RolloutOptions = {
   cursor?: string | null;
   paged?: boolean;
 };
+export type RolloutModelSettings = {
+  model?: string;
+  reasoningEffort?: string;
+  serviceTier?: string;
+};
 type SnapshotOptions = { threadId: string; maxBytes: number; maxItems: number };
 type RolloutSnapshot = SnapshotOptions & {
   fileSize: number;
@@ -76,6 +81,15 @@ const activityMarkers = [
   { needle: Buffer.from('"type":"turn_error"'), status: 'failed' },
 ] as const satisfies ReadonlyArray<{ needle: Buffer; status: RolloutStatus }>;
 const rolloutCache = new Map<string, RolloutSnapshot>();
+
+export async function readRolloutModelSettings(filePath: string): Promise<RolloutModelSettings> {
+  const handle = await open(filePath, 'r');
+  try {
+    return await findLatestModelSettingsBefore(handle, (await handle.stat()).size);
+  } finally {
+    await handle.close();
+  }
+}
 
 export async function readRolloutTail(options: RolloutOptions) {
   const filePath = String(options?.filePath || '');
@@ -373,6 +387,34 @@ async function findLatestPurposeBefore(handle: FileHandle, endOffset: number): P
   return '';
 }
 
+async function findLatestModelSettingsBefore(
+  handle: FileHandle, endOffset: number,
+): Promise<RolloutModelSettings> {
+  const settings: RolloutModelSettings = {};
+  let cursor = endOffset;
+  while (cursor > 0) {
+    const start = Math.max(0, cursor - ACTIVITY_SCAN_CHUNK_BYTES);
+    const readEnd = Math.min(endOffset, cursor + PLAN_SCAN_OVERLAP_BYTES);
+    const window = await readCompleteRows(handle, start, readEnd, start > 0);
+    for (let index = window.rows.length - 1; index >= 0; index -= 1) {
+      const row = window.rows[index];
+      const payload = row?.payload || {};
+      const source = row?.type === 'turn_context'
+        ? payload
+        : payload.type === 'thread_settings_applied' ? payload.thread_settings || {} : null;
+      if (!source) continue;
+      settings.model ||= String(source.model || '').trim() || undefined;
+      settings.reasoningEffort ||= String(
+        source.reasoning_effort || source.effort || source.collaboration_mode?.settings?.reasoning_effort || '',
+      ).trim() || undefined;
+      settings.serviceTier ||= String(source.service_tier || '').trim() || undefined;
+      if (settings.model && settings.reasoningEffort && settings.serviceTier) return settings;
+    }
+    cursor = start;
+  }
+  return settings;
+}
+
 function appendItems(current: RolloutItem[], appended: RolloutItem[], maxItems: number) {
   const result = [...current];
   for (const item of appended) pushText(result, item);
@@ -634,7 +676,7 @@ function capText(value: unknown, limit = MAX_TEXT_LENGTH) {
 
 export const internals = {
   activityKind, capText, decodeRolloutCursor, encodeRolloutCursor, epochMillis, extractContent,
-  findLatestActivityBefore, findLatestPlanBefore, findLatestPurposeBefore,
+  findLatestActivityBefore, findLatestModelSettingsBefore, findLatestPlanBefore, findLatestPurposeBefore,
   inferRolloutActivity,
   inferRolloutStatus, mapRolloutRows, recoverGeneratedImageRows, rolloutCache, updateLiveActivity,
   reasoningSummary, updateActivityDetail, updateToolPurpose,

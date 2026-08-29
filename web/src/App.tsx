@@ -39,7 +39,6 @@ import {
 } from './file-utils';
 import { t } from './i18n';
 import {
-  followLabel,
   formatDate,
   friendlyError,
   canSendToActiveDesktopTurn,
@@ -60,7 +59,6 @@ import {
   sessionProjectName,
   sessionUpdatedAt,
   shouldLoadOlderHistory,
-  shortId,
   type SessionAttentionState,
 } from './app-utils';
 import { DownloadIndicator, MessageBubble, SidebarIcon, TypewriterText } from './ui-components';
@@ -99,11 +97,14 @@ import type {
   FollowState,
   HistoryPage,
   LiveActivityKind,
+  ModelConfigDraft,
+  ModelOption,
   OpenedDownload,
   PendingImage,
   PendingApprovals,
   PendingRequest,
   Session,
+  SessionModelConfig,
   TurnStartResult,
   VisualizationDocument,
 } from './app-types';
@@ -237,8 +238,6 @@ function LiveActivityStatus({
   const [clock, setClock] = useState(Date.now());
   const elapsed = elapsedLabel(startedAt, clock);
   const hasMetrics = Boolean(progress.plan || progress.files);
-  const detailCompleted = detail.startsWith('✓ ');
-  const detailText = detailCompleted ? detail.slice(2) : detail || activityLabel(kind);
   useEffect(() => {
     if (!startedAt) return;
     setClock(Date.now());
@@ -253,7 +252,6 @@ function LiveActivityStatus({
       aria-label={[purpose, detail || activityLabel(kind), elapsed].filter(Boolean).join(' · ')}
       title={[purpose, detail || activityLabel(kind), elapsed].filter(Boolean).join(' · ')}
     >
-      <i aria-hidden="true" />
       <div className="activity-content">
         {purpose && (
           <div className="activity-line activity-purpose-line">
@@ -261,17 +259,7 @@ function LiveActivityStatus({
           </div>
         )}
         <div className="activity-line activity-detail-line">
-          {detailCompleted
-            ? <strong className="activity-detail-completed">{detailText}</strong>
-            : <TypewriterText
-                active
-                as="strong"
-                className="status-change"
-                key={detail || kind}
-                text={detailText}
-              />}
-          {detailCompleted && <span className="activity-complete-check" key={detail} aria-hidden="true">✓</span>}
-          {startedAt && <time>{elapsed}</time>}
+          <ToolActivityDetail detail={detail} kind={kind} />
         </div>
         {hasMetrics && (
           <div className="activity-line activity-secondary">
@@ -306,6 +294,181 @@ function LiveActivityStatus({
           </div>
         )}
       </div>
+      {startedAt && <time className="activity-elapsed">{elapsed}</time>}
+    </div>
+  );
+}
+
+function ToolActivityDetail({ detail, kind }: { detail: string; kind: LiveActivityKind }) {
+  const completed = detail.startsWith('✓ ');
+  const text = completed ? detail.slice(2) : detail || activityLabel(kind);
+  const [checkedDetail, setCheckedDetail] = useState('');
+  const [typedText, setTypedText] = useState('');
+  useEffect(() => {
+    if (!completed) {
+      setCheckedDetail('');
+      return;
+    }
+    // A completion observed after the running label was already typed can reveal
+    // its check immediately. A completion first seen by polling waits for typing.
+    if (typedText === text) setCheckedDetail(detail);
+  }, [completed, detail, text, typedText]);
+  return <>
+    <TypewriterText
+      active
+      as="strong"
+      className="status-change"
+      key={text}
+      text={text}
+      onComplete={() => {
+        setTypedText(text);
+        if (completed) setCheckedDetail(detail);
+      }}
+    />
+    {completed && checkedDetail === detail && (
+      <span className="activity-complete-check" key={detail} aria-hidden="true">✓</span>
+    )}
+  </>;
+}
+
+function reasoningEffortLabel(value: string) {
+  const labels: Record<string, [string, string]> = {
+    none: ['无', 'None'], minimal: ['极低', 'Minimal'], low: ['低', 'Low'], medium: ['中', 'Medium'],
+    high: ['高', 'High'], xhigh: ['极高', 'X-high'], max: ['最高', 'Max'], ultra: ['超高', 'Ultra'],
+  };
+  return labels[value] ? t(...labels[value]) : value;
+}
+
+function fastTierAvailable(model: ModelOption | undefined) {
+  return Boolean(model?.serviceTiers.some((tier) => /(?:fast|priority)/i.test(`${tier.id} ${tier.name}`)));
+}
+
+function ModelConfigControl({
+  config, loading, disabled, onSave,
+}: {
+  config: SessionModelConfig | null;
+  loading: boolean;
+  disabled: boolean;
+  onSave: (draft: ModelConfigDraft) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [draft, setDraft] = useState<ModelConfigDraft | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const selectedModel = config?.models.find((model) => model.model === config.model);
+  const draftModel = config?.models.find((model) => model.model === draft?.model);
+
+  useEffect(() => {
+    setOpen(false);
+    setError('');
+    setDraft(config ? {
+      model: config.model,
+      reasoningEffort: config.reasoningEffort,
+      fastMode: config.fastMode,
+    } : null);
+  }, [config]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [open]);
+
+  const save = async () => {
+    if (!draft || saving || disabled) return;
+    setSaving(true);
+    setError('');
+    try {
+      await onSave(draft);
+      setOpen(false);
+    } catch (saveError) {
+      setError(friendlyError(saveError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const displayModel = selectedModel?.displayName || config?.model || t('自动选择', 'Automatic');
+  return (
+    <div className={`model-config${open ? ' open' : ''}`} ref={rootRef}>
+      <button
+        className="model-config-summary"
+        type="button"
+        disabled={!config || loading}
+        onClick={() => setOpen((current) => !current)}
+        aria-expanded={open}
+        title={disabled ? t('会话执行中，仅展示当前配置', 'The task is running; current settings are read-only') : t('配置后续轮次', 'Configure subsequent turns')}
+      >
+        <span className="model-config-model">{loading ? t('读取模型…', 'Loading model…') : displayModel}</span>
+        <span>{config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort) : t('默认思考', 'Default reasoning')}</span>
+        <span className={config?.fastMode ? 'fast active' : 'fast'}>{config?.fastMode ? t('快速', 'Fast') : t('标准', 'Standard')}</span>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+      </button>
+      {open && draft && config && (
+        <div className="model-config-popover">
+          <header>
+            <strong>{t('后续轮次配置', 'Next-turn settings')}</strong>
+            <span>{disabled ? t('当前正在执行，暂不可修改', 'Read-only while this task is running') : t('保存后用于该会话的后续消息', 'Applies to subsequent messages in this task')}</span>
+          </header>
+          <label>
+            <span>{t('模型', 'Model')}</span>
+            <select
+              value={draft.model}
+              disabled={disabled || saving}
+              onChange={(event) => {
+                const nextModel = config.models.find((model) => model.model === event.target.value);
+                if (!nextModel) return;
+                const effortSupported = nextModel.supportedReasoningEfforts
+                  .some((option) => option.reasoningEffort === draft.reasoningEffort);
+                setDraft({
+                  model: nextModel.model,
+                  reasoningEffort: effortSupported ? draft.reasoningEffort : nextModel.defaultReasoningEffort,
+                  fastMode: draft.fastMode && fastTierAvailable(nextModel),
+                });
+              }}
+            >
+              {config.models.map((model) => <option key={model.model} value={model.model}>{model.displayName}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>{t('思考强度', 'Reasoning')}</span>
+            <select
+              value={draft.reasoningEffort}
+              disabled={disabled || saving}
+              onChange={(event) => setDraft({ ...draft, reasoningEffort: event.target.value })}
+            >
+              {(draftModel?.supportedReasoningEfforts || []).map((option) => (
+                <option key={option.reasoningEffort} value={option.reasoningEffort}>
+                  {reasoningEffortLabel(option.reasoningEffort)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className={`model-fast-toggle${fastTierAvailable(draftModel) ? '' : ' unavailable'}`}>
+            <span><strong>{t('快速模式', 'Fast mode')}</strong><small>{fastTierAvailable(draftModel)
+              ? t('使用模型支持的低延迟服务层', 'Use the model’s low-latency service tier')
+              : t('当前模型不支持', 'Not available for this model')}</small></span>
+            <input
+              type="checkbox"
+              checked={draft.fastMode}
+              disabled={disabled || saving || !fastTierAvailable(draftModel)}
+              onChange={(event) => setDraft({ ...draft, fastMode: event.target.checked })}
+            />
+            <i aria-hidden="true" />
+          </label>
+          {error && <p role="alert">{error}</p>}
+          <footer>
+            <button type="button" onClick={() => setOpen(false)}>{t('取消', 'Cancel')}</button>
+            <button className="primary-action" type="button" disabled={disabled || saving} onClick={() => void save()}>
+              {saving ? t('保存中…', 'Saving…') : t('保存', 'Save')}
+            </button>
+          </footer>
+        </div>
+      )}
     </div>
   );
 }
@@ -387,6 +550,8 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeSession, setActiveSession] = useState<Session | null>(null);
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [modelConfig, setModelConfig] = useState<SessionModelConfig | null>(null);
+  const [modelConfigLoading, setModelConfigLoading] = useState(false);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -400,7 +565,7 @@ export default function App() {
   const [running, setRunning] = useState(false);
   const [ownedTurnThreadId, setOwnedTurnThreadId] = useState<string | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
-  const [followState, setFollowState] = useState<FollowState>('idle');
+  const [, setFollowState] = useState<FollowState>('idle');
   const [executionState, setExecutionState] = useState<ExecutionState>('idle');
   const [toolPurpose, setToolPurpose] = useState('');
   const [activityDetail, setActivityDetail] = useState('');
@@ -667,6 +832,37 @@ export default function App() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (!threadId || !online) {
+      setModelConfig(null);
+      setModelConfigLoading(false);
+      return undefined;
+    }
+    let disposed = false;
+    setModelConfigLoading(true);
+    void request<SessionModelConfig>('session.model-config.read', { threadId })
+      .then((config) => {
+        if (!disposed && threadIdRef.current === threadId) setModelConfig(config);
+      })
+      .catch(() => {
+        if (!disposed && threadIdRef.current === threadId) setModelConfig(null);
+      })
+      .finally(() => {
+        if (!disposed && threadIdRef.current === threadId) setModelConfigLoading(false);
+      });
+    return () => { disposed = true; };
+  }, [online, request, threadId]);
+
+  const saveModelConfig = useCallback(async (draft: ModelConfigDraft) => {
+    const targetThreadId = threadIdRef.current;
+    if (!targetThreadId) throw new Error('thread_id_required');
+    const config = await request<SessionModelConfig>('session.model-config.update', {
+      threadId: targetThreadId,
+      ...draft,
+    });
+    if (threadIdRef.current === targetThreadId) setModelConfig(config);
+  }, [request]);
 
   const replayPendingRequests = useCallback(() => {
     const channel = secureChannelRef.current;
@@ -1621,6 +1817,10 @@ export default function App() {
         ...(steering ? {} : {
           cwd: isExistingSession ? '' : projectCwd,
           ...(directDesktopDelivery ? { preferDesktop: true } : {}),
+          ...(isExistingSession && modelConfig ? {
+            model: modelConfig.model,
+            reasoningEffort: modelConfig.reasoningEffort,
+          } : {}),
         }),
       });
       const sentAt = Date.now();
@@ -1687,7 +1887,7 @@ export default function App() {
       sendingRef.current = false;
     }
   }, [
-    addTimeline, executionState, newSessionCwd, ownedTurnThreadId, pendingImage, prompt,
+    addTimeline, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingImage, prompt,
     rememberAttachment, reportTimelineError, request, running, uploading,
   ]);
 
@@ -2092,11 +2292,12 @@ export default function App() {
           </button>
           <div className="conversation-heading">
             <strong>{activeSession?.title || (threadId ? t('Codex 会话', 'Codex session') : creatingNewSession ? t('新会话', 'New session') : t('最近会话', 'Recent session'))}</strong>
-            <span>{threadId
-              ? `${followLabel(followState)} · ${activeSession?.cwd || shortId(threadId)}`
-              : creatingNewSession
-                ? (newSessionCwd || t('尚未选择项目目录', 'No project directory selected'))
-                : t('从左上角菜单选择会话', 'Choose a session from the top-left menu')}</span>
+            <ModelConfigControl
+              config={modelConfig}
+              loading={modelConfigLoading}
+              disabled={!online || executionActive}
+              onSave={saveModelConfig}
+            />
           </div>
           <span
             className={`presence ${online ? 'online' : 'offline'} ${online ? executionState : ''}`}

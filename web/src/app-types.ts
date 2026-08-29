@@ -11,6 +11,24 @@ export type Session = {
   status?: string;
   canStartNewSession?: boolean;
 };
+export type ModelOption = {
+  model: string;
+  displayName: string;
+  description: string;
+  supportedReasoningEfforts: Array<{ reasoningEffort: string; description: string }>;
+  defaultReasoningEffort: string;
+  serviceTiers: Array<{ id: string; name: string; description: string }>;
+  defaultServiceTier: string | null;
+  isDefault: boolean;
+};
+export type SessionModelConfig = {
+  model: string;
+  reasoningEffort: string;
+  serviceTier: string;
+  fastMode: boolean;
+  models: ModelOption[];
+};
+export type ModelConfigDraft = Pick<SessionModelConfig, 'model' | 'reasoningEffort' | 'fastMode'>;
 
 export type FollowState = 'idle' | 'checking' | 'following' | 'synced' | 'error';
 export type ExecutionState = 'idle' | 'waiting' | 'running' | 'completed' | 'failed';

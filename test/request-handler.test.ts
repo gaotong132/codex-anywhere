@@ -10,6 +10,8 @@ function createDependencies(overrides = {}) {
       listSessions: async () => [],
       readSession: async () => ({}),
       listSessionTurns: async () => ({}),
+      readModelConfig: async () => ({ model: 'gpt-default' }),
+      updateModelConfig: async (_threadId, value) => value,
       startTurn: async () => ({ threadId: 'started-thread' }),
       steerTurn: async ({ threadId }) => ({ threadId, turnId: 'turn-1', steered: true }),
       stopTurn: async () => ({ stopped: true }),
@@ -74,6 +76,29 @@ test('visualization reads stay on the dedicated bounded connector path', async (
   const response = await handle(request('visualization.read', { path: 'C:\\artifact.html' }));
   assert.deepEqual(payload, { path: 'C:\\artifact.html' });
   assert.equal(response.data.name, 'concept.html');
+});
+
+test('session model configuration stays on the connector control path', async () => {
+  const calls = [];
+  const handle = createRequestHandler(createDependencies({
+    codex: {
+      readModelConfig: async (threadId) => {
+        calls.push({ action: 'read', threadId });
+        return { model: 'gpt-5.6-sol', reasoningEffort: 'high', fastMode: false, models: [] };
+      },
+      updateModelConfig: async (threadId, value) => {
+        calls.push({ action: 'update', threadId, value });
+        return { ...value, serviceTier: 'fast', models: [] };
+      },
+    },
+  }));
+  const read = await handle(request('session.model-config.read', { threadId: 'thread-1' }));
+  assert.equal(read.data.model, 'gpt-5.6-sol');
+  const updated = await handle(request('session.model-config.update', {
+    threadId: 'thread-1', model: 'gpt-5.6-sol', reasoningEffort: 'xhigh', fastMode: true,
+  }));
+  assert.equal(updated.data.serviceTier, 'fast');
+  assert.deepEqual(calls.map((call) => call.action), ['read', 'update']);
 });
 
 test('session listing merges live Desktop status and tolerates Desktop absence', async () => {

@@ -14,6 +14,8 @@ type CodexGateway = {
   listSessions(options: Payload): Promise<any[]>;
   readSession(threadId: string): Promise<any>;
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
+  readModelConfig(threadId: string): Promise<any>;
+  updateModelConfig(threadId: string, value: Payload): Promise<any>;
   startTurn(options: Payload): Promise<Record<string, any>>;
   steerTurn(options: Payload): Promise<Record<string, any>>;
   stopTurn(): Promise<any>;
@@ -91,6 +93,12 @@ async function dispatchAction({
       mode: payload.mode,
     });
   }
+  if (action === 'session.model-config.read') {
+    return codex.readModelConfig(String(payload.threadId || ''));
+  }
+  if (action === 'session.model-config.update') {
+    return codex.updateModelConfig(String(payload.threadId || ''), payload);
+  }
   if (action === 'attachment.upload') return attachments.save(payload);
   if (action === 'attachment.read') return attachments.read(payload);
   if (action === 'visualization.read') return visualizations.read(payload);
@@ -149,6 +157,7 @@ async function startTurn({
       text: payload.text,
       requestId,
       callerThreadId: codex.getControllerThreadId(threadId),
+      ...desktopTurnOverrides(payload),
     });
   }
   const largeSession = await codex.isLargeSession(threadId);
@@ -159,6 +168,7 @@ async function startTurn({
         text: payload.text,
         requestId,
         callerThreadId: codex.getControllerThreadId(threadId),
+        ...desktopTurnOverrides(payload),
       });
     } catch (error) {
       if (String(error instanceof Error ? error.message : error) !== 'desktop_app_unavailable') throw error;
@@ -180,6 +190,7 @@ async function startTurn({
       text: payload.text,
       requestId,
       callerThreadId: codex.getControllerThreadId(threadId),
+      ...desktopTurnOverrides(payload),
     });
   } catch (error) {
     if (String(error instanceof Error ? error.message : error) !== 'desktop_app_unavailable') throw error;
@@ -189,4 +200,13 @@ async function startTurn({
       delivery: 'appServer',
     };
   }
+}
+
+function desktopTurnOverrides(payload: Payload) {
+  const model = String(payload.model || '').trim();
+  const thinking = String(payload.reasoningEffort || '').trim();
+  return {
+    ...(model ? { model } : {}),
+    ...(thinking ? { thinking } : {}),
+  };
 }

@@ -5,7 +5,7 @@ import { stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
-import { readRolloutTail } from './rollout-tail.js';
+import { readRolloutModelSettings, readRolloutTail, type RolloutModelSettings } from './rollout-tail.js';
 import { extractGeneratedImageAttachment } from './generated-images.js';
 import { needsDesktopPermissionRecovery } from './session-permissions.js';
 import { resolveCodexExecutable } from './codex-executable.js';
@@ -41,6 +41,17 @@ type PendingApproval = {
   summary: string;
 };
 type SessionMetadata = { cwd: string; path: string; canAcceptDirectInput: boolean };
+type ModelOption = {
+  model: string;
+  displayName: string;
+  description: string;
+  supportedReasoningEfforts: Array<{ reasoningEffort: string; description: string }>;
+  defaultReasoningEffort: string;
+  serviceTiers: Array<{ id: string; name: string; description: string }>;
+  defaultServiceTier: string | null;
+  isDefault: boolean;
+};
+type SessionModelConfig = RolloutModelSettings & { fastMode: boolean; models: ModelOption[] };
 type TurnContext = {
   clientId?: string;
   requestId?: string;
@@ -77,6 +88,8 @@ export class CodexAppServer extends EventEmitter {
   approvals: Map<string, PendingApproval>;
   activeTurn: TurnContext | null;
   sessionMetadata: Map<string, SessionMetadata>;
+  sessionModelSettings: Map<string, RolloutModelSettings>;
+  modelCatalogCache: { expiresAt: number; models: ModelOption[] } | null;
 
   constructor(options: CodexAppServerOptions = {}) {
     super();
@@ -94,6 +107,8 @@ export class CodexAppServer extends EventEmitter {
     this.approvals = new Map();
     this.activeTurn = null;
     this.sessionMetadata = new Map();
+    this.sessionModelSettings = new Map();
+    this.modelCatalogCache = null;
   }
 
   async ensureStarted(): Promise<void> {
@@ -275,6 +290,118 @@ export class CodexAppServer extends EventEmitter {
   ) {
     if (!filePath) throw new Error('session_history_unavailable');
     return readRolloutTail({ filePath, threadId, ...options });
+  }
+
+  async readModelConfig(threadId: unknown): Promise<SessionModelConfig> {
+    await this.ensureStarted();
+    const resolvedThreadId = String(threadId || '').trim();
+    if (!resolvedThreadId) throw new Error('thread_id_required');
+    let metadata = this.sessionMetadata.get(resolvedThreadId);
+    if (!metadata?.path || !metadata?.cwd) {
+      await this.listSessions();
+      metadata = this.sessionMetadata.get(resolvedThreadId);
+    }
+    if (!metadata) throw new Error('session_not_found');
+    const [models, configResult, rolloutSettings] = await Promise.all([
+      this.listModels(),
+      this.rpcRaw('config/read', { cwd: metadata.cwd }).catch(() => ({ config: {} })),
+      metadata.path
+        ? readRolloutModelSettings(metadata.path).catch(() => ({} as RolloutModelSettings))
+        : Promise.resolve({} as RolloutModelSettings),
+    ]);
+    const remembered = this.sessionModelSettings.get(resolvedThreadId) || {};
+    const defaults = configResult?.config || {};
+    const fallbackModel = models.find((model) => model.isDefault) || models[0];
+    const settings = {
+      model: remembered.model || rolloutSettings.model || String(defaults.model || fallbackModel?.model || ''),
+      reasoningEffort: remembered.reasoningEffort || rolloutSettings.reasoningEffort
+        || String(defaults.model_reasoning_effort || fallbackModel?.defaultReasoningEffort || ''),
+      serviceTier: remembered.serviceTier || rolloutSettings.serviceTier
+        || String(defaults.service_tier || fallbackModel?.defaultServiceTier || 'default'),
+    };
+    return { ...settings, fastMode: isFastServiceTier(settings.serviceTier, models, settings.model), models };
+  }
+
+  async updateModelConfig(threadId: unknown, value: JsonObject): Promise<SessionModelConfig> {
+    await this.ensureStarted();
+    const resolvedThreadId = String(threadId || '').trim();
+    if (!resolvedThreadId) throw new Error('thread_id_required');
+    if (this.activeTurn?.threadId === resolvedThreadId) throw new Error('model_config_turn_active');
+    const models = await this.listModels();
+    const requestedModel = String(value.model || '').trim();
+    const model = models.find((candidate) => candidate.model === requestedModel);
+    if (!model) throw new Error('model_not_available');
+    const effort = String(value.reasoningEffort || '').trim();
+    if (!model.supportedReasoningEfforts.some((option) => option.reasoningEffort === effort)) {
+      throw new Error('reasoning_effort_not_available');
+    }
+    const fastMode = value.fastMode === true;
+    const fastTier = model.serviceTiers.find((tier) => /(?:fast|priority)/i.test(`${tier.id} ${tier.name}`));
+    if (fastMode && !fastTier) throw new Error('fast_mode_not_available');
+    const standardTier = model.serviceTiers.find((tier) => tier.id === model.defaultServiceTier)
+      || model.serviceTiers.find((tier) => /default|standard/i.test(`${tier.id} ${tier.name}`));
+    const serviceTier = fastMode ? fastTier!.id : standardTier?.id || model.defaultServiceTier || null;
+    const params = {
+      threadId: resolvedThreadId,
+      model: model.model,
+      effort,
+      serviceTier,
+    };
+    try {
+      await this.rpcRaw('thread/settings/update', params);
+    } catch (error) {
+      if (!/thread not found/i.test(String(error instanceof Error ? error.message : error))) throw error;
+      let metadata = this.sessionMetadata.get(resolvedThreadId);
+      if (!metadata?.cwd) {
+        await this.listSessions();
+        metadata = this.sessionMetadata.get(resolvedThreadId);
+      }
+      if (!metadata?.cwd) throw new Error('session_not_found');
+      await this.rpcRaw('thread/resume', {
+        threadId: resolvedThreadId,
+        cwd: metadata.cwd,
+        model: model.model,
+        serviceTier,
+        excludeTurns: true,
+      });
+      try {
+        await this.rpcRaw('thread/settings/update', params);
+      } finally {
+        await this.rpcRaw('thread/unsubscribe', { threadId: resolvedThreadId }).catch(() => undefined);
+      }
+    }
+    const settings = {
+      model: model.model,
+      reasoningEffort: effort,
+      serviceTier: serviceTier || 'default',
+    };
+    this.sessionModelSettings.set(resolvedThreadId, settings);
+    return { ...settings, fastMode, models };
+  }
+
+  async listModels(): Promise<ModelOption[]> {
+    if (this.modelCatalogCache && this.modelCatalogCache.expiresAt > Date.now()) {
+      return this.modelCatalogCache.models;
+    }
+    const result = await this.rpcRaw('model/list', { limit: 100, includeHidden: false });
+    const models = (Array.isArray(result?.data) ? result.data : []).map((model: JsonObject) => ({
+      model: String(model.model || model.id || ''),
+      displayName: String(model.displayName || model.model || model.id || ''),
+      description: String(model.description || ''),
+      supportedReasoningEfforts: (Array.isArray(model.supportedReasoningEfforts)
+        ? model.supportedReasoningEfforts : []).map((option: JsonObject) => ({
+        reasoningEffort: String(option.reasoningEffort || ''),
+        description: String(option.description || ''),
+      })).filter((option: { reasoningEffort: string }) => option.reasoningEffort),
+      defaultReasoningEffort: String(model.defaultReasoningEffort || ''),
+      serviceTiers: (Array.isArray(model.serviceTiers) ? model.serviceTiers : []).map((tier: JsonObject) => ({
+        id: String(tier.id || ''), name: String(tier.name || ''), description: String(tier.description || ''),
+      })).filter((tier: { id: string }) => tier.id),
+      defaultServiceTier: model.defaultServiceTier == null ? null : String(model.defaultServiceTier),
+      isDefault: model.isDefault === true,
+    })).filter((model: ModelOption) => model.model && model.supportedReasoningEfforts.length);
+    this.modelCatalogCache = { expiresAt: Date.now() + 5 * 60_000, models };
+    return models;
   }
 
   async startTurn({ text, threadId, cwd, clientId, requestId }: StartTurnOptions) {
@@ -596,6 +723,13 @@ export class CodexAppServer extends EventEmitter {
       this.activeTurn = null;
     }
   }
+}
+
+function isFastServiceTier(serviceTier: unknown, models: ModelOption[], selectedModel: unknown) {
+  const tierId = String(serviceTier || '');
+  const model = models.find((candidate) => candidate.model === String(selectedModel || ''));
+  const tier = model?.serviceTiers.find((candidate) => candidate.id === tierId);
+  return /(?:fast|priority)/i.test(`${tierId} ${tier?.name || ''}`);
 }
 
 function approvalKind(method: string) {

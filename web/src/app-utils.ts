@@ -30,6 +30,10 @@ export function friendlyError(error: unknown) {
   if (message === 'turn_start_timeout') return t('等待原会话可写超时，消息没有发送，已恢复到输入框。', 'Timed out waiting for the session to become writable. The message was not sent and has been restored.');
   if (message === 'desktop_app_unavailable') return t('桌面 Codex 当前不可用，请打开桌面应用后重试。', 'Codex Desktop is unavailable. Open it and try again.');
   if (message === 'desktop_delivery_timeout') return t('桌面 Codex 没有及时确认接收，消息已恢复到输入框，请确认后再重试。', 'Codex Desktop did not confirm receipt in time. The message was restored; verify the desktop app before retrying.');
+  if (message === 'model_config_turn_active') return t('当前任务仍在执行，完成后再修改模型配置。', 'Wait for the current run to finish before changing model settings.');
+  if (message === 'model_not_available') return t('所选模型当前不可用，请重新选择。', 'The selected model is unavailable. Choose another model.');
+  if (message === 'reasoning_effort_not_available') return t('当前模型不支持所选思考强度。', 'This model does not support the selected reasoning effort.');
+  if (message === 'fast_mode_not_available') return t('当前模型不支持快速模式。', 'Fast mode is not available for this model.');
   if (message === 'desktop_required_for_large_session') return t('这是一个超大会话，需要桌面 Codex 打开后才能安全发送到原会话。', 'This large session requires Codex Desktop to be open before a message can be delivered safely.');
   if (message === 'attachment_type_not_allowed') return t('只支持 JPG、PNG 和 WebP 图片。', 'Only JPG, PNG, and WebP images are supported.');
   if (message === 'attachment_too_large') return t('图片处理后仍超过 4 MB，请换一张更小的图片。', 'The processed image is still larger than 4 MB. Choose a smaller image.');

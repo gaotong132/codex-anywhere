@@ -24,6 +24,7 @@ export function TypewriterText({
   showCaret = true,
   completeContent,
   durationMs = 480,
+  onComplete,
 }: {
   text: string;
   active: boolean;
@@ -32,15 +33,19 @@ export function TypewriterText({
   showCaret?: boolean;
   completeContent?: ReactNode;
   durationMs?: number;
+  onComplete?: () => void;
 }) {
   const [visibleText, setVisibleText] = useState(active ? '' : text);
   const visibleTextRef = useRef(visibleText);
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
 
   useEffect(() => {
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (!active || reduceMotion) {
       visibleTextRef.current = text;
       setVisibleText(text);
+      onCompleteRef.current?.();
       return undefined;
     }
 
@@ -53,7 +58,10 @@ export function TypewriterText({
     const characters = Array.from(text);
     let index = Array.from(current).length;
     const remaining = characters.length - index;
-    if (remaining <= 0) return undefined;
+    if (remaining <= 0) {
+      onCompleteRef.current?.();
+      return undefined;
+    }
 
     const frameMs = 30;
     const frameCount = Math.max(1, Math.round(durationMs / frameMs));
@@ -64,7 +72,10 @@ export function TypewriterText({
       const next = characters.slice(0, index).join('');
       visibleTextRef.current = next;
       setVisibleText(next);
-      if (index >= characters.length) clearInterval(timer);
+      if (index >= characters.length) {
+        clearInterval(timer);
+        onCompleteRef.current?.();
+      }
     };
     timer = setInterval(reveal, frameMs);
     reveal();
