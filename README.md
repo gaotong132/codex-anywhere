@@ -22,6 +22,8 @@ computer; a lightweight relay on your own ECS/VPS provides the remote entry poin
 - **Continue existing sessions** — browse recent work, read Markdown history, and send new text or image
   messages from a phone.
 - **Follow work in progress** — see which sessions are running and follow useful progress as it happens.
+- **Know when to come back** — opt in to generic completion and approval notifications, including Web
+  Push after the page disconnects when the browser and mobile OS support it.
 - **Approve from your phone** — accept or reject supported command, file-change, and permission
   requests in the browser, even after reconnecting.
 - **Bring results back with you** — preview images and download files linked in assistant replies after
@@ -67,6 +69,11 @@ active in Codex Desktop remain Desktop-owned and use task tools for delivery plu
 polling over the same WebSocket; an approval already pending there must still be handled in Desktop.
 Codex Anywhere does not implement ACP.
 
+Notifications are deliberately separate from the encrypted conversation channel. An online background
+page creates its own local notification. If the page is disconnected, the connector sends only a
+`completed` or `approval` category to the relay; no session title, message, project name, or file path
+is included.
+
 ## Security model
 
 <p align="center">
@@ -82,7 +89,7 @@ Security is layered rather than delegated to a single bearer token:
 | Session controls | Rejects replayed proofs, expires authenticated connections after one hour by default, rate-limits repeated failures, validates browser origins, and limits WebSocket frame size. |
 | Local computer | Accepts no inbound public connection. On Windows, the connector token and device private key are protected with current-user DPAPI. Codex execution and project files remain local. |
 | File access | Raster previews are restricted to configured roots, content-validated, resized, and converted to WebP; SVG remains download-only. Codex HTML visualizations are size-limited, decrypted in the browser, and run in an isolated, network-blocked frame. Original-file downloads require explicit confirmation and a random, client-bound, short-lived capability. |
-| Relay deployment | The reference Compose service binds only to ECS loopback, runs as a non-root user with a read-only filesystem and no Linux capabilities, and persists public device keys plus approval metadata—not conversations or file content. |
+| Relay deployment | The reference Compose service binds only to ECS loopback, runs as a non-root user with a read-only filesystem and no Linux capabilities, and persists public device keys, approval metadata, and opted-in Web Push endpoints—not conversations or file content. |
 | Browser hardening | Removes the one-time secret from the URL fragment before connecting, clears temporary pairing/token material after approval, enforces same-origin WebSocket access, and serves a restrictive CSP and other browser security headers. |
 
 The limits matter just as much. End-to-end encryption prevents the normal relay process from reading
@@ -91,6 +98,8 @@ and administers the device trust registry; a compromised host or root administra
 browser code, alter future trust decisions, observe metadata, or force a legacy downgrade. Browser keys
 live in that browser profile rather than hardware-backed storage, so a compromised profile or extension
 can act as the approved browser. A compromised local computer can access everything available to Codex.
+With Web Push enabled, the relay and the browser's push provider also learn that a generic completion
+or approval event occurred and when it occurred; they do not receive the corresponding conversation.
 Plain `ws://` remains supported, but does not protect Web delivery, authentication bootstrap, or metadata
 from the network; use WSS, a VPN, or a secure tunnel on untrusted networks.
 
@@ -165,6 +174,7 @@ project files onto the ECS/VPS.
 | `BRIDGE_CONNECTOR_TOKEN` | Relay and connector | Local connector secret |
 | `BRIDGE_SESSION_MAX_AGE_MS` | Relay | Maximum authenticated WebSocket lifetime; defaults to one hour |
 | `BRIDGE_DEVICE_REGISTRY_FILE` | Relay | Persistent approved/pending public device records; Compose configures this automatically |
+| `BRIDGE_PUSH_SUBJECT` | Relay | Optional Web Push contact URI; Compose generates its VAPID key inside the protected state volume |
 | `BRIDGE_URL` | Connector | Relay WebSocket URL; supports `ws://` and `wss://` |
 | `CODEX_UI_LANGUAGE` | Relay | Web UI language: `zh-CN` or `en` |
 

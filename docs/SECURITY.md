@@ -25,6 +25,8 @@ filesystem paths in a public issue.
 - Keep the device registry volume persistent and root-administered. Create one-time browser pairings
   only from an encrypted administrator session. Treat an unused ten-minute link as a temporary secret;
   do not paste it into logs, issues, or chat. Review pending fallback requests and revoke lost or retired devices.
+- Treat notification permission as optional. Web Push subscriptions and the relay-generated VAPID
+  private key remain in the protected state volume; do not publish or back up that volume unencrypted.
 - Prefer `wss://` for every remote connector. Plaintext `ws://` is supported by operator choice but
   exposes relayed content and permits active network attackers to interfere with an authenticated
   connection. Challenge-response authentication avoids sending the token itself, but is not a
@@ -50,6 +52,13 @@ connector both initiate outbound connections; WSS is recommended on public netwo
 and Codex execution remain local.
 The relay has no conversation database and does not intentionally persist messages, attachment
 previews, or download chunks.
+
+When a user opts into notifications, the relay persists that approved browser's push-service endpoint
+and encryption material. While the browser is disconnected, the connector sends only the generic event
+kind `completed` or `approval`; the relay forwards that kind through Web Push. This exposes event type
+and timing to the relay and push provider, but no task ID, session title, message, project name, path,
+attachment, or tool output. Connected browsers receive local notifications instead. Delivery also
+depends on browser and mobile-OS background policies and is not guaranteed.
 
 Current browser and connector peers establish an application-layer encrypted channel after WebSocket
 authentication. They authenticate ephemeral X25519 keys with their approved Ed25519 identities, derive
