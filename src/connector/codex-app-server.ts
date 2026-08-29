@@ -654,18 +654,24 @@ function mapTurns(turns: unknown) {
       })
       .map((item: JsonObject) => {
         const attachment = extractGeneratedImageAttachment(item);
+        const userMessage = /user/i.test(String(item.type || ''));
+        const completedAt = item.completedAt || item.updatedAt || item.createdAt || item.timestamp
+          || (userMessage ? turn.startedAt : turn.completedAt) || null;
+        const timing = completedAt ? { completedAt } : {};
         if (attachment) {
           return {
             type: 'agentMessage', phase: 'final_answer', status: item.status || '', text: '', attachment,
+            ...timing,
           };
         }
-        const content = /user/i.test(String(item.type || ''))
+        const content = userMessage
           ? parseUserMessage(extractText(item)) : parseAssistantMessage(extractText(item));
         return {
           type: item.type,
           phase: item.phase || '',
           status: item.status || '',
           ...content,
+          ...timing,
         };
       })
       .filter((item: JsonObject) => item.text || item.attachment),

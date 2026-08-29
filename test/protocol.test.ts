@@ -25,6 +25,7 @@ import {
 } from '../src/connector/codex-desktop.js';
 import { internals as rolloutInternals, readRolloutTail } from '../src/connector/rollout-tail.js';
 import {
+  canStopOwnedTurn,
   friendlyError,
   isConnectionInterruption,
   markSessionAttentionRead,
@@ -174,6 +175,13 @@ test('session completion stays unread until the session is opened', () => {
   assert.deepEqual(completedWhileOpen, {});
 });
 
+test('stop control is shown only for the selected Web-owned turn', () => {
+  assert.equal(canStopOwnedTurn(false, 'thread-1', 'thread-1'), false);
+  assert.equal(canStopOwnedTurn(true, null, 'thread-1'), false);
+  assert.equal(canStopOwnedTurn(true, 'thread-1', 'thread-2'), false);
+  assert.equal(canStopOwnedTurn(true, 'thread-1', 'thread-1'), true);
+});
+
 test('only transient transport failures are treated as reconnectable connection interruptions', () => {
   assert.equal(isConnectionInterruption(new Error('Connection closed')), true);
   assert.equal(isConnectionInterruption(new Error('连接未建立')), true);
@@ -290,6 +298,26 @@ test('rollout tail mapping keeps only user-visible conversation updates', () => 
   assert.equal(items[1].text, 'visible update');
   assert.equal(items[2].phase, 'final_answer');
   assert.equal(items[2].text, 'done');
+});
+
+test('history messages keep their real sent and completed times', () => {
+  const startedAt = '2026-08-29T01:02:03.000Z';
+  const completedAt = '2026-08-29T01:03:04.000Z';
+  const turns = internals.mapTurns([{
+    id: 'timed-turn', status: 'completed', startedAt, completedAt, items: [
+      { type: 'userMessage', text: 'question' },
+      { type: 'agentMessage', phase: 'final_answer', text: 'answer' },
+    ],
+  }]);
+  const items = historyItems(turns);
+  assert.equal(items[0].completedAt, startedAt);
+  assert.equal(items[1].completedAt, completedAt);
+
+  const rolloutItems = rolloutInternals.mapRolloutRows([{
+    timestamp: completedAt,
+    type: 'event_msg', payload: { type: 'agent_message', phase: 'final_answer', message: 'answer' },
+  }]);
+  assert.equal(rolloutItems[0].completedAt, Date.parse(completedAt));
 });
 
 test('history readers expose generated images as lightweight local references', () => {

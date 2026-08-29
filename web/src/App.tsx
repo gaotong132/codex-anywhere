@@ -40,6 +40,7 @@ import {
   followLabel,
   formatDate,
   friendlyError,
+  canStopOwnedTurn,
   isConnectionInterruption,
   isSessionRunning,
   isTemporaryProjectPath,
@@ -87,6 +88,7 @@ const CLIENT_HEARTBEAT_MS = 20_000;
 const CLIENT_STALE_AFTER_MS = 55_000;
 const SESSION_STATUS_REFRESH_MS = 6_000;
 const SESSION_ATTENTION_KEY = 'bridge.sessionAttention.v1';
+const NEW_TURN_KEY = '__new_turn__';
 
 function loadSessionAttention(): SessionAttentionState {
   try {
@@ -200,6 +202,7 @@ export default function App() {
   const [knownAttachments, setKnownAttachments] = useState<Record<string, KnownAttachment>>(loadKnownAttachments);
   const [uploading, setUploading] = useState(false);
   const [running, setRunning] = useState(false);
+  const [ownedTurnThreadId, setOwnedTurnThreadId] = useState<string | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
   const [followState, setFollowState] = useState<FollowState>('idle');
   const [executionState, setExecutionState] = useState<ExecutionState>('idle');
@@ -244,12 +247,12 @@ export default function App() {
   const sessionRefreshInFlightRef = useRef(false);
   const optimisticRestoreRef = useRef<string | null>(null);
   const runningRef = useRef(running);
-  const executionStateRef = useRef(executionState);
+  const ownedTurnThreadIdRef = useRef(ownedTurnThreadId);
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
   useEffect(() => { tokenRef.current = token; }, [token]);
   useEffect(() => { runningRef.current = running; }, [running]);
-  useEffect(() => { executionStateRef.current = executionState; }, [executionState]);
+  useEffect(() => { ownedTurnThreadIdRef.current = ownedTurnThreadId; }, [ownedTurnThreadId]);
 
   const updateSessionAttention = useCallback((
     update: (current: SessionAttentionState) => SessionAttentionState,
@@ -375,15 +378,17 @@ export default function App() {
     if (!visibleText) return;
     if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
     const current = streamItemRef.current;
+    const completedAt = Date.now();
     streamItemRef.current = null;
     setTimeline((items) => {
       if (current?.kind === 'assistant' && items.some((item) => item.id === current.id)) {
         return items.map((item) => item.id === current.id
-          ? { ...item, text: visibleText, contexts: content.contexts }
+          ? { ...item, text: visibleText, contexts: content.contexts, completedAt }
           : item);
       }
       return [...items, {
         id: makeId(), kind: 'assistant', text: visibleText, contexts: content.contexts, transient: true,
+        completedAt,
       }];
     });
   }, []);
@@ -448,8 +453,7 @@ export default function App() {
         current,
         nextSessions,
         currentThreadId,
-        runningRef.current || executionStateRef.current === 'running' || executionStateRef.current === 'waiting'
-          ? currentThreadId : null,
+        runningRef.current ? ownedTurnThreadIdRef.current : null,
       ));
       if (currentThreadId) {
         const currentSession = nextSessions.find((session) => session.id === currentThreadId);
@@ -505,6 +509,7 @@ export default function App() {
     const payload = message.payload || {};
     if (message.event === 'turn.waiting') {
       setRunning(true);
+      setOwnedTurnThreadId(String(payload.threadId || threadIdRef.current || NEW_TURN_KEY));
       setExecutionState('waiting');
       setToolPurpose('');
       setLiveActivity('waiting');
@@ -515,6 +520,7 @@ export default function App() {
       setLiveActivity('starting');
       setActivityStartedAt(Date.now());
       const nextThreadId = String(payload.threadId || '');
+      setOwnedTurnThreadId(nextThreadId || threadIdRef.current || NEW_TURN_KEY);
       if (nextThreadId) {
         setThreadId(nextThreadId);
         threadIdRef.current = nextThreadId;
@@ -548,6 +554,7 @@ export default function App() {
       if (!nextApproval.threadId || nextApproval.threadId === threadIdRef.current) {
         setApproval(nextApproval);
         setRunning(true);
+        setOwnedTurnThreadId(nextApproval.threadId || threadIdRef.current || NEW_TURN_KEY);
         setExecutionState('waiting');
         setLiveActivity('waiting');
         setActivityStartedAt((current) => current || Date.now());
@@ -561,6 +568,7 @@ export default function App() {
       setLiveActivity('working');
       setActivityStartedAt(null);
       setRunning(false);
+      setOwnedTurnThreadId(null);
       setExecutionState('failed');
       addTimeline('error', String(payload.error || t('Codex 运行错误', 'Codex execution error')));
     } else if (message.event === 'turn.ended') {
@@ -570,6 +578,7 @@ export default function App() {
       setLiveActivity('working');
       setActivityStartedAt(null);
       setRunning(false);
+      setOwnedTurnThreadId(null);
       setExecutionState((current) => current === 'failed' ? current : 'completed');
       void refreshSessions();
     }
@@ -642,6 +651,7 @@ export default function App() {
       setConnecting(false);
       setOnline(false);
       setRunning(false);
+      setOwnedTurnThreadId(null);
       rejectPendingRequests(t('连接已断开', 'Connection closed'));
       if (event.code === 4003) {
         reconnectWantedRef.current = false;
@@ -1117,6 +1127,7 @@ export default function App() {
       optimisticItemId = addTimeline('user', visibleText, true, true, timelineAttachment);
       streamItemRef.current = null;
       setRunning(true);
+      setOwnedTurnThreadId(threadIdRef.current || NEW_TURN_KEY);
       setExecutionState('running');
       setLiveActivity('starting');
       setActivityStartedAt(Date.now());
@@ -1125,7 +1136,14 @@ export default function App() {
         threadId: threadIdRef.current,
         cwd: isExistingSession ? '' : projectCwd,
       });
+      const sentAt = Date.now();
+      if (optimisticItemId) {
+        setTimeline((current) => current.map((item) => item.id === optimisticItemId
+          ? { ...item, completedAt: sentAt }
+          : item));
+      }
       if (data.threadId) {
+        setOwnedTurnThreadId(data.delivery === 'desktop' ? null : data.threadId);
         setThreadId(data.threadId);
         threadIdRef.current = data.threadId;
         localStorage.setItem('bridge.lastThreadId', data.threadId);
@@ -1143,6 +1161,7 @@ export default function App() {
       }
       if (data.delivery === 'desktop') {
         setRunning(false);
+        setOwnedTurnThreadId(null);
         awaitingDesktopTurnRef.current = {
           text: visibleText,
           previousActivityId: latestActivityIdRef.current,
@@ -1155,6 +1174,7 @@ export default function App() {
     } catch (error) {
       setUploading(false);
       setRunning(false);
+      setOwnedTurnThreadId(null);
       setExecutionState('idle');
       setLiveActivity('working');
       setActivityStartedAt(null);
@@ -1187,6 +1207,7 @@ export default function App() {
   const stopTurn = useCallback(async () => {
     try { await request('turn.stop', {}); } catch (error) { reportTimelineError(error); }
     setRunning(false);
+    setOwnedTurnThreadId(null);
     awaitingDesktopTurnRef.current = null;
     setExecutionState('idle');
     setLiveActivity('working');
@@ -1223,7 +1244,9 @@ export default function App() {
         const pending = result.approvals?.[0] || result.externalApproval || null;
         if (pending) {
           setApproval(pending);
-          setRunning(true);
+          const webOwned = pending.actionable !== false;
+          setRunning(webOwned);
+          setOwnedTurnThreadId(webOwned ? (pending.threadId || threadId) : null);
           setExecutionState('waiting');
           setLiveActivity('waiting');
           setActivityStartedAt((current) => current || Date.now());
@@ -1232,6 +1255,7 @@ export default function App() {
         } else if (approval?.actionable === false) {
           setApproval(null);
           setRunning(false);
+          setOwnedTurnThreadId(null);
           setExecutionState('running');
           setLiveActivity('working');
         }
@@ -1681,11 +1705,11 @@ export default function App() {
                 : online ? t('发送给本机 Codex…', 'Send to local Codex…') : t('本机连接器离线', 'Local connector is offline')}
               disabled={!online || uploading}
             />
-            {running
+            {canStopOwnedTurn(running, ownedTurnThreadId, threadId || (creatingNewSession ? NEW_TURN_KEY : null))
               ? <button className="stop-button" onClick={() => void stopTurn()} aria-label={t('停止', 'Stop')}>■</button>
               : <button
                   className={`send-button${uploading ? ' uploading' : ''}`}
-                  disabled={!online || uploading || (!prompt.trim() && !pendingImage) || (!threadId && !newSessionCwd.trim())}
+                  disabled={!online || running || uploading || (!prompt.trim() && !pendingImage) || (!threadId && !newSessionCwd.trim())}
                   onClick={() => void sendTurn()}
                   aria-label={uploading ? t('正在发送图片', 'Sending image') : t('发送', 'Send')}
                 >

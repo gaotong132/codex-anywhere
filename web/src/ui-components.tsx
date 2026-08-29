@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { formatDate } from './app-utils';
 import { localFilePathFromHref } from './file-utils';
 import { t } from './i18n';
 import type { TimelineItem } from './history-utils';
 import type { FileDownloadState } from './app-types';
 
 type SidebarIconName = 'plus' | 'search' | 'panel-open' | 'panel-close';
+
+function dateTimeValue(value: TimelineItem['completedAt']) {
+  if (!value) return '';
+  const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1_000 : value;
+  const date = new Date(numeric);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : '';
+}
 
 export function SidebarIcon({ name }: { name: SidebarIconName }) {
   if (name === 'plus') {
@@ -85,6 +93,7 @@ export function MessageBubble({
     : copyState === 'failed'
       ? t('复制失败', 'Copy failed')
       : t('复制消息', 'Copy message');
+  const completedDateTime = dateTimeValue(item.completedAt);
   return (
     <div className={`message ${item.kind}${copyable ? ' copyable' : ''}`}>
       {copyable && (
@@ -163,6 +172,11 @@ export function MessageBubble({
             )}
           </figcaption>
         </figure>
+      )}
+      {copyable && item.completedAt && completedDateTime && (
+        <div className="message-time">
+          <time dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
+        </div>
       )}
     </div>
   );

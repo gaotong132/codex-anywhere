@@ -417,6 +417,8 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
     &.automation { color: #bbcae0; border-color: rgba(121, 157, 214, .25); }
   }
 
+  .message-time { display: flex; justify-content: flex-end; margin-top: 7px; color: #6f7d91; font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; }
+
   > :first-child:not(.message-copy), > .message-copy + * { margin-top: 0; }
   > :last-child { margin-bottom: 0; }
   p { margin: .45em 0; }
@@ -440,6 +442,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
   input[type="checkbox"] { width: auto; margin-right: .45em; }
 
   &.user { margin-left: auto; color: #fff; background: linear-gradient(145deg, #2d66d4, #284fac); border-bottom-right-radius: 5px; }
+  &.user .message-time { color: rgba(255, 255, 255, .58); }
   &.assistant { border: 1px solid #252e3d; color: #dfe6f1; background: #131925; border-bottom-left-radius: 5px; }
   &.error { border: 1px solid #74343c; color: #ffc7cc; background: #39171d; }
 }

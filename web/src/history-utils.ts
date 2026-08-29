@@ -20,12 +20,17 @@ type TurnItem = {
   output?: string;
   contexts?: MessageContext[];
   attachment?: ImageAttachment;
+  createdAt?: number | string | null;
+  updatedAt?: number | string | null;
+  completedAt?: number | string | null;
+  timestamp?: number | string | null;
 };
 
 export type Turn = {
   id: string;
   status?: string;
-  startedAt?: number | null;
+  startedAt?: number | string | null;
+  completedAt?: number | string | null;
   items?: TurnItem[];
 };
 
@@ -39,6 +44,7 @@ export type TimelineItem = {
   transient?: boolean;
   attachment?: ImageAttachment;
   contexts?: MessageContext[];
+  completedAt?: number | string | null;
 };
 export type KnownAttachment = ImageAttachment & { savedAt: number };
 
@@ -64,8 +70,10 @@ export function historyItems(turns: Turn[]) {
       const previous = items.at(-1);
       if (kind === 'progress' && previous?.kind === 'progress' && previous.historyTurnId === turn.id) {
         previous.text = `${previous.text}\n\n${displayText}`;
+        previous.completedAt = messageTime(item, turn, kind) || previous.completedAt;
         continue;
       }
+      const completedAt = messageTime(item, turn, kind);
       items.push({
         id: `history:${turn.id}:${index}`,
         kind,
@@ -73,6 +81,7 @@ export function historyItems(turns: Turn[]) {
         historyTurnId: turn.id,
         attachment,
         contexts: item.contexts?.length ? item.contexts : content.contexts,
+        ...(completedAt ? { completedAt } : {}),
       });
     }
   }
@@ -98,6 +107,8 @@ export function historyFingerprint(turns: Turn[]) {
   return JSON.stringify(turns.map((turn) => ({
     id: turn.id,
     status: turn.status,
+    startedAt: turn.startedAt,
+    completedAt: turn.completedAt,
     items: turn.items?.map((item) => ({
       type: item.type,
       phase: item.phase,
@@ -107,8 +118,17 @@ export function historyFingerprint(turns: Turn[]) {
       output: item.output,
       contexts: item.contexts,
       attachment: item.attachment,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
+      completedAt: item.completedAt,
+      timestamp: item.timestamp,
     })),
   })));
+}
+
+function messageTime(item: TurnItem, turn: Turn, kind: TimelineKind) {
+  return item.completedAt || item.updatedAt || item.createdAt || item.timestamp
+    || (kind === 'user' ? turn.startedAt : turn.completedAt) || null;
 }
 
 export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineItem[], latestTurnIds: Set<string>) {

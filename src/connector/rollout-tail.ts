@@ -29,6 +29,7 @@ type RolloutItem = {
   input?: string;
   output?: string;
   attachment?: GeneratedImageAttachment;
+  completedAt?: number | null;
 };
 type RolloutOptions = { filePath: string; threadId: string; maxBytes?: number; maxItems?: number };
 type SnapshotOptions = { threadId: string; maxBytes: number; maxItems: number };
@@ -303,27 +304,35 @@ function mapRolloutRows(rows: RolloutRow[]): RolloutItem[] {
   for (const row of Array.isArray(rows) ? rows : []) {
     const payload = row?.payload || {};
     const payloadType = String(payload.type || '');
+    const completedAt = epochMillis(row.timestamp);
+    const timing = completedAt ? { completedAt } : {};
     if (row?.type === 'event_msg' && payloadType === 'agent_message') {
       const content = parseAssistantMessage(payload.message);
       pushText(items, {
-        type: 'agentMessage', phase: payload.phase || 'commentary', ...content,
+        type: 'agentMessage', phase: payload.phase || 'commentary', ...content, ...timing,
       });
     } else if (row?.type === 'event_msg' && payloadType === 'user_message') {
-      pushText(items, { type: 'userMessage', ...parseUserMessage(payload.message || payload.text) });
+      pushText(items, {
+        type: 'userMessage', ...parseUserMessage(payload.message || payload.text), ...timing,
+      });
     } else if (row?.type === 'response_item' && payloadType === 'message') {
       if (payload.role === 'user') {
-        pushText(items, { type: 'userMessage', ...parseUserMessage(extractContent(payload.content)) });
+        pushText(items, {
+          type: 'userMessage', ...parseUserMessage(extractContent(payload.content)), ...timing,
+        });
       } else if (payload.role === 'assistant') {
         const content = parseAssistantMessage(extractContent(payload.content));
         pushText(items, {
           type: 'agentMessage', phase: payload.phase || 'commentary',
-          ...content,
+          ...content, ...timing,
         });
       }
     } else if (row?.type === 'event_msg' && payloadType === 'image_generation_end') {
       const attachment = extractGeneratedImageAttachment(payload);
       if (payload.status === 'completed' && attachment) {
-        pushText(items, { type: 'agentMessage', phase: 'final_answer', text: '', attachment });
+        pushText(items, {
+          type: 'agentMessage', phase: 'final_answer', text: '', attachment, ...timing,
+        });
       }
     }
   }

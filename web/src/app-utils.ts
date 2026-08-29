@@ -99,6 +99,10 @@ export function markSessionAttentionRead(current: SessionAttentionState, threadI
   return next;
 }
 
+export function canStopOwnedTurn(running: boolean, ownedThreadId: string | null, selectedThreadId: string | null) {
+  return running && Boolean(ownedThreadId) && ownedThreadId === selectedThreadId;
+}
+
 export function sessionUpdatedAt(value: Session['updatedAt']) {
   if (!value) return 0;
   const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1000 : value;
