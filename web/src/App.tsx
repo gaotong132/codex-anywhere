@@ -71,10 +71,7 @@ import {
 import { BrowserSecureChannel } from './secure-channel-client';
 import { createAuthProof } from '../../src/shared/auth';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
-import {
-  legacyProtocolOffer,
-  negotiateProtocol,
-} from '../../src/shared/protocol-negotiation';
+import { requireCurrentProtocol } from '../../src/shared/protocol-negotiation';
 import {
   clearBrowserDeviceApproval,
   createBrowserDeviceProof,
@@ -286,7 +283,6 @@ export default function App() {
   const reconnectWantedRef = useRef(false);
   const socketAuthenticatedRef = useRef(false);
   const connectorOnlineRef = useRef(false);
-  const secureRequiredRef = useRef(false);
   const secureChannelRef = useRef<BrowserSecureChannel | null>(null);
   const messageHandlerRef = useRef<(message: BridgeMessage) => void>(() => {});
   const lastServerActivityRef = useRef(0);
@@ -518,11 +514,7 @@ export default function App() {
         resolve: (value) => resolve(value as T), reject, timer, frame, acknowledged: false,
       });
       try {
-        if (secureRequiredRef.current) {
-          if (!secureChannelRef.current?.sendFrame(frame)) throw new Error('secure_channel_not_ready');
-        } else {
-          socket.send(JSON.stringify(frame));
-        }
+        if (!secureChannelRef.current?.sendFrame(frame)) throw new Error('secure_channel_not_ready');
       } catch {
         clearTimeout(timer);
         pendingRef.current.delete(requestId);
@@ -596,7 +588,6 @@ export default function App() {
   const beginSecureChannel = useCallback(() => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-    secureRequiredRef.current = true;
     secureChannelRef.current?.clear();
     const channel = new BrowserSecureChannel({
       identity: loadOrCreateBrowserDeviceIdentity(),
@@ -654,19 +645,17 @@ export default function App() {
           .catch(() => undefined);
       }
       const connected = Boolean(message.devices?.includes(DEVICE_ID));
-      const secure = connected && Boolean(message.secureDevices?.includes(DEVICE_ID));
-      if (secure) {
+      if (connected) {
         connectorOnlineRef.current = false;
         setOnline(false);
         setStatusText(t('正在建立安全通道…', 'Establishing secure channel…'));
         beginSecureChannel();
       } else {
-        secureRequiredRef.current = false;
         secureChannelRef.current?.clear();
         secureChannelRef.current = null;
-        connectorOnlineRef.current = connected;
-        setOnline(connected);
-        setStatusText(connected ? t('电脑在线', 'Computer online') : t('电脑离线', 'Computer offline'));
+        connectorOnlineRef.current = false;
+        setOnline(false);
+        setStatusText(t('电脑离线', 'Computer offline'));
       }
       return;
     }
@@ -677,31 +666,20 @@ export default function App() {
       return;
     }
     if (message.type === 'presence') {
-      const wasConnected = connectorOnlineRef.current;
       const connected = Boolean(message.devices?.includes(DEVICE_ID));
-      const secure = connected && Boolean(message.secureDevices?.includes(DEVICE_ID));
       if (!connected) {
-        secureRequiredRef.current = false;
         secureChannelRef.current?.clear();
         secureChannelRef.current = null;
         connectorOnlineRef.current = false;
         setOnline(false);
         setStatusText(t('电脑离线', 'Computer offline'));
-      } else if (secure) {
+      } else {
         if (!secureChannelRef.current?.isReady()) {
           connectorOnlineRef.current = false;
           setOnline(false);
           setStatusText(t('正在建立安全通道…', 'Establishing secure channel…'));
           if (!secureChannelRef.current) beginSecureChannel();
         }
-      } else {
-        secureRequiredRef.current = false;
-        secureChannelRef.current?.clear();
-        secureChannelRef.current = null;
-        connectorOnlineRef.current = true;
-        setOnline(true);
-        setStatusText(t('电脑在线', 'Computer online'));
-        if (!wasConnected) void refreshSessions();
       }
       return;
     }
@@ -850,7 +828,7 @@ export default function App() {
       try {
         const message = JSON.parse(String(incoming.data)) as BridgeMessage;
         if (message.type === 'auth.challenge') {
-          const protocol = negotiateProtocol(message.protocol || legacyProtocolOffer(message.version));
+          const protocol = requireCurrentProtocol(message.protocol);
           const challenge = String(message.challenge || '');
           const pairing = pairingCredentialRef.current;
           if (pairing) {
@@ -889,13 +867,11 @@ export default function App() {
     });
     socket.addEventListener('close', (event) => {
       if (socketRef.current !== socket) return;
-      const replayPending = secureRequiredRef.current
-        && reconnectWantedRef.current
+      const replayPending = reconnectWantedRef.current
         && ![4003, 4403, 4406, 4407, 4429].includes(event.code);
       socketRef.current = null;
       socketAuthenticatedRef.current = false;
       connectorOnlineRef.current = false;
-      secureRequiredRef.current = false;
       secureChannelRef.current?.clear();
       secureChannelRef.current = null;
       setConnecting(false);
@@ -1056,7 +1032,6 @@ export default function App() {
       document.removeEventListener('visibilitychange', handleVisibility);
       const socket = socketRef.current;
       socketRef.current = null;
-      secureRequiredRef.current = false;
       secureChannelRef.current?.clear();
       secureChannelRef.current = null;
       socket?.close(1000, 'page closed');
@@ -1648,9 +1623,6 @@ export default function App() {
     const result = await request<VisualizationDocument>('visualization.read', { path });
     if (result?.content && result.content.length <= 2 * 1024 * 1024 && !result.content.includes('\0')) {
       return URL.createObjectURL(new Blob([result.content], { type: 'text/html' }));
-    }
-    if (result && /^\/visualization-preview\/[A-Za-z0-9_-]{43}$/.test(result.previewUrl || '')) {
-      return result.previewUrl!;
     }
     throw new Error('visualization_content_invalid');
   }, [request]);

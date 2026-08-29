@@ -18,9 +18,7 @@ import {
 } from '../shared/pairing-auth.js';
 import {
   createProtocolOffer,
-  legacyProtocolOffer,
-  negotiateProtocol,
-  protocolHasCapability,
+  requireCurrentProtocol,
   type NegotiatedProtocol,
 } from '../shared/protocol-negotiation.js';
 import { DeviceRegistry } from './device-registry.js';
@@ -30,11 +28,6 @@ import {
   type PushNotificationKind,
 } from './push-notifications.js';
 import {
-  VISUALIZATION_PREVIEW_PREFIX,
-  VisualizationPreviewStore,
-} from './visualization-previews.js';
-import {
-  CLIENT_ACTIONS,
   MAX_FRAME_BYTES,
   createId,
   parseFrame,
@@ -56,8 +49,8 @@ type AliveWebSocket = WebSocket & { isAlive?: boolean };
 type StaticHandler = ReturnType<typeof sirv>;
 type AuthenticatedDevice = Pick<DeviceAuthProof, 'id' | 'publicKey'>;
 type SocketMeta =
-  | { role: 'client'; id: string; device: AuthenticatedDevice; protocol: NegotiatedProtocol }
-  | { role: 'connector'; deviceId: string; device: AuthenticatedDevice; protocol: NegotiatedProtocol };
+  | { role: 'client'; id: string; device: AuthenticatedDevice }
+  | { role: 'connector'; deviceId: string; device: AuthenticatedDevice };
 type BridgeServerOptions = {
   clientToken?: unknown;
   connectorToken?: unknown;
@@ -81,7 +74,6 @@ type HttpContext = {
   trustProxy: boolean;
   uiLanguage: string;
   staticHandler: StaticHandler;
-  visualizationPreviews: VisualizationPreviewStore;
   pushPublicKey: string;
 };
 type AuthLimiterOptions = {
@@ -129,8 +121,6 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   });
   const connectors = new Map<string, AliveWebSocket>();
   const clients = new Map<string, AliveWebSocket>();
-  const visualizationPreviews = new VisualizationPreviewStore();
-  const pendingVisualizationRequests = new LRUCache<string, true>({ max: 128, ttl: 60_000 });
   const socketMeta = new WeakMap<AliveWebSocket, SocketMeta>();
   const trustProxy = options.trustProxy ?? process.env.BRIDGE_TRUST_PROXY === '1';
   const sessionMaxAgeMs = positiveInteger(
@@ -148,7 +138,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
 
   const httpServer = createServer((request, response) => {
     handleHttpRequest({
-      request, response, trustProxy, uiLanguage, staticHandler, visualizationPreviews,
+      request, response, trustProxy, uiLanguage, staticHandler,
       pushPublicKey: pushNotifications.publicKey,
     });
   });
@@ -208,7 +198,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
           if (authenticated) {
             sessionTimer = setTimeout(() => socket.close(4005, 'authentication expired'), sessionMaxAgeMs);
             sessionTimer.unref?.();
-            broadcastPresence(clients, connectors, socketMeta);
+            broadcastPresence(clients, connectors);
           }
           return;
         }
@@ -218,12 +208,11 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
         }
         if (meta.role === 'client') {
           routeClientMessage({
-            socket, meta, message, connectors, pendingVisualizationRequests, pushNotifications,
+            socket, meta, message, connectors, pushNotifications,
           });
         } else {
           routeConnectorMessage({
-            message, clients, meta, pendingVisualizationRequests, visualizationPreviews,
-            pushNotifications, socketMeta,
+            message, clients, meta, pushNotifications, socketMeta,
           });
         }
       } catch (error) {
@@ -238,7 +227,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       if (!meta) return;
       if (meta.role === 'client') clients.delete(meta.id);
       if (meta.role === 'connector' && connectors.get(meta.deviceId) === socket) connectors.delete(meta.deviceId);
-      broadcastPresence(clients, connectors, socketMeta);
+      broadcastPresence(clients, connectors);
     });
     safeSend(socket, {
       type: 'auth.challenge', challenge: authChallenge, protocol: createProtocolOffer(),
@@ -264,7 +253,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   heartbeat.unref?.();
 
   return {
-    httpServer, webSocketServer, connectors, clients, deviceRegistry, visualizationPreviews,
+    httpServer, webSocketServer, connectors, clients, deviceRegistry,
     async listen(port = 3300, host = '127.0.0.1') {
       await new Promise<void>((resolveListen, reject) => {
         const onError = (error: Error) => reject(error);
@@ -278,8 +267,6 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
     },
     async close() {
       clearInterval(heartbeat);
-      pendingVisualizationRequests.clear();
-      visualizationPreviews.clear();
       for (const socket of webSocketServer.clients) socket.close(1001, 'server shutdown');
       await new Promise<void>((resolveClose) => httpServer.close(() => resolveClose()));
     },
@@ -287,7 +274,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
 }
 
 function handleHttpRequest({
-  request, response, trustProxy, uiLanguage, staticHandler, visualizationPreviews, pushPublicKey,
+  request, response, trustProxy, uiLanguage, staticHandler, pushPublicKey,
 }: HttpContext) {
   setSecurityHeaders(response, request, trustProxy);
   const method = String(request.method || 'GET').toUpperCase();
@@ -318,10 +305,6 @@ function handleHttpRequest({
   }
   if (pathname === '/config.js') {
     serveRuntimeConfig(response, uiLanguage, pushPublicKey, headOnly);
-    return;
-  }
-  if (pathname.startsWith(VISUALIZATION_PREVIEW_PREFIX)) {
-    serveVisualizationPreview(response, pathname, visualizationPreviews, headOnly);
     return;
   }
   staticHandler(request, response, () => {
@@ -356,7 +339,7 @@ function authenticateSocket({
   const deviceId = normalizeAuthDeviceId(message.deviceId);
   let protocol: NegotiatedProtocol;
   try {
-    protocol = negotiateProtocol(message.protocol || legacyProtocolOffer(message.version));
+    protocol = requireCurrentProtocol(message.protocol);
   } catch {
     socket.close(4406, 'protocol version unsupported');
     return false;
@@ -468,7 +451,7 @@ function authenticateSocket({
     if (previous && previous !== socket) previous.close(4004, 'connector replaced');
     connectors.set(deviceId, socket);
     socketMeta.set(socket, {
-      role, deviceId, device: { id: device.id, publicKey: device.publicKey }, protocol,
+      role, deviceId, device: { id: device.id, publicKey: device.publicKey },
     });
     safeSend(socket, { type: 'auth.ok', role, deviceId, protocol, authMode });
     return true;
@@ -476,12 +459,11 @@ function authenticateSocket({
   const id = createId('client');
   clients.set(id, socket);
   socketMeta.set(socket, {
-    role, id, device: { id: device.id, publicKey: device.publicKey }, protocol,
+    role, id, device: { id: device.id, publicKey: device.publicKey },
   });
   safeSend(socket, {
     type: 'auth.ok', role, clientId: id,
     devices: [...connectors.keys()],
-    secureDevices: secureConnectorIds(connectors, socketMeta),
     protocol,
     authMode,
   });
@@ -501,13 +483,12 @@ function rejectAuthentication(
 }
 
 function routeClientMessage({
-  socket, meta, message, connectors, pendingVisualizationRequests, pushNotifications,
+  socket, meta, message, connectors, pushNotifications,
 }: {
   socket: AliveWebSocket;
   meta: Extract<SocketMeta, { role: 'client' }>;
   message: JsonObject;
   connectors: Map<string, AliveWebSocket>;
-  pendingVisualizationRequests: LRUCache<string, true>;
   pushNotifications: PushNotifier;
 }) {
   if (message.type === 'push.subscribe') {
@@ -550,36 +531,15 @@ function routeClientMessage({
     safeSend(connector, { type: message.type, clientId: meta.id, envelope: message.envelope });
     return;
   }
-  if (message.type !== 'request' || !CLIENT_ACTIONS.has(message.action)) {
-    safeSend(socket, { type: 'error', requestId: message.requestId, error: 'unsupported_action' });
-    return;
-  }
-  if (!connector) {
-    safeSend(socket, { type: 'response', requestId: message.requestId, ok: false, error: 'connector_offline' });
-    return;
-  }
-  const requestId = String(message.requestId || createId('request'));
-  if (message.action === 'visualization.read') {
-    pendingVisualizationRequests.set(`${meta.id}\0${requestId}`, true);
-  }
-  safeSend(connector, {
-    type: 'request',
-    requestId,
-    action: message.action,
-    payload: message.payload && typeof message.payload === 'object' ? message.payload : {},
-    clientId: meta.id,
-  });
+  safeSend(socket, { type: 'error', requestId: message.requestId, error: 'secure_channel_required' });
 }
 
 function routeConnectorMessage({
-  message, clients, meta, pendingVisualizationRequests, visualizationPreviews,
-  pushNotifications, socketMeta,
+  message, clients, meta, pushNotifications, socketMeta,
 }: {
   message: JsonObject;
   clients: Map<string, AliveWebSocket>;
   meta: Extract<SocketMeta, { role: 'connector' }>;
-  pendingVisualizationRequests: LRUCache<string, true>;
-  visualizationPreviews: VisualizationPreviewStore;
   pushNotifications: PushNotifier;
   socketMeta: WeakMap<AliveWebSocket, SocketMeta>;
 }) {
@@ -614,33 +574,6 @@ function routeConnectorMessage({
     safeSend(client, { type: message.type, envelope: message.envelope, deviceId: meta.deviceId });
     return;
   }
-  if (message.type !== 'response' && message.type !== 'event') return;
-  const clientId = String(message.clientId || '');
-  const client = clients.get(clientId);
-  if (!client) return;
-  const requestId = String(message.requestId || '');
-  const previewRequestKey = `${clientId}\0${requestId}`;
-  if (message.type === 'response' && pendingVisualizationRequests.has(previewRequestKey)) {
-    pendingVisualizationRequests.delete(previewRequestKey);
-    if (message.ok) {
-      try {
-        const data = message.data && typeof message.data === 'object' ? message.data : {};
-        const previewUrl = visualizationPreviews.create(data.content);
-        const { content: _content, ...metadata } = data;
-        safeSend(client, {
-          ...message,
-          data: { ...metadata, previewUrl },
-          deviceId: meta.deviceId,
-        });
-      } catch (error) {
-        safeSend(client, {
-          type: 'response', requestId, ok: false, error: publicError(error), deviceId: meta.deviceId,
-        });
-      }
-      return;
-    }
-  }
-  safeSend(client, { ...message, deviceId: meta.deviceId });
 }
 
 function isSecureClientFrame(type: unknown) {
@@ -655,26 +588,12 @@ function isSecureConnectorFrame(type: unknown) {
 function broadcastPresence(
   clients: Map<string, AliveWebSocket>,
   connectors: Map<string, AliveWebSocket>,
-  socketMeta: WeakMap<AliveWebSocket, SocketMeta>,
 ) {
   const payload = {
     type: 'presence',
     devices: [...connectors.keys()],
-    secureDevices: secureConnectorIds(connectors, socketMeta),
   };
   for (const socket of clients.values()) safeSend(socket, payload);
-}
-
-function secureConnectorIds(
-  connectors: Map<string, AliveWebSocket>,
-  socketMeta: WeakMap<AliveWebSocket, SocketMeta>,
-) {
-  return [...connectors.entries()]
-    .filter(([, socket]) => {
-      const meta = socketMeta.get(socket);
-      return meta?.role === 'connector' && protocolHasCapability(meta.protocol, 'e2ee-channel.v1');
-    })
-    .map(([deviceId]) => deviceId);
 }
 
 function normalizeUiLanguage(value: unknown) {
@@ -695,43 +614,6 @@ function serveRuntimeConfig(
     'content-type': 'text/javascript; charset=utf-8',
     'cache-control': 'no-store',
     'content-length': Buffer.byteLength(body),
-  });
-  response.end(headOnly ? '' : body);
-}
-
-function serveVisualizationPreview(
-  response: ServerResponse,
-  pathname: string,
-  previews: VisualizationPreviewStore,
-  headOnly = false,
-) {
-  const content = previews.read(pathname);
-  if (!content) {
-    response.writeHead(404, { 'cache-control': 'no-store' });
-    response.end(headOnly ? '' : 'Preview expired or unavailable');
-    return;
-  }
-  const body = Buffer.from(content, 'utf8');
-  response.setHeader('x-frame-options', 'SAMEORIGIN');
-  response.setHeader('content-security-policy', [
-    "default-src 'none'",
-    "script-src 'unsafe-inline'",
-    "style-src 'unsafe-inline'",
-    'img-src data: blob:',
-    'font-src data:',
-    'media-src data: blob:',
-    "connect-src 'none'",
-    "worker-src 'none'",
-    "frame-src 'self'",
-    "object-src 'none'",
-    "form-action 'none'",
-    "base-uri 'none'",
-    "frame-ancestors 'self'",
-  ].join('; '));
-  response.writeHead(200, {
-    'content-type': 'text/html; charset=utf-8',
-    'cache-control': 'no-store',
-    'content-length': body.length,
   });
   response.end(headOnly ? '' : body);
 }

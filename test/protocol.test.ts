@@ -15,8 +15,7 @@ import {
 import { normalizeBridgeUrl, parseFrame, secretMatches } from '../src/shared/protocol.js';
 import {
   createProtocolOffer,
-  legacyProtocolOffer,
-  negotiateProtocol,
+  requireCurrentProtocol,
 } from '../src/shared/protocol-negotiation.js';
 import {
   browserPairingFragment,
@@ -98,21 +97,17 @@ test('frame parser rejects arrays', () => {
   assert.throws(() => parseFrame('[]'), /invalid_frame/);
 });
 
-test('protocol negotiation selects the highest compatible version and shared capabilities', () => {
-  assert.deepEqual(negotiateProtocol({
-    version: 3,
-    minimumVersion: 2,
-    capabilities: ['approval.v1', 'future.v1', 'approval.v1'],
-  }), {
-    version: 2,
-    capabilities: ['approval.v1'],
-  });
-  assert.deepEqual(negotiateProtocol(legacyProtocolOffer()), { version: 1, capabilities: [] });
-  assert.throws(() => negotiateProtocol({
-    version: 4, minimumVersion: 3, capabilities: [],
-  }), /protocol_version_unsupported/);
-  assert.equal(createProtocolOffer().capabilities.includes('protocol-negotiation.v1'), true);
-  assert.equal(createProtocolOffer().capabilities.includes('e2ee-channel.v1'), true);
+test('protocol validation requires the current version and every mandatory capability', () => {
+  const current = createProtocolOffer();
+  assert.deepEqual(requireCurrentProtocol(current), current);
+  assert.throws(() => requireCurrentProtocol(undefined), /protocol_offer_required/);
+  assert.throws(() => requireCurrentProtocol({ ...current, version: 2 }), /protocol_version_unsupported/);
+  assert.throws(() => requireCurrentProtocol({
+    ...current,
+    capabilities: current.capabilities.filter((capability) => capability !== 'e2ee-channel.v1'),
+  }), /protocol_capability_required/);
+  assert.equal(current.capabilities.includes('strict-protocol.v1'), true);
+  assert.equal(current.capabilities.includes('e2ee-channel.v1'), true);
 });
 
 test('browser pairing links are fragment-only and challenge bound', () => {

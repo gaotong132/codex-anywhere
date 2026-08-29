@@ -1,8 +1,7 @@
-export const BRIDGE_PROTOCOL_VERSION = 2;
-export const BRIDGE_MIN_PROTOCOL_VERSION = 1;
+export const BRIDGE_PROTOCOL_VERSION = 3;
 
 export const BRIDGE_PROTOCOL_CAPABILITIES = Object.freeze([
-  'protocol-negotiation.v1',
+  'strict-protocol.v1',
   'device-auth.v1',
   'device-key-auth.v1',
   'browser-pairing.v1',
@@ -17,7 +16,6 @@ export const BRIDGE_PROTOCOL_CAPABILITIES = Object.freeze([
 
 export type ProtocolOffer = {
   version: number;
-  minimumVersion: number;
   capabilities: string[];
 };
 
@@ -31,49 +29,27 @@ export function createProtocolOffer(
 ): ProtocolOffer {
   return {
     version: BRIDGE_PROTOCOL_VERSION,
-    minimumVersion: BRIDGE_MIN_PROTOCOL_VERSION,
     capabilities: normalizeCapabilities(capabilities),
   };
 }
 
-export function legacyProtocolOffer(version: unknown = 1): ProtocolOffer {
-  return {
-    version: positiveInteger(version) || 1,
-    minimumVersion: 1,
-    capabilities: [],
-  };
-}
-
-export function negotiateProtocol(
-  remote: unknown,
-  local: ProtocolOffer = createProtocolOffer(),
-): NegotiatedProtocol {
+export function requireCurrentProtocol(remote: unknown): NegotiatedProtocol {
   const remoteOffer = normalizeProtocolOffer(remote);
-  const localOffer = normalizeProtocolOffer(local);
-  const version = Math.min(localOffer.version, remoteOffer.version);
-  if (version < Math.max(localOffer.minimumVersion, remoteOffer.minimumVersion)) {
-    throw new Error('protocol_version_unsupported');
-  }
+  if (remoteOffer.version !== BRIDGE_PROTOCOL_VERSION) throw new Error('protocol_version_unsupported');
   const remoteCapabilities = new Set(remoteOffer.capabilities);
-  return {
-    version,
-    capabilities: localOffer.capabilities.filter((capability) => remoteCapabilities.has(capability)),
-  };
-}
-
-export function protocolHasCapability(protocol: NegotiatedProtocol, capability: string) {
-  return protocol.capabilities.includes(capability);
+  if (BRIDGE_PROTOCOL_CAPABILITIES.some((capability) => !remoteCapabilities.has(capability))) {
+    throw new Error('protocol_capability_required');
+  }
+  return createProtocolOffer();
 }
 
 function normalizeProtocolOffer(value: unknown): ProtocolOffer {
-  if (!value || typeof value !== 'object') return legacyProtocolOffer();
+  if (!value || typeof value !== 'object') throw new Error('protocol_offer_required');
   const candidate = value as Partial<ProtocolOffer>;
   const version = positiveInteger(candidate.version);
-  const minimumVersion = positiveInteger(candidate.minimumVersion) || 1;
-  if (!version || minimumVersion > version) throw new Error('protocol_offer_invalid');
+  if (!version) throw new Error('protocol_offer_invalid');
   return {
     version,
-    minimumVersion,
     capabilities: normalizeCapabilities(candidate.capabilities),
   };
 }

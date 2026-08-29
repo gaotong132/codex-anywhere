@@ -14,8 +14,7 @@ import { ConnectorSecureChannels } from './secure-channels.js';
 import { createAuthProof } from '../shared/auth.js';
 import { createDeviceAuthProof } from '../shared/device-auth.js';
 import {
-  legacyProtocolOffer,
-  negotiateProtocol,
+  requireCurrentProtocol,
 } from '../shared/protocol-negotiation.js';
 import {
   MAX_FRAME_BYTES, parseFrame, safeSend,
@@ -70,7 +69,7 @@ codex.on('turn-event', (message) => {
   if (message.event === 'turn.ended') safeSend(socket, { type: 'push.notify', kind: 'completed' });
   if (message.event === 'approval.requested') safeSend(socket, { type: 'push.notify', kind: 'approval' });
   const frame = { type: 'event', ...message };
-  if (!secureChannels.sendEvent(frame)) safeSend(socket, frame);
+  secureChannels.sendEvent(frame);
 });
 
 function connect() {
@@ -81,7 +80,7 @@ function connect() {
     try { message = parseFrame(data); } catch { return; }
     if (message.type === 'auth.challenge') {
       try {
-        const protocol = negotiateProtocol(message.protocol || legacyProtocolOffer(message.version));
+        const protocol = requireCurrentProtocol(message.protocol);
         const proof = createAuthProof(token, String(message.challenge || ''), 'connector', deviceId);
         const device = createDeviceAuthProof(deviceIdentity, {
           challenge: String(message.challenge || ''),
@@ -106,9 +105,6 @@ function connect() {
       return;
     }
     if (await secureChannels.handle(message)) return;
-    if (message.type === 'request') {
-      safeSend(socket, await handleRequest({ ...message, action: String(message.action || '') }));
-    }
   });
   socket.on('close', scheduleReconnect);
   socket.on('error', () => {});
