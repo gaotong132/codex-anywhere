@@ -5,6 +5,7 @@ import {
   stripImageAttachments,
 } from '../../src/shared/message-content';
 import type { MessageContext } from '../../src/shared/message-content';
+import { localFileName, localFilePathFromHref } from './file-utils';
 
 export { parseAssistantMessage } from '../../src/shared/message-content';
 
@@ -35,7 +36,7 @@ export type Turn = {
 };
 
 export type TimelineKind = 'user' | 'assistant' | 'progress' | 'error';
-export type ImageAttachment = { path: string; name: string; source?: 'generated' };
+export type ImageAttachment = { path: string; name: string; source?: 'generated' | 'local' };
 export type TimelineItem = {
   id: string;
   kind: TimelineKind;
@@ -55,7 +56,9 @@ export function historyItems(turns: Turn[]) {
       const type = item.type || '';
       const rawText = item.text?.trim();
       const attachment = item.attachment
-        || (/user/i.test(type) ? extractImageAttachment(rawText || '') : undefined);
+        || (/user/i.test(type)
+          ? extractImageAttachment(rawText || '')
+          : extractLocalMarkdownImage(rawText || ''));
       const content = /user/i.test(type)
         ? parseUserMessage(rawText || '')
         : parseAssistantMessage(rawText || '');
@@ -86,6 +89,20 @@ export function historyItems(turns: Turn[]) {
     }
   }
   return items;
+}
+
+function extractLocalMarkdownImage(text: string): ImageAttachment | undefined {
+  const image = /!\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|((?:file:\/\/\/|[A-Za-z]:[\\/])[^)\r\n]+))\s*\)/i.exec(text);
+  const rawHref = (image?.[2] || image?.[3] || '')
+    .replace(/\s+(?:"[^"]*"|'[^']*')\s*$/, '')
+    .trim();
+  const path = localFilePathFromHref(rawHref);
+  if (!path || !/\.(?:jpe?g|png|webp)$/i.test(path)) return undefined;
+  return {
+    path,
+    name: image?.[1]?.trim() || localFileName(path),
+    source: 'local',
+  };
 }
 
 function extractImageAttachment(text: string): ImageAttachment | undefined {

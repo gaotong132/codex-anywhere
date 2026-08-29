@@ -70,10 +70,13 @@ alone can create only a visible pending request—not an authenticated session. 
 expire after one hour by default and reconnect with fresh proofs; repeated failures are temporarily
 locked per client address.
 
-File downloads require explicit browser confirmation and use a random, short-lived, one-file,
-client-bound capability. The connector canonicalizes paths, rejects directories and path escapes,
-holds a stable file handle, detects changes during transfer, rate-limits chunks, and records only
-hashed local audit identifiers. Enabling unrestricted downloads intentionally expands this boundary.
+Assistant Markdown may embed a local JPEG, PNG, or WebP from `CODEX_ALLOWED_ROOTS`. The connector
+validates the canonical path and actual file type, then sends only a bounded WebP preview; SVG and
+other active or unsupported formats remain download-only. Original-file downloads require explicit
+browser confirmation and use a random, short-lived, one-file, client-bound capability. The connector
+rejects directories and path escapes, holds a stable file handle, detects changes during transfer,
+rate-limits chunks, and records only hashed local audit identifiers. Enabling unrestricted downloads
+intentionally expands the download boundary, not the automatic preview roots.
 
 Device administration is deliberately available only from the relay host. The default command lists
 pending requests and asks before approval. These variants list or revoke approved devices without

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatDate } from './app-utils';
-import { localFilePathFromHref } from './file-utils';
+import { localFileName, localFilePathFromHref } from './file-utils';
 import { t } from './i18n';
 import type { TimelineItem } from './history-utils';
 import type { FileDownloadState } from './app-types';
@@ -135,11 +135,22 @@ export function MessageBubble({
                 }}>{children}</a>
               : <a {...props} href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
           },
+          img: ({ node: _node, src, alt, ...props }) => {
+            const localPath = localFilePathFromHref(src);
+            if (!localPath) return <img {...props} src={src} alt={alt || ''} loading="lazy" />;
+            if (item.attachment?.path === localPath) return null;
+            return (
+              <a href={src} onClick={(event) => {
+                event.preventDefault();
+                onDownloadFile(localPath);
+              }}>{alt || localFileName(localPath)}</a>
+            );
+          },
         }}
       >
         {item.text}
       </ReactMarkdown>
-      {item.attachment && imageSource !== '' && (
+      {item.attachment && (
         <figure className="message-image">
           {imageSource === undefined && <div className="message-image-state">{t('正在加载图片…', 'Loading image…')}</div>}
           {imageSource === '' && <div className="message-image-state">{t('图片已过期或无法读取', 'Image expired or unavailable')}</div>}
@@ -150,7 +161,7 @@ export function MessageBubble({
           )}
           <figcaption>
             <span>{item.attachment.name}</span>
-            {item.attachment.source === 'generated' && (
+            {(item.attachment.source === 'generated' || item.attachment.source === 'local') && (
               <button type="button" onClick={() => onDownloadFile(item.attachment!.path)}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m-4-4 4 4 4-4M5 19h14" /></svg>
                 {t('下载原图', 'Download original')}

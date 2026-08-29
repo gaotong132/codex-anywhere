@@ -171,7 +171,7 @@ $clientToken = Read-Host 'Browser client token' -AsSecureString
 启动唯一的 Node 连接器进程。守护进程不解密也不长期持有 Token；每次重启都通过 DPAPI 启动器。
 
 新会话必须在 Web UI 明确选择项目目录，不存在默认工作区配置。`-AllowedRoots` 可选，默认只包含
-连接器仓库；只有需要选择更多本地目录时才配置。下载默认限制在这些根目录内。只有在单用户可信电脑上
+连接器仓库；只有需要选择更多本地目录时才配置。本机位图预览和下载默认限制在这些根目录内。只有在单用户可信电脑上
 明确需要不受限本地下载时才添加 `-AllowAnyFileDownload`。除非任务确实需要，否则保持网络访问关闭。
 
 加密凭据和非敏感配置保存在仓库外的 `%LOCALAPPDATA%\PersonalCodexBridge`。为避免升级后丢失已有

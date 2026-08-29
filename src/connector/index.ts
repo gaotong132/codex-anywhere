@@ -42,7 +42,10 @@ const downloads = new DownloadManager({
 const handleRequest = createRequestHandler({
   codex,
   desktop,
-  attachments: { save: saveImageAttachment, read: readImageAttachment },
+  attachments: {
+    save: saveImageAttachment,
+    read: (payload) => readImageAttachment(payload, { localAllowedRoots: allowedRoots }),
+  },
   downloads,
   deviceId,
 });

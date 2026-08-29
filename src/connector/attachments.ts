@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import { readGeneratedImagePreview } from './generated-images.js';
+import { readRasterImagePreview } from './image-previews.js';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 512 * 1024;
@@ -30,6 +31,7 @@ type ImagePayload = {
 type AttachmentOptions = {
   directory?: string;
   generatedDirectory?: string;
+  localAllowedRoots?: string[];
   now?: number;
   maxAgeMs?: number;
 };
@@ -65,6 +67,13 @@ export async function saveImageAttachment(payload: ImagePayload, options: Attach
 export async function readImageAttachment(payload: ImagePayload, options: AttachmentOptions = {}) {
   if (payload?.source === 'generated') {
     return readGeneratedImagePreview(payload, { directory: options.generatedDirectory });
+  }
+  if (payload?.source === 'local') {
+    return readRasterImagePreview({
+      path: payload.path,
+      allowedRoots: options.localAllowedRoots || [],
+      errorPrefix: 'local_image',
+    });
   }
   const directory = resolve(options.directory || DEFAULT_ATTACHMENT_DIRECTORY);
   await ensureSafeDirectory(directory);

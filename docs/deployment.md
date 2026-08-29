@@ -189,7 +189,7 @@ decrypt or retain either token; each restart goes through the DPAPI-backed launc
 
 New sessions require a project directory selected in the web UI; there is no default-workspace setting.
 `-AllowedRoots` is optional and defaults to the connector checkout. Set it only when additional local
-roots should be selectable. Downloads are limited to those roots by default. Add
+roots should be selectable. Local raster previews and downloads are limited to those roots by default. Add
 `-AllowAnyFileDownload` only when this is a trusted single-user computer and unrestricted local download
 is intentional. Leave network access disabled unless the Codex task actually needs it.
 

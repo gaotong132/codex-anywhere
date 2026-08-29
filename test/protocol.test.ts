@@ -358,6 +358,28 @@ test('history readers expose generated images as lightweight local references', 
   }]);
 });
 
+test('assistant Markdown images become safe local preview references', () => {
+  const items = historyItems([{
+    id: 'turn-local-image',
+    items: [{
+      type: 'assistant',
+      text: '图已生成：\n\n![Architecture](D:/workspace/diagrams/architecture.png)\n\n[SVG](D:/workspace/diagrams/architecture.svg)',
+    }],
+  }]);
+
+  assert.deepEqual(items[0].attachment, {
+    path: 'D:\\workspace\\diagrams\\architecture.png',
+    name: 'Architecture',
+    source: 'local',
+  });
+
+  const svgOnly = historyItems([{
+    id: 'turn-local-svg',
+    items: [{ type: 'assistant', text: '![Diagram](D:/workspace/diagrams/architecture.svg)' }],
+  }]);
+  assert.equal(svgOnly[0].attachment, undefined);
+});
+
 test('rollout tail recovers a generated image reference from a truncated Base64 event row', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-image-'));
   const filePath = join(directory, 'rollout.jsonl');

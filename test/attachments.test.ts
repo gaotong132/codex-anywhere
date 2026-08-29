@@ -124,6 +124,35 @@ test('generated image read returns a lightweight preview only from the Codex ima
   );
 });
 
+test('local Markdown images render only from configured project roots', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-local-image-test-'));
+  const outsideDirectory = await mkdtemp(join(tmpdir(), 'bridge-local-image-outside-'));
+  const localImage = join(directory, 'diagram.png');
+  const fakeImage = join(directory, 'not-an-image.png');
+  const outsideImage = join(outsideDirectory, 'outside.png');
+  await writeFile(localImage, ONE_PIXEL_PNG);
+  await writeFile(fakeImage, 'not an image');
+  await writeFile(outsideImage, ONE_PIXEL_PNG);
+  t.after(async () => {
+    await rm(directory, { recursive: true, force: true });
+    await rm(outsideDirectory, { recursive: true, force: true });
+  });
+
+  const result = await readImageAttachment({
+    path: localImage, source: 'local',
+  }, { localAllowedRoots: [directory] });
+  assert.equal(result.mimeType, 'image/webp');
+  assert.ok(result.data.length > 0);
+  await assert.rejects(
+    () => readImageAttachment({ path: outsideImage, source: 'local' }, { localAllowedRoots: [directory] }),
+    /local_image_path_not_allowed/,
+  );
+  await assert.rejects(
+    () => readImageAttachment({ path: fakeImage, source: 'local' }, { localAllowedRoots: [directory] }),
+    /local_image_content_mismatch/,
+  );
+});
+
 test('attachment cleanup deletes only expired regular files', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-attachment-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
