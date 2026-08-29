@@ -56,6 +56,7 @@ import {
   replayPendingFrames,
   sessionProjectName,
   sessionUpdatedAt,
+  shouldLoadOlderHistory,
   shortId,
   type SessionAttentionState,
 } from './app-utils';
@@ -378,6 +379,7 @@ export default function App() {
   const fileDownloadRef = useRef(false);
   const fileDownloadCancelRef = useRef(false);
   const sessionRefreshInFlightRef = useRef(false);
+  const olderHistoryLoadingRef = useRef(false);
   const optimisticRestoreRef = useRef<string | null>(null);
   const runningRef = useRef(running);
   const ownedTurnThreadIdRef = useRef(ownedTurnThreadId);
@@ -1267,6 +1269,8 @@ export default function App() {
     setCreatingNewSession(false);
     if (nextThreadId) localStorage.setItem('bridge.lastThreadId', nextThreadId);
     setTimeline([]);
+    preserveScrollHeightRef.current = null;
+    olderHistoryLoadingRef.current = false;
     setAttachmentUrls({});
     attachmentLoadsRef.current.clear();
     setNextCursor(null);
@@ -1325,8 +1329,26 @@ export default function App() {
   }, [authenticated, creatingNewSession, selectSession, sessions, threadId]);
 
   const loadOlder = useCallback(() => {
-    if (threadId && nextCursor) void loadHistory(threadId, nextCursor, selectedRequestRef.current);
+    if (!threadId || !nextCursor || olderHistoryLoadingRef.current) return;
+    olderHistoryLoadingRef.current = true;
+    void loadHistory(threadId, nextCursor, selectedRequestRef.current)
+      .finally(() => { olderHistoryLoadingRef.current = false; });
   }, [loadHistory, nextCursor, threadId]);
+
+  const handleMessageScroll = useCallback(() => {
+    updateAutoFollowLatest();
+    const element = messageListRef.current;
+    if (element && shouldLoadOlderHistory(
+      element, nextCursor, initialHistoryLoaded, historyLoading,
+    )) loadOlder();
+  }, [historyLoading, initialHistoryLoaded, loadOlder, nextCursor, updateAutoFollowLatest]);
+
+  useEffect(() => {
+    const element = messageListRef.current;
+    if (element && shouldLoadOlderHistory(
+      element, nextCursor, initialHistoryLoaded, historyLoading,
+    )) loadOlder();
+  }, [historyLoading, initialHistoryLoaded, loadOlder, nextCursor, timeline]);
 
   const chooseImage = useCallback(async (file?: File) => {
     if (!file) return;
@@ -1946,7 +1968,7 @@ export default function App() {
 
         <div className="session-context" />
 
-        <div className="message-list" ref={messageListRef} onScroll={updateAutoFollowLatest}>
+        <div className="message-list" ref={messageListRef} onScroll={handleMessageScroll}>
           <div className="message-list-content" ref={messageContentRef}>
             {threadId && initialHistoryLoaded && nextCursor && (
               <button className="load-older" disabled={historyLoading} onClick={loadOlder}>

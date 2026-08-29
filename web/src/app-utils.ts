@@ -140,6 +140,16 @@ export function isNearScrollBottom(
   return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight < threshold;
 }
 
+export function shouldLoadOlderHistory(
+  metrics: Pick<HTMLElement, 'scrollTop'>,
+  nextCursor: string | null,
+  initialHistoryLoaded: boolean,
+  historyLoading: boolean,
+  threshold = 160,
+) {
+  return Boolean(nextCursor) && initialHistoryLoaded && !historyLoading && metrics.scrollTop <= threshold;
+}
+
 export function sessionUpdatedAt(value: Session['updatedAt']) {
   if (!value) return 0;
   const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1000 : value;

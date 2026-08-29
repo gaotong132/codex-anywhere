@@ -54,6 +54,7 @@ import {
   markSessionAttentionRead,
   reconcileSessionAttention,
   replayPendingFrames,
+  shouldLoadOlderHistory,
 } from '../web/src/app-utils.js';
 import { historyItems, mergeHistorySnapshot } from '../web/src/history-utils.js';
 import { MessageBubble } from '../web/src/ui-components.js';
@@ -258,6 +259,14 @@ test('Desktop-owned active sessions accept direct delivery', () => {
 test('automatic message following tolerates a small mobile bottom offset', () => {
   assert.equal(isNearScrollBottom({ scrollHeight: 1_000, scrollTop: 650, clientHeight: 200 }), true);
   assert.equal(isNearScrollBottom({ scrollHeight: 1_000, scrollTop: 619, clientHeight: 200 }), false);
+});
+
+test('older history loads only near the top with another page available', () => {
+  assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, 'next', true, false), true);
+  assert.equal(shouldLoadOlderHistory({ scrollTop: 220 }, 'next', true, false), false);
+  assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, null, true, false), false);
+  assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, 'next', false, false), false);
+  assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, 'next', true, true), false);
 });
 
 test('only transient transport failures are treated as reconnectable connection interruptions', () => {
