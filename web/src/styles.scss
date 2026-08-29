@@ -487,7 +487,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 
   &.user { justify-items: end; margin-left: auto; }
 }
-.message-meta { min-width: 0; min-height: 18px; display: flex; align-items: center; justify-self: end; gap: 3px; margin-right: 4px; color: #687589; }
+.message-meta { min-width: 0; height: 18px; display: flex; align-items: center; justify-self: end; gap: 3px; margin-right: 4px; overflow: hidden; color: #687589; }
 .message-time { min-width: 28px; font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .message-time.placeholder { visibility: hidden; }
 .message-copy {
@@ -602,9 +602,10 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .progress-card pre { min-height: 1.55em; padding: 5px 11px 10px; font-size: 12px; line-height: 1.55; }
 .progress-card pre .progress-typewriter { color: #aab6c8; font-weight: 500; }
 .progress-card pre .progress-typewriter.typing { color: #aab6c8; }
-.typewriter-text { min-width: 0; }
+.typewriter-text { min-width: 0; line-height: inherit; }
 .typewriter-copy { white-space: pre-wrap; }
-.typewriter-caret { display: inline-block; width: 1.5px; height: 1.05em; margin-left: 2px; border-radius: 1px; vertical-align: -.15em; background: #82a9f4; box-shadow: 0 0 7px rgba(130, 169, 244, .48); animation: typewriter-caret .78s steps(1, end) infinite; }
+.typewriter-caret { position: relative; display: inline-block; width: 0; height: 0; margin: 0; vertical-align: baseline; }
+.typewriter-caret::after { position: absolute; left: 2px; bottom: -.12em; width: 1.5px; height: .9em; border-radius: 1px; content: ''; background: #82a9f4; box-shadow: 0 0 7px rgba(130, 169, 244, .48); animation: typewriter-caret .78s steps(1, end) infinite; }
 .execution-strip { min-width: 0; width: 100%; padding: 8px max(22px, calc((100% - 860px) / 2)); overflow: hidden; contain: layout paint; border-top: 1px solid $panel-divider; background: #0d121c; }
 .execution-strip:empty { display: none; }
 .tool-purpose { position: relative; isolation: isolate; width: 100%; min-width: 0; max-width: $content-width; display: grid; grid-template-columns: 12px minmax(0, 1fr); align-items: stretch; gap: 7px; margin: 0 auto; overflow: hidden; color: #8491a5; font-size: 11px; animation: activity-strip-arrive .25s ease-out both; }
@@ -613,10 +614,12 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .tool-purpose i::before, .tool-purpose i::after { position: absolute; border-radius: 50%; content: ''; }
 .tool-purpose i::before { inset: 3px; background: #6f8fd3; }
 .tool-purpose i::after { inset: 1px; border: 1px solid rgba(111, 143, 211, .55); animation: purpose-pulse 1.8s ease-out infinite; }
-.activity-content { min-width: 0; display: grid; gap: 3px; }
-.activity-line { min-width: 0; display: flex; align-items: center; gap: 7px; line-height: 1.35; }
+.activity-content { min-width: 0; display: grid; grid-auto-rows: 15px; gap: 3px; }
+.activity-line { min-width: 0; height: 15px; display: flex; align-items: center; gap: 7px; overflow: hidden; line-height: 15px; }
 .activity-line strong { min-width: 0; flex: 1 1 auto; @include truncate; color: #aab6c8; font-weight: 500; }
 .activity-purpose-line strong { color: #bdc9db; }
+.activity-detail-completed { animation: none; }
+.activity-complete-check { width: 14px; flex: 0 0 14px; color: #69c997; font-size: 12px; font-weight: 800; line-height: 1; text-align: center; animation: activity-check .34s cubic-bezier(.2, .85, .25, 1.35) both; }
 .activity-secondary { color: #aab6c8; }
 .activity-secondary strong { display: block; min-width: 0; @include truncate; font-weight: 500; }
 .activity-metrics { min-width: 0; flex: 0 1 auto; display: flex; gap: 7px; overflow: hidden; color: #96a4b8; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -637,6 +640,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 @keyframes activity-strip-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes activity-strip-scan { 0%, 42% { transform: translateX(-85%); } 78%, 100% { transform: translateX(85%); } }
 @keyframes status-change { from { opacity: .25; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes activity-check { from { opacity: 0; transform: scale(.35) rotate(-18deg); } to { opacity: 1; transform: none; } }
 @keyframes progress-arrive { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 @keyframes progress-rail { 0%, 100% { opacity: .2; transform: translateY(-70%); } 50% { opacity: .9; transform: translateY(70%); } }
 @keyframes typewriter-caret { 0%, 48% { opacity: 1; } 49%, 100% { opacity: .15; } }
@@ -653,7 +657,7 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
   .presence.running::before, .presence.running::after, .presence.waiting::before, .session-running-dot,
   .message.live, .message.assistant.final-arriving, .message.assistant.live::after, .progress-card.live, .progress-card.live::after,
   .away-summary, .tool-purpose, .tool-purpose::before,
-  .tool-purpose i::after, .tool-purpose .status-change, .typewriter-caret { animation: none; }
+  .tool-purpose i::after, .tool-purpose .status-change, .activity-complete-check, .typewriter-caret::after { animation: none; }
 }
 .approval-card { margin: 0 max(18px, calc((100% - 860px) / 2)) 10px; padding: 14px; border: 1px solid #79511e; border-radius: 14px; background: #2a1d0c; }
 .approval-card > div:first-child { display: flex; justify-content: space-between; gap: 10px; }

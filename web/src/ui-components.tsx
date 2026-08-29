@@ -399,7 +399,7 @@ export function MessageBubble({
         <div className="message-meta">
           {item.completedAt && completedDateTime
             ? <time className="message-time" dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
-            : <span className="message-time placeholder" aria-hidden="true">00:00</span>}
+            : <span className="message-time placeholder" aria-hidden="true">00/00 00:00</span>}
           <button
             className={`message-copy ${copyState}`}
             type="button"

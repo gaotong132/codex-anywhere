@@ -658,7 +658,7 @@ test('message metadata reserves stable space before completion time arrives', ()
     onReadVisualization: async () => '',
   }));
 
-  assert.match(markup, /class="message-time placeholder"[^>]*>00:00<\/span>/);
+  assert.match(markup, /class="message-time placeholder"[^>]*>00\/00 00:00<\/span>/);
   assert.match(markup, /class="message-copy idle"/);
 });
 
@@ -795,6 +795,40 @@ test('large rollout keeps activity across an incremental tail read', async () =>
     assert.equal(completed.toolPurpose, '');
     assert.equal(completed.activityKind, '');
     assert.deepEqual(completed.turnProgress.plan, { current: 2, total: 2 });
+  } finally {
+    rolloutInternals.rolloutCache.delete(filePath);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('large active rollout restores purpose and plan from before the visible tail', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-sticky-purpose-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const row = (value) => `${JSON.stringify(value)}\n`;
+  try {
+    await writeFile(filePath, [
+      row({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-sticky' } }),
+      row({ type: 'response_item', payload: {
+        type: 'custom_tool_call', name: 'exec', input: `const result = await tools.update_plan({plan:[
+          {step:"inspect",status:"completed"},{step:"verify",status:"in_progress"}
+        ]});`,
+      } }),
+      row({ type: 'event_msg', payload: { type: 'agent_reasoning', text: '**Checking persistent state**' } }),
+      row({ type: 'response_item', payload: {
+        type: 'custom_tool_call_output', output: 'x'.repeat(96 * 1024),
+      } }),
+      row({ type: 'response_item', payload: {
+        type: 'message', role: 'assistant', phase: 'commentary', content: [
+          { type: 'output_text', text: 'still running' },
+        ],
+      } }),
+    ].join(''));
+
+    const result = await readRolloutTail({
+      filePath, threadId: 'thread-sticky', maxBytes: 64 * 1024,
+    });
+    assert.equal(result.toolPurpose, 'Checking persistent state');
+    assert.deepEqual(result.turnProgress.plan, { current: 2, total: 2 });
   } finally {
     rolloutInternals.rolloutCache.delete(filePath);
     await rm(directory, { recursive: true, force: true });

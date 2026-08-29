@@ -237,6 +237,8 @@ function LiveActivityStatus({
   const [clock, setClock] = useState(Date.now());
   const elapsed = elapsedLabel(startedAt, clock);
   const hasMetrics = Boolean(progress.plan || progress.files);
+  const detailCompleted = detail.startsWith('✓ ');
+  const detailText = detailCompleted ? detail.slice(2) : detail || activityLabel(kind);
   useEffect(() => {
     if (!startedAt) return;
     setClock(Date.now());
@@ -259,18 +261,30 @@ function LiveActivityStatus({
           </div>
         )}
         <div className="activity-line activity-detail-line">
-          <TypewriterText
-            active
-            as="strong"
-            className="status-change"
-            key={detail || kind}
-            text={detail || activityLabel(kind)}
-          />
+          {detailCompleted
+            ? <strong className="activity-detail-completed">{detailText}</strong>
+            : <TypewriterText
+                active
+                as="strong"
+                className="status-change"
+                key={detail || kind}
+                text={detailText}
+              />}
+          {detailCompleted && <span className="activity-complete-check" key={detail} aria-hidden="true">✓</span>}
           {startedAt && <time>{elapsed}</time>}
         </div>
         {hasMetrics && (
           <div className="activity-line activity-secondary">
             <span className="activity-metrics">
+              {progress.plan && (
+                <TypewriterText
+                  active
+                  className="status-change"
+                  key={`plan:${progress.plan.current}:${progress.plan.total}`}
+                  showCaret={false}
+                  text={t(`第 ${progress.plan.current} / ${progress.plan.total} 步`, `Step ${progress.plan.current} / ${progress.plan.total}`)}
+                />
+              )}
               {progress.files && (
                 <TypewriterText
                   active
@@ -286,15 +300,6 @@ function LiveActivityStatus({
                     `${progress.files.changed} 个文件已更改 +${progress.files.additions} -${progress.files.deletions}`,
                     `${progress.files.changed} files changed +${progress.files.additions} -${progress.files.deletions}`,
                   )}
-                />
-              )}
-              {progress.plan && (
-                <TypewriterText
-                  active
-                  className="status-change"
-                  key={`plan:${progress.plan.current}:${progress.plan.total}`}
-                  showCaret={false}
-                  text={t(`第 ${progress.plan.current} / ${progress.plan.total} 步`, `Step ${progress.plan.current} / ${progress.plan.total}`)}
                 />
               )}
             </span>
@@ -851,7 +856,8 @@ export default function App() {
       appendStream(payload.phase === 'final_answer' ? 'assistant' : 'progress', String(payload.delta || ''));
     } else if (message.event === 'turn.reasoning') {
       setLiveActivity('planning');
-      setToolPurpose(normalizeToolPurpose(payload.text));
+      const purpose = normalizeToolPurpose(payload.text);
+      if (purpose) setToolPurpose(purpose);
     } else if (message.event === 'turn.progress') {
       const progress = normalizeTurnProgress(payload);
       setTurnProgress((current) => ({ ...current, ...progress }));
@@ -1281,7 +1287,10 @@ export default function App() {
         const latestStatus = page.turns[0]?.status;
         const inProgress = latestStatus === 'inProgress';
         const failed = latestStatus === 'failed';
-        setToolPurpose(inProgress ? normalizeToolPurpose(page.toolPurpose) : '');
+        setToolPurpose((current) => {
+          if (!inProgress) return '';
+          return normalizeToolPurpose(page.toolPurpose) || current;
+        });
         setActivityDetail(inProgress ? normalizeToolPurpose(page.activityDetail) : '');
         setLiveActivity(inProgress ? safeActivityKind(page.activityKind || (page.toolPurpose ? 'planning' : 'working')) : 'working');
         setActivityStartedAt((current) => (inProgress

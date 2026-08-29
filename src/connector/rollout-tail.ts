@@ -23,7 +23,6 @@ const ROLLOUT_CURSOR_PREFIX = 'rollout:v1:';
 const MAX_TEXT_LENGTH = 4_000;
 const ACTIVITY_SCAN_CHUNK_BYTES = 4 * 1024 * 1024;
 const ACTIVITY_SCAN_OVERLAP_BYTES = 1_024;
-const PLAN_SCAN_MAX_BYTES = 24 * 1024 * 1024;
 const PLAN_SCAN_OVERLAP_BYTES = 64 * 1024;
 const MAX_CACHED_ROLLOUTS = 12;
 type RolloutStatus = 'unknown' | 'inProgress' | 'completed' | 'failed';
@@ -164,7 +163,9 @@ async function readHistoryPage(
     activityKind: activity.status === 'inProgress' ? liveActivity.kind : '',
     activityStartedAt: activity.status === 'inProgress' ? activity.startedAt : null,
     activityUpdatedAt: activity.status === 'inProgress' ? liveActivity.updatedAt : null,
-    toolPurpose: activity.status === 'inProgress' ? updateToolPurpose('', window.rows, activity.status) : '',
+    toolPurpose: activity.status === 'inProgress'
+      ? await purposeForHistoryPage(handle, window.rows, activity, window.firstCompleteOffset)
+      : '',
     activityDetail: activity.status === 'inProgress' ? updateActivityDetail('', window.rows, activity.status) : '',
     turnProgress: { plan: progress.plan, files: progress.files },
   };
@@ -184,6 +185,14 @@ async function progressForHistoryPage(
     progress.plan = await findLatestPlanBefore(handle, firstCompleteOffset);
   }
   return progress;
+}
+
+async function purposeForHistoryPage(
+  handle: FileHandle, rows: RolloutRow[], activity: RolloutActivity, firstCompleteOffset: number,
+) {
+  const purpose = updateToolPurpose('', rows, activity.status);
+  if (activity.status !== 'inProgress' || purpose || firstCompleteOffset <= 0) return purpose;
+  return findLatestPurposeBefore(handle, firstCompleteOffset);
 }
 
 function encodeRolloutCursor(offset: number) {
@@ -213,6 +222,10 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
   if (activity.status !== 'unknown' && !progress.plan && window.firstCompleteOffset > 0) {
     progress.plan = await findLatestPlanBefore(handle, window.firstCompleteOffset);
   }
+  let toolPurpose = updateToolPurpose('', window.rows, activity.status);
+  if (activity.status === 'inProgress' && !toolPurpose && window.firstCompleteOffset > 0) {
+    toolPurpose = await findLatestPurposeBefore(handle, window.firstCompleteOffset);
+  }
   return {
     ...options,
     fileSize,
@@ -220,7 +233,7 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
     items: mapRolloutRows(window.rows).slice(-options.maxItems),
     activity,
     liveActivity: updateLiveActivity({ kind: 'working', updatedAt: activity.startedAt }, window.rows, activity.status),
-    toolPurpose: updateToolPurpose('', window.rows, activity.status),
+    toolPurpose,
     activityDetail: updateActivityDetail('', window.rows, activity.status),
     progress,
   };
@@ -306,7 +319,7 @@ async function findLatestActivityBefore(handle: FileHandle, endOffset: number): 
 }
 
 async function findLatestPlanBefore(handle: FileHandle, endOffset: number): Promise<TurnPlanProgress | undefined> {
-  const lowerBound = Math.max(0, endOffset - PLAN_SCAN_MAX_BYTES);
+  const lowerBound = 0;
   const planNeedle = Buffer.from('tools.update_plan');
   const taskNeedle = Buffer.from('"type":"task_started"');
   let cursor = endOffset;
@@ -338,6 +351,26 @@ async function findLatestPlanBefore(handle: FileHandle, endOffset: number): Prom
     cursor = start;
   }
   return undefined;
+}
+
+async function findLatestPurposeBefore(handle: FileHandle, endOffset: number): Promise<string> {
+  let cursor = endOffset;
+  while (cursor > 0) {
+    const start = Math.max(0, cursor - ACTIVITY_SCAN_CHUNK_BYTES);
+    const readEnd = Math.min(endOffset, cursor + PLAN_SCAN_OVERLAP_BYTES);
+    const window = await readCompleteRows(handle, start, readEnd, start > 0);
+    for (let index = window.rows.length - 1; index >= 0; index -= 1) {
+      const payload = window.rows[index]?.payload || {};
+      const type = String(payload.type || '');
+      if (type === 'task_started' || /task_complete|task_failed|turn_aborted|turn_error/.test(type)) return '';
+      if (type === 'agent_reasoning' || type === 'reasoning' || /Reasoning/i.test(String(payload.item?.type || ''))) {
+        const purpose = reasoningSummary(payload);
+        if (purpose) return purpose;
+      }
+    }
+    cursor = start;
+  }
+  return '';
 }
 
 function appendItems(current: RolloutItem[], appended: RolloutItem[], maxItems: number) {
@@ -601,7 +634,7 @@ function capText(value: unknown, limit = MAX_TEXT_LENGTH) {
 
 export const internals = {
   activityKind, capText, decodeRolloutCursor, encodeRolloutCursor, epochMillis, extractContent,
-  findLatestActivityBefore, findLatestPlanBefore,
+  findLatestActivityBefore, findLatestPlanBefore, findLatestPurposeBefore,
   inferRolloutActivity,
   inferRolloutStatus, mapRolloutRows, recoverGeneratedImageRows, rolloutCache, updateLiveActivity,
   reasoningSummary, updateActivityDetail, updateToolPurpose,
