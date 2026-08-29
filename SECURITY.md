@@ -17,11 +17,13 @@ filesystem paths in a public issue.
 
 - Use independent browser-client and connector tokens, each generated from at least 32
   cryptographically random bytes.
-- Store both tokens only in the relay `.env`; store only the connector token in the connector's
-  DPAPI-protected state. Put the client token in a password manager and enter it only on trusted
-  browser devices.
-- Keep the device registry volume persistent and root-administered. Verify the complete device ID
-  before approving the first browser, review pending requests, and revoke lost or retired devices.
+- Store both tokens in the root-readable relay `.env`. The Windows installer keeps the connector token
+  and connector device key in current-user DPAPI state; if supplied, it stores the browser token in a
+  separate DPAPI record only so the operator can copy it to a trusted browser. The connector process
+  does not receive the browser token. A password manager remains the recommended browser-token store.
+- Keep the device registry volume persistent and root-administered. From an encrypted administrator
+  session, identify a freshly initiated request by its role, label, source address, and request time;
+  never approve an ambiguous request. Review pending requests and revoke lost or retired devices.
 - Prefer `wss://` for every remote connector. Plaintext `ws://` is supported by operator choice but
   exposes relayed content and permits active network attackers to interfere with an authenticated
   connection. Challenge-response authentication avoids sending the token itself, but is not a

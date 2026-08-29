@@ -65,6 +65,38 @@ active in Codex Desktop remain Desktop-owned and use task tools for delivery plu
 polling over the same WebSocket; an approval already pending there must still be handled in Desktop.
 Codex Anywhere does not implement ACP.
 
+## Security model
+
+<p align="center">
+  <img src="docs/assets/security-model.svg" alt="Codex Anywhere security model: layered device authentication, a self-hosted relay trust boundary, and local-only Codex execution and files" width="100%">
+</p>
+
+Security is layered rather than delegated to a single bearer token:
+
+| Layer | What the current implementation does |
+| --- | --- |
+| Device access | Uses separate browser and connector tokens, a fresh 256-bit challenge, an HMAC-SHA-256 proof, and an Ed25519 signature from an explicitly approved device. A token alone cannot open a session. |
+| Session controls | Rejects replayed proofs, expires authenticated connections after one hour by default, rate-limits repeated failures, validates browser origins, and limits WebSocket frame size. |
+| Local computer | Accepts no inbound public connection. On Windows, the connector token and device private key are protected with current-user DPAPI. Codex execution and project files remain local. |
+| File access | Requires an explicit browser confirmation and a random, client-bound, short-lived capability. The connector validates canonical paths, regular files, sequential chunks, file stability, and request rate. |
+| Relay deployment | The reference Compose service binds only to ECS loopback, runs as a non-root user with a read-only filesystem and no Linux capabilities, and persists public device keys plus approval metadata—not conversations or file content. |
+| Browser hardening | Keeps the browser token in `sessionStorage`, enforces same-origin WebSocket access, and serves a restrictive CSP and other browser security headers. |
+
+The limits matter just as much. Codex Anywhere does **not** provide application-layer end-to-end
+encryption across the relay: WSS protects traffic on the network, but TLS terminates at the ECS/VPS and
+the relay can see forwarded messages, previews, and file chunks in memory. The relay deliberately has no
+conversation database and does not intentionally persist those frames, but the ECS administrator and
+host remain trusted. Browser device keys live in that browser profile rather than hardware-backed
+storage, so a compromised profile or malicious extension can act as that approved browser. A compromised
+local computer can access everything available to Codex. Plain `ws://` remains supported by operator
+choice but offers no confidentiality.
+
+This is a single-user personal bridge, not a multi-tenant identity system, a zero-trust gateway, or a
+replacement for Codex permission review. Use an ECS/VPS you control, prefer WSS/VPN/a secure tunnel on
+untrusted networks, keep the host patched, approve only a freshly initiated device request, and revoke
+devices or rotate role tokens after suspected exposure. See the complete [security policy](SECURITY.md)
+and [production deployment guide](docs/deployment.md).
+
 ## Deployment
 
 ### What you need

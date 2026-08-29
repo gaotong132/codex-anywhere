@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="840" viewBox="0 0 1400 840" role="img" aria-labelledby="title desc">
+  <title id="title">Codex Anywhere security model</title>
+  <desc id="desc">Security architecture showing the browser, self-hosted relay, and local computer trust boundaries, authentication layers, protected file access, and honest limitations.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#07101d"/>
+      <stop offset="1" stop-color="#111a2b"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#397cf5"/>
+      <stop offset="1" stop-color="#6558ec"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2fcf9a"/>
+      <stop offset="1" stop-color="#168e78"/>
+    </linearGradient>
+    <filter id="shadow" x="-25%" y="-30%" width="150%" height="170%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#020711" flood-opacity=".48"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0l10 5-10 5z" fill="#7095d5"/>
+    </marker>
+  </defs>
+
+  <rect width="1400" height="840" rx="30" fill="url(#background)"/>
+  <text x="64" y="69" fill="#f2f6fc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="750">Security model</text>
+  <text x="64" y="103" fill="#8394ad" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">Layered device authentication protects access. Your relay remains an explicit trust boundary.</text>
+
+  <g font-family="Inter,Segoe UI,Arial,sans-serif" filter="url(#shadow)">
+    <g transform="translate(64 150)">
+      <rect width="365" height="410" rx="24" fill="#101b2e" stroke="#2e4c75" stroke-width="2"/>
+      <rect x="24" y="22" width="52" height="52" rx="15" fill="#172b4a"/>
+      <path d="M38 34h24v27H38zM43 65h14" fill="none" stroke="#8eb5f4" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="92" y="45" fill="#f0f5fc" font-size="19" font-weight="750">Trusted browser</text>
+      <text x="92" y="66" fill="#7588a5" font-size="12">Your phone or another browser</text>
+
+      <g transform="translate(24 98)">
+        <rect width="317" height="72" rx="14" fill="#0c1626" stroke="#253d5e"/>
+        <text x="18" y="27" fill="#bcd0ed" font-size="13" font-weight="700">Browser client token</text>
+        <text x="18" y="50" fill="#788ca8" font-size="12">Held in sessionStorage for the active tab</text>
+      </g>
+      <g transform="translate(24 184)">
+        <rect width="317" height="72" rx="14" fill="#0c1626" stroke="#253d5e"/>
+        <text x="18" y="27" fill="#bcd0ed" font-size="13" font-weight="700">Ed25519 device key</text>
+        <text x="18" y="50" fill="#788ca8" font-size="12">Persistent in this browser profile</text>
+      </g>
+      <g transform="translate(24 270)">
+        <rect width="317" height="108" rx="14" fill="#111c2d" stroke="#315a8c"/>
+        <path d="M22 26l8 8 15-18" fill="none" stroke="#73a9ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="58" y="31" fill="#dce9fb" font-size="13" font-weight="700">Out-of-band approval required</text>
+        <text x="18" y="61" fill="#8297b6" font-size="12">A valid token alone creates only a</text>
+        <text x="18" y="81" fill="#8297b6" font-size="12">pending request, not an active session.</text>
+      </g>
+    </g>
+
+    <g transform="translate(518 150)">
+      <rect width="365" height="410" rx="24" fill="#111e32" stroke="#4778bd" stroke-width="2"/>
+      <rect x="24" y="22" width="52" height="52" rx="15" fill="url(#blue)"/>
+      <path d="M50 32l15 6v11c0 10-6 17-15 21-9-4-15-11-15-21V38zM43 49l5 5 10-12" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="92" y="45" fill="#f0f5fc" font-size="19" font-weight="750">Self-hosted relay</text>
+      <text x="92" y="66" fill="#8197b8" font-size="12">Your ECS / VPS</text>
+
+      <g transform="translate(24 98)">
+        <rect width="317" height="84" rx="14" fill="#0d192b" stroke="#31578a"/>
+        <text x="18" y="27" fill="#c9dbf6" font-size="13" font-weight="700">Fresh challenge on every connection</text>
+        <text x="18" y="51" fill="#8095b4" font-size="12">HMAC-SHA-256 token proof</text>
+        <text x="18" y="69" fill="#8095b4" font-size="12">+ signature from an approved Ed25519 key</text>
+      </g>
+      <g transform="translate(24 196)">
+        <rect width="317" height="84" rx="14" fill="#0d192b" stroke="#31578a"/>
+        <text x="18" y="27" fill="#c9dbf6" font-size="13" font-weight="700">Bounded authenticated sessions</text>
+        <text x="18" y="51" fill="#8095b4" font-size="12">Role-separated secrets · 1-hour reauth</text>
+        <text x="18" y="69" fill="#8095b4" font-size="12">Failure throttling · origin validation</text>
+      </g>
+      <g transform="translate(24 294)">
+        <rect width="317" height="84" rx="14" fill="#17202f" stroke="#8b6741"/>
+        <text x="18" y="28" fill="#f0c78c" font-size="13" font-weight="750">Explicit trust boundary</text>
+        <text x="18" y="52" fill="#aa9478" font-size="12">TLS ends here; the relay can see live</text>
+        <text x="18" y="70" fill="#aa9478" font-size="12">message and file frames in memory.</text>
+      </g>
+    </g>
+
+    <g transform="translate(972 150)">
+      <rect width="365" height="410" rx="24" fill="#101e2d" stroke="#2d6b5b" stroke-width="2"/>
+      <rect x="24" y="22" width="52" height="52" rx="15" fill="url(#teal)"/>
+      <path d="M35 39h30v22H35zM40 67h20M46 61v6M54 61v6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="92" y="45" fill="#f0f5fc" font-size="19" font-weight="750">Trusted local computer</text>
+      <text x="92" y="66" fill="#789a91" font-size="12">Connector, Codex and project files</text>
+
+      <g transform="translate(24 98)">
+        <rect width="317" height="72" rx="14" fill="#0c1922" stroke="#285546"/>
+        <text x="18" y="27" fill="#c6e6dc" font-size="13" font-weight="700">Outbound connector only</text>
+        <text x="18" y="50" fill="#779a90" font-size="12">No public inbound port on this computer</text>
+      </g>
+      <g transform="translate(24 184)">
+        <rect width="317" height="72" rx="14" fill="#0c1922" stroke="#285546"/>
+        <text x="18" y="27" fill="#c6e6dc" font-size="13" font-weight="700">Windows credential protection</text>
+        <text x="18" y="50" fill="#779a90" font-size="12">Connector token and key use user DPAPI</text>
+      </g>
+      <g transform="translate(24 270)">
+        <rect width="317" height="108" rx="14" fill="#0e1b25" stroke="#34725f"/>
+        <text x="18" y="28" fill="#c6e6dc" font-size="13" font-weight="700">Local data stays local</text>
+        <text x="18" y="55" fill="#789c91" font-size="12">Codex execution and projects stay here.</text>
+        <text x="18" y="77" fill="#789c91" font-size="12">Downloads require confirmation, a short-</text>
+        <text x="18" y="95" fill="#789c91" font-size="12">lived capability and an allowed path.</text>
+      </g>
+    </g>
+  </g>
+
+  <g fill="none" stroke="#7095d5" stroke-width="2.5" marker-end="url(#arrow)">
+    <path d="M435 336h72"/>
+    <path d="M889 336h72"/>
+  </g>
+  <g font-family="Inter,Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" text-anchor="middle">
+    <g transform="translate(471 296)"><rect x="-64" y="-15" width="128" height="26" rx="13" fill="#152743" stroke="#315889"/><text y="3" fill="#a8c3ef">WSS recommended</text></g>
+    <g transform="translate(925 296)"><rect x="-64" y="-15" width="128" height="26" rx="13" fill="#15302d" stroke="#2e6659"/><text y="3" fill="#a8d8ca">Outbound WSS</text></g>
+  </g>
+
+  <g transform="translate(64 606)" font-family="Inter,Segoe UI,Arial,sans-serif">
+    <rect width="1273" height="170" rx="22" fill="#171a24" stroke="#604c43"/>
+    <text x="24" y="36" fill="#f0d1a4" font-size="17" font-weight="750">Honest limits — this is not a zero-trust or end-to-end encrypted system</text>
+    <path d="M24 53h1225" stroke="#413a3a"/>
+    <g fill="#b7a99b" font-size="13">
+      <text x="24" y="83">• A compromised ECS/root administrator can obtain relay secrets and inspect live plaintext after TLS termination.</text>
+      <text x="24" y="110">• A compromised browser profile, extension, approved device, or local computer can act with that user's authority.</text>
+      <text x="24" y="137">• Plain ws:// is supported for operator choice but provides no confidentiality; use WSS, a VPN, or a secure tunnel on untrusted networks.</text>
+    </g>
+  </g>
+</svg>
