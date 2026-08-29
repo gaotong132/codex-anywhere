@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { DeviceRegistry } from '../src/server/device-registry.js';
+import { runDeviceAdmin } from '../src/server/device-admin.js';
 import { createDeviceIdentity } from '../src/shared/device-auth.js';
 
 test('device registry persists public trust records and reloads external approvals', async (t) => {
@@ -35,4 +36,63 @@ test('device registry persists public trust records and reloads external approva
 
   assert.equal(operatorRegistry.remove('client', identity.id), true);
   assert.equal(serverRegistry.isApproved('client', identity), false);
+});
+
+test('device approval command confirms a numbered device without exposing key material', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'codex-anywhere-device-admin-'));
+  const filePath = join(directory, 'devices.json');
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const registry = new DeviceRegistry(filePath);
+  const older = createDeviceIdentity();
+  const newer = createDeviceIdentity();
+  registry.requestPairing({
+    role: 'client', device: { ...older, signature: '0'.repeat(128), label: 'Tablet' },
+    address: '203.0.113.10', now: Date.now() - 1_000,
+  });
+  registry.requestPairing({
+    role: 'client', device: { ...newer, signature: '0'.repeat(128), label: 'Phone' },
+    address: '203.0.113.11', now: Date.now(),
+  });
+  const answers = ['1', 'yes'];
+  let output = '';
+  const result = await runDeviceAdmin({
+    registry,
+    io: {
+      question: async (prompt) => { output += prompt; return answers.shift() || ''; },
+      write: (text) => { output += text; },
+    },
+  });
+
+  assert.equal(result, 'approved');
+  assert.equal(registry.isApproved('client', newer), true);
+  assert.equal(registry.isApproved('client', older), false);
+  assert.match(output, /Select a device to approve/);
+  assert.match(output, /Approved client: Phone/);
+  assert.doesNotMatch(output, new RegExp(newer.privateKey));
+  assert.doesNotMatch(output, new RegExp(newer.publicKey));
+});
+
+test('device approval command follows the configured Chinese language', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'codex-anywhere-device-admin-zh-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const registry = new DeviceRegistry(join(directory, 'devices.json'));
+  const identity = createDeviceIdentity();
+  registry.requestPairing({
+    role: 'client', device: { ...identity, signature: '0'.repeat(128), label: '我的手机' },
+    address: '203.0.113.12',
+  });
+  let output = '';
+  const result = await runDeviceAdmin({
+    registry,
+    language: 'zh-CN',
+    io: {
+      question: async (prompt) => { output += prompt; return '确认'; },
+      write: (text) => { output += text; },
+    },
+  });
+
+  assert.equal(result, 'approved');
+  assert.match(output, /待批准设备/);
+  assert.match(output, /已批准浏览器：我的手机/);
+  assert.doesNotMatch(output, new RegExp(identity.publicKey));
 });

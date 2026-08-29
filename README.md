@@ -109,6 +109,10 @@ tunnel is strongly recommended whenever traffic crosses a public or untrusted ne
    [production deployment guide](docs/deployment.md). Device identity and registry details are never
    exposed to the browser UI.
 
+   ```bash
+   docker compose exec bridge node build/server/device-admin.js
+   ```
+
 Read [SECURITY.md](SECURITY.md) before exposing the relay to the internet. Do not install Codex or copy
 project files onto the ECS/VPS.
 

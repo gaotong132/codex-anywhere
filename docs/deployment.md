@@ -1,5 +1,7 @@
 # Production deployment
 
+English | [简体中文](deployment.zh-CN.md)
+
 Codex Anywhere is intended to use a small public ECS/VPS as a rendezvous relay. The relay is not
 Codex itself: Codex Desktop/CLI, project files, attachments, and generated files stay on the connector
 computer. `http://127.0.0.1:3300` is only a same-computer development test and has no practical value
@@ -169,38 +171,16 @@ it never exposes the connector credential. Clear clipboard history afterward on 
 ## 5. Approve the first trusted browser
 
 The relay never auto-approves a device. Open the Web page, enter the browser token, and leave it at the
-generic “waiting for approval” state. The Web UI deliberately receives no device ID, request ID, public
-key, address, or registry listing. From an encrypted ECS administrator session, list pending records;
-use the role, label, source address, request time, and a freshly initiated connection to identify the
-new record. Do not approve an ambiguous request:
+generic “waiting for approval” state. Then run this single command from the deployment directory in an
+encrypted ECS administrator session:
 
 ```bash
-docker compose exec bridge node -e '
-const fs=require("node:fs"), p="/data/devices.json";
-const s=JSON.parse(fs.readFileSync(p,"utf8"));
-console.table(s.pending.map(({requestId,id,role,label,address,requestedAt})=>
-  ({requestId,id,role,label,address,requestedAt:new Date(requestedAt).toISOString()})));
-'
+docker compose exec bridge node build/server/device-admin.js
 ```
 
-After copying the exact `requestId` of the identified record, approve it with this one-time operator
-command. The command modifies deployment state only; it does not add a device or bypass to the source
-code.
-
-```bash
-read -r -p 'Verified request ID: ' DEVICE_REQUEST_ID
-docker compose exec -e DEVICE_REQUEST_ID="$DEVICE_REQUEST_ID" bridge node -e '
-const fs=require("node:fs"), p="/data/devices.json", id=process.env.DEVICE_REQUEST_ID;
-const s=JSON.parse(fs.readFileSync(p,"utf8")), i=s.pending.findIndex(x=>x.requestId===id);
-if(i<0) throw new Error("pending device not found");
-const d=s.pending.splice(i,1)[0], key=`${d.role}:${d.id}`;
-s.approved=s.approved.filter(x=>`${x.role}:${x.id}`!==key);
-s.approved.push({id:d.id,publicKey:d.publicKey,role:d.role,...(d.routeDeviceId?{routeDeviceId:d.routeDeviceId}:{}),label:d.label,approvedAt:Date.now()});
-const t=`${p}.${process.pid}.tmp`; fs.writeFileSync(t,JSON.stringify(s,null,2)+"\n",{mode:0o600}); fs.renameSync(t,p);
-console.log(`Approved ${d.role} device ${d.id}`);
-'
-unset DEVICE_REQUEST_ID
-```
+The command shows only the identification details needed by the operator. Select the matching number
+and confirm it. Do not approve an ambiguous request. Device IDs, request IDs and public keys remain out
+of the Web UI, and no source-code bypass is created.
 
 The waiting browser or connector reconnects automatically. Repeat the same ECS-only procedure for each
 new endpoint. Remove unfamiliar pending records and revoke lost devices directly in the registry; these
