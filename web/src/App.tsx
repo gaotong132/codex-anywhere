@@ -60,6 +60,7 @@ import {
   sessionProjectName,
   sessionUpdatedAt,
   shouldLoadOlderHistory,
+  shouldPrefillOlderHistory,
   type SessionAttentionState,
 } from './app-utils';
 import { CustomSelect, DownloadIndicator, MessageBubble, SidebarIcon, TypewriterText } from './ui-components';
@@ -608,6 +609,7 @@ export default function App() {
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const messageContentRef = useRef<HTMLDivElement | null>(null);
   const preserveScrollHeightRef = useRef<number | null>(null);
+  const previousMessageScrollTopRef = useRef(0);
   const shouldScrollBottomRef = useRef(false);
   const autoFollowLatestRef = useRef(true);
   const streamItemRef = useRef<{ id: string; kind: TimelineKind } | null>(null);
@@ -695,9 +697,13 @@ export default function App() {
     if (preserveScrollHeightRef.current != null) {
       element.scrollTop += element.scrollHeight - preserveScrollHeightRef.current;
       preserveScrollHeightRef.current = null;
+      previousMessageScrollTopRef.current = element.scrollTop;
     } else if (shouldScrollBottomRef.current || autoFollowLatestRef.current) {
       shouldScrollBottomRef.current = false;
-      const scrollToLatest = () => { element.scrollTop = element.scrollHeight; };
+      const scrollToLatest = () => {
+        element.scrollTop = element.scrollHeight;
+        previousMessageScrollTopRef.current = element.scrollTop;
+      };
       scrollToLatest();
       const frame = requestAnimationFrame(scrollToLatest);
       return () => cancelAnimationFrame(frame);
@@ -1597,6 +1603,7 @@ export default function App() {
     if (nextThreadId) localStorage.setItem('bridge.lastThreadId', nextThreadId);
     setTimeline([]);
     preserveScrollHeightRef.current = null;
+    previousMessageScrollTopRef.current = 0;
     olderHistoryLoadingRef.current = false;
     setAttachmentUrls({});
     attachmentLoadsRef.current.clear();
@@ -1683,16 +1690,20 @@ export default function App() {
   }, [loadHistory, nextCursor, threadId]);
 
   const handleMessageScroll = useCallback(() => {
-    updateAutoFollowLatest();
     const element = messageListRef.current;
-    if (element && shouldLoadOlderHistory(
+    if (!element) return;
+    const previousScrollTop = previousMessageScrollTopRef.current;
+    const currentScrollTop = Math.max(0, element.scrollTop);
+    previousMessageScrollTopRef.current = currentScrollTop;
+    updateAutoFollowLatest();
+    if (currentScrollTop < previousScrollTop && shouldLoadOlderHistory(
       element, nextCursor, initialHistoryLoaded, historyLoading,
     )) loadOlder();
   }, [historyLoading, initialHistoryLoaded, loadOlder, nextCursor, updateAutoFollowLatest]);
 
   useEffect(() => {
     const element = messageListRef.current;
-    if (element && shouldLoadOlderHistory(
+    if (element && shouldPrefillOlderHistory(
       element, nextCursor, initialHistoryLoaded, historyLoading,
     )) loadOlder();
   }, [
@@ -2338,8 +2349,13 @@ export default function App() {
         <div className="message-list" ref={messageListRef} onScroll={handleMessageScroll}>
           <div className="message-list-content" ref={messageContentRef}>
             {threadId && initialHistoryLoaded && nextCursor && (
-              <button className="load-older" disabled={historyLoading} onClick={loadOlder}>
-                {historyLoading ? t('正在加载…', 'Loading…') : t('加载更早记录', 'Load older messages')}
+              <button
+                className="load-older"
+                disabled={historyLoading}
+                aria-busy={historyLoading}
+                onClick={loadOlder}
+              >
+                {t('加载更早记录', 'Load older messages')}
               </button>
             )}
             {threadId && historyLoading && !initialHistoryLoaded && <div className="history-skeleton">{t('正在加载最近记录…', 'Loading recent messages…')}</div>}

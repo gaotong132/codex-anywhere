@@ -449,6 +449,7 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   background: #111722;
   font-size: 12px;
 }
+.load-older:disabled { opacity: 1; color: #97a6ba; background: #111722; }
 .history-skeleton { padding: 20px; color: #8491a5; text-align: center; }
 .away-summary {
   width: min(100%, #{$content-width});

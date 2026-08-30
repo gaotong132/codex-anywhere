@@ -62,6 +62,7 @@ import {
   reconcileSessionAttention,
   replayPendingFrames,
   shouldLoadOlderHistory,
+  shouldPrefillOlderHistory,
 } from '../web/src/app-utils.js';
 import {
   attachLatestAssistantFileChanges,
@@ -289,6 +290,27 @@ test('older history loads only near the top with another page available', () => 
   assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, null, true, false), false);
   assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, 'next', false, false), false);
   assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, 'next', true, true), false);
+});
+
+test('older history prefill runs only when the list cannot leave the top trigger area', () => {
+  assert.equal(shouldPrefillOlderHistory(
+    { scrollHeight: 1_000, clientHeight: 900 }, 'next', true, false,
+  ), true);
+  assert.equal(shouldPrefillOlderHistory(
+    { scrollHeight: 1_000, clientHeight: 700 }, 'next', true, false,
+  ), false);
+  assert.equal(shouldPrefillOlderHistory(
+    { scrollHeight: 1_000, clientHeight: 900 }, null, true, false,
+  ), false);
+  assert.equal(shouldPrefillOlderHistory(
+    { scrollHeight: 1_000, clientHeight: 900 }, 'next', true, true,
+  ), false);
+});
+
+test('older history keeps a stable label while a page is loading', async () => {
+  const appSource = await readFile(resolve('web/src/App.tsx'), 'utf8');
+  assert.match(appSource, /aria-busy=\{historyLoading\}/);
+  assert.doesNotMatch(appSource, /historyLoading \? t\('正在加载…'/);
 });
 
 test('initial bootstrap waits for both sessions and the restored conversation', () => {
