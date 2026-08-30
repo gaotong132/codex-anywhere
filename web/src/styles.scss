@@ -552,6 +552,12 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   &.user { justify-items: end; margin-left: auto; }
 }
 .message-meta { min-width: 0; height: 18px; display: flex; align-items: center; justify-self: end; gap: 3px; margin-right: 4px; overflow: hidden; color: #687589; }
+.message-change-summary {
+  min-width: 0; display: inline-flex; align-items: center; gap: 4px; margin-right: 2px;
+  color: #7f8da2; font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap;
+  .additions { color: #43c986; }
+  .deletions { color: #ff747f; }
+}
 .message-time { min-width: 28px; font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .message-time.placeholder { visibility: hidden; }
 .message-copy {

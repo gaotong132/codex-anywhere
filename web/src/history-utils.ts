@@ -5,6 +5,7 @@ import {
   stripImageAttachments,
 } from '../../src/shared/message-content';
 import type { MessageContext } from '../../src/shared/message-content';
+import { normalizeTurnProgress, type TurnFileProgress } from '../../src/shared/turn-progress';
 import { localFileName, localFilePathFromHref } from './file-utils';
 
 export { parseAssistantMessage } from '../../src/shared/message-content';
@@ -50,6 +51,7 @@ export type TimelineItem = {
   visualization?: VisualizationArtifact;
   contexts?: MessageContext[];
   completedAt?: number | string | null;
+  fileChanges?: TurnFileProgress;
 };
 export type KnownAttachment = ImageAttachment & { savedAt: number };
 
@@ -66,6 +68,24 @@ export function latestTurnProgressItemId(items: TimelineItem[]) {
     if (item?.kind === 'progress' && item.text.trim()) return item.id;
   }
   return null;
+}
+
+export function attachLatestAssistantFileChanges(items: TimelineItem[], progress: unknown) {
+  const files = normalizeTurnProgress(progress).files;
+  if (!files) return items;
+  let latestUserIndex = -1;
+  let assistantIndex = -1;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (assistantIndex < 0 && items[index]?.kind === 'assistant' && items[index]?.text.trim()) {
+      assistantIndex = index;
+    }
+    if (items[index]?.kind === 'user') {
+      latestUserIndex = index;
+      break;
+    }
+  }
+  if (assistantIndex <= latestUserIndex) return items;
+  return items.map((item, index) => index === assistantIndex ? { ...item, fileChanges: files } : item);
 }
 
 export function historyItems(turns: Turn[]) {

@@ -64,6 +64,7 @@ import {
   shouldLoadOlderHistory,
 } from '../web/src/app-utils.js';
 import {
+  attachLatestAssistantFileChanges,
   historyItems,
   latestTurnProgressItemId,
   mergeHistorySnapshot,
@@ -655,6 +656,40 @@ test('message time and copy action render outside the message card', () => {
 
   assert.match(markup, /class="message-block assistant copyable"/);
   assert.match(markup, /<\/div><div class="message-meta">/);
+});
+
+test('aggregate file changes attach only to the latest completed reply', () => {
+  const items = [
+    { id: 'old-user', kind: 'user' as const, text: 'first' },
+    { id: 'old-answer', kind: 'assistant' as const, text: 'old answer' },
+    { id: 'new-user', kind: 'user' as const, text: 'second' },
+    { id: 'progress', kind: 'progress' as const, text: 'working' },
+    { id: 'new-answer', kind: 'assistant' as const, text: 'new answer' },
+  ];
+  const attached = attachLatestAssistantFileChanges(items, {
+    files: { changed: 3, additions: 12, deletions: 4 },
+  });
+
+  assert.equal(attached[1].fileChanges, undefined);
+  assert.deepEqual(attached[4].fileChanges, { changed: 3, additions: 12, deletions: 4 });
+  assert.equal(attachLatestAssistantFileChanges(items, {}).includes(items[4]), true);
+});
+
+test('assistant file changes share the compact time and copy metadata row', () => {
+  const markup = renderToStaticMarkup(createElement(MessageBubble, {
+    item: {
+      id: 'reply-with-changes', kind: 'assistant' as const, text: '完成', completedAt: Date.now(),
+      fileChanges: { changed: 3, additions: 12, deletions: 4 },
+    },
+    onDownloadFile: () => undefined,
+    onReadVisualization: async () => '',
+  }));
+
+  assert.match(markup, /class="message-change-summary"/);
+  assert.match(markup, /3 个文件已更改/);
+  assert.match(markup, /class="additions">\+12/);
+  assert.match(markup, /class="deletions">−4/);
+  assert.match(markup, /message-change-summary[\s\S]*message-time[\s\S]*message-copy/);
 });
 
 test('message metadata reserves stable space before completion time arrives', () => {

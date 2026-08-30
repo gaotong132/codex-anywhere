@@ -548,6 +548,19 @@ export function MessageBubble({
       </div>
       {copyable && (
         <div className="message-meta">
+          {item.kind === 'assistant' && item.fileChanges && (
+            <span
+              className="message-change-summary"
+              title={t(
+                `${item.fileChanges.changed} 个文件已更改，新增 ${item.fileChanges.additions} 行，删除 ${item.fileChanges.deletions} 行`,
+                `${item.fileChanges.changed} files changed, ${item.fileChanges.additions} additions, ${item.fileChanges.deletions} deletions`,
+              )}
+            >
+              <span>{t(`${item.fileChanges.changed} 个文件已更改`, `${item.fileChanges.changed} files changed`)}</span>
+              <span className="additions">+{item.fileChanges.additions}</span>
+              <span className="deletions">−{item.fileChanges.deletions}</span>
+            </span>
+          )}
           {item.completedAt && completedDateTime
             ? <time className="message-time" dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
             : <span className="message-time placeholder" aria-hidden="true">00/00 00:00</span>}

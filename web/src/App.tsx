@@ -10,6 +10,7 @@ import {
   useState,
 } from 'react';
 import {
+  attachLatestAssistantFileChanges,
   attachmentRegistryKey,
   parseAssistantMessage,
   historyFingerprint,
@@ -69,7 +70,11 @@ import {
 } from './away-summary';
 import { BrowserSecureChannel } from './secure-channel-client';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
-import { normalizeTurnProgress, type TurnProgress } from '../../src/shared/turn-progress';
+import {
+  normalizeTurnProgress,
+  type TurnFileProgress,
+  type TurnProgress,
+} from '../../src/shared/turn-progress';
 import { requireCurrentProtocol } from '../../src/shared/protocol-contract';
 import {
   clearBrowserDeviceApproval,
@@ -607,6 +612,7 @@ export default function App() {
   const autoFollowLatestRef = useRef(true);
   const streamItemRef = useRef<{ id: string; kind: TimelineKind } | null>(null);
   const activeTurnIdRef = useRef('');
+  const turnProgressRef = useRef<TurnProgress>({});
   const followFingerprintRef = useRef('');
   const latestActivityIdRef = useRef('');
   const awaitingDesktopTurnRef = useRef<AwaitingDesktopTurn | null>(null);
@@ -789,7 +795,7 @@ export default function App() {
     }]);
   }, []);
 
-  const finishAssistant = useCallback((text: string) => {
+  const finishAssistant = useCallback((text: string, fileChanges?: TurnFileProgress) => {
     const content = parseAssistantMessage(text);
     const visibleText = content.text;
     if (!visibleText) return;
@@ -800,12 +806,19 @@ export default function App() {
     setTimeline((items) => {
       if (current?.kind === 'assistant' && items.some((item) => item.id === current.id)) {
         return items.map((item) => item.id === current.id
-          ? { ...item, text: visibleText, contexts: content.contexts, completedAt }
+          ? {
+            ...item,
+            text: visibleText,
+            contexts: content.contexts,
+            completedAt,
+            ...(fileChanges ? { fileChanges } : {}),
+          }
           : item);
       }
       return [...items, {
         id: makeId(), kind: 'assistant', text: visibleText, contexts: content.contexts, transient: true,
         ...(activeTurnIdRef.current ? { historyTurnId: activeTurnIdRef.current } : {}),
+        ...(fileChanges ? { fileChanges } : {}),
         completedAt,
       }];
     });
@@ -1036,6 +1049,7 @@ export default function App() {
       setToolPurpose('');
       setActivityDetail('');
       setTurnProgress({});
+      turnProgressRef.current = {};
       setLiveActivity('starting');
       setActivityStartedAt(Date.now());
       const nextThreadId = String(payload.threadId || '');
@@ -1058,7 +1072,8 @@ export default function App() {
       if (purpose) setToolPurpose(purpose);
     } else if (message.event === 'turn.progress') {
       const progress = normalizeTurnProgress(payload);
-      setTurnProgress((current) => ({ ...current, ...progress }));
+      turnProgressRef.current = { ...turnProgressRef.current, ...progress };
+      setTurnProgress(turnProgressRef.current);
     } else if (message.event === 'tool.started') {
       setLiveActivity(liveEventActivity(payload));
       const detail = normalizeToolPurpose(payload.detail);
@@ -1070,7 +1085,7 @@ export default function App() {
     } else if (message.event === 'turn.final') {
       setLiveActivity('responding');
       const text = String(payload.text || '');
-      finishAssistant(text);
+      finishAssistant(text, turnProgressRef.current.files);
     } else if (message.event === 'approval.requested') {
       const nextApproval = {
         approvalId: String(payload.approvalId || ''),
@@ -1098,6 +1113,7 @@ export default function App() {
       setLiveActivity('working');
       setActivityStartedAt(null);
       setTurnProgress({});
+      turnProgressRef.current = {};
       setRunning(false);
       setOwnedTurnThreadId(null);
       setExecutionState('failed');
@@ -1111,6 +1127,7 @@ export default function App() {
       setLiveActivity('working');
       setActivityStartedAt(null);
       setTurnProgress({});
+      turnProgressRef.current = {};
       setRunning(false);
       setOwnedTurnThreadId(null);
       setExecutionState((current) => current === 'failed' ? current : 'completed');
@@ -1408,7 +1425,7 @@ export default function App() {
         mode: 'conversation',
       });
       if (selectedRequestRef.current !== requestVersion || threadIdRef.current !== targetThreadId) return;
-      const items = historyItems(page.turns);
+      const items = attachLatestAssistantFileChanges(historyItems(page.turns), page.turnProgress);
       if (cursor) setTimeline((current) => [...items, ...current]);
       else {
         autoFollowLatestRef.current = true;
@@ -1495,7 +1512,7 @@ export default function App() {
           ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || current || Date.now()
           : null));
         setTurnProgress(inProgress ? normalizeTurnProgress(page.turnProgress) : {});
-        const latestItems = historyItems(page.turns);
+        const latestItems = attachLatestAssistantFileChanges(historyItems(page.turns), page.turnProgress);
         const awaitingDesktopTurn = awaitingDesktopTurnRef.current;
         const awaitedMessageSeen = Boolean(awaitingDesktopTurn
           && latestItems.some((item) => item.kind === 'user' && item.text.trim() === awaitingDesktopTurn.text));
