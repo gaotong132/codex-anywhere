@@ -33,7 +33,7 @@
       width: 30px; height: 30px; flex: 0 0 30px;
       i { width: 8px; height: 8px; }
     }
-    .message-list { padding: 18px 12px; }
+    .message-list { padding: 18px 12px 4px; }
     .execution-strip { padding: 6px max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); }
     .tool-purpose { gap: 5px; padding: 6px 8px; border-radius: 11px; font-size: 10px; }
     .activity-primary time { max-width: 50px; }

@@ -841,6 +841,8 @@ test('message metadata stays in a fixed sibling row outside the bubble', async (
   assert.match(stylesSource, /--bubble-tail-color:\s*#131925;[\s\S]*?color:\s*#c8d1df;[\s\S]*?background:\s*var\(--bubble-tail-color\);/);
   assert.doesNotMatch(stylesSource, /&\.assistant\s*\{[^}]*border:\s*1px/);
   assert.match(stylesSource, /&\.user::before,\s*&\.assistant::before\s*\{[\s\S]*?background:\s*var\(--bubble-tail-color\);/);
+  assert.match(stylesSource, /\.message-list-content\s*>\s*:last-child\s*\{\s*margin-bottom:\s*0;/);
+  assert.match(responsiveSource, /\.message-list\s*\{\s*padding:\s*18px 12px 4px;/);
   assert.match(responsiveSource, /\.message-block\s*\{\s*width:\s*96%;\s*max-width:\s*96%;\s*\}/);
 });
 

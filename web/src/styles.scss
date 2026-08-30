@@ -474,6 +474,7 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   backdrop-filter: blur(8px);
 }
 .message-list-content { min-height: 100%; }
+.message-list-content > :last-child { margin-bottom: 0; }
 .conversation-render-placeholder { min-height: 1px; }
 .new-session-dialog {
   width: min(540px, 100%);
