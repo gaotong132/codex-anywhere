@@ -177,12 +177,15 @@ export function TypewriterText({
       return undefined;
     }
 
-    let current = visibleTextRef.current;
-    if (!text.startsWith(current)) {
-      current = '';
-      visibleTextRef.current = '';
-      setVisibleText('');
+    const update = resolveTypewriterUpdate(text, visibleTextRef.current);
+    if (!update.animate) {
+      visibleTextRef.current = update.from;
+      setVisibleText(update.from);
+      rememberTypewriterText(continuityKey, update.from);
+      onCompleteRef.current?.();
+      return undefined;
     }
+    const current = update.from;
     const characters = Array.from(text);
     let index = Array.from(current).length;
     const remaining = characters.length - index;
@@ -227,10 +230,15 @@ export function seedTypewriterText(continuityKey: string, text: string) {
   rememberTypewriterText(continuityKey, text);
 }
 
+export function resolveTypewriterUpdate(text: string, current: string) {
+  if (!text.startsWith(current)) return { from: text, animate: false };
+  return { from: current, animate: current !== text };
+}
+
 function initialTypewriterText(text: string, active: boolean, continuityKey?: string) {
   if (!active) return text;
   const remembered = continuityKey ? typewriterContinuity.get(continuityKey) || '' : '';
-  return text.startsWith(remembered) ? remembered : '';
+  return resolveTypewriterUpdate(text, remembered).from;
 }
 
 function rememberTypewriterText(continuityKey: string | undefined, text: string) {

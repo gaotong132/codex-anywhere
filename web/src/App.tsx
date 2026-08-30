@@ -571,6 +571,7 @@ export default function App() {
   const fileDownloadCancelRef = useRef(false);
   const sessionRefreshInFlightRef = useRef(false);
   const olderHistoryLoadingRef = useRef(false);
+  const liveHistoryHydratedThreadRef = useRef<string | null>(null);
   const optimisticRestoreRef = useRef<string | null>(null);
   const runningRef = useRef(running);
   const ownedTurnThreadIdRef = useRef(ownedTurnThreadId);
@@ -1455,6 +1456,12 @@ export default function App() {
           : null));
         setTurnProgress(inProgress ? normalizeTurnProgress(page.turnProgress) : {});
         const latestItems = attachLatestAssistantFileChanges(historyItems(page.turns), page.turnProgress);
+        if (liveHistoryHydratedThreadRef.current !== threadId) {
+          const liveProgressId = latestTurnProgressItemId(latestItems);
+          const liveProgress = latestItems.find((item) => item.id === liveProgressId);
+          if (liveProgress) seedTypewriterText(progressTypewriterKey(liveProgress), liveProgress.text);
+          liveHistoryHydratedThreadRef.current = threadId;
+        }
         const awaitingDesktopTurn = awaitingDesktopTurnRef.current;
         const awaitedMessageSeen = Boolean(awaitingDesktopTurn
           && latestItems.some((item) => item.kind === 'user' && item.text.trim() === awaitingDesktopTurn.text));
@@ -1533,6 +1540,7 @@ export default function App() {
     setNextCursor(null);
     setInitialHistoryLoaded(!nextThreadId);
     setHistoryLoading(false);
+    liveHistoryHydratedThreadRef.current = null;
     followFingerprintRef.current = '';
     latestActivityIdRef.current = '';
     awaitingDesktopTurnRef.current = null;

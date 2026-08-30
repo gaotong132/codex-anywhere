@@ -74,7 +74,11 @@ import {
 } from '../web/src/history-utils.js';
 import { MessageBubble, messagePresentationEqual } from '../web/src/message-bubble.js';
 import { ConversationTimeline } from '../web/src/conversation-timeline.js';
-import { seedTypewriterText, TypewriterText } from '../web/src/ui-components.js';
+import {
+  resolveTypewriterUpdate,
+  seedTypewriterText,
+  TypewriterText,
+} from '../web/src/ui-components.js';
 
 test('connector bootstrap proofs are route and challenge bound', () => {
   const token = 'a'.repeat(32);
@@ -874,6 +878,25 @@ test('hydrated progress starts complete and only a later suffix is animated', ()
   assert.match(updated, />已有进度</);
   assert.doesNotMatch(updated, /新增进度/);
   assert.match(updated, /typing/);
+});
+
+test('a non-prefix polling snapshot replaces progress without replaying it', () => {
+  assert.deepEqual(resolveTypewriterUpdate('替换后的实时快照', '旧的分页快照'), {
+    from: '替换后的实时快照', animate: false,
+  });
+  const key = 'progress:non-prefix-snapshot';
+  seedTypewriterText(key, '旧的分页快照');
+  const replaced = renderToStaticMarkup(createElement(TypewriterText, {
+    text: '替换后的实时快照', active: true, continuityKey: key,
+  }));
+  assert.match(replaced, />替换后的实时快照</);
+  assert.doesNotMatch(replaced, /typing/);
+});
+
+test('the first live snapshot is hydrated before it can animate', async () => {
+  const appSource = await readFile(resolve('web/src/App.tsx'), 'utf8');
+  assert.match(appSource, /liveHistoryHydratedThreadRef\.current !== threadId/);
+  assert.match(appSource, /seedTypewriterText\(progressTypewriterKey\(liveProgress\), liveProgress\.text\)/);
 });
 
 test('only progress after the latest user message is treated as the live progress block', () => {
