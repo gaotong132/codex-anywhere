@@ -184,6 +184,13 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   &:focus-visible { outline: 2px solid #6798ff; outline-offset: 2px; }
   .sidebar-tool-icon { width: 16px; height: 16px; stroke-width: 2; }
 }
+.topbar > .icon-button,
+.model-config-summary {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+
+  &:focus:not(:focus-visible) { outline: none; }
+}
 .sidebar-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
 .compact-search {
   min-width: 0;

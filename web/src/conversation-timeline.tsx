@@ -101,11 +101,14 @@ export const ConversationTimeline = memo(function ConversationTimeline({
       item: attachment && !item.attachment ? { ...item, attachment } : item,
     };
   }), [knownAttachments, threadId, timeline]);
+  const awaitingVisibleHistory = Boolean(
+    threadId && !timeline.length && (historyLoading || nextCursor),
+  );
 
   return (
     <div className="message-list" ref={messageListRef} onScroll={onScroll}>
       <div className="message-list-content" ref={messageContentRef}>
-        {threadId && initialHistoryLoaded && nextCursor && (
+        {threadId && initialHistoryLoaded && nextCursor && Boolean(timeline.length) && (
           <button
             className="load-older"
             disabled={historyLoading}
@@ -115,10 +118,10 @@ export const ConversationTimeline = memo(function ConversationTimeline({
             {t('加载更早记录', 'Load older messages')}
           </button>
         )}
-        {threadId && historyLoading && !initialHistoryLoaded && (
+        {awaitingVisibleHistory && (
           <div className="history-skeleton">{t('正在加载最近记录…', 'Loading recent messages…')}</div>
         )}
-        {!timeline.length && !historyLoading && (
+        {!timeline.length && !awaitingVisibleHistory && (
           <div className="empty-conversation">
             <div className="brand-mark small">C</div>
             <h2>{threadId

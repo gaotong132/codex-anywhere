@@ -72,6 +72,7 @@ import {
   mergeHistorySnapshot,
 } from '../web/src/history-utils.js';
 import { MessageBubble, messagePresentationEqual } from '../web/src/message-bubble.js';
+import { ConversationTimeline } from '../web/src/conversation-timeline.js';
 import { buildAwaySummary, formatAwayDuration } from '../web/src/away-summary.js';
 
 test('connector bootstrap proofs are route and challenge bound', () => {
@@ -311,6 +312,34 @@ test('older history keeps a stable label while a page is loading', async () => {
   const timelineSource = await readFile(resolve('web/src/conversation-timeline.tsx'), 'utf8');
   assert.match(timelineSource, /aria-busy=\{historyLoading\}/);
   assert.doesNotMatch(timelineSource, /historyLoading \? t\('正在加载…'/);
+});
+
+test('empty intermediate history pages keep one stable loading surface', () => {
+  const markup = renderToStaticMarkup(createElement(ConversationTimeline, {
+    messageListRef: { current: null },
+    messageContentRef: { current: null },
+    threadId: 'large-thread',
+    creatingNewSession: false,
+    initialHistoryLoaded: true,
+    nextCursor: 'rollout:v1:1048576',
+    historyLoading: false,
+    timeline: [],
+    knownAttachments: {},
+    attachmentUrls: {},
+    executionActive: true,
+    progressAnimationReady: false,
+    liveProgressItemId: null,
+    awaySummary: null,
+    onScroll: () => undefined,
+    onLoadOlder: () => undefined,
+    onDownloadFile: () => undefined,
+    onReadVisualization: async () => '',
+    onDismissAwaySummary: () => undefined,
+  }));
+
+  assert.match(markup, /class="history-skeleton"/);
+  assert.doesNotMatch(markup, /class="empty-conversation"/);
+  assert.doesNotMatch(markup, /class="load-older"/);
 });
 
 test('initial bootstrap waits for both sessions and the restored conversation', () => {
@@ -789,6 +818,16 @@ test('message metadata stays in a fixed sibling row outside the bubble', async (
   assert.doesNotMatch(stylesSource, /\.message-block\s*\{[^}]*width:\s*fit-content;/);
   assert.match(stylesSource, /\.message-meta\s*\{[\s\S]*?height:\s*18px;[\s\S]*?flex:\s*0 0 18px;/);
   assert.doesNotMatch(stylesSource, /\.message-meta\s*\{[^}]*position:\s*absolute;/);
+});
+
+test('mobile header controls suppress transient tap rectangles without hiding keyboard focus', async () => {
+  const stylesSource = await readFile(resolve('web/src/styles.scss'), 'utf8');
+  assert.match(
+    stylesSource,
+    /\.topbar\s*>\s*\.icon-button,\s*\n\.model-config-summary\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;[\s\S]*?touch-action:\s*manipulation;/,
+  );
+  assert.match(stylesSource, /&:focus:not\(:focus-visible\)\s*\{\s*outline:\s*none;\s*\}/);
+  assert.match(stylesSource, /\.icon-button\s*\{[\s\S]*?&:focus-visible\s*\{\s*outline:\s*2px solid #6798ff;/);
 });
 
 test('message presentation equality skips unchanged polling snapshots', () => {
