@@ -18,6 +18,7 @@ import {
   latestTurnProgressItemId,
   loadKnownAttachments,
   mergeHistorySnapshot,
+  progressTypewriterKey,
   resolveTimelineAttachment,
   storeKnownAttachments,
   type ImageAttachment,
@@ -63,7 +64,13 @@ import {
   shouldPrefillOlderHistory,
   type SessionAttentionState,
 } from './app-utils';
-import { CustomSelect, DownloadIndicator, SidebarIcon, TypewriterText } from './ui-components';
+import {
+  CustomSelect,
+  DownloadIndicator,
+  seedTypewriterText,
+  SidebarIcon,
+  TypewriterText,
+} from './ui-components';
 import { ConversationTimeline } from './conversation-timeline';
 import { BrowserSecureChannel } from './secure-channel-client';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
@@ -1378,6 +1385,9 @@ export default function App() {
       else {
         autoFollowLatestRef.current = true;
         shouldScrollBottomRef.current = true;
+        for (const item of items) {
+          if (item.kind === 'progress') seedTypewriterText(progressTypewriterKey(item), item.text);
+        }
         setTimeline(items);
         followFingerprintRef.current = historyFingerprint(page.turns, page.turnProgress);
         latestActivityIdRef.current = page.activityId || '';

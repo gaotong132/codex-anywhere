@@ -223,6 +223,10 @@ export function TypewriterText({
 
 const typewriterContinuity = new Map<string, string>();
 
+export function seedTypewriterText(continuityKey: string, text: string) {
+  rememberTypewriterText(continuityKey, text);
+}
+
 function initialTypewriterText(text: string, active: boolean, continuityKey?: string) {
   if (!active) return text;
   const remembered = continuityKey ? typewriterContinuity.get(continuityKey) || '' : '';

@@ -10,7 +10,7 @@ import remarkGfm from 'remark-gfm';
 import { formatDate } from './app-utils';
 import { localFileName, localFilePathFromHref } from './file-utils';
 import { t } from './i18n';
-import type { TimelineItem } from './history-utils';
+import { progressTypewriterKey, type TimelineItem } from './history-utils';
 import { TypewriterText } from './ui-components';
 
 type MessageCopyState = 'idle' | 'copied' | 'failed';
@@ -260,7 +260,7 @@ function MessageBubbleComponent({
           className="progress-typewriter"
           text={item.text}
           active={active}
-          continuityKey={`progress:${item.historyTurnId || item.id}`}
+          continuityKey={progressTypewriterKey(item)}
           durationMs={1_200}
         /></pre>
       </details>

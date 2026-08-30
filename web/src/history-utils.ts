@@ -56,6 +56,10 @@ export type TimelineItem = {
 };
 export type KnownAttachment = ImageAttachment & { savedAt: number };
 
+export function progressTypewriterKey(item: Pick<TimelineItem, 'id' | 'historyTurnId'>) {
+  return `progress:${item.historyTurnId || item.id}`;
+}
+
 export function latestTurnProgressItemId(items: TimelineItem[]) {
   let latestUserIndex = -1;
   for (let index = items.length - 1; index >= 0; index -= 1) {

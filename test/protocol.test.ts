@@ -70,9 +70,11 @@ import {
   historyItems,
   latestTurnProgressItemId,
   mergeHistorySnapshot,
+  progressTypewriterKey,
 } from '../web/src/history-utils.js';
 import { MessageBubble, messagePresentationEqual } from '../web/src/message-bubble.js';
 import { ConversationTimeline } from '../web/src/conversation-timeline.js';
+import { seedTypewriterText, TypewriterText } from '../web/src/ui-components.js';
 
 test('connector bootstrap proofs are route and challenge bound', () => {
   const token = 'a'.repeat(32);
@@ -849,8 +851,29 @@ test('conversation loads the Markdown renderer outside the startup bundle', asyn
 test('progress animation waits until initial history hydration finishes', async () => {
   const timelineSource = await readFile(resolve('web/src/conversation-timeline.tsx'), 'utf8');
   const bubbleSource = await readFile(resolve('web/src/message-bubble.tsx'), 'utf8');
+  const appSource = await readFile(resolve('web/src/App.tsx'), 'utf8');
   assert.match(timelineSource, /progressAnimationReady && item\.id === liveProgressItemId/);
-  assert.match(bubbleSource, /continuityKey=\{`progress:\$\{item\.historyTurnId \|\| item\.id\}`\}/);
+  assert.match(bubbleSource, /continuityKey=\{progressTypewriterKey\(item\)\}/);
+  assert.match(appSource, /seedTypewriterText\(progressTypewriterKey\(item\), item\.text\)/);
+});
+
+test('hydrated progress starts complete and only a later suffix is animated', () => {
+  const item = { id: 'history:turn-hydrated:1', historyTurnId: 'turn-hydrated' };
+  const key = progressTypewriterKey(item);
+  seedTypewriterText(key, '已有进度');
+
+  const hydrated = renderToStaticMarkup(createElement(TypewriterText, {
+    text: '已有进度', active: true, continuityKey: key,
+  }));
+  assert.match(hydrated, />已有进度</);
+  assert.doesNotMatch(hydrated, /typing/);
+
+  const updated = renderToStaticMarkup(createElement(TypewriterText, {
+    text: '已有进度\n新增进度', active: true, continuityKey: key,
+  }));
+  assert.match(updated, />已有进度</);
+  assert.doesNotMatch(updated, /新增进度/);
+  assert.match(updated, /typing/);
 });
 
 test('only progress after the latest user message is treated as the live progress block', () => {
