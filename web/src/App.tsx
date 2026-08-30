@@ -404,7 +404,7 @@ function ModelConfigControl({
         disabled={!config || loading}
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
-        title={disabled ? t('会话执行中，仅展示当前配置', 'The task is running; current settings are read-only') : t('配置后续轮次', 'Configure subsequent turns')}
+        title={disabled ? t('会话执行中，可预选并在结束后保存', 'Preselect now and save after the task finishes') : t('配置后续轮次', 'Configure subsequent turns')}
       >
         <span className="model-config-model">{loading ? t('读取模型…', 'Loading model…') : displayModel}</span>
         <span>{config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort) : t('默认思考', 'Default reasoning')}</span>
@@ -415,13 +415,13 @@ function ModelConfigControl({
         <div className="model-config-popover">
           <header>
             <strong>{t('后续轮次配置', 'Next-turn settings')}</strong>
-            <span>{disabled ? t('当前正在执行，暂不可修改', 'Read-only while this task is running') : t('保存后用于该会话的后续消息', 'Applies to subsequent messages in this task')}</span>
+            <span>{disabled ? t('当前正在执行，可预选并在结束后保存', 'Preselect now and save after the task finishes') : t('保存后用于该会话的后续消息', 'Applies to subsequent messages in this task')}</span>
           </header>
           <div className="model-config-field">
             <span>{t('模型', 'Model')}</span>
             <CustomSelect
               value={draft.model}
-              disabled={disabled || saving}
+              disabled={saving}
               ariaLabel={t('选择模型', 'Select model')}
               options={config.models.map((model) => ({
                 value: model.model,
@@ -445,7 +445,7 @@ function ModelConfigControl({
             <span>{t('思考强度', 'Reasoning')}</span>
             <CustomSelect
               value={draft.reasoningEffort}
-              disabled={disabled || saving}
+              disabled={saving}
               ariaLabel={t('选择思考强度', 'Select reasoning effort')}
               options={(draftModel?.supportedReasoningEfforts || []).map((option) => ({
                 value: option.reasoningEffort,
@@ -462,7 +462,7 @@ function ModelConfigControl({
             <input
               type="checkbox"
               checked={draft.fastMode}
-              disabled={disabled || saving || !fastTierAvailable(draftModel)}
+              disabled={saving || !fastTierAvailable(draftModel)}
               onChange={(event) => setDraft({ ...draft, fastMode: event.target.checked })}
             />
             <i aria-hidden="true" />
@@ -1431,7 +1431,7 @@ export default function App() {
         autoFollowLatestRef.current = true;
         shouldScrollBottomRef.current = true;
         setTimeline(items);
-        followFingerprintRef.current = historyFingerprint(page.turns);
+        followFingerprintRef.current = historyFingerprint(page.turns, page.turnProgress);
         latestActivityIdRef.current = page.activityId || '';
         const latestStatus = page.turns[0]?.status;
         const active = latestStatus === 'inProgress';
@@ -1496,7 +1496,7 @@ export default function App() {
           mode: 'live',
         });
         if (disposed || threadIdRef.current !== threadId) return;
-        const fingerprint = historyFingerprint(page.turns);
+        const fingerprint = historyFingerprint(page.turns, page.turnProgress);
         const previousFingerprint = followFingerprintRef.current;
         const changed = Boolean(previousFingerprint && previousFingerprint !== fingerprint);
         const latestStatus = page.turns[0]?.status;

@@ -65,6 +65,7 @@ import {
 } from '../web/src/app-utils.js';
 import {
   attachLatestAssistantFileChanges,
+  historyFingerprint,
   historyItems,
   latestTurnProgressItemId,
   mergeHistorySnapshot,
@@ -673,6 +674,18 @@ test('aggregate file changes attach only to the latest completed reply', () => {
   assert.equal(attached[1].fileChanges, undefined);
   assert.deepEqual(attached[4].fileChanges, { changed: 3, additions: 12, deletions: 4 });
   assert.equal(attachLatestAssistantFileChanges(items, {}).includes(items[4]), true);
+});
+
+test('live history fingerprint changes when aggregate file progress arrives after the reply', () => {
+  const turns = [{
+    id: 'late-progress', status: 'completed',
+    items: [{ type: 'agentMessage', phase: 'final_answer', text: 'done' }],
+  }];
+
+  assert.notEqual(
+    historyFingerprint(turns),
+    historyFingerprint(turns, { files: { changed: 2, additions: 8, deletions: 3 } }),
+  );
 });
 
 test('assistant file changes share the compact time and copy metadata row', () => {

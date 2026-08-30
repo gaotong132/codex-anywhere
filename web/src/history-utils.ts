@@ -193,27 +193,30 @@ function extractImageAttachment(text: string): ImageAttachment | undefined {
   return { path, name: metadataName || fallbackName };
 }
 
-export function historyFingerprint(turns: Turn[]) {
-  return JSON.stringify(turns.map((turn) => ({
-    id: turn.id,
-    status: turn.status,
-    startedAt: turn.startedAt,
-    completedAt: turn.completedAt,
-    items: turn.items?.map((item) => ({
-      type: item.type,
-      phase: item.phase,
-      status: item.status,
-      text: item.text,
-      input: item.input,
-      output: item.output,
-      contexts: item.contexts,
-      attachment: item.attachment,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-      completedAt: item.completedAt,
-      timestamp: item.timestamp,
+export function historyFingerprint(turns: Turn[], progress?: unknown) {
+  return JSON.stringify({
+    turns: turns.map((turn) => ({
+      id: turn.id,
+      status: turn.status,
+      startedAt: turn.startedAt,
+      completedAt: turn.completedAt,
+      items: turn.items?.map((item) => ({
+        type: item.type,
+        phase: item.phase,
+        status: item.status,
+        text: item.text,
+        input: item.input,
+        output: item.output,
+        contexts: item.contexts,
+        attachment: item.attachment,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        completedAt: item.completedAt,
+        timestamp: item.timestamp,
+      })),
     })),
-  })));
+    progress: normalizeTurnProgress(progress),
+  });
 }
 
 function messageTime(item: TurnItem, turn: Turn, kind: TimelineKind) {

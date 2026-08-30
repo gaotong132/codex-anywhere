@@ -102,9 +102,6 @@ export function CustomSelect({
     <div
       className={`custom-select${open ? ' open' : ''}${className ? ` ${className}` : ''}`}
       ref={rootRef}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
-      }}
     >
       <button
         ref={triggerRef}
@@ -154,6 +151,57 @@ function dateTimeValue(value: TimelineItem['completedAt']) {
   const numeric = typeof value === 'number' && value < 10_000_000_000 ? value * 1_000 : value;
   const date = new Date(numeric);
   return Number.isFinite(date.getTime()) ? date.toISOString() : '';
+}
+
+type MessageCopyState = 'idle' | 'copied' | 'failed';
+
+function MessageMetadata({
+  item,
+  copyState,
+  onCopy,
+}: {
+  item: TimelineItem;
+  copyState: MessageCopyState;
+  onCopy: () => void;
+}) {
+  const copyLabel = copyState === 'copied'
+    ? t('已复制', 'Copied')
+    : copyState === 'failed'
+      ? t('复制失败', 'Copy failed')
+      : t('复制消息', 'Copy message');
+  const completedDateTime = dateTimeValue(item.completedAt);
+  return (
+    <div className="message-meta">
+      {item.kind === 'assistant' && item.fileChanges && (
+        <span
+          className="message-change-summary"
+          title={t(
+            `${item.fileChanges.changed} 个文件已更改，新增 ${item.fileChanges.additions} 行，删除 ${item.fileChanges.deletions} 行`,
+            `${item.fileChanges.changed} files changed, ${item.fileChanges.additions} additions, ${item.fileChanges.deletions} deletions`,
+          )}
+        >
+          <span>{t(`${item.fileChanges.changed} 个文件已更改`, `${item.fileChanges.changed} files changed`)}</span>
+          <span className="additions">+{item.fileChanges.additions}</span>
+          <span className="deletions">−{item.fileChanges.deletions}</span>
+        </span>
+      )}
+      {item.completedAt && completedDateTime
+        ? <time className="message-time" dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
+        : <span className="message-time placeholder" aria-hidden="true">00/00 00:00</span>}
+      <button
+        className={`message-copy ${copyState}`}
+        type="button"
+        onClick={onCopy}
+        aria-label={copyLabel}
+        aria-live="polite"
+        title={copyLabel}
+      >
+        {copyState === 'copied'
+          ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
+          : <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>}
+      </button>
+    </div>
+  );
 }
 
 export function TypewriterText({
@@ -277,7 +325,7 @@ export function MessageBubble({
   onDownloadFile: (path: string) => void;
   onReadVisualization: (path: string) => Promise<string>;
 }) {
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [copyState, setCopyState] = useState<MessageCopyState>('idle');
   const [imageExpanded, setImageExpanded] = useState(false);
   const [visualizationOpen, setVisualizationOpen] = useState(false);
   const [visualizationSource, setVisualizationSource] = useState('');
@@ -393,12 +441,6 @@ export function MessageBubble({
       </details>
     );
   }
-  const copyLabel = copyState === 'copied'
-    ? t('已复制', 'Copied')
-    : copyState === 'failed'
-      ? t('复制失败', 'Copy failed')
-      : t('复制消息', 'Copy message');
-  const completedDateTime = dateTimeValue(item.completedAt);
   return (
     <div className={`message-block ${item.kind}${copyable ? ' copyable' : ''}`}>
       <div className={`message ${item.kind}${copyable ? ' copyable' : ''}${active ? ' live' : ''}${finalReplyArriving ? ' final-arriving' : ''}`}>
@@ -547,36 +589,7 @@ export function MessageBubble({
       )}
       </div>
       {copyable && (
-        <div className="message-meta">
-          {item.kind === 'assistant' && item.fileChanges && (
-            <span
-              className="message-change-summary"
-              title={t(
-                `${item.fileChanges.changed} 个文件已更改，新增 ${item.fileChanges.additions} 行，删除 ${item.fileChanges.deletions} 行`,
-                `${item.fileChanges.changed} files changed, ${item.fileChanges.additions} additions, ${item.fileChanges.deletions} deletions`,
-              )}
-            >
-              <span>{t(`${item.fileChanges.changed} 个文件已更改`, `${item.fileChanges.changed} files changed`)}</span>
-              <span className="additions">+{item.fileChanges.additions}</span>
-              <span className="deletions">−{item.fileChanges.deletions}</span>
-            </span>
-          )}
-          {item.completedAt && completedDateTime
-            ? <time className="message-time" dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
-            : <span className="message-time placeholder" aria-hidden="true">00/00 00:00</span>}
-          <button
-            className={`message-copy ${copyState}`}
-            type="button"
-            onClick={() => void copyMessage()}
-            aria-label={copyLabel}
-            aria-live="polite"
-            title={copyLabel}
-          >
-            {copyState === 'copied'
-              ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
-              : <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>}
-          </button>
-        </div>
+        <MessageMetadata item={item} copyState={copyState} onCopy={() => void copyMessage()} />
       )}
     </div>
   );

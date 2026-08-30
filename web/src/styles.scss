@@ -297,8 +297,9 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   background: rgba(11, 15, 24, .92);
   backdrop-filter: blur(12px);
 }
+.topbar::before { width: 30px; height: 30px; flex: 0 0 30px; content: ''; }
 .conversation-heading { position: relative; min-width: 0; flex: 1; display: grid; gap: 3px; }
-.conversation-heading > strong { @include truncate; font-size: 15px; }
+.conversation-heading > strong { @include truncate; font-size: 15px; text-align: center; }
 .model-config { position: relative; min-width: 0; width: fit-content; max-width: 100%; justify-self: center; }
 .model-config-summary {
   min-width: 0; max-width: 100%; height: 21px; display: flex; align-items: center; gap: 5px; padding: 0; border: 0; color: #7d8aa0; background: transparent; font-size: 10px; cursor: pointer;
@@ -544,18 +545,18 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .new-session-dialog-actions .primary-action { border-color: #3970dc; color: #fff; background: #3267d8; }
 .new-session-dialog-actions .primary-action:hover:not(:disabled) { border-color: #5689ef; background: #3c74e4; }
 .message-block {
+  position: relative;
   width: fit-content;
   min-width: 0;
   max-width: min(84%, 760px);
-  display: grid;
-  justify-items: start;
-  row-gap: 2px;
+  display: block;
   margin: 0 0 7px;
 
-  &.user { justify-items: end; margin-left: auto; }
+  &.copyable { padding-bottom: 20px; }
+  &.user { margin-left: auto; }
 }
-.message-meta { min-width: 0; height: 18px; display: flex; align-items: center; justify-self: end; gap: 3px; margin-right: 4px; overflow: hidden; color: #687589; }
-.message-block.assistant .message-meta { justify-self: start; margin-right: 0; margin-left: 4px; }
+.message-meta { position: absolute; right: 4px; bottom: 0; min-width: 0; max-width: calc(100vw - 32px); height: 18px; display: flex; align-items: center; gap: 3px; overflow: hidden; color: #687589; }
+.message-block.assistant .message-meta { right: auto; left: 4px; }
 .message-change-summary {
   min-width: 0; display: inline-flex; align-items: center; gap: 4px; margin-right: 2px;
   color: #7f8da2; font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap;
@@ -618,7 +619,7 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   hr { border: 0; border-top: 1px solid #354055; }
   input[type="checkbox"] { width: auto; margin-right: .45em; }
 
-  &.user { color: #fff; background: linear-gradient(145deg, #2d66d4, #284fac); border-bottom-right-radius: 5px; }
+  &.user { color: #fff; background: linear-gradient(145deg, #2d66d4, #284fac); border-bottom-right-radius: 5px; line-height: 1.5; }
   &.assistant { border: 1px solid #252e3d; color: #dfe6f1; background: #131925; border-bottom-left-radius: 5px; transition: border-color .35s ease, box-shadow .35s ease; }
   &.error { border: 1px solid #74343c; color: #ffc7cc; background: #39171d; }
 
