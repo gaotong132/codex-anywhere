@@ -149,6 +149,7 @@ export function TypewriterText({
   showCaret = true,
   completeContent,
   durationMs = 480,
+  continuityKey,
   onComplete,
 }: {
   text: string;
@@ -158,9 +159,10 @@ export function TypewriterText({
   showCaret?: boolean;
   completeContent?: ReactNode;
   durationMs?: number;
+  continuityKey?: string;
   onComplete?: () => void;
 }) {
-  const [visibleText, setVisibleText] = useState(active ? '' : text);
+  const [visibleText, setVisibleText] = useState(() => initialTypewriterText(text, active, continuityKey));
   const visibleTextRef = useRef(visibleText);
   const onCompleteRef = useRef(onComplete);
   useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
@@ -170,6 +172,7 @@ export function TypewriterText({
     if (!active || reduceMotion) {
       visibleTextRef.current = text;
       setVisibleText(text);
+      rememberTypewriterText(continuityKey, text);
       onCompleteRef.current?.();
       return undefined;
     }
@@ -197,6 +200,7 @@ export function TypewriterText({
       const next = characters.slice(0, index).join('');
       visibleTextRef.current = next;
       setVisibleText(next);
+      rememberTypewriterText(continuityKey, next);
       if (index >= characters.length) {
         clearInterval(timer);
         onCompleteRef.current?.();
@@ -205,7 +209,7 @@ export function TypewriterText({
     timer = setInterval(reveal, frameMs);
     reveal();
     return () => clearInterval(timer);
-  }, [active, durationMs, text]);
+  }, [active, continuityKey, durationMs, text]);
 
   const typing = active && visibleText !== text;
   const Tag = as;
@@ -215,6 +219,23 @@ export function TypewriterText({
       {typing && showCaret && <i className="typewriter-caret" aria-hidden="true" />}
     </Tag>
   );
+}
+
+const typewriterContinuity = new Map<string, string>();
+
+function initialTypewriterText(text: string, active: boolean, continuityKey?: string) {
+  if (!active) return text;
+  const remembered = continuityKey ? typewriterContinuity.get(continuityKey) || '' : '';
+  return text.startsWith(remembered) ? remembered : '';
+}
+
+function rememberTypewriterText(continuityKey: string | undefined, text: string) {
+  if (!continuityKey) return;
+  typewriterContinuity.delete(continuityKey);
+  typewriterContinuity.set(continuityKey, text);
+  if (typewriterContinuity.size <= 80) return;
+  const oldest = typewriterContinuity.keys().next().value;
+  if (oldest) typewriterContinuity.delete(oldest);
 }
 
 export function SidebarIcon({ name }: { name: SidebarIconName }) {

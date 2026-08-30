@@ -577,8 +577,23 @@ test('history merge replaces an optimistic image message without duplicating it'
   }];
 
   assert.deepEqual(mergeHistorySnapshot(current, latest, new Set(['turn-new'])), [{
-    ...latest[0], attachment,
+    ...latest[0], id: 'optimistic', attachment,
   }]);
+});
+
+test('history merge preserves an optimistic user message DOM identity', () => {
+  const current = [{
+    id: 'optimistic-user', kind: 'user' as const, text: '继续处理', transient: true,
+  }];
+  const latest = [{
+    id: 'history:turn-new:0', kind: 'user' as const, text: '继续处理', historyTurnId: 'turn-new',
+    contexts: [{ kind: 'delegation' as const, sourceThreadId: 'source-thread' }],
+  }];
+
+  const merged = mergeHistorySnapshot(current, latest, new Set(['turn-new']));
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].id, 'optimistic-user');
+  assert.equal(merged[0].historyTurnId, 'turn-new');
 });
 
 test('history merge carries unpublished progress into its turn when a later turn appears', () => {
@@ -697,6 +712,20 @@ test('message time and copy action render outside the message card', () => {
   assert.match(markup, /<\/div><div class="message-meta">/);
 });
 
+test('delegation metadata does not add hidden layout inside user bubbles', () => {
+  const markup = renderToStaticMarkup(createElement(MessageBubble, {
+    item: {
+      id: 'delegated-user', kind: 'user' as const, text: '继续处理',
+      contexts: [{ kind: 'delegation' as const, sourceThreadId: 'source-thread' }],
+    },
+    onDownloadFile: () => undefined,
+    onReadVisualization: async () => '',
+  }));
+
+  assert.doesNotMatch(markup, /message-contexts/);
+  assert.match(markup, /class="message user copyable"[\s\S]*?<p>继续处理<\/p>/);
+});
+
 test('aggregate file changes attach only to the latest completed reply', () => {
   const items = [
     { id: 'old-user', kind: 'user' as const, text: 'first' },
@@ -779,6 +808,13 @@ test('conversation loads the Markdown renderer outside the startup bundle', asyn
   assert.match(timelineSource, /lazy\(\(\) => import\('\.\/message-bubble'\)/);
   assert.match(timelineSource, /<Suspense fallback=/);
   assert.doesNotMatch(timelineSource, /import \{ MessageBubble \} from '\.\/message-bubble'/);
+});
+
+test('progress animation waits until initial history hydration finishes', async () => {
+  const timelineSource = await readFile(resolve('web/src/conversation-timeline.tsx'), 'utf8');
+  const bubbleSource = await readFile(resolve('web/src/message-bubble.tsx'), 'utf8');
+  assert.match(timelineSource, /progressAnimationReady && item\.id === liveProgressItemId/);
+  assert.match(bubbleSource, /continuityKey=\{`progress:\$\{item\.historyTurnId \|\| item\.id\}`\}/);
 });
 
 test('only progress after the latest user message is treated as the live progress block', () => {

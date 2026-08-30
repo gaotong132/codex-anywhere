@@ -239,12 +239,14 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
   const transientAttachments = new Map(current
     .filter((item) => item.transient && item.attachment)
     .map((item) => [messageContentIdentity(item), item.attachment]));
-  const hydratedLatest = latest.map((item) => {
+  const optimisticUserMatches = matchOptimisticUsers(current, latest);
+  const hydratedLatest = latest.map((item, index) => {
     const retainedFileChanges = item.historyTurnId
       ? persistedFileChanges.get(`${item.historyTurnId}\0${messageIdentity(item)}`)
       : undefined;
     const hydrated = {
       ...item,
+      ...(optimisticUserMatches.get(index) ? { id: optimisticUserMatches.get(index)!.id } : {}),
       ...(item.attachment ? {} : {
         attachment: transientAttachments.get(messageContentIdentity(item)),
       }),
@@ -306,6 +308,23 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
     ...mergedLatest,
     ...retained.slice(insertionIndex),
   ];
+}
+
+function matchOptimisticUsers(current: TimelineItem[], latest: TimelineItem[]) {
+  const matches = new Map<number, TimelineItem>();
+  const claimedLatestIndexes = new Set<number>();
+  const optimisticUsers = current.filter((item) => item.transient && item.kind === 'user').reverse();
+  for (const optimistic of optimisticUsers) {
+    const identity = messageContentIdentity(optimistic);
+    for (let index = latest.length - 1; index >= 0; index -= 1) {
+      if (claimedLatestIndexes.has(index) || latest[index]?.kind !== 'user') continue;
+      if (messageContentIdentity(latest[index]) !== identity) continue;
+      claimedLatestIndexes.add(index);
+      matches.set(index, optimistic);
+      break;
+    }
+  }
+  return matches;
 }
 
 function messageIdentity(item: TimelineItem) {

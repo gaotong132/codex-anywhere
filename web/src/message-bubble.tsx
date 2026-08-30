@@ -96,10 +96,13 @@ function MessageMetadata({ item }: { item: TimelineItem }) {
 }
 
 function MessageContexts({ item }: { item: TimelineItem }) {
-  if (!item.contexts?.length) return null;
+  const contexts = item.contexts?.filter((context) => (
+    item.kind !== 'user' || context.kind !== 'delegation'
+  ));
+  if (!contexts?.length) return null;
   return (
     <div className="message-contexts" aria-label={t('消息来源', 'Message context')}>
-      {item.contexts.map((context, index) => {
+      {contexts.map((context, index) => {
         const isAutomation = context.kind === 'automation';
         const label = isAutomation
           ? item.kind === 'user' ? t('定时任务', 'Scheduled task') : t('自动任务通知', 'Automation update')
@@ -253,7 +256,13 @@ function MessageBubbleComponent({
     return (
       <details className={`progress-card${active ? ' live' : ''}`} open>
         <summary>{t('进度更新', 'Progress update')}</summary>
-        <pre><TypewriterText className="progress-typewriter" text={item.text} active={active} durationMs={1_200} /></pre>
+        <pre><TypewriterText
+          className="progress-typewriter"
+          text={item.text}
+          active={active}
+          continuityKey={`progress:${item.historyTurnId || item.id}`}
+          durationMs={1_200}
+        /></pre>
       </details>
     );
   }

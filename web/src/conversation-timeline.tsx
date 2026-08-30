@@ -23,6 +23,7 @@ type ConversationTimelineProps = {
   knownAttachments: Record<string, KnownAttachment>;
   attachmentUrls: Record<string, string>;
   executionActive: boolean;
+  progressAnimationReady: boolean;
   liveProgressItemId: string | null;
   awaySummary: AwaySummary | null;
   onScroll: UIEventHandler<HTMLDivElement>;
@@ -84,6 +85,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   knownAttachments,
   attachmentUrls,
   executionActive,
+  progressAnimationReady,
   liveProgressItemId,
   awaySummary,
   onScroll,
@@ -137,7 +139,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
               key={item.id}
               item={item}
               active={executionActive && (item.kind === 'progress'
-                ? item.id === liveProgressItemId
+                ? progressAnimationReady && item.id === liveProgressItemId
                 : Boolean(item.transient))}
               imageSource={attachment ? attachmentUrls[attachment.path] : undefined}
               onDownloadFile={onDownloadFile}

@@ -533,7 +533,7 @@ export default function App() {
   const [running, setRunning] = useState(false);
   const [ownedTurnThreadId, setOwnedTurnThreadId] = useState<string | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
-  const [, setFollowState] = useState<FollowState>('idle');
+  const [followState, setFollowState] = useState<FollowState>('idle');
   const [executionState, setExecutionState] = useState<ExecutionState>('idle');
   const [toolPurpose, setToolPurpose] = useState('');
   const [activityDetail, setActivityDetail] = useState('');
@@ -2332,6 +2332,7 @@ export default function App() {
           knownAttachments={knownAttachments}
           attachmentUrls={attachmentUrls}
           executionActive={executionActive}
+          progressAnimationReady={followState !== 'checking'}
           liveProgressItemId={liveProgressItemId}
           awaySummary={awaySummary}
           onScroll={handleMessageScroll}
