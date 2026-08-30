@@ -837,7 +837,7 @@ test('message metadata stays in a fixed sibling row outside the bubble', async (
   assert.match(stylesSource, /&\.user::before,\s*&\.assistant::before/);
   assert.match(stylesSource, /&\.user\s*\{[\s\S]*?border-radius:\s*18px 18px 5px 18px;/);
   assert.match(stylesSource, /&\.assistant\s*\{[\s\S]*?border-radius:\s*18px 18px 18px 5px;/);
-  assert.match(stylesSource, /--bubble-tail-color:\s*#315fc5;[\s\S]*?var\(--bubble-tail-color\) 82%/);
+  assert.match(stylesSource, /--bubble-tail-color:\s*#2b55a3;[\s\S]*?var\(--bubble-tail-color\) 82%/);
   assert.match(stylesSource, /--bubble-tail-color:\s*#131925;[\s\S]*?color:\s*#c8d1df;[\s\S]*?background:\s*var\(--bubble-tail-color\);/);
   assert.doesNotMatch(stylesSource, /&\.assistant\s*\{[^}]*border:\s*1px/);
   assert.match(stylesSource, /&\.user::before,\s*&\.assistant::before\s*\{[\s\S]*?background:\s*var\(--bubble-tail-color\);/);

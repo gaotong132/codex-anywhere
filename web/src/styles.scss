@@ -611,10 +611,10 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   input[type="checkbox"] { width: auto; margin-right: .45em; }
 
   &.user {
-    --bubble-tail-color: #315fc5;
+    --bubble-tail-color: #2b55a3;
     border-radius: 18px 18px 5px 18px; color: #fff;
-    background: linear-gradient(135deg, #326ddd 0%, var(--bubble-tail-color) 82%, var(--bubble-tail-color) 100%);
-    box-shadow: 0 7px 22px rgba(23, 57, 130, .2); line-height: 1.5;
+    background: linear-gradient(135deg, #2f62bd 0%, var(--bubble-tail-color) 82%, var(--bubble-tail-color) 100%);
+    box-shadow: 0 7px 20px rgba(18, 42, 92, .16); line-height: 1.5;
   }
   &.user > p:first-of-type { margin-top: 0; }
   &.assistant {
