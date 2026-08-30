@@ -290,7 +290,7 @@ export function SidebarIcon({ name }: { name: SidebarIconName }) {
   if (name === 'panel-open') {
     return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>;
   }
-  return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2" /><path d="M9 4.5v15m7-10-3 2.5 3 2.5" /></svg>;
+  return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6" /></svg>;
 }
 
 export function DownloadIndicator({
