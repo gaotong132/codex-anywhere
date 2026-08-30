@@ -34,8 +34,8 @@
       i { width: 8px; height: 8px; }
     }
     .message-list { padding: 18px 12px; }
-    .execution-strip { padding: 7px max(12px, env(safe-area-inset-right)) 7px max(12px, env(safe-area-inset-left)); }
-    .tool-purpose { gap: 5px; font-size: 10px; }
+    .execution-strip { padding: 6px max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); }
+    .tool-purpose { gap: 5px; padding: 6px 8px; border-radius: 11px; font-size: 10px; }
     .activity-primary time { max-width: 50px; }
     .session-context { padding: 10px 12px; }
     .new-session-overlay { align-items: end; padding: 0; }
@@ -53,7 +53,7 @@
     .progress-card { max-width: 96%; }
     .approval-card { margin: 0 10px 8px; }
     .composer-wrap {
-      padding: 9px 10px calc(8px + env(safe-area-inset-bottom));
+      padding: 6px 10px calc(8px + env(safe-area-inset-bottom));
       > small { display: none; }
     }
     .composer { border-radius: 15px; }
