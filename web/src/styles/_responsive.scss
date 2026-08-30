@@ -27,7 +27,7 @@
     .model-config-summary { gap: 3px; }
     .model-config-summary > span { padding: 0 5px; }
     .model-config-summary .model-config-model { max-width: 108px; }
-    .model-config-popover { position: fixed; top: calc(66px + env(safe-area-inset-top)); right: 12px; left: 12px; width: auto; }
+    .model-config-popover { position: fixed; top: calc(66px + env(safe-area-inset-top)); right: 12px; left: 12px; width: auto; transform: none; }
     .presence {
       width: 30px; height: 30px; flex: 0 0 30px;
       i { width: 8px; height: 8px; }

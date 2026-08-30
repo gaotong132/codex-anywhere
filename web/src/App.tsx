@@ -61,7 +61,7 @@ import {
   shouldLoadOlderHistory,
   type SessionAttentionState,
 } from './app-utils';
-import { DownloadIndicator, MessageBubble, SidebarIcon, TypewriterText } from './ui-components';
+import { CustomSelect, DownloadIndicator, MessageBubble, SidebarIcon, TypewriterText } from './ui-components';
 import {
   buildAwaySummary,
   formatAwayDuration,
@@ -412,13 +412,19 @@ function ModelConfigControl({
             <strong>{t('后续轮次配置', 'Next-turn settings')}</strong>
             <span>{disabled ? t('当前正在执行，暂不可修改', 'Read-only while this task is running') : t('保存后用于该会话的后续消息', 'Applies to subsequent messages in this task')}</span>
           </header>
-          <label>
+          <div className="model-config-field">
             <span>{t('模型', 'Model')}</span>
-            <select
+            <CustomSelect
               value={draft.model}
               disabled={disabled || saving}
-              onChange={(event) => {
-                const nextModel = config.models.find((model) => model.model === event.target.value);
+              ariaLabel={t('选择模型', 'Select model')}
+              options={config.models.map((model) => ({
+                value: model.model,
+                label: model.displayName,
+                description: model.description,
+              }))}
+              onChange={(value) => {
+                const nextModel = config.models.find((model) => model.model === value);
                 if (!nextModel) return;
                 const effortSupported = nextModel.supportedReasoningEfforts
                   .some((option) => option.reasoningEffort === draft.reasoningEffort);
@@ -428,24 +434,22 @@ function ModelConfigControl({
                   fastMode: draft.fastMode && fastTierAvailable(nextModel),
                 });
               }}
-            >
-              {config.models.map((model) => <option key={model.model} value={model.model}>{model.displayName}</option>)}
-            </select>
-          </label>
-          <label>
+            />
+          </div>
+          <div className="model-config-field">
             <span>{t('思考强度', 'Reasoning')}</span>
-            <select
+            <CustomSelect
               value={draft.reasoningEffort}
               disabled={disabled || saving}
-              onChange={(event) => setDraft({ ...draft, reasoningEffort: event.target.value })}
-            >
-              {(draftModel?.supportedReasoningEfforts || []).map((option) => (
-                <option key={option.reasoningEffort} value={option.reasoningEffort}>
-                  {reasoningEffortLabel(option.reasoningEffort)}
-                </option>
-              ))}
-            </select>
-          </label>
+              ariaLabel={t('选择思考强度', 'Select reasoning effort')}
+              options={(draftModel?.supportedReasoningEfforts || []).map((option) => ({
+                value: option.reasoningEffort,
+                label: reasoningEffortLabel(option.reasoningEffort),
+                description: option.description,
+              }))}
+              onChange={(value) => setDraft({ ...draft, reasoningEffort: value })}
+            />
+          </div>
           <label className={`model-fast-toggle${fastTierAvailable(draftModel) ? '' : ' unavailable'}`}>
             <span><strong>{t('快速模式', 'Fast mode')}</strong><small>{fastTierAvailable(draftModel)
               ? t('使用模型支持的低延迟服务层', 'Use the model’s low-latency service tier')
@@ -2202,19 +2206,22 @@ export default function App() {
             </header>
             <div className="new-session-dialog-body">
               {existingProjects.length > 0 && (
-                <label className="new-session-field" htmlFor="existing-project">
+                <div className="new-session-field">
                   <span>{t('已有项目', 'Existing project')}</span>
-                  <select
-                    id="existing-project"
+                  <CustomSelect
                     value={selectedExistingProject}
-                    onChange={(event) => setNewSessionCwd(event.target.value)}
-                  >
-                    <option value="">{t('手动输入其他目录', 'Enter another directory')}</option>
-                    {existingProjects.map((project) => (
-                      <option key={project.toLocaleLowerCase()} value={project}>{projectLabel(project)}</option>
-                    ))}
-                  </select>
-                </label>
+                    ariaLabel={t('选择已有项目', 'Select an existing project')}
+                    options={[
+                      { value: '', label: t('手动输入其他目录', 'Enter another directory') },
+                      ...existingProjects.map((project) => ({
+                        value: project,
+                        label: projectLabel(project),
+                        description: project,
+                      })),
+                    ]}
+                    onChange={setNewSessionCwd}
+                  />
+                </div>
               )}
               <label className="new-session-field" htmlFor="new-session-cwd">
                 <span>{t('项目目录', 'Project directory')}</span>
