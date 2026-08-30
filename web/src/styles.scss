@@ -611,25 +611,29 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   input[type="checkbox"] { width: auto; margin-right: .45em; }
 
   &.user {
-    border: 1px solid rgba(139, 177, 255, .13); border-radius: 18px 18px 5px 18px; color: #fff;
-    background: linear-gradient(145deg, #326ddd, #284fac); box-shadow: 0 7px 22px rgba(23, 57, 130, .2); line-height: 1.5;
+    --bubble-tail-color: #315fc5;
+    border-radius: 18px 18px 5px 18px; color: #fff;
+    background: linear-gradient(135deg, #326ddd 0%, var(--bubble-tail-color) 82%, var(--bubble-tail-color) 100%);
+    box-shadow: 0 7px 22px rgba(23, 57, 130, .2); line-height: 1.5;
   }
   &.user > p:first-of-type { margin-top: 0; }
   &.assistant {
-    border: 1px solid #2a3445; border-radius: 18px 18px 18px 5px; color: #dfe6f1;
-    background: linear-gradient(145deg, #151c29, #111722); box-shadow: 0 7px 22px rgba(2, 7, 15, .16);
-    transition: border-color .35s ease, box-shadow .35s ease;
+    --bubble-tail-color: #151c29;
+    border-radius: 18px 18px 18px 5px; color: #dfe6f1; background: var(--bubble-tail-color);
+    box-shadow: 0 7px 22px rgba(2, 7, 15, .16);
+    transition: box-shadow .35s ease;
   }
   &.user::before, &.assistant::before {
-    position: absolute; bottom: -1px; width: 11px; height: 13px; pointer-events: none; content: '';
+    position: absolute; bottom: 0; width: 9px; height: 10px; pointer-events: none; content: '';
+    background: var(--bubble-tail-color);
   }
-  &.user::before { right: -5px; background: #284fac; clip-path: polygon(0 0, 100% 100%, 0 100%); }
-  &.assistant::before { left: -5px; background: #111722; clip-path: polygon(100% 0, 100% 100%, 0 100%); }
+  &.user::before { right: -4px; clip-path: polygon(0 0, 100% 100%, 0 100%); }
+  &.assistant::before { left: -4px; clip-path: polygon(100% 0, 100% 100%, 0 100%); }
   &.error { border: 1px solid #74343c; color: #ffc7cc; background: #39171d; }
 
   &.live { animation: message-arrive .38s cubic-bezier(.2, .75, .3, 1) both; }
   &.user.live { animation-name: user-message-arrive; box-shadow: 0 12px 28px rgba(32, 79, 183, .18); }
-  &.assistant.live { border-color: rgba(73, 105, 164, .52); box-shadow: 0 12px 34px rgba(4, 9, 19, .2); }
+  &.assistant.live { box-shadow: 0 12px 34px rgba(4, 9, 19, .24); }
   &.assistant.final-arriving { animation: final-reply-arrive .7s cubic-bezier(.2, .78, .25, 1) both; }
   &.assistant.live::after {
     position: absolute; inset: 0; pointer-events: none; content: '';
@@ -641,9 +645,9 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 @keyframes user-message-arrive { from { opacity: 0; transform: translate3d(10px, 8px, 0) scale(.98); } to { opacity: 1; transform: none; } }
 @keyframes assistant-sheen { 0%, 46% { transform: translateX(-110%); } 78%, 100% { transform: translateX(110%); } }
 @keyframes final-reply-arrive {
-  0% { opacity: .68; border-color: rgba(109, 157, 245, .78); box-shadow: 0 0 0 1px rgba(94, 139, 224, .18), 0 18px 44px rgba(17, 48, 105, .28); }
-  58% { opacity: 1; border-color: rgba(91, 139, 224, .64); box-shadow: 0 0 0 1px rgba(94, 139, 224, .09), 0 15px 38px rgba(15, 40, 88, .22); }
-  100% { opacity: 1; border-color: #2a3445; box-shadow: 0 7px 22px rgba(2, 7, 15, .16); }
+  0% { opacity: .68; box-shadow: 0 0 0 1px rgba(94, 139, 224, .18), 0 18px 44px rgba(17, 48, 105, .28); }
+  58% { opacity: 1; box-shadow: 0 0 0 1px rgba(94, 139, 224, .09), 0 15px 38px rgba(15, 40, 88, .22); }
+  100% { opacity: 1; box-shadow: 0 7px 22px rgba(2, 7, 15, .16); }
 }
 .message-image { width: min(100%, 420px); margin: 10px 0 0; overflow: hidden; border: 1px solid rgba(255, 255, 255, .12); border-radius: 12px; background: rgba(7, 11, 18, .28); }
 .message-image-preview { display: block; width: 100%; border: 0; padding: 0; background: transparent; cursor: zoom-in; }
