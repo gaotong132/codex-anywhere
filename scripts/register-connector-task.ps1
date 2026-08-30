@@ -15,20 +15,24 @@ $projectRoot = if ($ProjectRoot) {
 else {
     Split-Path -Parent $PSScriptRoot
 }
-$watcherPath = Join-Path $PSScriptRoot 'watch-connector.ps1'
-if (-not (Test-Path -LiteralPath $watcherPath -PathType Leaf)) {
-    throw "Connector watchdog was not found: $watcherPath"
+$launcherPath = Join-Path $PSScriptRoot 'launch-connector-hidden.vbs'
+if (-not (Test-Path -LiteralPath $launcherPath -PathType Leaf)) {
+    throw "Hidden connector launcher was not found: $launcherPath"
 }
 
-$powerShellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
-$arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watcherPath`" -ProjectRoot `"$projectRoot`""
+$wscriptPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
+if (-not (Test-Path -LiteralPath $wscriptPath -PathType Leaf)) {
+    throw "Windows Script Host was not found: $wscriptPath"
+}
+$arguments = "//B //NoLogo `"$launcherPath`" `"$projectRoot`""
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 
 if ($PlanOnly) {
     [PSCustomObject]@{
         taskName = $TaskName
         user = $identity
-        executable = $powerShellPath
+        executable = $wscriptPath
+        launcher = $launcherPath
         arguments = $arguments
         workingDirectory = $projectRoot
         trigger = 'AtLogOn'
@@ -53,7 +57,7 @@ foreach ($command in $requiredCommands) {
 }
 
 $action = New-ScheduledTaskAction `
-    -Execute $powerShellPath `
+    -Execute $wscriptPath `
     -Argument $arguments `
     -WorkingDirectory $projectRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $identity

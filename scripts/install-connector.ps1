@@ -1,8 +1,8 @@
 [CmdletBinding()]
 param(
     [Security.SecureString] $ConnectorToken,
-    [string] $BridgeUrl = 'ws://127.0.0.1:3300/ws',
-    [string] $DeviceId = 'personal-pc',
+    [string] $BridgeUrl,
+    [string] $DeviceId,
     [string[]] $AllowedRoots,
     [switch] $AllowAnyFileDownload,
     [switch] $EnableNetworkAccess,
@@ -14,7 +14,7 @@ Set-StrictMode -Version Latest
 [void][Reflection.Assembly]::LoadWithPartialName('System.Security')
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$watcherPath = Join-Path $PSScriptRoot 'watch-connector.ps1'
+$hiddenLauncherPath = Join-Path $PSScriptRoot 'launch-connector-hidden.vbs'
 $taskRegistrarPath = Join-Path $PSScriptRoot 'register-connector-task.ps1'
 $stateDirectory = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex-anywhere'
 $legacyStateDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'PersonalCodexBridge'
@@ -26,8 +26,43 @@ $shortcutPath = Join-Path $startupDirectory 'Codex Anywhere Connector.lnk'
 $legacyShortcutPath = Join-Path $startupDirectory 'Personal Codex Bridge Connector.lnk'
 $taskName = 'Codex Anywhere Connector'
 
+$existingConfig = $null
+if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+    try {
+        $existingConfig = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
+    }
+    catch {
+        throw "Existing connector settings are invalid: $configPath. $($_.Exception.Message)"
+    }
+}
+
+function Get-ExistingSetting {
+    param(
+        [Parameter(Mandatory)] [string] $Name,
+        $DefaultValue
+    )
+
+    if ($existingConfig -and $existingConfig.PSObject.Properties.Name -contains $Name) {
+        return $existingConfig.$Name
+    }
+    return $DefaultValue
+}
+
+$effectiveBridgeUrl = if ($PSBoundParameters.ContainsKey('BridgeUrl')) {
+    $BridgeUrl
+}
+else {
+    [string] (Get-ExistingSetting -Name 'bridgeUrl' -DefaultValue 'ws://127.0.0.1:3300/ws')
+}
+$effectiveDeviceId = if ($PSBoundParameters.ContainsKey('DeviceId')) {
+    $DeviceId
+}
+else {
+    [string] (Get-ExistingSetting -Name 'deviceId' -DefaultValue 'personal-pc')
+}
+
 $bridgeUri = $null
-if (-not [Uri]::TryCreate($BridgeUrl, [UriKind]::Absolute, [ref] $bridgeUri) -or $bridgeUri.Scheme -notin @('ws', 'wss')) {
+if (-not [Uri]::TryCreate($effectiveBridgeUrl, [UriKind]::Absolute, [ref] $bridgeUri) -or $bridgeUri.Scheme -notin @('ws', 'wss')) {
     throw 'BridgeUrl must use ws:// or wss://.'
 }
 if (-not [string]::IsNullOrEmpty($bridgeUri.UserInfo) -or -not [string]::IsNullOrEmpty($bridgeUri.Query) -or -not [string]::IsNullOrEmpty($bridgeUri.Fragment)) {
@@ -85,18 +120,34 @@ if ($ConnectorToken) {
 elseif (-not (Test-Path -LiteralPath $secretPath -PathType Leaf)) {
     throw 'ConnectorToken is required for the first installation.'
 }
-$resolvedAllowedRoots = if ($AllowedRoots -and $AllowedRoots.Count -gt 0) {
-    @($AllowedRoots | ForEach-Object { [IO.Path]::GetFullPath($_) })
+[string[]] $resolvedAllowedRoots = if ($PSBoundParameters.ContainsKey('AllowedRoots') -and $AllowedRoots.Count -gt 0) {
+    $AllowedRoots | ForEach-Object { [IO.Path]::GetFullPath($_) }
+}
+elseif ($existingConfig) {
+    @(Get-ExistingSetting -Name 'allowedRoots' -DefaultValue @($projectRoot)) |
+        ForEach-Object { [IO.Path]::GetFullPath([string] $_) }
 }
 else {
-    @($projectRoot)
+    $projectRoot
+}
+$effectiveAllowAnyFileDownload = if ($PSBoundParameters.ContainsKey('AllowAnyFileDownload')) {
+    [bool] $AllowAnyFileDownload
+}
+else {
+    [bool] (Get-ExistingSetting -Name 'allowAnyFileDownload' -DefaultValue $false)
+}
+$effectiveNetworkAccess = if ($PSBoundParameters.ContainsKey('EnableNetworkAccess')) {
+    [bool] $EnableNetworkAccess
+}
+else {
+    [bool] (Get-ExistingSetting -Name 'networkAccess' -DefaultValue $false)
 }
 $connectorConfig = [ordered]@{
     bridgeUrl = $bridgeUri.AbsoluteUri
-    deviceId = $DeviceId
+    deviceId = $effectiveDeviceId
     allowedRoots = $resolvedAllowedRoots
-    allowAnyFileDownload = [bool] $AllowAnyFileDownload
-    networkAccess = [bool] $EnableNetworkAccess
+    allowAnyFileDownload = $effectiveAllowAnyFileDownload
+    networkAccess = $effectiveNetworkAccess
 }
 [IO.File]::WriteAllText(
     $configPath,
@@ -116,13 +167,19 @@ try {
 }
 catch {
     Write-Warning "Could not register the Windows background task; using the login shortcut instead. $($_.Exception.Message)"
-    $powerShellPath = (Get-Command powershell.exe -ErrorAction Stop).Source
-    $arguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$watcherPath`""
+    if (-not (Test-Path -LiteralPath $hiddenLauncherPath -PathType Leaf)) {
+        throw "Hidden connector launcher was not found: $hiddenLauncherPath"
+    }
+    $wscriptPath = Join-Path $env:SystemRoot 'System32\wscript.exe'
+    if (-not (Test-Path -LiteralPath $wscriptPath -PathType Leaf)) {
+        throw "Windows Script Host was not found: $wscriptPath"
+    }
+    $arguments = "//B //NoLogo `"$hiddenLauncherPath`" `"$projectRoot`""
     $shell = New-Object -ComObject WScript.Shell
     $shortcut = $null
     try {
         $shortcut = $shell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = $powerShellPath
+        $shortcut.TargetPath = $wscriptPath
         $shortcut.Arguments = $arguments
         $shortcut.WorkingDirectory = $projectRoot
         $shortcut.WindowStyle = 7
@@ -137,7 +194,7 @@ catch {
         [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell)
     }
     if (-not $NoStart) {
-        Start-Process -FilePath $powerShellPath -ArgumentList $arguments -WindowStyle Hidden
+        Start-Process -FilePath $wscriptPath -ArgumentList $arguments -WindowStyle Hidden
     }
     $backgroundLauncher = "login shortcut: $shortcutPath"
 }
