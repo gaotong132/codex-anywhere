@@ -1385,6 +1385,35 @@ test('both history readers hide the desktop delegation envelope', () => {
   assert.equal(turns[0].items[0].contexts[0].kind, 'delegation');
 });
 
+test('delegated mobile messages survive rollout refresh without duplicates', () => {
+  const envelope = '<codex_delegation><source_thread_id>source-thread</source_thread_id><input>请修复。</input></codex_delegation>';
+  const items = rolloutInternals.mapRolloutRows([
+    {
+      timestamp: '2026-08-30T10:01:12.726Z',
+      type: 'response_item',
+      payload: { type: 'function_call_output', name: 'send_message_to_thread', output: envelope },
+    },
+    {
+      timestamp: '2026-08-30T10:01:12.726Z',
+      type: 'event_msg',
+      payload: {
+        type: 'item_completed',
+        item: { type: 'FunctionCallOutput', name: 'send_message_to_thread', output: envelope },
+      },
+    },
+    {
+      type: 'response_item',
+      payload: { type: 'function_call_output', name: 'exec_command', output: envelope },
+    },
+  ]);
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].type, 'userMessage');
+  assert.equal(items[0].text, '请修复。');
+  assert.deepEqual(items[0].contexts, [{ kind: 'delegation', sourceThreadId: 'source-thread' }]);
+  assert.equal(items[0].completedAt, Date.parse('2026-08-30T10:01:12.726Z'));
+});
+
 test('approval results stay inside workspace and keep network disabled', () => {
   const approvalRoot = resolve('approval-root');
   const approvalOutput = join(approvalRoot, 'output');

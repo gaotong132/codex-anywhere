@@ -687,7 +687,10 @@ function mapRolloutRows(rows: RolloutRow[], initialProgress?: RolloutProgress): 
     if (progressEvent) progress = applyFileProgressEvent(progress, progressEvent);
     const completedAt = epochMillis(row.timestamp);
     const timing = completedAt ? { completedAt } : {};
-    if (row?.type === 'event_msg' && payloadType === 'agent_message') {
+    const delegatedMessage = delegatedUserMessage(row);
+    if (delegatedMessage) {
+      pushText(items, { type: 'userMessage', ...delegatedMessage, ...timing });
+    } else if (row?.type === 'event_msg' && payloadType === 'agent_message') {
       const content = parseAssistantMessage(payload.message);
       pushText(items, {
         type: 'agentMessage', phase: payload.phase || 'commentary', ...content,
@@ -726,6 +729,23 @@ function mapRolloutRows(rows: RolloutRow[], initialProgress?: RolloutProgress): 
     }
   }
   return items;
+}
+
+function delegatedUserMessage(row: RolloutRow) {
+  const payload = row?.payload || {};
+  const item = row?.type === 'response_item'
+    && /^(?:function_call_output|custom_tool_call_output)$/i.test(String(payload.type || ''))
+    ? payload
+    : row?.type === 'event_msg'
+      && String(payload.type || '') === 'item_completed'
+      && /^(?:FunctionCallOutput|CustomToolCallOutput)$/i.test(String(payload.item?.type || ''))
+      ? payload.item
+      : null;
+  if (!item || String(item.name || '') !== 'send_message_to_thread' || typeof item.output !== 'string') {
+    return null;
+  }
+  const content = parseUserMessage(item.output);
+  return content.text && content.contexts.some((context) => context.kind === 'delegation') ? content : null;
 }
 
 function isFinalAssistantRow(row: RolloutRow) {
@@ -788,7 +808,8 @@ function capText(value: unknown, limit = MAX_TEXT_LENGTH) {
 }
 
 export const internals = {
-  activityKind, capText, decodeRolloutCursor, encodeRolloutCursor, epochMillis, extractContent, fullText,
+  activityKind, capText, decodeRolloutCursor, delegatedUserMessage, encodeRolloutCursor,
+  epochMillis, extractContent, fullText,
   findLatestActivityBefore, findLatestFileProgressBefore, findLatestModelSettingsBefore,
   findLatestPlanBefore, findLatestPurposeBefore,
   inferRolloutActivity,
