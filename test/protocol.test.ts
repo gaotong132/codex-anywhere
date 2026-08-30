@@ -73,7 +73,6 @@ import {
 } from '../web/src/history-utils.js';
 import { MessageBubble, messagePresentationEqual } from '../web/src/message-bubble.js';
 import { ConversationTimeline } from '../web/src/conversation-timeline.js';
-import { buildAwaySummary, formatAwayDuration } from '../web/src/away-summary.js';
 
 test('connector bootstrap proofs are route and challenge bound', () => {
   const token = 'a'.repeat(32);
@@ -329,12 +328,10 @@ test('empty intermediate history pages keep one stable loading surface', () => {
     executionActive: true,
     progressAnimationReady: false,
     liveProgressItemId: null,
-    awaySummary: null,
     onScroll: () => undefined,
     onLoadOlder: () => undefined,
     onDownloadFile: () => undefined,
     onReadVisualization: async () => '',
-    onDismissAwaySummary: () => undefined,
   }));
 
   assert.match(markup, /class="history-skeleton"/);
@@ -907,45 +904,6 @@ test('rollout tail unwraps and deduplicates heartbeat event formats', () => {
   ]);
   assert.equal(items.length, 1);
   assert.equal(items[0].text, '部署完成');
-});
-
-test('away summary reports only verifiable changes since the last visit', () => {
-  const lastVisitedAt = Date.parse('2026-08-29T01:00:00.000Z');
-  const summary = buildAwaySummary([{
-    id: 'new-turn',
-    status: 'completed',
-    startedAt: '2026-08-29T01:01:00.000Z',
-    completedAt: '2026-08-29T01:03:01.000Z',
-    items: [
-      { type: 'userMessage', text: 'continue', createdAt: '2026-08-29T01:01:00.000Z' },
-      { type: 'agentMessage', phase: 'final_answer', text: 'done', completedAt: '2026-08-29T01:03:00.000Z' },
-      {
-        type: 'agentMessage', phase: 'final_answer', text: '',
-        attachment: { path: 'C:\\output\\result.png', name: 'result.png' },
-        completedAt: '2026-08-29T01:03:01.000Z',
-      },
-    ],
-  }], {
-    plan: { current: 4, total: 4 },
-    files: { changed: 3, additions: 18, deletions: 2 },
-  }, lastVisitedAt);
-  assert.deepEqual(summary, {
-    status: 'completed',
-    newReplies: 1,
-    artifacts: 1,
-    durationMs: 121_000,
-    progress: {
-      plan: { current: 4, total: 4 },
-      files: { changed: 3, additions: 18, deletions: 2 },
-    },
-  });
-  assert.equal(formatAwayDuration(summary?.durationMs), '2m 1s');
-});
-
-test('away summary stays hidden when nothing changed after the last visit', () => {
-  assert.equal(buildAwaySummary([{
-    id: 'old-turn', status: 'completed', completedAt: '2026-08-29T01:00:00.000Z', items: [],
-  }], {}, Date.parse('2026-08-29T02:00:00.000Z')), null);
 });
 
 test('large rollout keeps activity across an incremental tail read', async () => {

@@ -1,5 +1,4 @@
 import { lazy, memo, Suspense, useMemo, type RefObject, type UIEventHandler } from 'react';
-import { formatAwayDuration, type AwaySummary } from './away-summary';
 import {
   resolveTimelineAttachment,
   type KnownAttachment,
@@ -25,53 +24,11 @@ type ConversationTimelineProps = {
   executionActive: boolean;
   progressAnimationReady: boolean;
   liveProgressItemId: string | null;
-  awaySummary: AwaySummary | null;
   onScroll: UIEventHandler<HTMLDivElement>;
   onLoadOlder: () => void;
   onDownloadFile: (path: string) => void;
   onReadVisualization: (path: string) => Promise<string>;
-  onDismissAwaySummary: () => void;
 };
-
-function AwaySummaryCard({ summary, onDismiss }: { summary: AwaySummary; onDismiss: () => void }) {
-  const duration = formatAwayDuration(summary.durationMs);
-  const headline = summary.status === 'running'
-    ? t('任务仍在执行', 'The run is still in progress')
-    : summary.status === 'failed'
-      ? t('本轮任务执行失败', 'The run failed')
-      : t('本轮任务已完成', 'The run completed');
-  return (
-    <section className={`away-summary ${summary.status}`} aria-label={t('离开期间摘要', 'While you were away')}>
-      <header>
-        <span><i aria-hidden="true" />{t('离开期间', 'While you were away')}</span>
-        <button type="button" onClick={onDismiss} aria-label={t('关闭摘要', 'Dismiss summary')}>×</button>
-      </header>
-      <strong>{headline}</strong>
-      <div className="away-summary-metrics">
-        {summary.progress.plan && (
-          <span>{t(
-            `${summary.progress.plan.current} / ${summary.progress.plan.total} 个步骤`,
-            `${summary.progress.plan.current} / ${summary.progress.plan.total} steps`,
-          )}</span>
-        )}
-        {summary.progress.files && (
-          <span>
-            {t(`${summary.progress.files.changed} 个文件`, `${summary.progress.files.changed} files`)}
-            {' '}<b className="additions">+{summary.progress.files.additions}</b>
-            {' '}<b className="deletions">-{summary.progress.files.deletions}</b>
-          </span>
-        )}
-        {summary.newReplies > 0 && (
-          <span>{t(`${summary.newReplies} 条新回复`, `${summary.newReplies} new replies`)}</span>
-        )}
-        {summary.artifacts > 0 && (
-          <span>{t(`${summary.artifacts} 个新产物`, `${summary.artifacts} new artifacts`)}</span>
-        )}
-        {duration && <span>{duration}</span>}
-      </div>
-    </section>
-  );
-}
 
 export const ConversationTimeline = memo(function ConversationTimeline({
   messageListRef,
@@ -87,12 +44,10 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   executionActive,
   progressAnimationReady,
   liveProgressItemId,
-  awaySummary,
   onScroll,
   onLoadOlder,
   onDownloadFile,
   onReadVisualization,
-  onDismissAwaySummary,
 }: ConversationTimelineProps) {
   const resolvedItems = useMemo(() => timeline.map((item) => {
     const attachment = resolveTimelineAttachment(item, threadId, knownAttachments);
@@ -150,7 +105,6 @@ export const ConversationTimeline = memo(function ConversationTimeline({
             />
           ))}
         </Suspense>
-        {awaySummary && <AwaySummaryCard summary={awaySummary} onDismiss={onDismissAwaySummary} />}
       </div>
     </div>
   );

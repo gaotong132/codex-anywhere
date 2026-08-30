@@ -65,10 +65,6 @@ import {
 } from './app-utils';
 import { CustomSelect, DownloadIndicator, SidebarIcon, TypewriterText } from './ui-components';
 import { ConversationTimeline } from './conversation-timeline';
-import {
-  buildAwaySummary,
-  type AwaySummary,
-} from './away-summary';
 import { BrowserSecureChannel } from './secure-channel-client';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
 import {
@@ -125,7 +121,6 @@ const CLIENT_STALE_AFTER_MS = 55_000;
 const SESSION_STATUS_REFRESH_MS = 6_000;
 const INITIAL_BOOTSTRAP_TIMEOUT_MS = 10_000;
 const SESSION_ATTENTION_KEY = 'bridge.sessionAttention.v1';
-const SESSION_VISITS_KEY = 'bridge.sessionVisits.v1';
 const PENDING_PAIRING_KEY = 'bridge.pendingPairing.v1';
 const NEW_TURN_KEY = '__new_turn__';
 const PairingDialog = lazy(() => import('./pairing-dialog').then((module) => ({
@@ -164,23 +159,6 @@ function loadSessionAttention(): SessionAttentionState {
 
 function storeSessionAttention(value: SessionAttentionState) {
   try { localStorage.setItem(SESSION_ATTENTION_KEY, JSON.stringify(value)); } catch { /* keep in memory */ }
-}
-
-type SessionVisits = Record<string, number>;
-
-function loadSessionVisits(): SessionVisits {
-  try {
-    const stored = JSON.parse(localStorage.getItem(SESSION_VISITS_KEY) || '{}') as Record<string, unknown>;
-    return Object.fromEntries(Object.entries(stored)
-      .filter(([id, visitedAt]) => id && typeof visitedAt === 'number' && Number.isFinite(visitedAt))
-      .slice(-200)) as SessionVisits;
-  } catch {
-    return {};
-  }
-}
-
-function storeSessionVisits(value: SessionVisits) {
-  try { localStorage.setItem(SESSION_VISITS_KEY, JSON.stringify(value)); } catch { /* keep in memory */ }
 }
 
 const ACTIVITY_LABELS: Record<LiveActivityKind, [string, string]> = {
@@ -540,7 +518,6 @@ export default function App() {
   const [liveActivity, setLiveActivity] = useState<LiveActivityKind>('working');
   const [activityStartedAt, setActivityStartedAt] = useState<number | null>(null);
   const [turnProgress, setTurnProgress] = useState<TurnProgress>({});
-  const [awaySummary, setAwaySummary] = useState<AwaySummary | null>(null);
   const [fileDownload, setFileDownload] = useState<FileDownloadState | null>(null);
   const [creatingNewSession, setCreatingNewSession] = useState(false);
   const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
@@ -591,8 +568,6 @@ export default function App() {
   const runningRef = useRef(running);
   const ownedTurnThreadIdRef = useRef(ownedTurnThreadId);
   const sessionAttentionRef = useRef(sessionAttention);
-  const sessionVisitsRef = useRef<SessionVisits>(loadSessionVisits());
-  const awaySummaryRequestRef = useRef<{ threadId: string; lastVisitedAt: number } | null>(null);
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
   useEffect(() => { pairingCredentialRef.current = pairingCredential; }, [pairingCredential]);
@@ -669,7 +644,7 @@ export default function App() {
       return () => cancelAnimationFrame(frame);
     }
   }, [
-    timeline, executionState, attachmentUrls, fileDownload, approval, awaySummary,
+    timeline, executionState, attachmentUrls, fileDownload, approval,
     initialBootstrapPending,
   ]);
 
@@ -1417,22 +1392,6 @@ export default function App() {
           ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || Date.now()
           : null);
         setTurnProgress(active ? normalizeTurnProgress(page.turnProgress) : {});
-        const summaryRequest = awaySummaryRequestRef.current;
-        if (summaryRequest?.threadId === targetThreadId) {
-          awaySummaryRequestRef.current = null;
-          setAwaySummary(buildAwaySummary(page.turns, page.turnProgress, summaryRequest.lastVisitedAt));
-          if (!page.turnProgress?.plan && !page.turnProgress?.files) {
-            void request<HistoryPage>('session.turns.list', {
-              threadId: targetThreadId,
-              limit: 2,
-              mode: 'live',
-            }).then((livePage) => {
-              if (selectedRequestRef.current !== requestVersion || threadIdRef.current !== targetThreadId) return;
-              shouldScrollBottomRef.current = true;
-              setAwaySummary(buildAwaySummary(page.turns, livePage.turnProgress, summaryRequest.lastVisitedAt));
-            }).catch(() => { /* the conversation itself is already available */ });
-          }
-        }
       }
       setNextCursor(page.nextCursor || null);
       setInitialHistoryLoaded(true);
@@ -1540,20 +1499,7 @@ export default function App() {
   const selectSession = useCallback((session: Session | null) => {
     const nextThreadId = session?.id || null;
     if (nextThreadId) {
-      awaySummaryRequestRef.current = sessionAttentionRef.current[nextThreadId] === 'unread'
-        ? { threadId: nextThreadId, lastVisitedAt: sessionVisitsRef.current[nextThreadId] || 0 }
-        : null;
-      const nextVisits = {
-        ...sessionVisitsRef.current,
-        [nextThreadId]: Date.now(),
-      };
-      sessionVisitsRef.current = Object.fromEntries(Object.entries(nextVisits)
-        .sort((left, right) => left[1] - right[1])
-        .slice(-200));
-      storeSessionVisits(sessionVisitsRef.current);
       updateSessionAttention((current) => markSessionAttentionRead(current, nextThreadId));
-    } else {
-      awaySummaryRequestRef.current = null;
     }
     if (nextThreadId && nextThreadId === threadIdRef.current) {
       setActiveSession(session);
@@ -1587,7 +1533,6 @@ export default function App() {
     setLiveActivity('working');
     setActivityStartedAt(null);
     setTurnProgress({});
-    setAwaySummary(null);
     setApproval(null);
     autoFollowLatestRef.current = true;
     streamItemRef.current = null;
@@ -1757,7 +1702,6 @@ export default function App() {
       return;
     }
     if (!isExistingSession) localStorage.setItem('bridge.newSessionCwd', projectCwd);
-    setAwaySummary(null);
     sendingRef.current = true;
     let turnText = text;
     let visibleText = text;
@@ -2041,10 +1985,6 @@ export default function App() {
 
   const cancelFileDownload = useCallback(() => {
     fileDownloadCancelRef.current = true;
-  }, []);
-
-  const dismissAwaySummary = useCallback(() => {
-    setAwaySummary(null);
   }, []);
 
   const filteredSessions = useMemo(() => {
@@ -2334,12 +2274,10 @@ export default function App() {
           executionActive={executionActive}
           progressAnimationReady={followState !== 'checking'}
           liveProgressItemId={liveProgressItemId}
-          awaySummary={awaySummary}
           onScroll={handleMessageScroll}
           onLoadOlder={loadOlder}
           onDownloadFile={downloadLocalFile}
           onReadVisualization={readVisualization}
-          onDismissAwaySummary={dismissAwaySummary}
         />
         <div className="execution-strip">
           {(executionState === 'running' || executionState === 'waiting') && (
