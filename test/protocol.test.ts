@@ -1051,6 +1051,42 @@ test('rollout tail exposes active plan and aggregate file progress', async () =>
   }
 });
 
+test('completed rollout pages restore modern file changes from before the visible window', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-persisted-progress-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const row = (value) => `${JSON.stringify(value)}\n`;
+  try {
+    await writeFile(filePath, [
+      row({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-files' } }),
+      row({ type: 'event_msg', payload: { type: 'item_completed', item: {
+        type: 'FileChange', changes: {
+          'src/first.ts': { type: 'update', unified_diff: '@@ -1 +1,2 @@\n-old\n+new\n+line' },
+          'src/second.ts': { type: 'add', content: 'created\n' },
+        },
+      } } }),
+      row({ type: 'response_item', payload: {
+        type: 'custom_tool_call_output', output: 'x'.repeat(600 * 1024),
+      } }),
+      row({ type: 'response_item', payload: {
+        type: 'message', role: 'assistant', phase: 'final_answer', content: [
+          { type: 'output_text', text: 'finished' },
+        ],
+      } }),
+      row({ type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn-files' } }),
+    ].join(''));
+
+    const result = await readRolloutTail({
+      filePath, threadId: 'thread-files', paged: true,
+    });
+    assert.equal(result.turns[0].items.at(-1).text, 'finished');
+    assert.deepEqual(result.turnProgress.files, {
+      changed: 2, additions: 3, deletions: 1,
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('large rollout pages walk backward to the oldest visible messages', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-pages-'));
   const filePath = join(directory, 'rollout.jsonl');

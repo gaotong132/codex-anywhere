@@ -35,6 +35,10 @@ type RolloutProgress = {
   files?: TurnFileProgress;
   patchFiles: Set<string>;
 };
+type FileProgressEvent =
+  | { kind: 'reset' }
+  | { kind: 'replace'; files: TurnFileProgress }
+  | { kind: 'patch'; files: TurnFileProgress; paths: string[] };
 type RolloutRow = Record<string, any>;
 type RolloutItem = {
   type: string;
@@ -194,7 +198,11 @@ async function activityForHistoryPage(handle: FileHandle, rows: RolloutRow[], fi
 async function progressForHistoryPage(
   handle: FileHandle, rows: RolloutRow[], activity: RolloutActivity, firstCompleteOffset: number,
 ) {
-  const progress = updateTurnProgress({ patchFiles: new Set<string>() }, rows, activity.status);
+  const hasTaskStart = rows.some((row) => String(row?.payload?.type || '') === 'task_started');
+  const priorProgress = firstCompleteOffset > 0 && !hasTaskStart
+    ? await findLatestFileProgressBefore(handle, firstCompleteOffset)
+    : { patchFiles: new Set<string>() };
+  const progress = updateTurnProgress(priorProgress, rows, activity.status);
   if (activity.status !== 'unknown' && !progress.plan && firstCompleteOffset > 0) {
     progress.plan = await findLatestPlanBefore(handle, firstCompleteOffset);
   }
@@ -367,6 +375,32 @@ async function findLatestPlanBefore(handle: FileHandle, endOffset: number): Prom
   return undefined;
 }
 
+async function findLatestFileProgressBefore(handle: FileHandle, endOffset: number): Promise<RolloutProgress> {
+  const chunks: FileProgressEvent[][] = [];
+  let cursor = endOffset;
+  while (cursor > 0) {
+    const start = Math.max(0, cursor - ACTIVITY_SCAN_CHUNK_BYTES);
+    const window = await readCompleteRows(handle, start, cursor, start > 0);
+    let taskStartIndex = -1;
+    for (let index = window.rows.length - 1; index >= 0; index -= 1) {
+      if (String(window.rows[index]?.payload?.type || '') !== 'task_started') continue;
+      taskStartIndex = index;
+      break;
+    }
+    const relevantRows = taskStartIndex >= 0 ? window.rows.slice(taskStartIndex) : window.rows;
+    const events = relevantRows.map(fileProgressEvent).filter((event): event is FileProgressEvent => Boolean(event));
+    if (events.length) chunks.push(events);
+    if (taskStartIndex >= 0 || start === 0) break;
+    cursor = window.firstCompleteOffset < cursor ? window.firstCompleteOffset : start;
+  }
+
+  let progress: RolloutProgress = { patchFiles: new Set() };
+  for (const events of chunks.reverse()) {
+    for (const event of events) progress = applyFileProgressEvent(progress, event);
+  }
+  return progress;
+}
+
 async function findLatestPurposeBefore(handle: FileHandle, endOffset: number): Promise<string> {
   let cursor = endOffset;
   while (cursor > 0) {
@@ -525,25 +559,45 @@ function updateTurnProgress(current: RolloutProgress, rows: RolloutRow[], status
     if (/task_complete|task_failed|turn_aborted|turn_error/.test(type)) continue;
     const structuredPlan = summarizePlanSteps(payload.plan);
     if (structuredPlan) progress.plan = structuredPlan;
-    const structuredDiff = summarizeUnifiedDiff(payload.diff);
-    if (structuredDiff) {
-      progress.files = structuredDiff;
-      progress.patchFiles.clear();
-    }
-    const patch = type === 'patch_apply_end' && payload.success !== false
-      ? summarizePatchChanges(payload.changes) : undefined;
-    if (patch) {
-      for (const path of patch.paths) progress.patchFiles.add(path);
-      progress.files = {
-        changed: progress.patchFiles.size || patch.changed,
-        additions: (progress.files?.additions || 0) + patch.additions,
-        deletions: (progress.files?.deletions || 0) + patch.deletions,
-      };
-    }
+    const fileEvent = fileProgressEvent(row);
+    if (fileEvent) progress = applyFileProgressEvent(progress, fileEvent);
     const plan = planProgressFromRow(row);
     if (plan) progress.plan = plan;
   }
   return status === 'unknown' ? { patchFiles: new Set() } : progress;
+}
+
+function fileProgressEvent(row: RolloutRow): FileProgressEvent | undefined {
+  const payload = row?.payload || {};
+  const type = String(payload.type || '');
+  if (type === 'task_started') return { kind: 'reset' };
+  const structuredDiff = summarizeUnifiedDiff(payload.diff);
+  if (structuredDiff) return { kind: 'replace', files: structuredDiff };
+  const changes = type === 'patch_apply_end' && payload.success !== false
+    ? payload.changes
+    : type === 'item_completed' && /FileChange/i.test(String(payload.item?.type || ''))
+      ? payload.item?.changes
+      : undefined;
+  const patch = summarizePatchChanges(changes);
+  return patch ? { kind: 'patch', files: patch, paths: patch.paths } : undefined;
+}
+
+function applyFileProgressEvent(current: RolloutProgress, event: FileProgressEvent): RolloutProgress {
+  if (event.kind === 'reset') return { patchFiles: new Set() };
+  if (event.kind === 'replace') {
+    return { ...current, files: event.files, patchFiles: new Set() };
+  }
+  const patchFiles = new Set(current.patchFiles);
+  for (const path of event.paths) patchFiles.add(path);
+  return {
+    ...current,
+    patchFiles,
+    files: {
+      changed: patchFiles.size || event.files.changed,
+      additions: (current.files?.additions || 0) + event.files.additions,
+      deletions: (current.files?.deletions || 0) + event.files.deletions,
+    },
+  };
 }
 
 function planProgressFromRow(row: RolloutRow | null) {
@@ -676,7 +730,8 @@ function capText(value: unknown, limit = MAX_TEXT_LENGTH) {
 
 export const internals = {
   activityKind, capText, decodeRolloutCursor, encodeRolloutCursor, epochMillis, extractContent,
-  findLatestActivityBefore, findLatestModelSettingsBefore, findLatestPlanBefore, findLatestPurposeBefore,
+  findLatestActivityBefore, findLatestFileProgressBefore, findLatestModelSettingsBefore,
+  findLatestPlanBefore, findLatestPurposeBefore,
   inferRolloutActivity,
   inferRolloutStatus, mapRolloutRows, recoverGeneratedImageRows, rolloutCache, updateLiveActivity,
   reasoningSummary, updateActivityDetail, updateToolPurpose,

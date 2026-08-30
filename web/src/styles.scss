@@ -167,16 +167,22 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   .eyebrow { margin: 0; white-space: nowrap; }
 }
 .icon-button {
-  width: 40px;
-  height: 40px;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
   display: grid;
   place-items: center;
   padding: 0;
   border: 1px solid #2b3444;
-  border-radius: 11px;
-  color: #dbe4f2;
-  background: #151b28;
-  font-size: 20px;
+  border-radius: 50%;
+  color: #9fb7df;
+  background: rgba(20, 26, 37, .75);
+  transition: color .15s ease, border-color .15s ease, background .15s ease, transform .15s ease;
+
+  &:hover { color: #dce8ff; border-color: rgba(75, 126, 225, .55); background: rgba(44, 91, 181, .16); }
+  &:active { transform: scale(.96); }
+  &:focus-visible { outline: 2px solid #6798ff; outline-offset: 2px; }
+  .sidebar-tool-icon { width: 16px; height: 16px; stroke-width: 2; }
 }
 .sidebar-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 4px; }
 .compact-search {
