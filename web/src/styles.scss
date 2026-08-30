@@ -618,8 +618,8 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   }
   &.user > p:first-of-type { margin-top: 0; }
   &.assistant {
-    --bubble-tail-color: #151c29;
-    border-radius: 18px 18px 18px 5px; color: #dfe6f1; background: var(--bubble-tail-color);
+    --bubble-tail-color: #131925;
+    border-radius: 18px 18px 18px 5px; color: #c8d1df; background: var(--bubble-tail-color);
     box-shadow: 0 7px 22px rgba(2, 7, 15, .16);
     transition: box-shadow .35s ease;
   }
