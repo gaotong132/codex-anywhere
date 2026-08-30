@@ -774,6 +774,13 @@ test('message presentation equality skips unchanged polling snapshots', () => {
   }), false);
 });
 
+test('conversation loads the Markdown renderer outside the startup bundle', async () => {
+  const timelineSource = await readFile(resolve('web/src/conversation-timeline.tsx'), 'utf8');
+  assert.match(timelineSource, /lazy\(\(\) => import\('\.\/message-bubble'\)/);
+  assert.match(timelineSource, /<Suspense fallback=/);
+  assert.doesNotMatch(timelineSource, /import \{ MessageBubble \} from '\.\/message-bubble'/);
+});
+
 test('only progress after the latest user message is treated as the live progress block', () => {
   assert.equal(latestTurnProgressItemId([
     { id: 'old-user', kind: 'user', text: 'first' },

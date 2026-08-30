@@ -1,4 +1,4 @@
-import { memo, useMemo, type RefObject, type UIEventHandler } from 'react';
+import { lazy, memo, Suspense, useMemo, type RefObject, type UIEventHandler } from 'react';
 import { formatAwayDuration, type AwaySummary } from './away-summary';
 import {
   resolveTimelineAttachment,
@@ -6,7 +6,10 @@ import {
   type TimelineItem,
 } from './history-utils';
 import { t } from './i18n';
-import { MessageBubble } from './message-bubble';
+
+const MessageBubble = lazy(() => import('./message-bubble').then((module) => ({
+  default: module.MessageBubble,
+})));
 
 type ConversationTimelineProps = {
   messageListRef: RefObject<HTMLDivElement | null>;
@@ -128,21 +131,22 @@ export const ConversationTimeline = memo(function ConversationTimeline({
                 : t('打开左上角菜单选择会话；新会话入口也已移入菜单。', 'Open the top-left menu to choose a session or start a new one.')}</p>
           </div>
         )}
-        {resolvedItems.map(({ item, attachment }) => (
-          <MessageBubble
-            key={item.id}
-            item={item}
-            active={executionActive && (item.kind === 'progress'
-              ? item.id === liveProgressItemId
-              : Boolean(item.transient))}
-            imageSource={attachment ? attachmentUrls[attachment.path] : undefined}
-            onDownloadFile={onDownloadFile}
-            onReadVisualization={onReadVisualization}
-          />
-        ))}
+        <Suspense fallback={<div className="conversation-render-placeholder" aria-hidden="true" />}>
+          {resolvedItems.map(({ item, attachment }) => (
+            <MessageBubble
+              key={item.id}
+              item={item}
+              active={executionActive && (item.kind === 'progress'
+                ? item.id === liveProgressItemId
+                : Boolean(item.transient))}
+              imageSource={attachment ? attachmentUrls[attachment.path] : undefined}
+              onDownloadFile={onDownloadFile}
+              onReadVisualization={onReadVisualization}
+            />
+          ))}
+        </Suspense>
         {awaySummary && <AwaySummaryCard summary={awaySummary} onDismiss={onDismissAwaySummary} />}
       </div>
     </div>
   );
 });
-
