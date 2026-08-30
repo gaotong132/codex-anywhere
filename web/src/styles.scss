@@ -342,9 +342,12 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .custom-select-option {
   width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 15px; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-radius: 8px; color: #aab6c8; background: transparent; text-align: left; cursor: pointer;
   > span { min-width: 0; display: grid; gap: 2px; }
-  strong, small { @include truncate; }
+  strong { @include truncate; }
   strong { color: inherit; font-size: 10px; font-weight: 650; }
-  small { color: #68768b; font-size: 8px; font-weight: 400; }
+  small {
+    min-width: 0; overflow: visible; color: #68768b; font-size: 8px; font-weight: 400;
+    line-height: 1.4; overflow-wrap: anywhere; text-overflow: clip; white-space: normal;
+  }
   > i { color: #87abf2; font-style: normal; font-size: 11px; font-weight: 800; text-align: center; }
   &.active { color: #e7eef9; background: #1a2638; }
   &.selected { color: #c6d8fb; }
@@ -552,6 +555,7 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   &.user { justify-items: end; margin-left: auto; }
 }
 .message-meta { min-width: 0; height: 18px; display: flex; align-items: center; justify-self: end; gap: 3px; margin-right: 4px; overflow: hidden; color: #687589; }
+.message-block.assistant .message-meta { justify-self: start; margin-right: 0; margin-left: 4px; }
 .message-change-summary {
   min-width: 0; display: inline-flex; align-items: center; gap: 4px; margin-right: 2px;
   color: #7f8da2; font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap;
