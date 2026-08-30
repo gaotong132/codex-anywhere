@@ -486,6 +486,18 @@ test('rollout tail mapping keeps only user-visible conversation updates', () => 
   assert.equal(items[2].text, 'done');
 });
 
+test('rollout history keeps complete final replies while bounding progress updates', () => {
+  const longText = '完整回复。'.repeat(1_000);
+  const items = rolloutInternals.mapRolloutRows([
+    { type: 'event_msg', payload: { type: 'agent_message', phase: 'commentary', message: longText } },
+    { type: 'event_msg', payload: { type: 'agent_message', phase: 'final_answer', message: longText } },
+  ]);
+
+  assert.equal(items[0].text, `${longText.slice(0, 4_000)}\n…（已截断）`);
+  assert.equal(items[1].text, longText);
+  assert.equal(items[1].text.includes('已截断'), false);
+});
+
 test('history messages keep their real sent and completed times', () => {
   const startedAt = '2026-08-29T01:02:03.000Z';
   const completedAt = '2026-08-29T01:03:04.000Z';

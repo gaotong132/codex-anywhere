@@ -753,7 +753,7 @@ function finalFileChanges(phase: unknown, progress: RolloutProgress) {
 }
 
 function pushText(items: RolloutItem[], item: RolloutItem) {
-  const text = capText(item.text);
+  const text = item.phase === 'final_answer' ? fullText(item.text) : capText(item.text);
   if (!text && !item.attachment) return;
   const previous = items.at(-1);
   if (previous?.type === item.type
@@ -767,6 +767,11 @@ function pushText(items: RolloutItem[], item: RolloutItem) {
   items.push({ ...item, text, status: '', name: '', input: '', output: '' });
 }
 
+function fullText(value: unknown) {
+  if (value == null) return '';
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
 function extractContent(content: unknown) {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
@@ -777,14 +782,13 @@ function extractContent(content: unknown) {
 }
 
 function capText(value: unknown, limit = MAX_TEXT_LENGTH) {
-  if (value == null) return '';
-  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  const text = fullText(value);
   if (text.length <= limit) return text;
   return `${text.slice(0, limit)}\n…（已截断）`;
 }
 
 export const internals = {
-  activityKind, capText, decodeRolloutCursor, encodeRolloutCursor, epochMillis, extractContent,
+  activityKind, capText, decodeRolloutCursor, encodeRolloutCursor, epochMillis, extractContent, fullText,
   findLatestActivityBefore, findLatestFileProgressBefore, findLatestModelSettingsBefore,
   findLatestPlanBefore, findLatestPurposeBefore,
   inferRolloutActivity,
