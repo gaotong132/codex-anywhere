@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/gaotong132/codex-anywhere?display_name=tag)](https://github.com/gaotong132/codex-anywhere/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <p align="center">
@@ -113,6 +114,12 @@ npm run build
 
 应用源码和测试统一使用严格 TypeScript。`build/` 中的 JavaScript 和 `dist/` 中的 Web 资源属于构建
 产物，不进入仓库。仓库结构和协议约束参见[贡献指南](docs/CONTRIBUTING.zh-CN.md)。
+
+## 社区
+
+欢迎在 [GitHub Discussions](https://github.com/gaotong132/codex-anywhere/discussions) 分享部署经验和想法，
+可复现的问题请提交到 [Issues](https://github.com/gaotong132/codex-anywhere/issues)。安全问题请按照
+[安全说明](docs/SECURITY.zh-CN.md)私下报告。
 
 ## 许可证
 

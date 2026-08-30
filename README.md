@@ -4,6 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 [![CI](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)
+[![Release](https://img.shields.io/github/v/release/gaotong132/codex-anywhere?display_name=tag)](https://github.com/gaotong132/codex-anywhere/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <p align="center">
@@ -122,6 +123,12 @@ npm run build
 Application source and tests use strict TypeScript. The generated JavaScript in `build/` and bundled Web
 assets in `dist/` are build output and are not committed. See [Contributing](docs/CONTRIBUTING.md) for the
 repository map and protocol rules.
+
+## Community
+
+Share setups and ideas in [GitHub Discussions](https://github.com/gaotong132/codex-anywhere/discussions),
+or report reproducible problems through [Issues](https://github.com/gaotong132/codex-anywhere/issues).
+Please report security concerns privately through the [security policy](docs/SECURITY.md).
 
 ## License
 
