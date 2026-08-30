@@ -651,8 +651,11 @@ input:focus, textarea:focus, select:focus { border-color: $focus !important; box
 .activity-content { min-width: 0; display: grid; grid-auto-rows: 15px; gap: 3px; }
 .activity-line { min-width: 0; height: 15px; display: flex; align-items: center; gap: 7px; overflow: hidden; line-height: 15px; }
 .activity-line strong { min-width: 0; flex: 1 1 auto; @include truncate; color: #aab6c8; font-weight: 500; }
+.activity-line .typewriter-copy { white-space: nowrap; }
+.activity-detail-line { gap: 4px; }
+.activity-detail-line strong { max-width: calc(100% - 16px); flex: 0 1 auto; }
 .activity-purpose-line strong { color: #bdc9db; }
-.activity-complete-check { width: 14px; flex: 0 0 14px; color: #69c997; font-size: 12px; font-weight: 800; line-height: 1; text-align: center; animation: activity-check .34s cubic-bezier(.2, .85, .25, 1.35) both; }
+.activity-complete-check { width: 12px; flex: 0 0 12px; color: #69c997; font-size: 12px; font-weight: 800; line-height: 1; text-align: center; animation: activity-check .34s cubic-bezier(.2, .85, .25, 1.35) both; }
 .activity-secondary { color: #aab6c8; }
 .activity-secondary strong { display: block; min-width: 0; @include truncate; font-weight: 500; }
 .activity-metrics { min-width: 0; flex: 0 1 auto; display: flex; gap: 7px; overflow: hidden; color: #96a4b8; font-variant-numeric: tabular-nums; white-space: nowrap; }

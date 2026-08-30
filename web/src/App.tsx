@@ -309,8 +309,6 @@ function ToolActivityDetail({ detail, kind }: { detail: string; kind: LiveActivi
       setCheckedDetail('');
       return;
     }
-    // A completion observed after the running label was already typed can reveal
-    // its check immediately. A completion first seen by polling waits for typing.
     if (typedText === text) setCheckedDetail(detail);
   }, [completed, detail, text, typedText]);
   return <>
