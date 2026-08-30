@@ -63,10 +63,10 @@ import {
   shouldPrefillOlderHistory,
   type SessionAttentionState,
 } from './app-utils';
-import { CustomSelect, DownloadIndicator, MessageBubble, SidebarIcon, TypewriterText } from './ui-components';
+import { CustomSelect, DownloadIndicator, SidebarIcon, TypewriterText } from './ui-components';
+import { ConversationTimeline } from './conversation-timeline';
 import {
   buildAwaySummary,
-  formatAwayDuration,
   type AwaySummary,
 } from './away-summary';
 import { BrowserSecureChannel } from './secure-channel-client';
@@ -481,46 +481,6 @@ function ModelConfigControl({
   );
 }
 
-function AwaySummaryCard({ summary, onDismiss }: { summary: AwaySummary; onDismiss: () => void }) {
-  const duration = formatAwayDuration(summary.durationMs);
-  const headline = summary.status === 'running'
-    ? t('任务仍在执行', 'The run is still in progress')
-    : summary.status === 'failed'
-      ? t('本轮任务执行失败', 'The run failed')
-      : t('本轮任务已完成', 'The run completed');
-  return (
-    <section className={`away-summary ${summary.status}`} aria-label={t('离开期间摘要', 'While you were away')}>
-      <header>
-        <span><i aria-hidden="true" />{t('离开期间', 'While you were away')}</span>
-        <button type="button" onClick={onDismiss} aria-label={t('关闭摘要', 'Dismiss summary')}>×</button>
-      </header>
-      <strong>{headline}</strong>
-      <div className="away-summary-metrics">
-        {summary.progress.plan && (
-          <span>{t(
-            `${summary.progress.plan.current} / ${summary.progress.plan.total} 个步骤`,
-            `${summary.progress.plan.current} / ${summary.progress.plan.total} steps`,
-          )}</span>
-        )}
-        {summary.progress.files && (
-          <span>
-            {t(`${summary.progress.files.changed} 个文件`, `${summary.progress.files.changed} files`)}
-            {' '}<b className="additions">+{summary.progress.files.additions}</b>
-            {' '}<b className="deletions">-{summary.progress.files.deletions}</b>
-          </span>
-        )}
-        {summary.newReplies > 0 && (
-          <span>{t(`${summary.newReplies} 条新回复`, `${summary.newReplies} new replies`)}</span>
-        )}
-        {summary.artifacts > 0 && (
-          <span>{t(`${summary.artifacts} 个新产物`, `${summary.artifacts} new artifacts`)}</span>
-        )}
-        {duration && <span>{duration}</span>}
-      </div>
-    </section>
-  );
-}
-
 function StartupScreen({ status }: { status: string }) {
   return (
     <main className="startup-shell" aria-busy="true" aria-live="polite">
@@ -894,12 +854,19 @@ export default function App() {
     );
   }, []);
 
-  useEffect(() => {
-    if (!online) return;
+  const timelineAttachments = useMemo(() => {
+    const attachments = new Map<string, ImageAttachment>();
     for (const item of timeline) {
       const attachment = resolveTimelineAttachment(item, threadId, knownAttachments);
-      if (!attachment
-        || Object.prototype.hasOwnProperty.call(attachmentUrls, attachment.path)
+      if (attachment) attachments.set(attachment.path, attachment);
+    }
+    return [...attachments.values()];
+  }, [knownAttachments, threadId, timeline]);
+
+  useEffect(() => {
+    if (!online) return;
+    for (const attachment of timelineAttachments) {
+      if (Object.prototype.hasOwnProperty.call(attachmentUrls, attachment.path)
         || attachmentLoadsRef.current.has(attachment.path)) continue;
       attachmentLoadsRef.current.add(attachment.path);
       void request<DownloadedImage>('attachment.read', {
@@ -917,7 +884,7 @@ export default function App() {
         .catch(() => setAttachmentUrls((current) => ({ ...current, [attachment.path]: '' })))
         .finally(() => attachmentLoadsRef.current.delete(attachment.path));
     }
-  }, [attachmentUrls, knownAttachments, online, request, threadId, timeline]);
+  }, [attachmentUrls, online, request, timelineAttachments]);
 
   const refreshSessions = useCallback(async () => {
     if (sessionRefreshInFlightRef.current) return [];
@@ -2076,6 +2043,10 @@ export default function App() {
     fileDownloadCancelRef.current = true;
   }, []);
 
+  const dismissAwaySummary = useCallback(() => {
+    setAwaySummary(null);
+  }, []);
+
   const filteredSessions = useMemo(() => {
     const query = sessionSearch.trim().toLocaleLowerCase();
     const matches = query
@@ -2112,7 +2083,10 @@ export default function App() {
   const primaryAction = composerPrimaryAction(stopAvailable, prompt, Boolean(pendingImage));
   const primaryStopsRun = primaryAction === 'stop';
   const executionActive = executionState === 'running' || executionState === 'waiting';
-  const liveProgressItemId = executionActive ? latestTurnProgressItemId(timeline) : null;
+  const liveProgressItemId = useMemo(
+    () => executionActive ? latestTurnProgressItemId(timeline) : null,
+    [executionActive, timeline],
+  );
 
   if (initialBootstrapPending) return <StartupScreen status={statusText} />;
 
@@ -2346,52 +2320,26 @@ export default function App() {
 
         <div className="session-context" />
 
-        <div className="message-list" ref={messageListRef} onScroll={handleMessageScroll}>
-          <div className="message-list-content" ref={messageContentRef}>
-            {threadId && initialHistoryLoaded && nextCursor && (
-              <button
-                className="load-older"
-                disabled={historyLoading}
-                aria-busy={historyLoading}
-                onClick={loadOlder}
-              >
-                {t('加载更早记录', 'Load older messages')}
-              </button>
-            )}
-            {threadId && historyLoading && !initialHistoryLoaded && <div className="history-skeleton">{t('正在加载最近记录…', 'Loading recent messages…')}</div>}
-            {!timeline.length && !historyLoading && (
-              <div className="empty-conversation">
-                <div className="brand-mark small">C</div>
-                <h2>{threadId ? t('这个分页暂无消息', 'No messages on this page') : creatingNewSession ? t('创建一个新会话', 'Create a new session') : t('选择已有会话', 'Choose an existing session')}</h2>
-                <p>{threadId
-                  ? t('历史记录按页加载，不再一次拉取整个会话。', 'History loads page by page instead of fetching the entire session.')
-                  : creatingNewSession
-                    ? t('选择本机项目目录后，第一条消息将在该目录中运行。', 'Choose a local project directory; the first message will run there.')
-                    : t('打开左上角菜单选择会话；新会话入口也已移入菜单。', 'Open the top-left menu to choose a session or start a new one.')}</p>
-              </div>
-            )}
-            {timeline.map((item) => {
-              const attachment = resolveTimelineAttachment(item, threadId, knownAttachments);
-              const active = executionActive && (item.kind === 'progress'
-                ? item.id === liveProgressItemId
-                : Boolean(item.transient));
-              return (
-                <MessageBubble
-                  key={item.id}
-                  item={attachment && !item.attachment ? { ...item, attachment } : item}
-                  active={active}
-                  imageSource={attachment ? attachmentUrls[attachment.path] : undefined}
-                  onDownloadFile={downloadLocalFile}
-                  onReadVisualization={readVisualization}
-                />
-              );
-            })}
-            {awaySummary && (
-              <AwaySummaryCard summary={awaySummary} onDismiss={() => setAwaySummary(null)} />
-            )}
-          </div>
-        </div>
-
+        <ConversationTimeline
+          messageListRef={messageListRef}
+          messageContentRef={messageContentRef}
+          threadId={threadId}
+          creatingNewSession={creatingNewSession}
+          initialHistoryLoaded={initialHistoryLoaded}
+          nextCursor={nextCursor}
+          historyLoading={historyLoading}
+          timeline={timeline}
+          knownAttachments={knownAttachments}
+          attachmentUrls={attachmentUrls}
+          executionActive={executionActive}
+          liveProgressItemId={liveProgressItemId}
+          awaySummary={awaySummary}
+          onScroll={handleMessageScroll}
+          onLoadOlder={loadOlder}
+          onDownloadFile={downloadLocalFile}
+          onReadVisualization={readVisualization}
+          onDismissAwaySummary={dismissAwaySummary}
+        />
         <div className="execution-strip">
           {(executionState === 'running' || executionState === 'waiting') && (
             <LiveActivityStatus

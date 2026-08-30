@@ -71,7 +71,7 @@ import {
   latestTurnProgressItemId,
   mergeHistorySnapshot,
 } from '../web/src/history-utils.js';
-import { MessageBubble } from '../web/src/ui-components.js';
+import { MessageBubble, messagePresentationEqual } from '../web/src/message-bubble.js';
 import { buildAwaySummary, formatAwayDuration } from '../web/src/away-summary.js';
 
 test('connector bootstrap proofs are route and challenge bound', () => {
@@ -308,9 +308,9 @@ test('older history prefill runs only when the list cannot leave the top trigger
 });
 
 test('older history keeps a stable label while a page is loading', async () => {
-  const appSource = await readFile(resolve('web/src/App.tsx'), 'utf8');
-  assert.match(appSource, /aria-busy=\{historyLoading\}/);
-  assert.doesNotMatch(appSource, /historyLoading \? t\('正在加载…'/);
+  const timelineSource = await readFile(resolve('web/src/conversation-timeline.tsx'), 'utf8');
+  assert.match(timelineSource, /aria-busy=\{historyLoading\}/);
+  assert.doesNotMatch(timelineSource, /historyLoading \? t\('正在加载…'/);
 });
 
 test('initial bootstrap waits for both sessions and the restored conversation', () => {
@@ -756,9 +756,22 @@ test('message metadata reserves stable space before completion time arrives', ()
 
 test('message metadata stays in a fixed sibling row outside the bubble', async () => {
   const stylesSource = await readFile(resolve('web/src/styles.scss'), 'utf8');
-  assert.match(stylesSource, /\.message-block\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/);
+  assert.match(stylesSource, /\.message-block\s*\{[\s\S]*?width:\s*min\(84%, 760px\);[\s\S]*?display:\s*flex;/);
+  assert.doesNotMatch(stylesSource, /\.message-block\s*\{[^}]*width:\s*fit-content;/);
   assert.match(stylesSource, /\.message-meta\s*\{[\s\S]*?height:\s*18px;[\s\S]*?flex:\s*0 0 18px;/);
   assert.doesNotMatch(stylesSource, /\.message-meta\s*\{[^}]*position:\s*absolute;/);
+});
+
+test('message presentation equality skips unchanged polling snapshots', () => {
+  const first = {
+    id: 'reply', kind: 'assistant' as const, text: 'done', completedAt: 123,
+    fileChanges: { changed: 2, additions: 8, deletions: 3 },
+  };
+  assert.equal(messagePresentationEqual(first, { ...first, fileChanges: { ...first.fileChanges } }), true);
+  assert.equal(messagePresentationEqual(first, { ...first, text: 'updated' }), false);
+  assert.equal(messagePresentationEqual(first, {
+    ...first, fileChanges: { changed: 3, additions: 8, deletions: 3 },
+  }), false);
 });
 
 test('only progress after the latest user message is treated as the live progress block', () => {
