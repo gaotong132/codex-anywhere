@@ -829,10 +829,15 @@ test('message metadata reserves stable space before completion time arrives', ()
 
 test('message metadata stays in a fixed sibling row outside the bubble', async () => {
   const stylesSource = await readFile(resolve('web/src/styles.scss'), 'utf8');
-  assert.match(stylesSource, /\.message-block\s*\{[\s\S]*?width:\s*min\(84%, 760px\);[\s\S]*?display:\s*flex;/);
+  const responsiveSource = await readFile(resolve('web/src/styles/_responsive.scss'), 'utf8');
+  assert.match(stylesSource, /\.message-block\s*\{[\s\S]*?width:\s*min\(96%, 920px\);[\s\S]*?display:\s*flex;/);
   assert.doesNotMatch(stylesSource, /\.message-block\s*\{[^}]*width:\s*fit-content;/);
   assert.match(stylesSource, /\.message-meta\s*\{[\s\S]*?height:\s*18px;[\s\S]*?flex:\s*0 0 18px;/);
   assert.doesNotMatch(stylesSource, /\.message-meta\s*\{[^}]*position:\s*absolute;/);
+  assert.match(stylesSource, /&\.user::before,\s*&\.assistant::before/);
+  assert.match(stylesSource, /&\.user\s*\{[\s\S]*?border-radius:\s*18px 18px 5px 18px;/);
+  assert.match(stylesSource, /&\.assistant\s*\{[\s\S]*?border-radius:\s*18px 18px 18px 5px;/);
+  assert.match(responsiveSource, /\.message-block\s*\{\s*width:\s*96%;\s*max-width:\s*96%;\s*\}/);
 });
 
 test('mobile header controls suppress transient tap rectangles without hiding keyboard focus', async () => {
