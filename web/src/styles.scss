@@ -551,18 +551,17 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .new-session-dialog-actions .primary-action { border-color: #3970dc; color: #fff; background: #3267d8; }
 .new-session-dialog-actions .primary-action:hover:not(:disabled) { border-color: #5689ef; background: #3c74e4; }
 .message-block {
-  position: relative;
   width: fit-content;
   min-width: 0;
   max-width: min(84%, 760px);
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   margin: 0 0 7px;
 
-  &.copyable { padding-bottom: 20px; }
-  &.user { margin-left: auto; }
+  &.user { align-items: flex-end; margin-left: auto; }
 }
-.message-meta { position: absolute; right: 4px; bottom: 0; min-width: 0; max-width: calc(100vw - 32px); height: 18px; display: flex; align-items: center; gap: 3px; overflow: hidden; color: #687589; }
-.message-block.assistant .message-meta { right: auto; left: 4px; }
+.message-meta { min-width: 0; max-width: calc(100vw - 32px); height: 18px; flex: 0 0 18px; display: flex; align-items: center; gap: 3px; margin: 2px 4px 0; overflow: hidden; color: #687589; }
 .message-change-summary {
   min-width: 0; display: inline-flex; align-items: center; gap: 4px; margin-right: 2px;
   color: #7f8da2; font-size: 9px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap;

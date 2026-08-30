@@ -24,6 +24,7 @@ type TurnItem = {
   output?: string;
   contexts?: MessageContext[];
   attachment?: ImageAttachment;
+  fileChanges?: TurnFileProgress;
   createdAt?: number | string | null;
   updatedAt?: number | string | null;
   completedAt?: number | string | null;
@@ -125,6 +126,9 @@ export function historyItems(turns: Turn[]) {
         continue;
       }
       const completedAt = messageTime(item, turn, kind);
+      const fileChanges = kind === 'assistant'
+        ? normalizeTurnProgress({ files: item.fileChanges }).files
+        : undefined;
       items.push({
         id: `history:${turn.id}:${index}`,
         kind,
@@ -134,6 +138,7 @@ export function historyItems(turns: Turn[]) {
         ...(visualization ? { visualization } : {}),
         contexts: item.contexts?.length ? item.contexts : content.contexts,
         ...(completedAt ? { completedAt } : {}),
+        ...(fileChanges ? { fileChanges } : {}),
       });
     }
   }
@@ -209,6 +214,7 @@ export function historyFingerprint(turns: Turn[], progress?: unknown) {
         output: item.output,
         contexts: item.contexts,
         attachment: item.attachment,
+        fileChanges: item.fileChanges,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         completedAt: item.completedAt,
@@ -227,13 +233,22 @@ function messageTime(item: TurnItem, turn: Turn, kind: TimelineKind) {
 export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineItem[], latestTurnIds: Set<string>) {
   const knownTurnIds = new Set(current.map((item) => item.historyTurnId).filter(Boolean));
   const introducesNewTurn = [...latestTurnIds].some((turnId) => !knownTurnIds.has(turnId));
+  const persistedFileChanges = new Map(current
+    .filter((item) => item.historyTurnId && item.fileChanges)
+    .map((item) => [`${item.historyTurnId}\0${messageIdentity(item)}`, item.fileChanges!]));
   const transientAttachments = new Map(current
     .filter((item) => item.transient && item.attachment)
     .map((item) => [messageContentIdentity(item), item.attachment]));
   const hydratedLatest = latest.map((item) => {
-    const hydrated = item.attachment ? item : {
+    const retainedFileChanges = item.historyTurnId
+      ? persistedFileChanges.get(`${item.historyTurnId}\0${messageIdentity(item)}`)
+      : undefined;
+    const hydrated = {
       ...item,
-      attachment: transientAttachments.get(messageContentIdentity(item)),
+      ...(item.attachment ? {} : {
+        attachment: transientAttachments.get(messageContentIdentity(item)),
+      }),
+      ...(item.fileChanges || !retainedFileChanges ? {} : { fileChanges: retainedFileChanges }),
     };
     if (hydrated.kind !== 'progress' || !hydrated.historyTurnId) return hydrated;
     for (let index = current.length - 1; index >= 0; index -= 1) {

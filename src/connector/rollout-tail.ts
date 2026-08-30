@@ -50,6 +50,7 @@ type RolloutItem = {
   input?: string;
   output?: string;
   attachment?: GeneratedImageAttachment;
+  fileChanges?: TurnFileProgress;
   completedAt?: number | null;
 };
 type RolloutOptions = {
@@ -150,7 +151,6 @@ async function readHistoryPage(
   const endOffset = decodeRolloutCursor(encodedCursor, fileSize);
   const startOffset = Math.max(0, endOffset - HISTORY_PAGE_BYTES);
   const window = await readCompleteRows(handle, startOffset, endOffset, startOffset > 0);
-  const items = mapRolloutRows(window.rows);
   const activity = encodedCursor
     ? { status: 'completed' as const, id: '', startedAt: null }
     : await activityForHistoryPage(handle, window.rows, window.firstCompleteOffset);
@@ -158,9 +158,19 @@ async function readHistoryPage(
     ? window.firstCompleteOffset
     : startOffset;
   const nextCursor = nextOffset > 0 ? encodeRolloutCursor(nextOffset) : null;
+  const needsPriorProgress = window.firstCompleteOffset > 0
+    && (encodedCursor
+      ? hasFinalReplyBeforeFirstTaskStart(window.rows)
+      : needsInitialFileProgress(window.rows));
+  const priorProgress = needsPriorProgress
+    ? await findLatestFileProgressBefore(handle, window.firstCompleteOffset)
+    : { patchFiles: new Set<string>() };
+  const items = mapRolloutRows(window.rows, priorProgress);
   const progress = encodedCursor
     ? { patchFiles: new Set<string>() }
-    : await progressForHistoryPage(handle, window.rows, activity, window.firstCompleteOffset);
+    : await progressForHistoryPage(
+      handle, window.rows, activity, window.firstCompleteOffset, priorProgress,
+    );
   const liveActivity = updateLiveActivity(
     { kind: 'working', updatedAt: activity.startedAt }, window.rows, activity.status,
   );
@@ -197,11 +207,11 @@ async function activityForHistoryPage(handle: FileHandle, rows: RolloutRow[], fi
 
 async function progressForHistoryPage(
   handle: FileHandle, rows: RolloutRow[], activity: RolloutActivity, firstCompleteOffset: number,
+  recoveredProgress?: RolloutProgress,
 ) {
-  const hasTaskStart = rows.some((row) => String(row?.payload?.type || '') === 'task_started');
-  const priorProgress = firstCompleteOffset > 0 && !hasTaskStart
+  const priorProgress = recoveredProgress || (firstCompleteOffset > 0 && needsInitialFileProgress(rows)
     ? await findLatestFileProgressBefore(handle, firstCompleteOffset)
-    : { patchFiles: new Set<string>() };
+    : { patchFiles: new Set<string>() });
   const progress = updateTurnProgress(priorProgress, rows, activity.status);
   if (activity.status !== 'unknown' && !progress.plan && firstCompleteOffset > 0) {
     progress.plan = await findLatestPlanBefore(handle, firstCompleteOffset);
@@ -240,7 +250,10 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
   if (activity.status === 'unknown' && window.firstCompleteOffset > 0) {
     activity = await findLatestActivityBefore(handle, window.firstCompleteOffset);
   }
-  const progress = updateTurnProgress({ patchFiles: new Set() }, window.rows, activity.status);
+  const priorProgress = window.firstCompleteOffset > 0 && needsInitialFileProgress(window.rows)
+    ? await findLatestFileProgressBefore(handle, window.firstCompleteOffset)
+    : { patchFiles: new Set<string>() };
+  const progress = updateTurnProgress(priorProgress, window.rows, activity.status);
   if (activity.status !== 'unknown' && !progress.plan && window.firstCompleteOffset > 0) {
     progress.plan = await findLatestPlanBefore(handle, window.firstCompleteOffset);
   }
@@ -252,7 +265,7 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
     ...options,
     fileSize,
     parsedOffset: window.parsedOffset,
-    items: mapRolloutRows(window.rows).slice(-options.maxItems),
+    items: mapRolloutRows(window.rows, priorProgress).slice(-options.maxItems),
     activity,
     liveActivity: updateLiveActivity({ kind: 'working', updatedAt: activity.startedAt }, window.rows, activity.status),
     toolPurpose,
@@ -276,7 +289,7 @@ async function updateSnapshot(handle: FileHandle, fileSize: number, cached: Roll
     ...cached,
     fileSize,
     parsedOffset: appended.parsedOffset,
-    items: appendItems(cached.items, mapRolloutRows(appended.rows), cached.maxItems),
+    items: appendItems(cached.items, mapRolloutRows(appended.rows, cached.progress), cached.maxItems),
     activity,
     liveActivity: updateLiveActivity(cached.liveActivity, appended.rows, activity.status),
     toolPurpose: updateToolPurpose(cached.toolPurpose, appended.rows, activity.status),
@@ -660,17 +673,25 @@ function recoverGeneratedImageRows(partialRow: string): RolloutRow[] {
   return rows;
 }
 
-function mapRolloutRows(rows: RolloutRow[]): RolloutItem[] {
+function mapRolloutRows(rows: RolloutRow[], initialProgress?: RolloutProgress): RolloutItem[] {
   const items: RolloutItem[] = [];
+  let progress: RolloutProgress = initialProgress
+    ? { ...initialProgress, patchFiles: new Set(initialProgress.patchFiles) }
+    : { patchFiles: new Set() };
+  let turnItemStart = 0;
   for (const row of Array.isArray(rows) ? rows : []) {
     const payload = row?.payload || {};
     const payloadType = String(payload.type || '');
+    if (payloadType === 'task_started') turnItemStart = items.length;
+    const progressEvent = fileProgressEvent(row);
+    if (progressEvent) progress = applyFileProgressEvent(progress, progressEvent);
     const completedAt = epochMillis(row.timestamp);
     const timing = completedAt ? { completedAt } : {};
     if (row?.type === 'event_msg' && payloadType === 'agent_message') {
       const content = parseAssistantMessage(payload.message);
       pushText(items, {
-        type: 'agentMessage', phase: payload.phase || 'commentary', ...content, ...timing,
+        type: 'agentMessage', phase: payload.phase || 'commentary', ...content,
+        ...finalFileChanges(payload.phase, progress), ...timing,
       });
     } else if (row?.type === 'event_msg' && payloadType === 'user_message') {
       pushText(items, {
@@ -685,7 +706,7 @@ function mapRolloutRows(rows: RolloutRow[]): RolloutItem[] {
         const content = parseAssistantMessage(extractContent(payload.content));
         pushText(items, {
           type: 'agentMessage', phase: payload.phase || 'commentary',
-          ...content, ...timing,
+          ...content, ...finalFileChanges(payload.phase, progress), ...timing,
         });
       }
     } else if (row?.type === 'event_msg' && payloadType === 'image_generation_end') {
@@ -696,8 +717,39 @@ function mapRolloutRows(rows: RolloutRow[]): RolloutItem[] {
         });
       }
     }
+    if (payloadType === 'task_complete' && progress.files) {
+      for (let index = items.length - 1; index >= turnItemStart; index -= 1) {
+        if (items[index]?.type !== 'agentMessage' || items[index]?.phase !== 'final_answer') continue;
+        items[index].fileChanges = progress.files;
+        break;
+      }
+    }
   }
   return items;
+}
+
+function isFinalAssistantRow(row: RolloutRow) {
+  const payload = row?.payload || {};
+  return (row?.type === 'event_msg' && payload.type === 'agent_message' && payload.phase === 'final_answer')
+    || (row?.type === 'response_item' && payload.type === 'message'
+      && payload.role === 'assistant' && payload.phase === 'final_answer');
+}
+
+function needsInitialFileProgress(rows: RolloutRow[]) {
+  const taskStartIndex = rows.findIndex((row) => String(row?.payload?.type || '') === 'task_started');
+  return taskStartIndex < 0 || hasFinalReplyBeforeFirstTaskStart(rows, taskStartIndex);
+}
+
+function hasFinalReplyBeforeFirstTaskStart(rows: RolloutRow[], knownTaskStartIndex?: number) {
+  const taskStartIndex = knownTaskStartIndex ?? rows.findIndex(
+    (row) => String(row?.payload?.type || '') === 'task_started',
+  );
+  const firstFinalIndex = rows.findIndex(isFinalAssistantRow);
+  return firstFinalIndex >= 0 && (taskStartIndex < 0 || firstFinalIndex < taskStartIndex);
+}
+
+function finalFileChanges(phase: unknown, progress: RolloutProgress) {
+  return phase === 'final_answer' && progress.files ? { fileChanges: progress.files } : {};
 }
 
 function pushText(items: RolloutItem[], item: RolloutItem) {
@@ -708,7 +760,10 @@ function pushText(items: RolloutItem[], item: RolloutItem) {
     && previous.phase === item.phase
     && previous.text === text
     && previous.attachment?.path === item.attachment?.path
-    && JSON.stringify(previous.contexts || []) === JSON.stringify(item.contexts || [])) return;
+    && JSON.stringify(previous.contexts || []) === JSON.stringify(item.contexts || [])) {
+    if (item.fileChanges) previous.fileChanges = item.fileChanges;
+    return;
+  }
   items.push({ ...item, text, status: '', name: '', input: '', output: '' });
 }
 

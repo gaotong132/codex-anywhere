@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -595,6 +595,22 @@ test('history merge preserves a growing progress block identity for incremental 
   assert.equal(merged[0].text, latest[0].text);
 });
 
+test('history merge keeps completed reply file changes when a new turn arrives', () => {
+  const current = [{
+    id: 'old-reply', kind: 'assistant' as const, text: 'implemented', historyTurnId: 'turn-old',
+    fileChanges: { changed: 2, additions: 8, deletions: 3 },
+  }];
+  const latest = [
+    { id: 'persisted-reply', kind: 'assistant' as const, text: 'implemented', historyTurnId: 'turn-old' },
+    { id: 'new-message', kind: 'user' as const, text: 'continue', historyTurnId: 'turn-new' },
+  ];
+
+  const merged = mergeHistorySnapshot(current, latest, new Set(['turn-old', 'turn-new']));
+  assert.deepEqual(merged.find((item) => item.text === 'implemented')?.fileChanges, {
+    changed: 2, additions: 8, deletions: 3,
+  });
+});
+
 test('image previews open in the page instead of navigating to a data URL', () => {
   const markup = renderToStaticMarkup(createElement(MessageBubble, {
     item: {
@@ -714,6 +730,13 @@ test('message metadata reserves stable space before completion time arrives', ()
 
   assert.match(markup, /class="message-time placeholder"[^>]*>00\/00 00:00<\/span>/);
   assert.match(markup, /class="message-copy idle"/);
+});
+
+test('message metadata stays in a fixed sibling row outside the bubble', async () => {
+  const stylesSource = await readFile(resolve('web/src/styles.scss'), 'utf8');
+  assert.match(stylesSource, /\.message-block\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/);
+  assert.match(stylesSource, /\.message-meta\s*\{[\s\S]*?height:\s*18px;[\s\S]*?flex:\s*0 0 18px;/);
+  assert.doesNotMatch(stylesSource, /\.message-meta\s*\{[^}]*position:\s*absolute;/);
 });
 
 test('only progress after the latest user message is treated as the live progress block', () => {
@@ -1081,6 +1104,98 @@ test('completed rollout pages restore modern file changes from before the visibl
     assert.equal(result.turns[0].items.at(-1).text, 'finished');
     assert.deepEqual(result.turnProgress.files, {
       changed: 2, additions: 3, deletions: 1,
+    });
+    assert.deepEqual(result.turns[0].items.at(-1).fileChanges, {
+      changed: 2, additions: 3, deletions: 1,
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('starting a new turn does not remove file changes from the previous live reply', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-next-turn-file-progress-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const row = (value) => `${JSON.stringify(value)}\n`;
+  try {
+    await writeFile(filePath, [
+      row({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-first' } }),
+      row({ type: 'event_msg', payload: { type: 'item_completed', item: {
+        type: 'FileChange', changes: {
+          'src/kept.ts': { type: 'update', unified_diff: '@@ -1 +1 @@\n-old\n+new' },
+        },
+      } } }),
+      row({ type: 'response_item', payload: {
+        type: 'message', role: 'assistant', phase: 'final_answer', content: [
+          { type: 'output_text', text: 'first finished' },
+        ],
+      } }),
+      row({ type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn-first' } }),
+    ].join(''));
+    const initial = await readRolloutTail({ filePath, threadId: 'thread-next-turn' });
+    assert.deepEqual(initial.turns[0].items.find((item) => item.text === 'first finished')?.fileChanges, {
+      changed: 1, additions: 1, deletions: 1,
+    });
+
+    await appendFile(filePath, [
+      row({ type: 'event_msg', payload: { type: 'user_message', message: 'continue' } }),
+      row({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-second' } }),
+    ].join(''));
+    const nextTurn = await readRolloutTail({ filePath, threadId: 'thread-next-turn' });
+    assert.deepEqual(nextTurn.turns[0].items.find((item) => item.text === 'first finished')?.fileChanges, {
+      changed: 1, additions: 1, deletions: 1,
+    });
+  } finally {
+    rolloutInternals.rolloutCache.delete(filePath);
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('older rollout pages retain file changes on their own final replies', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-previous-file-progress-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const row = (value) => `${JSON.stringify(value)}\n`;
+  const turnRows = (id, file, message) => [
+    row({ type: 'event_msg', payload: { type: 'task_started', turn_id: id } }),
+    row({ type: 'event_msg', payload: { type: 'item_completed', item: {
+      type: 'FileChange', changes: {
+        [file]: { type: 'update', unified_diff: '@@ -1 +1 @@\n-old\n+new' },
+      },
+    } } }),
+    row({ type: 'response_item', payload: {
+      type: 'custom_tool_call_output', output: 'x'.repeat(600 * 1024),
+    } }),
+    row({ type: 'response_item', payload: {
+      type: 'message', role: 'assistant', phase: 'final_answer', content: [
+        { type: 'output_text', text: message },
+      ],
+    } }),
+    row({ type: 'event_msg', payload: { type: 'task_complete', turn_id: id } }),
+  ];
+  try {
+    await writeFile(filePath, [
+      ...turnRows('turn-older', 'src/older.ts', 'older finished'),
+      ...turnRows('turn-newer', 'src/newer.ts', 'newer finished'),
+    ].join(''));
+
+    const latest = await readRolloutTail({ filePath, threadId: 'thread-pages', paged: true });
+    let cursor = latest.nextCursor;
+    let olderFinal;
+    for (let pageNumber = 0; pageNumber < 4 && cursor && !olderFinal; pageNumber += 1) {
+      const page = await readRolloutTail({
+        filePath, threadId: 'thread-pages', paged: true, cursor,
+      });
+      olderFinal = page.turns[0]?.items.find((item) => item.text === 'older finished');
+      cursor = page.nextCursor;
+    }
+    assert.deepEqual(olderFinal?.fileChanges, {
+      changed: 1, additions: 1, deletions: 1,
+    });
+    const timeline = historyItems([{
+      id: 'older-turn', status: 'completed', items: olderFinal ? [olderFinal] : [],
+    }]);
+    assert.deepEqual(timeline[0]?.fileChanges, {
+      changed: 1, additions: 1, deletions: 1,
     });
   } finally {
     await rm(directory, { recursive: true, force: true });
