@@ -707,6 +707,21 @@ test('image previews open in the page instead of navigating to a data URL', () =
   assert.doesNotMatch(markup, /href="data:image\/webp/);
 });
 
+test('Windows file links survive Markdown sanitization for the local download handler', () => {
+  const markup = renderToStaticMarkup(createElement(MessageBubble, {
+    item: {
+      id: 'apk-link', kind: 'assistant' as const,
+      text: '[android-ssh-egress-bridge-v0.1.1.apk](D:/project/android-ssh-egress-bridge-v0.1.1.apk)',
+    },
+    onDownloadFile: () => undefined,
+    onReadVisualization: async () => '',
+  }));
+
+  assert.match(markup, /href="D:\/project\/android-ssh-egress-bridge-v0\.1\.1\.apk"/);
+  assert.doesNotMatch(markup, /href=""/);
+  assert.doesNotMatch(markup, /target="_blank"/);
+});
+
 test('only active timeline items receive live motion classes', () => {
   const props = {
     item: { id: 'live-reply', kind: 'assistant' as const, text: '正在生成回复' },

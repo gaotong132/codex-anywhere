@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatDate } from './app-utils';
 import { localFileName, localFilePathFromHref } from './file-utils';
@@ -24,6 +24,10 @@ export type MessageBubbleProps = {
 };
 
 const markdownPlugins = [remarkGfm];
+
+function messageUrlTransform(url: string) {
+  return localFilePathFromHref(url) ? url : defaultUrlTransform(url);
+}
 
 function dateTimeValue(value: TimelineItem['completedAt']) {
   if (!value) return '';
@@ -161,7 +165,15 @@ const MessageMarkdown = memo(function MessageMarkdown({
       );
     },
   }), [attachmentPath, onDownloadFile]);
-  return <ReactMarkdown remarkPlugins={markdownPlugins} components={components}>{text}</ReactMarkdown>;
+  return (
+    <ReactMarkdown
+      remarkPlugins={markdownPlugins}
+      components={components}
+      urlTransform={messageUrlTransform}
+    >
+      {text}
+    </ReactMarkdown>
+  );
 });
 
 function MessageBubbleComponent({
