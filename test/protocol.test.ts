@@ -76,11 +76,33 @@ import {
 } from '../web/src/history-utils.js';
 import { MessageBubble, messagePresentationEqual } from '../web/src/message-bubble.js';
 import { ConversationTimeline } from '../web/src/conversation-timeline.js';
+import { downloadCanContinue, waitForDownloadReady } from '../web/src/download-resume.js';
 import {
   resolveTypewriterUpdate,
   seedTypewriterText,
   TypewriterText,
 } from '../web/src/ui-components.js';
+
+test('mobile downloads pause until the page and encrypted channel are ready', async () => {
+  assert.equal(downloadCanContinue({ visible: true, online: true, channelReady: true }), true);
+  assert.equal(downloadCanContinue({ visible: false, online: true, channelReady: true }), false);
+  assert.equal(downloadCanContinue({ visible: true, online: false, channelReady: true }), false);
+
+  let ready = false;
+  let pauses = 0;
+  let waits = 0;
+  await waitForDownloadReady({
+    signal: new AbortController().signal,
+    isReady: () => ready,
+    onPause: () => { pauses += 1; },
+    wait: async () => {
+      waits += 1;
+      ready = true;
+    },
+  });
+  assert.equal(pauses, 1);
+  assert.equal(waits, 1);
+});
 
 test('connector bootstrap proofs are route and challenge bound', () => {
   const token = 'a'.repeat(32);

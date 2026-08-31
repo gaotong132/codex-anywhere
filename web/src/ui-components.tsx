@@ -273,13 +273,17 @@ export function DownloadIndicator({
   if (!download) return null;
   const progress = download.size > 0 ? Math.min(100, Math.round(download.received / download.size * 100)) : 0;
   return (
-    <div className={`download-status${download.paused ? ' paused' : ''}`} role="status" aria-live="polite">
+    <div className={`download-status${download.paused ? ' paused' : ''}${download.protection === 'foreground-only' ? ' foreground-only' : ''}`} role="status" aria-live="polite">
       <span className="download-name">{t(`正在下载 ${download.name}`, `Downloading ${download.name}`)}</span>
       <strong>{download.size > 0 ? `${progress}%` : t('准备中', 'Preparing')}</strong>
       <small>
         {download.paused
-          ? t('连接已暂停，返回页面并恢复连接后会自动继续', 'Paused. Return to this page and reconnect to resume automatically.')
-          : t('息屏或切到后台时可能暂停，返回页面后会自动继续', 'Locking the screen or backgrounding may pause the transfer; return here to resume.')}
+          ? t('下载已安全暂停；保持本页打开，回到前台后会自动续传', 'Safely paused. Keep this page open; it will resume when you return.')
+          : download.protection === 'screen-awake'
+            ? t('已保持屏幕常亮，请停留在本页直到下载完成', 'Screen awake is active. Stay on this page until the download finishes.')
+            : download.protection === 'foreground-only'
+              ? t('当前浏览器不支持可靠后台下载，请保持屏幕亮起并停留本页', 'Background download is not reliable in this browser. Keep the screen awake and stay here.')
+              : t('正在启用屏幕常亮…', 'Enabling screen awake…')}
       </small>
       <progress value={download.received} max={Math.max(1, download.size)} />
       <button type="button" onClick={onCancel}>{t('取消下载', 'Cancel download')}</button>

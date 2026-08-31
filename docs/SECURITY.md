@@ -62,8 +62,9 @@ reviewed from the relay host with `./scripts/relay.sh approve`.
 - Image previews must resolve inside an allowed root, pass content validation, and are resized and
   converted to WebP before transfer.
 - Original file downloads require user confirmation and an in-memory capability bound to one approved
-  browser identity and one unchanged file. The capability expires after 30 minutes without progress;
-  a brief mobile background pause can resume after the same browser reconnects.
+  browser identity and one unchanged file. The capability expires after 30 minutes without progress and
+  is not stored by the relay. The Web client tries to keep the screen awake; while hidden or disconnected,
+  it stops requesting new chunks and resumes after the same browser reconnects.
 - Interactive HTML is limited to Codex visualization roots and rendered in an opaque-origin,
   network-blocked sandbox.
 - The Web UI can act only on approvals owned by connector-started turns. An approval already owned by

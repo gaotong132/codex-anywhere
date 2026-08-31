@@ -30,8 +30,8 @@ you control provides the remote meeting point.
 - **Choose how Codex works** — view or change the model, reasoning effort, and fast mode when the selected
   Codex model exposes those options.
 - **Use the results on mobile** — preview sent or generated images, open isolated Codex visualizations,
-  copy messages, and download linked local files after confirmation. Interrupted mobile transfers resume
-  after the approved browser reconnects.
+  copy messages, and download linked local files after confirmation. Downloads try to keep the screen awake;
+  a foreground transfer pauses safely and resumes after the approved browser reconnects.
 - **Handle supported approvals** — approve or reject requests owned by a run started through the
   connector. Requests already owned by Codex Desktop remain on the computer.
 - **Recover from network changes** — browser, relay, and connector reconnect and resynchronize without

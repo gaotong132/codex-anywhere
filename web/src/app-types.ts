@@ -92,4 +92,5 @@ export type FileDownloadState = {
   size: number;
   received: number;
   paused: boolean;
+  protection: 'checking' | 'screen-awake' | 'foreground-only';
 };
