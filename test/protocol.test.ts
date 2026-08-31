@@ -78,8 +78,18 @@ import {
   mergeHistorySnapshot,
   progressTypewriterKey,
 } from '../web/src/history-utils.js';
-import { MessageBubble, messagePresentationEqual } from '../web/src/message-bubble.js';
+import {
+  MessageBubble,
+  messagePresentationEqual,
+  visualizationRequestIsCurrent,
+} from '../web/src/message-bubble.js';
 import { ConversationTimeline } from '../web/src/conversation-timeline.js';
+import {
+  initialConversationExecution,
+  patchConversationExecution,
+  resetConversationExecutionPresentation,
+} from '../web/src/conversation-execution.js';
+import { SessionSidebar } from '../web/src/session-sidebar.js';
 import {
   downloadCanContinue,
   runResumableDownloadRequest,
@@ -160,6 +170,55 @@ test('mobile download status explains background limits and automatic resume', (
   }));
   assert.match(foregroundOnly, /不保证后台下载/);
   assert.match(paused, /回到本页后会自动续传/);
+});
+
+test('conversation execution resets atomically without losing a background writer', () => {
+  const running = patchConversationExecution(initialConversationExecution(), {
+    running: true,
+    ownedTurnThreadId: 'thread-a',
+    state: 'running',
+    purpose: 'Inspecting the project',
+    detail: 'Reading files',
+    activity: 'searching',
+    startedAt: 123,
+    progress: { plan: { current: 1, total: 3 } },
+  });
+  const selectedAnotherSession = resetConversationExecutionPresentation(running);
+  assert.equal(selectedAnotherSession.running, true);
+  assert.equal(selectedAnotherSession.ownedTurnThreadId, 'thread-a');
+  assert.equal(selectedAnotherSession.state, 'idle');
+  assert.equal(selectedAnotherSession.purpose, '');
+  assert.deepEqual(selectedAnotherSession.progress, {});
+  assert.deepEqual(running.progress, { plan: { current: 1, total: 3 } });
+});
+
+test('late visualization responses cannot replace the currently selected artifact', () => {
+  assert.equal(visualizationRequestIsCurrent(3, 3, 'first.html', 'first.html'), true);
+  assert.equal(visualizationRequestIsCurrent(3, 4, 'first.html', 'first.html'), false);
+  assert.equal(visualizationRequestIsCurrent(3, 3, 'first.html', 'second.html'), false);
+});
+
+test('session sidebar sorts recent sessions and renders current execution state independently', () => {
+  const markup = renderToStaticMarkup(createElement(SessionSidebar, {
+    open: true,
+    sessions: [
+      { id: 'older', title: 'Older task', cwd: 'D:\\work\\alpha', updatedAt: 10 },
+      { id: 'current', title: 'Current task', cwd: 'D:\\work\\beta', updatedAt: 20 },
+    ],
+    selectedThreadId: 'current',
+    executionState: 'running',
+    attention: {},
+    searchOpen: false,
+    search: '',
+    onSearchOpenChange: () => {},
+    onSearchChange: () => {},
+    onNewSession: () => {},
+    onClose: () => {},
+    onSelect: () => {},
+  }));
+  assert.ok(markup.indexOf('Current task') < markup.indexOf('Older task'));
+  assert.match(markup, /session-card active running/);
+  assert.match(markup, />beta</);
 });
 
 test('active Desktop writer errors are private and consecutive duplicates collapse', () => {

@@ -23,6 +23,15 @@ export type MessageBubbleProps = {
   onReadVisualization: (path: string) => Promise<string>;
 };
 
+export function visualizationRequestIsCurrent(
+  requestVersion: number,
+  currentVersion: number,
+  requestedPath: string,
+  currentPath: string | undefined,
+) {
+  return requestVersion === currentVersion && requestedPath === currentPath;
+}
+
 const markdownPlugins = [remarkGfm];
 
 function messageUrlTransform(url: string) {
@@ -188,15 +197,20 @@ function MessageBubbleComponent({
   const [visualizationSource, setVisualizationSource] = useState('');
   const [visualizationStatus, setVisualizationStatus] = useState<'idle' | 'loading' | 'failed'>('idle');
   const visualizationHistoryEntry = useRef(false);
+  const visualizationRequestRef = useRef(0);
+  const visualizationPathRef = useRef(item.visualization?.path);
+  visualizationPathRef.current = item.visualization?.path;
   const copyable = item.kind === 'user' || item.kind === 'assistant';
   const finalReplyArriving = item.kind === 'assistant' && Boolean(item.transient && item.completedAt);
 
   useEffect(() => { setImageExpanded(false); }, [item.attachment?.path]);
   useEffect(() => {
+    visualizationRequestRef.current += 1;
     setVisualizationOpen(false);
     clearVisualizationSource();
     setVisualizationStatus('idle');
   }, [item.visualization?.path]);
+  useEffect(() => () => { visualizationRequestRef.current += 1; }, []);
   useEffect(() => () => {
     if (visualizationSource.startsWith('blob:')) URL.revokeObjectURL(visualizationSource);
   }, [visualizationSource]);
@@ -241,10 +255,7 @@ function MessageBubbleComponent({
   }
 
   function clearVisualizationSource() {
-    setVisualizationSource((current) => {
-      if (current.startsWith('blob:')) URL.revokeObjectURL(current);
-      return '';
-    });
+    setVisualizationSource('');
   }
 
   async function openVisualization() {
@@ -253,14 +264,24 @@ function MessageBubbleComponent({
       showVisualization();
       return;
     }
+    const path = item.visualization.path;
+    const requestVersion = ++visualizationRequestRef.current;
     setVisualizationStatus('loading');
     try {
-      const previewUrl = await onReadVisualization(item.visualization.path);
+      const previewUrl = await onReadVisualization(path);
+      if (!visualizationRequestIsCurrent(
+        requestVersion, visualizationRequestRef.current, path, visualizationPathRef.current,
+      )) {
+        if (previewUrl.startsWith('blob:')) URL.revokeObjectURL(previewUrl);
+        return;
+      }
       setVisualizationSource(previewUrl);
       setVisualizationStatus('idle');
       showVisualization();
     } catch {
-      setVisualizationStatus('failed');
+      if (visualizationRequestIsCurrent(
+        requestVersion, visualizationRequestRef.current, path, visualizationPathRef.current,
+      )) setVisualizationStatus('failed');
     }
   }
 

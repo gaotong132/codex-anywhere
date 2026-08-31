@@ -48,7 +48,6 @@ import {
 } from './download-resume';
 import { t } from './i18n';
 import {
-  formatDate,
   friendlyError,
   canSendToActiveDesktopTurn,
   canSteerOwnedTurn,
@@ -59,7 +58,6 @@ import {
   isCurrentSessionRequest,
   isEventForSelectedThread,
   isNearScrollBottom,
-  isSessionRunning,
   isTemporaryProjectPath,
   makeId,
   markSessionAttentionRead,
@@ -67,9 +65,7 @@ import {
   projectLabel,
   reconcileSessionAttention,
   replayPendingFrames,
-  sessionProjectName,
   sessionDeliveryMatchesTarget,
-  sessionUpdatedAt,
   shouldAdoptStartedThread,
   shouldLoadOlderHistory,
   shouldPrefillOlderHistory,
@@ -83,6 +79,8 @@ import {
   TypewriterText,
 } from './ui-components';
 import { ConversationTimeline } from './conversation-timeline';
+import { useConversationExecution } from './conversation-execution';
+import { SessionSidebar } from './session-sidebar';
 import { BrowserSecureChannel } from './secure-channel-client';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
 import {
@@ -112,7 +110,6 @@ import type {
   BridgeMessage,
   DownloadedImage,
   DownloadFileChunk,
-  ExecutionState,
   FileDownloadState,
   FollowState,
   HistoryPage,
@@ -530,16 +527,28 @@ export default function App() {
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [knownAttachments, setKnownAttachments] = useState<Record<string, KnownAttachment>>(loadKnownAttachments);
   const [uploading, setUploading] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [ownedTurnThreadId, setOwnedTurnThreadId] = useState<string | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
   const [followState, setFollowState] = useState<FollowState>('idle');
-  const [executionState, setExecutionState] = useState<ExecutionState>('idle');
-  const [toolPurpose, setToolPurpose] = useState('');
-  const [activityDetail, setActivityDetail] = useState('');
-  const [liveActivity, setLiveActivity] = useState<LiveActivityKind>('working');
-  const [activityStartedAt, setActivityStartedAt] = useState<number | null>(null);
-  const [turnProgress, setTurnProgress] = useState<TurnProgress>({});
+  const {
+    execution: {
+      running,
+      ownedTurnThreadId,
+      state: executionState,
+      purpose: toolPurpose,
+      detail: activityDetail,
+      activity: liveActivity,
+      startedAt: activityStartedAt,
+      progress: turnProgress,
+    },
+    resetExecution,
+    resetExecutionPresentation,
+    updateExecution,
+    setState: setExecutionState,
+    setPurpose: setToolPurpose,
+    setDetail: setActivityDetail,
+    setActivity: setLiveActivity,
+    setProgress: setTurnProgress,
+  } = useConversationExecution();
   const [fileDownload, setFileDownload] = useState<FileDownloadState | null>(null);
   const [creatingNewSession, setCreatingNewSession] = useState(false);
   const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
@@ -898,15 +907,21 @@ export default function App() {
 
   useEffect(() => {
     if (!online) return;
+    const targetThreadId = threadId;
+    const requestVersion = selectedRequestRef.current;
     for (const attachment of timelineAttachments) {
+      const loadKey = `${requestVersion}\0${attachment.path}`;
       if (Object.prototype.hasOwnProperty.call(attachmentUrls, attachment.path)
-        || attachmentLoadsRef.current.has(attachment.path)) continue;
-      attachmentLoadsRef.current.add(attachment.path);
+        || attachmentLoadsRef.current.has(loadKey)) continue;
+      attachmentLoadsRef.current.add(loadKey);
       void request<DownloadedImage>('attachment.read', {
         path: attachment.path,
         source: attachment.source,
       })
         .then((image) => {
+          if (!isCurrentSessionRequest(
+            targetThreadId, threadIdRef.current, requestVersion, selectedRequestRef.current,
+          )) return;
           if (!isValidImagePayload(image.mimeType, image.data)) throw new Error('attachment_content_mismatch');
           if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
           setAttachmentUrls((current) => ({
@@ -914,10 +929,14 @@ export default function App() {
             [attachment.path]: `data:${image.mimeType};base64,${image.data}`,
           }));
         })
-        .catch(() => setAttachmentUrls((current) => ({ ...current, [attachment.path]: '' })))
-        .finally(() => attachmentLoadsRef.current.delete(attachment.path));
+        .catch(() => {
+          if (isCurrentSessionRequest(
+            targetThreadId, threadIdRef.current, requestVersion, selectedRequestRef.current,
+          )) setAttachmentUrls((current) => ({ ...current, [attachment.path]: '' }));
+        })
+        .finally(() => attachmentLoadsRef.current.delete(loadKey));
     }
-  }, [attachmentUrls, online, request, timelineAttachments]);
+  }, [attachmentUrls, online, request, threadId, timelineAttachments]);
 
   const refreshSessions = useCallback(async () => {
     if (sessionRefreshInFlightRef.current) return [];
@@ -1060,8 +1079,7 @@ export default function App() {
         if (eventThreadId && ownedTurnThreadIdRef.current === eventThreadId) {
           runningRef.current = false;
           ownedTurnThreadIdRef.current = null;
-          setRunning(false);
-          setOwnedTurnThreadId(null);
+          updateExecution({ running: false, ownedTurnThreadId: null });
           updateSessionAttention((current) => current[eventThreadId] === 'running'
             ? { ...current, [eventThreadId]: 'unread' } : current);
         }
@@ -1083,20 +1101,22 @@ export default function App() {
       activeTurnIdRef.current = String(payload.turnId || '');
       runningRef.current = true;
       ownedTurnThreadIdRef.current = nextThreadId || selectedThreadId || NEW_TURN_KEY;
-      setOwnedTurnThreadId(ownedTurnThreadIdRef.current);
-      setRunning(true);
-      setToolPurpose('');
-      setActivityDetail('');
-      setTurnProgress({});
       turnProgressRef.current = {};
-      setLiveActivity('starting');
-      setActivityStartedAt(Date.now());
+      updateExecution({
+        running: true,
+        ownedTurnThreadId: ownedTurnThreadIdRef.current,
+        purpose: '',
+        detail: '',
+        progress: {},
+        activity: 'starting',
+        startedAt: Date.now(),
+        ...(nextThreadId ? { state: 'running' as const } : {}),
+      });
       if (nextThreadId) {
         setThreadId(nextThreadId);
         threadIdRef.current = nextThreadId;
         localStorage.setItem('bridge.lastThreadId', nextThreadId);
         setCreatingNewSession(false);
-        setExecutionState('running');
       }
     } else if (message.event === 'turn.delta') {
       setLiveActivity('responding');
@@ -1131,11 +1151,15 @@ export default function App() {
       };
       if (!nextApproval.threadId || nextApproval.threadId === threadIdRef.current) {
         setApproval(nextApproval);
-        setRunning(true);
-        setOwnedTurnThreadId(nextApproval.threadId || threadIdRef.current || NEW_TURN_KEY);
-        setExecutionState('waiting');
-        setLiveActivity('waiting');
-        setActivityStartedAt((current) => current || Date.now());
+        runningRef.current = true;
+        ownedTurnThreadIdRef.current = nextApproval.threadId || threadIdRef.current || NEW_TURN_KEY;
+        updateExecution((current) => ({
+          running: true,
+          ownedTurnThreadId: ownedTurnThreadIdRef.current,
+          state: 'waiting',
+          activity: 'waiting',
+          startedAt: current.startedAt || Date.now(),
+        }));
         autoFollowLatestRef.current = true;
         shouldScrollBottomRef.current = true;
       }
@@ -1143,38 +1167,33 @@ export default function App() {
       streamItemRef.current = null;
       activeTurnIdRef.current = '';
       setApproval(null);
-      setToolPurpose('');
-      setActivityDetail('');
-      setLiveActivity('working');
-      setActivityStartedAt(null);
-      setTurnProgress({});
       turnProgressRef.current = {};
       runningRef.current = false;
       ownedTurnThreadIdRef.current = null;
-      setRunning(false);
-      setOwnedTurnThreadId(null);
-      setExecutionState('failed');
+      resetExecution('failed');
       addTimeline('error', String(payload.error || t('Codex 运行错误', 'Codex execution error')));
     } else if (message.event === 'turn.ended') {
       streamItemRef.current = null;
       activeTurnIdRef.current = '';
       setApproval(null);
-      setToolPurpose('');
-      setActivityDetail('');
-      setLiveActivity('working');
-      setActivityStartedAt(null);
-      setTurnProgress({});
       turnProgressRef.current = {};
       runningRef.current = false;
       ownedTurnThreadIdRef.current = null;
-      setRunning(false);
-      setOwnedTurnThreadId(null);
-      setExecutionState((current) => current === 'failed' ? current : 'completed');
+      updateExecution((current) => ({
+        running: false,
+        ownedTurnThreadId: null,
+        purpose: '',
+        detail: '',
+        activity: 'working',
+        startedAt: null,
+        progress: {},
+        state: current.state === 'failed' ? 'failed' : 'completed',
+      }));
       void refreshSessions();
     }
   }, [
     addTimeline, appendStream, beginSecureChannel, finishAssistant, finishInitialBootstrap,
-    refreshSessions, updateSessionAttention,
+    refreshSessions, resetExecution, updateExecution, updateSessionAttention,
   ]);
 
   useEffect(() => { messageHandlerRef.current = handleBridgeMessage; }, [handleBridgeMessage]);
@@ -1275,8 +1294,9 @@ export default function App() {
       secureChannelRef.current = null;
       setConnecting(false);
       setOnline(false);
-      setRunning(false);
-      setOwnedTurnThreadId(null);
+      runningRef.current = false;
+      ownedTurnThreadIdRef.current = null;
+      updateExecution({ running: false, ownedTurnThreadId: null });
       if (!replayPending) rejectPendingRequests(t('连接已断开', 'Connection closed'));
       if (event.code === 4003) {
         reconnectWantedRef.current = false;
@@ -1333,7 +1353,10 @@ export default function App() {
     socket.addEventListener('error', () => {
       if (socketRef.current === socket) setStatusText(t('连接失败', 'Connection failed'));
     });
-  }, [clearPendingPairing, clearReconnectTimer, finishInitialBootstrap, hasAuthenticationMaterial, rejectPendingRequests]);
+  }, [
+    clearPendingPairing, clearReconnectTimer, finishInitialBootstrap, hasAuthenticationMaterial,
+    rejectPendingRequests, updateExecution,
+  ]);
 
   const scheduleReconnect = useCallback((immediate = false) => {
     if (!reconnectWantedRef.current || !hasAuthenticationMaterial()) return;
@@ -1456,7 +1479,14 @@ export default function App() {
 
   const loadHistory = useCallback(async (targetThreadId: string, cursor: string | null, requestVersion: number) => {
     setHistoryLoading(true);
-    if (cursor && messageListRef.current) preserveScrollHeightRef.current = messageListRef.current.scrollHeight;
+    const preservedScrollHeight = cursor && messageListRef.current
+      ? messageListRef.current.scrollHeight : null;
+    if (preservedScrollHeight != null) preserveScrollHeightRef.current = preservedScrollHeight;
+    const discardUnusedScrollAnchor = () => {
+      if (preserveScrollHeightRef.current === preservedScrollHeight) {
+        preserveScrollHeightRef.current = null;
+      }
+    };
     try {
       const page = await request<HistoryPage>('session.turns.list', {
         threadId: targetThreadId,
@@ -1464,7 +1494,10 @@ export default function App() {
         limit: HISTORY_PAGE_SIZE,
         mode: 'conversation',
       });
-      if (selectedRequestRef.current !== requestVersion || threadIdRef.current !== targetThreadId) return;
+      if (selectedRequestRef.current !== requestVersion || threadIdRef.current !== targetThreadId) {
+        discardUnusedScrollAnchor();
+        return;
+      }
       const items = attachLatestAssistantFileChanges(historyItems(page.turns), page.turnProgress);
       if (cursor) setTimeline((current) => [...items, ...current]);
       else {
@@ -1479,23 +1512,28 @@ export default function App() {
         const latestStatus = page.turns[0]?.status;
         const active = latestStatus === 'inProgress';
         const failed = latestStatus === 'failed';
-        setExecutionState(active ? 'running' : failed ? 'failed' : 'idle');
-        setToolPurpose(active ? normalizeToolPurpose(page.toolPurpose) : '');
-        setActivityDetail(active ? normalizeToolPurpose(page.activityDetail) : '');
-        setLiveActivity(active ? safeActivityKind(page.activityKind || (page.toolPurpose ? 'planning' : 'working')) : 'working');
-        setActivityStartedAt(active
-          ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || Date.now()
-          : null);
-        setTurnProgress(active ? normalizeTurnProgress(page.turnProgress) : {});
+        updateExecution({
+          state: active ? 'running' : failed ? 'failed' : 'idle',
+          purpose: active ? normalizeToolPurpose(page.toolPurpose) : '',
+          detail: active ? normalizeToolPurpose(page.activityDetail) : '',
+          activity: active
+            ? safeActivityKind(page.activityKind || (page.toolPurpose ? 'planning' : 'working'))
+            : 'working',
+          startedAt: active
+            ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || Date.now()
+            : null,
+          progress: active ? normalizeTurnProgress(page.turnProgress) : {},
+        });
       }
       setNextCursor(page.nextCursor || null);
       setInitialHistoryLoaded(true);
     } catch (error) {
+      discardUnusedScrollAnchor();
       if (selectedRequestRef.current === requestVersion) reportTimelineError(error);
     } finally {
       if (selectedRequestRef.current === requestVersion) setHistoryLoading(false);
     }
-  }, [reportTimelineError, request]);
+  }, [reportTimelineError, request, updateExecution]);
 
   useEffect(() => {
     if (!threadId) {
@@ -1529,16 +1567,17 @@ export default function App() {
         const latestStatus = page.turns[0]?.status;
         const inProgress = latestStatus === 'inProgress';
         const failed = latestStatus === 'failed';
-        setToolPurpose((current) => {
-          if (!inProgress) return '';
-          return normalizeToolPurpose(page.toolPurpose) || current;
-        });
-        setActivityDetail(inProgress ? normalizeToolPurpose(page.activityDetail) : '');
-        setLiveActivity(inProgress ? safeActivityKind(page.activityKind || (page.toolPurpose ? 'planning' : 'working')) : 'working');
-        setActivityStartedAt((current) => (inProgress
-          ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || current || Date.now()
-          : null));
-        setTurnProgress(inProgress ? normalizeTurnProgress(page.turnProgress) : {});
+        updateExecution((current) => ({
+          purpose: inProgress ? normalizeToolPurpose(page.toolPurpose) || current.purpose : '',
+          detail: inProgress ? normalizeToolPurpose(page.activityDetail) : '',
+          activity: inProgress
+            ? safeActivityKind(page.activityKind || (page.toolPurpose ? 'planning' : 'working'))
+            : 'working',
+          startedAt: inProgress
+            ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || current.startedAt || Date.now()
+            : null,
+          progress: inProgress ? normalizeTurnProgress(page.turnProgress) : {},
+        }));
         const latestItems = attachLatestAssistantFileChanges(historyItems(page.turns), page.turnProgress);
         if (liveHistoryHydratedThreadRef.current !== threadId) {
           const liveProgressId = latestTurnProgressItemId(latestItems);
@@ -1597,7 +1636,7 @@ export default function App() {
       disposed = true;
       if (timer) clearTimeout(timer);
     };
-  }, [initialHistoryLoaded, online, request, running, threadId]);
+  }, [initialHistoryLoaded, online, request, running, threadId, updateExecution]);
 
   const selectSession = useCallback((session: Session | null) => {
     const nextThreadId = session?.id || null;
@@ -1629,19 +1668,14 @@ export default function App() {
     latestActivityIdRef.current = '';
     awaitingDesktopTurnRef.current = null;
     setFollowState(nextThreadId ? 'checking' : 'idle');
-    setExecutionState('idle');
-    setToolPurpose('');
-    setActivityDetail('');
-    setLiveActivity('working');
-    setActivityStartedAt(null);
-    setTurnProgress({});
+    resetExecutionPresentation();
     setApproval(null);
     autoFollowLatestRef.current = true;
     streamItemRef.current = null;
     activeTurnIdRef.current = '';
     setDrawerOpen(false);
     if (nextThreadId) void loadHistory(nextThreadId, null, requestVersion);
-  }, [loadHistory, updateSessionAttention]);
+  }, [loadHistory, resetExecutionPresentation, updateSessionAttention]);
 
   const beginNewSession = useCallback(() => {
     setNewSessionPrompt('');
@@ -1652,6 +1686,7 @@ export default function App() {
     setDrawerOpen(false);
     setNewSessionDialogOpen(true);
   }, []);
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   useEffect(() => {
     if (!authenticated || !online || !connectionEpoch || creatingNewSession || threadId) return;
@@ -1725,15 +1760,17 @@ export default function App() {
 
   const chooseImage = useCallback(async (file?: File) => {
     if (!file) return;
+    const selectionVersion = selectedRequestRef.current;
     try {
       const prepared = await prepareImageFile(file);
+      if (selectionVersion !== selectedRequestRef.current) return;
       setPendingImage({
         file: prepared.file,
         transferPreview: prepared.preview,
         previewUrl: URL.createObjectURL(prepared.file),
       });
     } catch (error) {
-      reportTimelineError(error);
+      if (selectionVersion === selectedRequestRef.current) reportTimelineError(error);
     }
   }, [reportTimelineError]);
 
@@ -1808,6 +1845,7 @@ export default function App() {
     let turnText = text;
     let visibleText = text;
     let timelineAttachment: ImageAttachment | undefined;
+    let uploadedPreviewUrl = '';
     let optimisticItemId = '';
     let composerCleared = false;
     if (image) setUploading(true);
@@ -1830,19 +1868,22 @@ export default function App() {
         turnText = imageMessage.turnText;
         visibleText = imageMessage.visibleText;
         timelineAttachment = { path: uploaded.path, name: uploaded.name };
-        if (targetThreadId) rememberAttachment(targetThreadId, visibleText, timelineAttachment);
-        setAttachmentUrls((current) => ({
-          ...current,
-          [uploaded.path]: image.transferPreview
-            ? `data:${image.transferPreview.type};base64,${previewEncoded}`
-            : `data:${uploaded.mimeType};base64,${encoded}`,
-        }));
+        uploadedPreviewUrl = image.transferPreview
+          ? `data:${image.transferPreview.type};base64,${previewEncoded}`
+          : `data:${uploaded.mimeType};base64,${encoded}`;
       }
       if (!isCurrentSessionRequest(
         targetThreadId, threadIdRef.current, selectionVersion, selectedRequestRef.current,
       )) {
         setUploading(false);
         return;
+      }
+      if (image && timelineAttachment) {
+        if (targetThreadId) rememberAttachment(targetThreadId, visibleText, timelineAttachment);
+        setAttachmentUrls((current) => ({
+          ...current,
+          [timelineAttachment!.path]: uploadedPreviewUrl,
+        }));
       }
       setUploading(false);
       setPrompt('');
@@ -1853,13 +1894,15 @@ export default function App() {
       if (!steering) activeTurnIdRef.current = '';
       if (!steering) {
         runningRef.current = true;
-        setRunning(true);
         ownedTurnThreadIdRef.current = targetThreadId || NEW_TURN_KEY;
-        setOwnedTurnThreadId(ownedTurnThreadIdRef.current);
-        setExecutionState('running');
-        setLiveActivity('starting');
-        setActivityStartedAt(Date.now());
-        setTurnProgress({});
+        updateExecution({
+          running: true,
+          ownedTurnThreadId: ownedTurnThreadIdRef.current,
+          state: 'running',
+          activity: 'starting',
+          startedAt: Date.now(),
+          progress: {},
+        });
       }
       const action = steering ? 'turn.steer' : 'turn.start';
       const data = await request<TurnStartResult>(action, {
@@ -1896,7 +1939,8 @@ export default function App() {
             ...current.filter((session) => session.id !== data.threadId),
           ]);
           if (selectionStillCurrent) {
-            setOwnedTurnThreadId(data.delivery === 'desktop' ? null : data.threadId);
+            ownedTurnThreadIdRef.current = data.delivery === 'desktop' ? null : data.threadId;
+            updateExecution({ ownedTurnThreadId: ownedTurnThreadIdRef.current });
             setThreadId(data.threadId);
             threadIdRef.current = data.threadId;
             localStorage.setItem('bridge.lastThreadId', data.threadId);
@@ -1905,13 +1949,15 @@ export default function App() {
             updateSessionAttention((current) => ({ ...current, [data.threadId]: 'running' }));
           }
         } else if (selectionStillCurrent) {
-          setOwnedTurnThreadId(data.delivery === 'desktop' ? null : data.threadId);
+          ownedTurnThreadIdRef.current = data.delivery === 'desktop' ? null : data.threadId;
+          updateExecution({ ownedTurnThreadId: ownedTurnThreadIdRef.current });
         }
         if (timelineAttachment) rememberAttachment(data.threadId, visibleText, timelineAttachment);
       }
       if (data.delivery === 'desktop') {
-        setRunning(false);
-        setOwnedTurnThreadId(null);
+        runningRef.current = false;
+        ownedTurnThreadIdRef.current = null;
+        updateExecution({ running: false, ownedTurnThreadId: null });
         if (!selectionStillCurrent) {
           if (targetThreadId) {
             updateSessionAttention((current) => ({ ...current, [targetThreadId]: 'running' }));
@@ -1937,19 +1983,15 @@ export default function App() {
         if (!steering && ownedTurnThreadIdRef.current === (targetThreadId || NEW_TURN_KEY)) {
           runningRef.current = false;
           ownedTurnThreadIdRef.current = null;
-          setRunning(false);
-          setOwnedTurnThreadId(null);
+          updateExecution({ running: false, ownedTurnThreadId: null });
         }
         void refreshSessions();
         return;
       }
       if (!steering) {
-        setRunning(false);
-        setOwnedTurnThreadId(null);
-        setExecutionState('idle');
-        setLiveActivity('working');
-        setActivityStartedAt(null);
-        setTurnProgress({});
+        runningRef.current = false;
+        ownedTurnThreadIdRef.current = null;
+        resetExecution();
       }
       if (optimisticItemId) {
         setTimeline((current) => current.filter((item) => item.id !== optimisticItemId));
@@ -1971,8 +2013,8 @@ export default function App() {
     }
   }, [
     addTimeline, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingImage, prompt,
-    refreshSessions, rememberAttachment, reportTimelineError, request, running, updateSessionAttention,
-    uploading,
+    refreshSessions, rememberAttachment, reportTimelineError, request, resetExecution, running,
+    updateExecution, updateSessionAttention, uploading,
   ]);
 
   useEffect(() => {
@@ -1983,14 +2025,11 @@ export default function App() {
 
   const stopTurn = useCallback(async () => {
     try { await request('turn.stop', {}); } catch (error) { reportTimelineError(error); }
-    setRunning(false);
-    setOwnedTurnThreadId(null);
+    runningRef.current = false;
+    ownedTurnThreadIdRef.current = null;
     awaitingDesktopTurnRef.current = null;
-    setExecutionState('idle');
-    setLiveActivity('working');
-    setActivityStartedAt(null);
-    setTurnProgress({});
-  }, [reportTimelineError, request]);
+    resetExecution();
+  }, [reportTimelineError, request, resetExecution]);
 
   const answerApproval = useCallback(async (approved: boolean) => {
     if (!approval || approval.actionable === false) return;
@@ -2023,19 +2062,27 @@ export default function App() {
         if (pending) {
           setApproval(pending);
           const webOwned = pending.actionable !== false;
-          setRunning(webOwned);
-          setOwnedTurnThreadId(webOwned ? (pending.threadId || threadId) : null);
-          setExecutionState('waiting');
-          setLiveActivity('waiting');
-          setActivityStartedAt((current) => current || Date.now());
+          runningRef.current = webOwned;
+          ownedTurnThreadIdRef.current = webOwned ? (pending.threadId || threadId) : null;
+          updateExecution((current) => ({
+            running: webOwned,
+            ownedTurnThreadId: ownedTurnThreadIdRef.current,
+            state: 'waiting',
+            activity: 'waiting',
+            startedAt: current.startedAt || Date.now(),
+          }));
           autoFollowLatestRef.current = true;
           shouldScrollBottomRef.current = true;
         } else if (approval?.actionable === false) {
           setApproval(null);
-          setRunning(false);
-          setOwnedTurnThreadId(null);
-          setExecutionState('running');
-          setLiveActivity('working');
+          runningRef.current = false;
+          ownedTurnThreadIdRef.current = null;
+          updateExecution({
+            running: false,
+            ownedTurnThreadId: null,
+            state: 'running',
+            activity: 'working',
+          });
         }
         if (pending?.actionable === false || executionState === 'running' || executionState === 'waiting') {
           timer = setTimeout(syncApproval, 4_000);
@@ -2047,7 +2094,10 @@ export default function App() {
       disposed = true;
       if (timer) clearTimeout(timer);
     };
-  }, [approval?.actionable, authenticated, connectionEpoch, executionState, online, request, threadId]);
+  }, [
+    approval?.actionable, authenticated, connectionEpoch, executionState, online, request,
+    threadId, updateExecution,
+  ]);
 
   const acquireDownloadWakeLock = useCallback(async () => {
     if (!fileDownloadRef.current || document.visibilityState !== 'visible'
@@ -2257,15 +2307,6 @@ export default function App() {
     fileDownloadAbortRef.current?.abort();
   }, []);
 
-  const filteredSessions = useMemo(() => {
-    const query = sessionSearch.trim().toLocaleLowerCase();
-    const matches = query
-      ? sessions.filter((session) => `${session.title} ${session.cwd || ''} ${session.preview || ''}`
-        .toLocaleLowerCase().includes(query))
-      : sessions;
-    return [...matches].sort((left, right) => sessionUpdatedAt(right.updatedAt) - sessionUpdatedAt(left.updatedAt));
-  }, [sessionSearch, sessions]);
-
   const existingProjects = useMemo(() => {
     const seen = new Set<string>();
     const projects: string[] = [];
@@ -2328,79 +2369,21 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      {drawerOpen && <button className="drawer-backdrop" aria-label={t('关闭会话列表', 'Close session list')} onClick={() => setDrawerOpen(false)} />}
-      <aside className={`sidebar ${drawerOpen ? 'open' : ''}`} aria-label={t('会话列表', 'Session list')}>
-        <div className="sidebar-head">
-          <div>
-            <p className="eyebrow">CODEX ANYWHERE</p>
-          </div>
-          <div className="sidebar-actions">
-            <button className="sidebar-tool" onClick={beginNewSession} aria-label={t('新会话', 'New session')} title={t('新会话', 'New session')}>
-              <SidebarIcon name="plus" />
-            </button>
-            <button
-              className={`sidebar-tool ${searchOpen ? 'active' : ''}`}
-              onClick={() => {
-                if (searchOpen) setSessionSearch('');
-                setSearchOpen((open) => !open);
-              }}
-              aria-label={searchOpen ? t('收起搜索', 'Collapse search') : t('搜索会话', 'Search sessions')}
-              title={searchOpen ? t('收起搜索', 'Collapse search') : t('搜索会话', 'Search sessions')}
-            >
-              <SidebarIcon name="search" />
-            </button>
-            <button className="sidebar-tool mobile-only" onClick={() => setDrawerOpen(false)} aria-label={t('收起会话列表', 'Collapse session list')} title={t('收起会话列表', 'Collapse session list')}>
-              <SidebarIcon name="panel-close" />
-            </button>
-          </div>
-        </div>
-        {searchOpen && (
-          <label className="compact-search session-search-panel">
-            <span className="compact-search-icon"><SidebarIcon name="search" /></span>
-            <input
-              autoFocus
-              value={sessionSearch}
-              onChange={(event) => setSessionSearch(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') {
-                  setSessionSearch('');
-                  setSearchOpen(false);
-                }
-              }}
-              placeholder={t('搜索会话或目录', 'Search sessions or folders')}
-            />
-          </label>
-        )}
-        <nav className="session-list">
-          {filteredSessions.map((session) => {
-            const sessionRunning = isSessionRunning(session.status)
-              || (session.id === threadId && (executionState === 'running' || executionState === 'waiting'));
-            const completedUnread = !sessionRunning && sessionAttention[session.id] === 'unread';
-            const projectName = sessionProjectName(session.cwd);
-            return (
-              <button
-                key={session.id}
-                className={`session-card ${threadId === session.id ? 'active' : ''} ${sessionRunning ? 'running' : ''} ${completedUnread ? 'completed-unread' : ''}`}
-                onClick={() => selectSession(session)}
-              >
-                <span className="session-title" title={session.title || session.id}>{session.title || session.id}</span>
-                <span className="session-meta">
-                  {sessionRunning && <span className="session-running-dot" aria-label={t('运行中', 'Running')} title={t('运行中', 'Running')} />}
-                  {completedUnread && <span className="session-unread-dot" aria-label={t('已完成，未读', 'Completed, unread')} title={t('已完成，未读', 'Completed, unread')} />}
-                  <span
-                    className={projectName ? 'session-project' : 'session-project placeholder'}
-                    title={projectName ? session.cwd : undefined}
-                  >
-                    {projectName || 'General session'}
-                  </span>
-                  <time>{formatDate(session.updatedAt)}</time>
-                </span>
-              </button>
-            );
-          })}
-          {!filteredSessions.length && <p className="empty-list">{t('没有匹配的会话', 'No matching sessions')}</p>}
-        </nav>
-      </aside>
+      {drawerOpen && <button className="drawer-backdrop" aria-label={t('关闭会话列表', 'Close session list')} onClick={closeDrawer} />}
+      <SessionSidebar
+        open={drawerOpen}
+        sessions={sessions}
+        selectedThreadId={threadId}
+        executionState={executionState}
+        attention={sessionAttention}
+        searchOpen={searchOpen}
+        search={sessionSearch}
+        onSearchOpenChange={setSearchOpen}
+        onSearchChange={setSessionSearch}
+        onNewSession={beginNewSession}
+        onClose={closeDrawer}
+        onSelect={selectSession}
+      />
 
       {newSessionDialogOpen && (
         <div
