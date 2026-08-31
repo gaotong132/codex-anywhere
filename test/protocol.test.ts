@@ -412,6 +412,12 @@ test('internal environment context is never rendered as a user message', () => {
 <INSTRUCTIONS>internal workspace guidance</INSTRUCTIONS>
 <environment_context><cwd>D:\\project\\SampleProject</cwd><shell>powershell</shell></environment_context>`;
   assert.equal(displayUserMessage(internal), '');
+  assert.equal(displayUserMessage(`# AGENTS.md instructions for D:\\project\\SampleProject
+
+<INSTRUCTIONS>internal workspace guidance</INSTRUCTIONS>`), '');
+  assert.equal(displayUserMessage(`# AGENTS.md instructions for D:\\project\\SampleProject
+
+&lt;INSTRUCTIONS&gt;internal workspace guidance&lt;/INSTRUCTIONS&gt;`), '');
 });
 
 test('automation heartbeat displays only its notification message', () => {

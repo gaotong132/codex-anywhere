@@ -1803,10 +1803,6 @@ export default function App() {
         ...(steering ? {} : {
           cwd: isExistingSession ? '' : projectCwd,
           ...(directDesktopDelivery ? { preferDesktop: true } : {}),
-          ...(isExistingSession && modelConfig ? {
-            model: modelConfig.model,
-            reasoningEffort: modelConfig.reasoningEffort,
-          } : {}),
         }),
       });
       const sentAt = Date.now();

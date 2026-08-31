@@ -162,7 +162,6 @@ async function startTurn({
       text: payload.text,
       requestId,
       callerThreadId: codex.getControllerThreadId(threadId),
-      ...desktopTurnOverrides(payload),
     });
   }
   const largeSession = await codex.isLargeSession(threadId);
@@ -173,7 +172,6 @@ async function startTurn({
         text: payload.text,
         requestId,
         callerThreadId: codex.getControllerThreadId(threadId),
-        ...desktopTurnOverrides(payload),
       });
     } catch (error) {
       if (String(error instanceof Error ? error.message : error) !== 'desktop_app_unavailable') throw error;
@@ -195,7 +193,6 @@ async function startTurn({
       text: payload.text,
       requestId,
       callerThreadId: codex.getControllerThreadId(threadId),
-      ...desktopTurnOverrides(payload),
     });
   } catch (error) {
     if (String(error instanceof Error ? error.message : error) !== 'desktop_app_unavailable') throw error;
@@ -205,13 +202,4 @@ async function startTurn({
       delivery: 'appServer',
     };
   }
-}
-
-function desktopTurnOverrides(payload: Payload) {
-  const model = String(payload.model || '').trim();
-  const thinking = String(payload.reasoningEffort || '').trim();
-  return {
-    ...(model ? { model } : {}),
-    ...(thinking ? { thinking } : {}),
-  };
 }

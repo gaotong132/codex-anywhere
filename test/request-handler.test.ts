@@ -164,6 +164,7 @@ test('active Desktop sessions receive follow-up messages immediately through Des
   }));
   const response = await handle(request('turn.start', {
     threadId: 'target-thread', text: 'adjust this now', preferDesktop: true,
+    model: 'stale-model', reasoningEffort: 'low',
   }));
   assert.deepEqual(delivered, {
     threadId: 'target-thread', text: 'adjust this now', requestId: 'request-1',

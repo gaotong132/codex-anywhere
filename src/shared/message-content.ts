@@ -5,6 +5,7 @@ const IMAGE_ATTACHMENT = /<image\b[^>]*?(?:\/\s*>|>\s*<\/image\s*>)/gi;
 const ESCAPED_IMAGE_ATTACHMENT = /&lt;image\b[\s\S]*?(?:\/\s*&gt;|&gt;\s*&lt;\/image\s*&gt;)/gi;
 const INTERNAL_CONTEXT = /<environment_context\b[^>]*>[\s\S]*?<\/environment_context>/i;
 const ESCAPED_INTERNAL_CONTEXT = /(?:\\?<|&lt;)environment_context\b[\s\S]*?(?:\\?<|&lt;)\/environment_context(?:>|&gt;)/i;
+const INTERNAL_AGENT_INSTRUCTIONS = /^\s*#\s+AGENTS\.md instructions for\s+[^\r\n]+\s+(?:<INSTRUCTIONS>[\s\S]*<\/INSTRUCTIONS>|&lt;INSTRUCTIONS&gt;[\s\S]*&lt;\/INSTRUCTIONS&gt;)\s*$/i;
 const BARE_URL_BEFORE_CJK_PUNCTUATION = /(?<![<(])(https?:\/\/[^\s<>()]+?)(?=[，。；：！？、）》】])/gu;
 const CONTROL_ENVELOPE_START = /^\s*(?:\\?<(?:codex_delegation|heartbeat|environment_context)\b|&lt;(?:codex_delegation|heartbeat|environment_context)\b)/i;
 
@@ -93,7 +94,11 @@ function parseMessageContent(value: unknown, role: 'user' | 'assistant'): Parsed
 
   const request = USER_REQUEST_SECTION.exec(text);
   if (request) text = request[1];
-  else if (INTERNAL_CONTEXT.test(normalizeControlEnvelope(text)) || ESCAPED_INTERNAL_CONTEXT.test(text)) {
+  else if (
+    INTERNAL_AGENT_INSTRUCTIONS.test(text)
+    || INTERNAL_CONTEXT.test(normalizeControlEnvelope(text))
+    || ESCAPED_INTERNAL_CONTEXT.test(text)
+  ) {
     return { text: '', contexts };
   }
 
