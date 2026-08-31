@@ -720,6 +720,23 @@ function mapRolloutRows(rows: RolloutRow[], initialProgress?: RolloutProgress): 
         });
       }
     }
+    if (payloadType === 'task_complete') {
+      const finalText = fullText(payload.last_agent_message).trim();
+      if (finalText) {
+        const parsed = parseAssistantMessage(finalText);
+        const alreadyPresent = items.slice(turnItemStart).some((item) => (
+          item.type === 'agentMessage'
+          && item.phase === 'final_answer'
+          && item.text === parsed.text
+        ));
+        if (!alreadyPresent) {
+          pushText(items, {
+            type: 'agentMessage', phase: 'final_answer', ...parsed,
+            ...finalFileChanges('final_answer', progress), ...timing,
+          });
+        }
+      }
+    }
     if (payloadType === 'task_complete' && progress.files) {
       for (let index = items.length - 1; index >= turnItemStart; index -= 1) {
         if (items[index]?.type !== 'agentMessage' || items[index]?.phase !== 'final_answer') continue;

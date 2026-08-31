@@ -88,7 +88,13 @@ async function dispatchAction({
     try {
       desktopThreads = await desktop.listThreads({ callerThreadId: sessions[0]?.id, limit: 50 });
     } catch { /* app-server status remains the fallback when Desktop is unavailable */ }
-    return { sessions: mergeDesktopSessionStatuses(sessions, desktopThreads) };
+    return {
+      sessions: mergeDesktopSessionStatuses(
+        sessions,
+        desktopThreads,
+        String((codex.activeTurn as { threadId?: unknown } | null)?.threadId || ''),
+      ),
+    };
   }
   if (action === 'session.read') return codex.readSession(String(payload.threadId || ''));
   if (action === 'session.turns.list') {
@@ -157,53 +163,14 @@ async function startTurn({
   if (!threadId) {
     return { ...await codex.startTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
   }
-  if (payload.preferDesktop === true) {
-    return desktop.sendMessage({
-      threadId,
-      text: payload.text,
-      requestId,
-      callerThreadId: codex.getControllerThreadId(threadId),
-      ...codex.getDesktopTurnOverrides(threadId),
-    });
-  }
-  const largeSession = await codex.isLargeSession(threadId);
-  if (!largeSession && await codex.needsDesktopPermissionRecovery(threadId)) {
-    try {
-      return await desktop.sendMessage({
-        threadId,
-        text: payload.text,
-        requestId,
-        callerThreadId: codex.getControllerThreadId(threadId),
-        ...codex.getDesktopTurnOverrides(threadId),
-      });
-    } catch (error) {
-      if (String(error instanceof Error ? error.message : error) !== 'desktop_app_unavailable') throw error;
-    }
-  }
-  if (codex.canOwnSession(threadId) && !largeSession) {
-    try {
-      return {
-        ...await codex.startTurn({ ...payload, clientId, requestId }),
-        delivery: 'appServer',
-      };
-    } catch (error) {
-      if (String(error instanceof Error ? error.message : error) !== 'thread_active_writer_conflict') throw error;
-    }
-  }
-  try {
-    return await desktop.sendMessage({
-      threadId,
-      text: payload.text,
-      requestId,
-      callerThreadId: codex.getControllerThreadId(threadId),
-      ...codex.getDesktopTurnOverrides(threadId),
-    });
-  } catch (error) {
-    if (String(error instanceof Error ? error.message : error) !== 'desktop_app_unavailable') throw error;
-    if (largeSession) throw new Error('desktop_required_for_large_session');
-    return {
-      ...await codex.startTurn({ ...payload, clientId, requestId }),
-      delivery: 'appServer',
-    };
-  }
+  // Existing Desktop tasks must keep their original writer. Starting or
+  // resuming them through the bridge's app-server creates a second writer and
+  // makes later Desktop delivery fail with "already has an active writer".
+  return desktop.sendMessage({
+    threadId,
+    text: payload.text,
+    requestId,
+    callerThreadId: codex.getControllerThreadId(threadId),
+    ...codex.getDesktopTurnOverrides(threadId),
+  });
 }

@@ -135,22 +135,34 @@ test('session listing merges live Desktop status and tolerates Desktop absence',
     desktop: { listThreads: async () => { throw new Error('desktop_app_unavailable'); } },
   }));
   assert.deepEqual((await unavailable(request('sessions.list'))).data.sessions, sessions);
+
+  const locallyActive = createRequestHandler(createDependencies({
+    codex: {
+      activeTurn: { threadId: 'thread-1' },
+      listSessions: async () => sessions,
+    },
+    desktop: { listThreads: async () => [{ id: 'thread-1', status: 'notLoaded' }] },
+  }));
+  assert.equal((await locallyActive(request('sessions.list'))).data.sessions[0].status, 'active');
 });
 
-test('idle existing sessions use app-server so Web can receive approval requests', async () => {
-  let started;
+test('existing sessions are always delivered through Desktop without bridge takeover', async () => {
+  let delivered;
+  let appServerCalls = 0;
   const handle = createRequestHandler(createDependencies({
-    codex: { startTurn: async (message) => {
-      started = message;
-      return { threadId: message.threadId };
+    codex: { startTurn: async () => { appServerCalls += 1; return {}; } },
+    desktop: { sendMessage: async (message) => {
+      delivered = message;
+      return { threadId: message.threadId, delivery: 'desktop' };
     } },
   }));
   const response = await handle(request('turn.start', { threadId: 'target-thread', text: 'hello' }));
-  assert.deepEqual(started, {
-    threadId: 'target-thread', text: 'hello', requestId: 'request-1', clientId: 'client-1',
+  assert.deepEqual(delivered, {
+    threadId: 'target-thread', text: 'hello', requestId: 'request-1', callerThreadId: 'controller-thread',
   });
+  assert.equal(appServerCalls, 0);
   assert.equal(response.ok, true);
-  assert.equal(response.data.delivery, 'appServer');
+  assert.equal(response.data.delivery, 'desktop');
 });
 
 test('active Desktop sessions receive follow-up messages immediately through Desktop', async () => {
@@ -214,12 +226,12 @@ test('active Web-owned sessions steer the in-flight app-server turn', async () =
   });
 });
 
-test('a legacy bridge permission override is handed back to Desktop once', async () => {
+test('existing sessions preserve configured Desktop turn overrides', async () => {
   let sent;
   let appServerCalls = 0;
   const handle = createRequestHandler(createDependencies({
     codex: {
-      needsDesktopPermissionRecovery: async () => true,
+      getDesktopTurnOverrides: () => ({ model: 'gpt-5.6-sol', thinking: 'high' }),
       startTurn: async () => { appServerCalls += 1; return { threadId: 'target-thread' }; },
     },
     desktop: { sendMessage: async (message) => {
@@ -230,6 +242,7 @@ test('a legacy bridge permission override is handed back to Desktop once', async
   const response = await handle(request('turn.start', { threadId: 'target-thread', text: 'continue' }));
   assert.deepEqual(sent, {
     threadId: 'target-thread', text: 'continue', requestId: 'request-1', callerThreadId: 'controller-thread',
+    model: 'gpt-5.6-sol', thinking: 'high',
   });
   assert.equal(response.data.delivery, 'desktop');
   assert.equal(appServerCalls, 0);
@@ -237,8 +250,9 @@ test('a legacy bridge permission override is handed back to Desktop once', async
 
 test('active Desktop sessions preserve the required caller task', async () => {
   let sent;
+  let appServerCalls = 0;
   const handle = createRequestHandler(createDependencies({
-    codex: { startTurn: async () => { throw new Error('thread_active_writer_conflict'); } },
+    codex: { startTurn: async () => { appServerCalls += 1; throw new Error('thread_active_writer_conflict'); } },
     desktop: { sendMessage: async (message) => {
       sent = message;
       return { threadId: message.threadId, delivery: 'desktop' };
@@ -250,9 +264,10 @@ test('active Desktop sessions preserve the required caller task', async () => {
   });
   assert.equal(response.ok, true);
   assert.equal(response.data.delivery, 'desktop');
+  assert.equal(appServerCalls, 0);
 });
 
-test('Desktop absence never turns a follow-up into a hidden queue', async () => {
+test('Desktop absence never lets the bridge take over an existing session', async () => {
   let startCalls = 0;
   const fallback = createRequestHandler(createDependencies({
     codex: { startTurn: async (message) => {
@@ -263,15 +278,15 @@ test('Desktop absence never turns a follow-up into a hidden queue', async () => 
   }));
   const response = await fallback(request('turn.start', { threadId: 'thread-1', text: 'continue' }));
   assert.equal(response.ok, false);
-  assert.equal(response.error, 'thread_active_writer_conflict');
-  assert.equal(startCalls, 2);
+  assert.equal(response.error, 'desktop_app_unavailable');
+  assert.equal(startCalls, 0);
 
   const large = createRequestHandler(createDependencies({
     codex: { isLargeSession: async () => true },
     desktop: { sendMessage: async () => { throw new Error('desktop_app_unavailable'); } },
   }));
   assert.equal((await large(request('turn.start', { threadId: 'large-thread', text: 'continue' }))).error,
-    'desktop_required_for_large_session');
+    'desktop_app_unavailable');
 });
 
 test('Desktop delivery errors are not converted into a second send attempt', async () => {
@@ -286,7 +301,7 @@ test('Desktop delivery errors are not converted into a second send attempt', asy
   const response = await handle(request('turn.start', { threadId: 'thread-1', text: 'hello' }));
   assert.equal(response.ok, false);
   assert.equal(response.error, 'desktop_delivery_failed:rejected');
-  assert.equal(resumeCalls, 1);
+  assert.equal(resumeCalls, 0);
 });
 
 test('pending approval requests are scoped to the selected thread and rebind the client', async () => {

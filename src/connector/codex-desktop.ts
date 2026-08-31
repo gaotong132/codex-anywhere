@@ -307,12 +307,15 @@ function parseToolPayload(result: JsonObject): JsonObject {
 }
 
 export function mergeDesktopSessionStatuses<T extends { id: string; status?: string }>(
-  sessions: T[], desktopThreads: DesktopThread[],
+  sessions: T[], desktopThreads: DesktopThread[], locallyActiveThreadId = '',
 ) {
   const statuses = new Map((desktopThreads || []).map((thread) => [thread.id, thread.status]));
-  return (sessions || []).map((session) => statuses.has(session.id)
-    ? { ...session, status: statuses.get(session.id) }
-    : session);
+  return (sessions || []).map((session) => {
+    if (session.id === locallyActiveThreadId) return { ...session, status: 'active' };
+    return statuses.has(session.id)
+      ? { ...session, status: statuses.get(session.id) }
+      : session;
+  });
 }
 
 export const internals = { encodeNativeFrame, parseToolPayload };
