@@ -1,0 +1,54 @@
+html,
+body,
+#root {
+  width: 390px;
+  height: 100vh;
+}
+
+body {
+  min-width: 390px;
+}
+
+*,
+*::before,
+*::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+.promo-conversation-shell {
+  grid-template-columns: 1fr;
+}
+
+.promo-conversation {
+  width: 390px;
+  height: 100vh;
+}
+
+.promo-conversation .message-list {
+  padding-top: 14px;
+}
+
+.promo-conversation .message-image img {
+  max-height: 132px;
+}
+
+.promo-conversation .message {
+  font-size: 13px;
+}
+
+.promo-conversation .progress-card {
+  margin-top: 3px;
+}
+
+.promo-session-shell .promo-conversation {
+  opacity: .72;
+}
+
+.promo-session-shell .drawer-backdrop {
+  cursor: default;
+}
+
+.promo-session-shell .sidebar {
+  z-index: 31;
+}

@@ -52,6 +52,8 @@ Pull Request 应足够聚焦，便于审阅和说明用户价值。只有成熟�
 - 修改 `scripts/relay.sh` 后，在 POSIX shell 执行 `sh -n scripts/relay.sh`。
 - 辅助命令与中英文部署指南保持一致。
 - 使用长标题、长文件名、长进度文字和三行活动状态检查手机布局。
+- 修改手机界面后，运行 `npm run docs:hero`，通过文档专用 React 示例重新生成 README 首图；如果未能
+  自动找到 Edge 或 Chrome，可设置 `CODEX_ANYWHERE_BROWSER`。
 - 创建版本 Tag 前确认包版本，更新全部用户文档，完成检查和构建，并标记已经验证的准确提交。
 
 ## 安全与测试数据

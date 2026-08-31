@@ -59,6 +59,8 @@ relay, or local-computer trust boundary.
 - When `scripts/relay.sh` changes, run `sh -n scripts/relay.sh` in a POSIX shell.
 - Keep helper commands and both deployment guides synchronized.
 - Verify mobile layout for long titles, filenames, progress text, and three-line activity status.
+- After changing the mobile UI, run `npm run docs:hero` to regenerate the README hero from the
+  docs-only React fixture. Set `CODEX_ANYWHERE_BROWSER` when Edge or Chrome is not auto-detected.
 - Before a release tag, confirm the package version, update all user documents, run checks and builds,
   and tag the exact tested commit.
 

@@ -21,6 +21,7 @@
     "build": "npm run build:web && npm run build:node",
     "build:web": "vite build",
     "build:node": "tsc -p tsconfig.node.json",
+    "docs:hero": "node scripts/generate-readme-hero.mjs",
     "dev": "vite --host 127.0.0.1",
     "server": "npm run build && node build/server/index.js",
     "serve": "node build/server/index.js",

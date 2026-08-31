@@ -8,7 +8,7 @@ English | [简体中文](README.zh-CN.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <p align="center">
-  <img src="docs/assets/readme-hero.svg" alt="Codex Anywhere lets a mobile browser follow and continue Codex sessions running on your own computer" width="100%">
+  <img src="docs/assets/readme-hero.png" alt="Codex Anywhere lets a mobile browser follow and continue Codex sessions running on your own computer" width="100%">
 </p>
 
 Codex Anywhere is a single-user, self-hosted Web bridge for the Codex sessions on your computer. Follow
