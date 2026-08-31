@@ -65,6 +65,12 @@ export function isDuplicateFinalProgress(progressText: string, assistantText: st
   return Boolean(progress) && progress === canonicalMessageText(assistantText);
 }
 
+export function appendUniqueTimelineError(items: TimelineItem[], item: TimelineItem) {
+  const previous = items.at(-1);
+  if (item.kind === 'error' && previous?.kind === 'error' && previous.text === item.text) return items;
+  return [...items, item];
+}
+
 export function latestTurnProgressItemId(items: TimelineItem[]) {
   let latestUserIndex = -1;
   for (let index = items.length - 1; index >= 0; index -= 1) {

@@ -11,6 +11,7 @@ import {
 } from 'react';
 import {
   attachLatestAssistantFileChanges,
+  appendUniqueTimelineError,
   attachmentRegistryKey,
   parseAssistantMessage,
   historyFingerprint,
@@ -712,7 +713,9 @@ export default function App() {
       autoFollowLatestRef.current = true;
       shouldScrollBottomRef.current = true;
     }
-    setTimeline((current) => [...current, item]);
+    setTimeline((current) => kind === 'error'
+      ? appendUniqueTimelineError(current, item)
+      : [...current, item]);
     return item.id;
   }, []);
 

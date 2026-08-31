@@ -48,15 +48,18 @@ export function friendlyError(error: unknown) {
   if (message === 'download_rate_limited') return t('下载请求过快，请稍后重新点击文件链接。', 'Download requests are too frequent. Wait and click the file link again.');
   if (message === 'download_confirmation_required') return t('需要在当前页面确认后才能下载本机文件。', 'Confirm the download on this page first.');
   if (message.startsWith('download_')) return t('本机文件下载失败，请检查电脑连接后重试。', 'Local file download failed. Check the computer connection and retry.');
+  if (/already has an active writer/i.test(message)) {
+    return t(
+      '当前会话仍在桌面 Codex 中执行，暂时无法从手机插入消息。消息已保留在输入框，请稍后重试。',
+      'Codex Desktop is still running this task, so a mobile message cannot be inserted yet. The message remains in the composer; try again shortly.',
+    );
+  }
   if (message.startsWith('desktop_delivery_failed:')) {
     const detail = message.slice('desktop_delivery_failed:'.length);
     return t(`桌面 Codex 未接收这条消息：${detail}`, `Codex Desktop did not receive this message: ${detail}`);
   }
   if (message === 'thread_active_writer_conflict') {
     return t('无法通过桌面通道直接发送，消息没有进入排队。请确认桌面 Codex 在线后重试。', 'Direct Desktop delivery is unavailable and the message was not queued. Confirm Codex Desktop is online, then retry.');
-  }
-  if (/already has an active writer/i.test(message)) {
-    return t('这个会话当前正由桌面 Codex 占用，不能同时从手机写入。请先让桌面任务结束并关闭该会话，再重试；系统不会自动创建 fork。', 'Codex Desktop is currently writing to this session, so the phone cannot write at the same time. Finish and close the desktop task before retrying; no fork will be created automatically.');
   }
   return message;
 }

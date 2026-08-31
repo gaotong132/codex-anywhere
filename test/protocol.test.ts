@@ -66,6 +66,7 @@ import {
   shouldPrefillOlderHistory,
 } from '../web/src/app-utils.js';
 import {
+  appendUniqueTimelineError,
   attachLatestAssistantFileChanges,
   historyFingerprint,
   historyItems,
@@ -102,6 +103,21 @@ test('mobile downloads pause until the page and encrypted channel are ready', as
   });
   assert.equal(pauses, 1);
   assert.equal(waits, 1);
+});
+
+test('active Desktop writer errors are private and consecutive duplicates collapse', () => {
+  const text = friendlyError(new Error(
+    'desktop_delivery_failed:thread private-thread-id already has an active writer',
+  ));
+  assert.match(text, /当前会话仍在桌面 Codex 中执行/);
+  assert.doesNotMatch(text, /private-thread-id/);
+
+  const first = [{ id: 'error-1', kind: 'error' as const, text }];
+  const duplicate = appendUniqueTimelineError(first, { id: 'error-2', kind: 'error', text });
+  assert.equal(duplicate, first);
+  assert.equal(appendUniqueTimelineError(first, {
+    id: 'error-3', kind: 'error', text: 'another error',
+  }).length, 2);
 });
 
 test('connector bootstrap proofs are route and challenge bound', () => {
