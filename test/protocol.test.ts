@@ -1148,6 +1148,25 @@ test('rollout tail unwraps and deduplicates heartbeat event formats', () => {
   assert.equal(items[0].text, '部署完成');
 });
 
+test('rollout mapping preserves real turn boundaries inside one byte page', () => {
+  const items = rolloutInternals.mapRolloutRows([
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-first' } },
+    { type: 'event_msg', payload: {
+      type: 'agent_message', phase: 'commentary', message: 'same progress',
+    } },
+    { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn-first' } },
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-second' } },
+    { type: 'event_msg', payload: {
+      type: 'agent_message', phase: 'commentary', message: 'same progress',
+    } },
+  ]);
+
+  assert.deepEqual(items.map((item) => item.turnId), ['turn-first', 'turn-second']);
+  const timeline = historyItems([{ id: 'rollout:thread:0:100', items }]);
+  assert.deepEqual(timeline.map((item) => item.historyTurnId), ['turn-first', 'turn-second']);
+  assert.equal(timeline.length, 2);
+});
+
 test('large rollout keeps activity across an incremental tail read', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-'));
   const filePath = join(directory, 'rollout.jsonl');
@@ -1169,6 +1188,7 @@ test('large rollout keeps activity across an incremental tail read', async () =>
     const running = await readRolloutTail({ filePath, threadId: 'thread-large', maxBytes: 64 * 1024 });
     assert.equal(running.turns[0].status, 'inProgress');
     assert.equal(running.turns[0].items.at(-1).text, 'still running');
+    assert.equal(running.turns[0].items.at(-1).turnId, 'turn-large');
     assert.equal(running.toolPurpose, 'Checking persistent state');
     assert.equal(running.activityKind, 'planning');
     assert.deepEqual(running.turnProgress.plan, { current: 2, total: 2 });

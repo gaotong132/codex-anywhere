@@ -16,6 +16,7 @@ const VISUALIZATION_MARKER_PATTERN = /(?:^|\r?\n)[ \t]*(?:visualize[ \t]+|\uE200
 
 type TurnItem = {
   type?: string;
+  turnId?: string;
   phase?: string;
   status?: string;
   text?: string;
@@ -126,6 +127,7 @@ export function historyItems(turns: Turn[]) {
         ? parseUserMessage(rawText || '')
         : parseAssistantMessage(presentationText);
       const text = content.text;
+      const historyTurnId = item.turnId?.trim() || turn.id;
       let kind: TimelineKind | null = null;
       const displayText = text || '';
       if (/user/i.test(type) && (text || attachment)) kind = 'user';
@@ -135,7 +137,7 @@ export function historyItems(turns: Turn[]) {
       if (!kind || (!displayText && !attachment && !visualization)) continue;
       const previous = items.at(-1);
       if (kind === 'progress' && !visualization
-        && previous?.kind === 'progress' && previous.historyTurnId === turn.id) {
+        && previous?.kind === 'progress' && previous.historyTurnId === historyTurnId) {
         previous.text = `${previous.text}\n\n${displayText}`;
         previous.completedAt = messageTime(item, turn, kind) || previous.completedAt;
         continue;
@@ -148,7 +150,7 @@ export function historyItems(turns: Turn[]) {
         id: `history:${turn.id}:${index}`,
         kind,
         text: displayText,
-        historyTurnId: turn.id,
+        historyTurnId,
         attachment,
         ...(visualization ? { visualization } : {}),
         contexts: item.contexts?.length ? item.contexts : content.contexts,
@@ -222,6 +224,7 @@ export function historyFingerprint(turns: Turn[], progress?: unknown) {
       completedAt: turn.completedAt,
       items: turn.items?.map((item) => ({
         type: item.type,
+        turnId: item.turnId,
         phase: item.phase,
         status: item.status,
         text: item.text,

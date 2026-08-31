@@ -42,6 +42,7 @@ type FileProgressEvent =
 type RolloutRow = Record<string, any>;
 type RolloutItem = {
   type: string;
+  turnId?: string;
   phase?: string;
   text: string;
   contexts?: MessageContext[];
@@ -165,7 +166,8 @@ async function readHistoryPage(
   const priorProgress = needsPriorProgress
     ? await findLatestFileProgressBefore(handle, window.firstCompleteOffset)
     : { patchFiles: new Set<string>() };
-  const items = mapRolloutRows(window.rows, priorProgress);
+  const initialTurnId = await initialTurnIdForWindow(handle, window);
+  const items = mapRolloutRows(window.rows, priorProgress, initialTurnId);
   const progress = encodedCursor
     ? { patchFiles: new Set<string>() }
     : await progressForHistoryPage(
@@ -261,11 +263,12 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
   if (activity.status === 'inProgress' && !toolPurpose && window.firstCompleteOffset > 0) {
     toolPurpose = await findLatestPurposeBefore(handle, window.firstCompleteOffset);
   }
+  const initialTurnId = await initialTurnIdForWindow(handle, window);
   return {
     ...options,
     fileSize,
     parsedOffset: window.parsedOffset,
-    items: mapRolloutRows(window.rows, priorProgress).slice(-options.maxItems),
+    items: mapRolloutRows(window.rows, priorProgress, initialTurnId).slice(-options.maxItems),
     activity,
     liveActivity: updateLiveActivity({ kind: 'working', updatedAt: activity.startedAt }, window.rows, activity.status),
     toolPurpose,
@@ -289,7 +292,11 @@ async function updateSnapshot(handle: FileHandle, fileSize: number, cached: Roll
     ...cached,
     fileSize,
     parsedOffset: appended.parsedOffset,
-    items: appendItems(cached.items, mapRolloutRows(appended.rows, cached.progress), cached.maxItems),
+    items: appendItems(
+      cached.items,
+      mapRolloutRows(appended.rows, cached.progress, cached.activity.id),
+      cached.maxItems,
+    ),
     activity,
     liveActivity: updateLiveActivity(cached.liveActivity, appended.rows, activity.status),
     toolPurpose: updateToolPurpose(cached.toolPurpose, appended.rows, activity.status),
@@ -322,6 +329,30 @@ async function readCompleteRows(
   const rows = recoveredRows.concat(data.subarray(begin, lastNewline + 1).toString('utf8')
     .split('\n').filter(Boolean).map(parseRow).filter((row): row is RolloutRow => Boolean(row)));
   return { rows, parsedOffset: start + lastNewline + 1, firstCompleteOffset };
+}
+
+async function initialTurnIdForWindow(handle: FileHandle, window: CompleteRows) {
+  if (window.firstCompleteOffset <= 0 || !hasVisibleRowsBeforeFirstTaskStart(window.rows)) return '';
+  return (await findLatestActivityBefore(handle, window.firstCompleteOffset)).id;
+}
+
+function hasVisibleRowsBeforeFirstTaskStart(rows: RolloutRow[]) {
+  for (const row of rows) {
+    if (String(row?.payload?.type || '') === 'task_started') return false;
+    if (isVisibleRolloutRow(row)) return true;
+  }
+  return false;
+}
+
+function isVisibleRolloutRow(row: RolloutRow) {
+  const payload = row?.payload || {};
+  const type = String(payload.type || '');
+  return Boolean(
+    delegatedUserMessage(row)
+    || (row?.type === 'event_msg' && /^(?:agent_message|user_message|image_generation_end)$/.test(type))
+    || (row?.type === 'response_item' && type === 'message')
+    || (type === 'task_complete' && fullText(payload.last_agent_message).trim()),
+  );
 }
 
 async function findLatestActivityBefore(handle: FileHandle, endOffset: number): Promise<RolloutActivity> {
@@ -673,15 +704,20 @@ function recoverGeneratedImageRows(partialRow: string): RolloutRow[] {
   return rows;
 }
 
-function mapRolloutRows(rows: RolloutRow[], initialProgress?: RolloutProgress): RolloutItem[] {
+function mapRolloutRows(
+  rows: RolloutRow[], initialProgress?: RolloutProgress, initialTurnId = '',
+): RolloutItem[] {
   const items: RolloutItem[] = [];
   let progress: RolloutProgress = initialProgress
     ? { ...initialProgress, patchFiles: new Set(initialProgress.patchFiles) }
     : { patchFiles: new Set() };
   let turnItemStart = 0;
+  let currentTurnId = initialTurnId;
   for (const row of Array.isArray(rows) ? rows : []) {
     const payload = row?.payload || {};
     const payloadType = String(payload.type || '');
+    currentTurnId = rolloutRowTurnId(row) || currentTurnId;
+    const turn = currentTurnId ? { turnId: currentTurnId } : {};
     if (payloadType === 'task_started') turnItemStart = items.length;
     const progressEvent = fileProgressEvent(row);
     if (progressEvent) progress = applyFileProgressEvent(progress, progressEvent);
@@ -689,34 +725,34 @@ function mapRolloutRows(rows: RolloutRow[], initialProgress?: RolloutProgress): 
     const timing = completedAt ? { completedAt } : {};
     const delegatedMessage = delegatedUserMessage(row);
     if (delegatedMessage) {
-      pushText(items, { type: 'userMessage', ...delegatedMessage, ...timing });
+      pushText(items, { type: 'userMessage', ...delegatedMessage, ...turn, ...timing });
     } else if (row?.type === 'event_msg' && payloadType === 'agent_message') {
       const content = parseAssistantMessage(payload.message);
       pushText(items, {
         type: 'agentMessage', phase: payload.phase || 'commentary', ...content,
-        ...finalFileChanges(payload.phase, progress), ...timing,
+        ...finalFileChanges(payload.phase, progress), ...turn, ...timing,
       });
     } else if (row?.type === 'event_msg' && payloadType === 'user_message') {
       pushText(items, {
-        type: 'userMessage', ...parseUserMessage(payload.message || payload.text), ...timing,
+        type: 'userMessage', ...parseUserMessage(payload.message || payload.text), ...turn, ...timing,
       });
     } else if (row?.type === 'response_item' && payloadType === 'message') {
       if (payload.role === 'user') {
         pushText(items, {
-          type: 'userMessage', ...parseUserMessage(extractContent(payload.content)), ...timing,
+          type: 'userMessage', ...parseUserMessage(extractContent(payload.content)), ...turn, ...timing,
         });
       } else if (payload.role === 'assistant') {
         const content = parseAssistantMessage(extractContent(payload.content));
         pushText(items, {
           type: 'agentMessage', phase: payload.phase || 'commentary',
-          ...content, ...finalFileChanges(payload.phase, progress), ...timing,
+          ...content, ...finalFileChanges(payload.phase, progress), ...turn, ...timing,
         });
       }
     } else if (row?.type === 'event_msg' && payloadType === 'image_generation_end') {
       const attachment = extractGeneratedImageAttachment(payload);
       if (payload.status === 'completed' && attachment) {
         pushText(items, {
-          type: 'agentMessage', phase: 'final_answer', text: '', attachment, ...timing,
+          type: 'agentMessage', phase: 'final_answer', text: '', attachment, ...turn, ...timing,
         });
       }
     }
@@ -732,7 +768,7 @@ function mapRolloutRows(rows: RolloutRow[], initialProgress?: RolloutProgress): 
         if (!alreadyPresent) {
           pushText(items, {
             type: 'agentMessage', phase: 'final_answer', ...parsed,
-            ...finalFileChanges('final_answer', progress), ...timing,
+            ...finalFileChanges('final_answer', progress), ...turn, ...timing,
           });
         }
       }
@@ -746,6 +782,22 @@ function mapRolloutRows(rows: RolloutRow[], initialProgress?: RolloutProgress): 
     }
   }
   return items;
+}
+
+function rolloutRowTurnId(row: RolloutRow) {
+  const payload = row?.payload || {};
+  const item = payload.item || {};
+  return String(
+    payload.turn_id
+    || payload.turnId
+    || payload.internal_chat_message_metadata_passthrough?.turn_id
+    || item.turn_id
+    || item.turnId
+    || item.internal_chat_message_metadata_passthrough?.turn_id
+    || row?.turn_id
+    || row?.turnId
+    || '',
+  ).trim();
 }
 
 function delegatedUserMessage(row: RolloutRow) {
@@ -794,6 +846,7 @@ function pushText(items: RolloutItem[], item: RolloutItem) {
   if (!text && !item.attachment) return;
   const previous = items.at(-1);
   if (previous?.type === item.type
+    && previous.turnId === item.turnId
     && previous.phase === item.phase
     && previous.text === text
     && previous.attachment?.path === item.attachment?.path
@@ -830,7 +883,8 @@ export const internals = {
   findLatestActivityBefore, findLatestFileProgressBefore, findLatestModelSettingsBefore,
   findLatestPlanBefore, findLatestPurposeBefore,
   inferRolloutActivity,
-  inferRolloutStatus, mapRolloutRows, recoverGeneratedImageRows, rolloutCache, updateLiveActivity,
+  inferRolloutStatus, mapRolloutRows, recoverGeneratedImageRows, rolloutCache, rolloutRowTurnId,
+  updateLiveActivity,
   reasoningSummary, updateActivityDetail, updateToolPurpose,
   updateTurnProgress,
 };

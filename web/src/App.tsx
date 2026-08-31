@@ -1568,7 +1568,9 @@ export default function App() {
 
         if (!previousFingerprint || previousFingerprint !== fingerprint) {
           if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
-          const latestTurnIds = new Set(page.turns.map((turn) => turn.id));
+          const latestTurnIds = new Set(latestItems
+            .map((item) => item.historyTurnId)
+            .filter((turnId): turnId is string => Boolean(turnId)));
           setTimeline((current) => mergeHistorySnapshot(current, latestItems, latestTurnIds));
         }
         schedule(inProgress || changed ? 1_500 : 6_000);
