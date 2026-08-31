@@ -273,9 +273,14 @@ export function DownloadIndicator({
   if (!download) return null;
   const progress = download.size > 0 ? Math.min(100, Math.round(download.received / download.size * 100)) : 0;
   return (
-    <div className="download-status" role="status" aria-live="polite">
-      <span>{t(`正在下载 ${download.name}`, `Downloading ${download.name}`)}</span>
+    <div className={`download-status${download.paused ? ' paused' : ''}`} role="status" aria-live="polite">
+      <span className="download-name">{t(`正在下载 ${download.name}`, `Downloading ${download.name}`)}</span>
       <strong>{download.size > 0 ? `${progress}%` : t('准备中', 'Preparing')}</strong>
+      <small>
+        {download.paused
+          ? t('连接已暂停，返回页面并恢复连接后会自动继续', 'Paused. Return to this page and reconnect to resume automatically.')
+          : t('息屏或切到后台时可能暂停，返回页面后会自动继续', 'Locking the screen or backgrounding may pause the transfer; return here to resume.')}
+      </small>
       <progress value={download.received} max={Math.max(1, download.size)} />
       <button type="button" onClick={onCancel}>{t('取消下载', 'Cancel download')}</button>
     </div>

@@ -52,6 +52,26 @@ function request(action, payload = {}) {
   return { action, payload, requestId: 'request-1', clientId: 'client-1' };
 }
 
+test('file downloads stay authorized to the stable browser identity across relay reconnects', async () => {
+  const owners = [];
+  const handle = createRequestHandler(createDependencies({
+    downloads: {
+      open: async (_payload, owner) => { owners.push(owner); return {}; },
+      read: async (_payload, owner) => { owners.push(owner); return {}; },
+      close: async (_payload, owner) => { owners.push(owner); return {}; },
+    },
+  }));
+  for (const action of ['file.download.open', 'file.download.chunk', 'file.download.close']) {
+    await handle({
+      action, payload: {}, requestId: action,
+      clientId: `relay-${action}`, clientDeviceId: 'approved-browser-device',
+    });
+  }
+  assert.deepEqual(owners, [
+    'approved-browser-device', 'approved-browser-device', 'approved-browser-device',
+  ]);
+});
+
 test('request handler keeps connector routing independent from process startup', async () => {
   const handle = createRequestHandler(createDependencies());
   assert.deepEqual(await handle(request('connector.status')), {

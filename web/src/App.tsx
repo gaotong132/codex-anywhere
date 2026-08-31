@@ -130,6 +130,11 @@ const INITIAL_BOOTSTRAP_TIMEOUT_MS = 10_000;
 const SESSION_ATTENTION_KEY = 'bridge.sessionAttention.v1';
 const PENDING_PAIRING_KEY = 'bridge.pendingPairing.v1';
 const NEW_TURN_KEY = '__new_turn__';
+type RequestOptions = { timeoutMs?: number | null; signal?: AbortSignal };
+type ScreenWakeLockSentinel = { released: boolean; release(): Promise<void> };
+type WakeLockNavigator = Navigator & {
+  wakeLock?: { request(type: 'screen'): Promise<ScreenWakeLockSentinel> };
+};
 const PairingDialog = lazy(() => import('./pairing-dialog').then((module) => ({
   default: module.PairingDialog,
 })));
@@ -569,6 +574,8 @@ export default function App() {
   const attachmentLoadsRef = useRef(new Set<string>());
   const fileDownloadRef = useRef(false);
   const fileDownloadCancelRef = useRef(false);
+  const fileDownloadAbortRef = useRef<AbortController | null>(null);
+  const downloadWakeLockRef = useRef<ScreenWakeLockSentinel | null>(null);
   const sessionRefreshInFlightRef = useRef(false);
   const olderHistoryLoadingRef = useRef(false);
   const liveHistoryHydratedThreadRef = useRef<string | null>(null);
@@ -773,26 +780,48 @@ export default function App() {
     });
   }, []);
 
-  const request = useCallback(<T,>(action: string, payload: Record<string, unknown>): Promise<T> => {
+  const request = useCallback(<T,>(
+    action: string,
+    payload: Record<string, unknown>,
+    options: RequestOptions = {},
+  ): Promise<T> => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error(t('连接未建立', 'Connection is not established')));
     const requestId = makeId();
-    const timeoutMs = action === 'turn.start' ? TURN_START_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
+    const timeoutMs = options.timeoutMs === undefined
+      ? (action === 'turn.start' ? TURN_START_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS)
+      : options.timeoutMs;
     return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
+      let onAbort: (() => void) | null = null;
+      const cleanup = () => {
         pendingRef.current.delete(requestId);
-        reject(new Error(action === 'turn.start' ? 'turn_start_timeout' : 'request_timeout'));
-      }, timeoutMs);
+        if (pending.timer) clearTimeout(pending.timer);
+        if (onAbort) options.signal?.removeEventListener('abort', onAbort);
+      };
       const frame = { type: 'request', requestId, action, payload, deviceId: DEVICE_ID };
-      pendingRef.current.set(requestId, {
-        resolve: (value) => resolve(value as T), reject, timer, frame, acknowledged: false,
-      });
+      const pending: PendingRequest = {
+        resolve: (value) => { cleanup(); resolve(value as T); },
+        reject: (reason) => { cleanup(); reject(reason); },
+        timer: null,
+        frame,
+        acknowledged: false,
+      };
+      onAbort = () => pending.reject(new Error('download_cancelled'));
+      if (options.signal?.aborted) {
+        pending.reject(new Error('download_cancelled'));
+        return;
+      }
+      if (timeoutMs != null) {
+        pending.timer = setTimeout(() => {
+          pending.reject(new Error(action === 'turn.start' ? 'turn_start_timeout' : 'request_timeout'));
+        }, timeoutMs);
+      }
+      options.signal?.addEventListener('abort', onAbort, { once: true });
+      pendingRef.current.set(requestId, pending);
       try {
         if (!secureChannelRef.current?.sendFrame(frame)) throw new Error('secure_channel_not_ready');
       } catch {
-        clearTimeout(timer);
-        pendingRef.current.delete(requestId);
-        reject(new Error(t('连接已断开', 'Connection closed')));
+        pending.reject(new Error(t('连接已断开', 'Connection closed')));
       }
     });
   }, []);
@@ -994,7 +1023,7 @@ export default function App() {
       const pending = pendingRef.current.get(message.requestId);
       if (!pending) return;
       pendingRef.current.delete(message.requestId);
-      clearTimeout(pending.timer);
+      if (pending.timer) clearTimeout(pending.timer);
       if (message.ok) pending.resolve(message.data);
       else pending.reject(new Error(message.error || t('请求失败', 'Request failed')));
       return;
@@ -1095,10 +1124,8 @@ export default function App() {
 
   const rejectPendingRequests = useCallback((message: string) => {
     for (const pending of pendingRef.current.values()) {
-      clearTimeout(pending.timer);
       pending.reject(new Error(message));
     }
-    pendingRef.current.clear();
   }, []);
 
   const clearReconnectTimer = useCallback(() => {
@@ -1924,26 +1951,70 @@ export default function App() {
     };
   }, [approval?.actionable, authenticated, connectionEpoch, executionState, online, request, threadId]);
 
+  const acquireDownloadWakeLock = useCallback(async () => {
+    if (!fileDownloadRef.current || document.visibilityState !== 'visible'
+      || (downloadWakeLockRef.current && !downloadWakeLockRef.current.released)) return;
+    try {
+      const sentinel = await (navigator as WakeLockNavigator).wakeLock?.request('screen');
+      if (!sentinel) return;
+      if (!fileDownloadRef.current) {
+        await sentinel.release().catch(() => {});
+        return;
+      }
+      downloadWakeLockRef.current = sentinel;
+    } catch {
+      // Wake Lock is optional; resumable transfer remains the fallback.
+    }
+  }, []);
+
+  const releaseDownloadWakeLock = useCallback(async () => {
+    const sentinel = downloadWakeLockRef.current;
+    downloadWakeLockRef.current = null;
+    if (sentinel && !sentinel.released) await sentinel.release().catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!fileDownloadRef.current) return;
+    setFileDownload((current) => (current ? { ...current, paused: !online } : current));
+  }, [online]);
+
+  useEffect(() => {
+    const resumeWakeLock = () => {
+      if (document.visibilityState === 'visible' && fileDownloadRef.current) {
+        void acquireDownloadWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', resumeWakeLock);
+    return () => document.removeEventListener('visibilitychange', resumeWakeLock);
+  }, [acquireDownloadWakeLock]);
+
   const downloadLocalFile = useCallback(async (path: string) => {
     if (fileDownloadRef.current) return;
     const accepted = window.confirm(
       t(
-        `是否从这台电脑下载以下文件？\n\n${path}\n\n确认后会签发一项 2 分钟、仅限当前页面和此文件的一次性权限。`,
-        `Download this file from your computer?\n\n${path}\n\nConfirming grants this page a one-time, file-specific permission valid for 2 minutes.`,
+        `是否从这台电脑下载以下文件？\n\n${path}\n\n下载仅授权给当前已批准设备和此文件。息屏或切后台可能暂停，返回页面后会自动续传。`,
+        `Download this file from your computer?\n\n${path}\n\nThe transfer is limited to this approved device and file. Locking the screen or backgrounding may pause it; return to this page to resume automatically.`,
       ),
     );
     if (!accepted) return;
     fileDownloadRef.current = true;
     fileDownloadCancelRef.current = false;
-    setFileDownload({ name: localFileName(path), size: 0, received: 0 });
+    const abortController = new AbortController();
+    fileDownloadAbortRef.current = abortController;
+    setFileDownload({ name: localFileName(path), size: 0, received: 0, paused: !online });
+    void acquireDownloadWakeLock();
     let opened: OpenedDownload | null = null;
     let completed = false;
     try {
-      opened = await request<OpenedDownload>('file.download.open', { path, confirmed: true });
+      opened = await request<OpenedDownload>(
+        'file.download.open',
+        { path, confirmed: true },
+        { timeoutMs: null, signal: abortController.signal },
+      );
       if (!opened.downloadId || !opened.downloadToken || !Number.isSafeInteger(opened.size) || opened.size < 0) {
         throw new Error('download_capability_invalid');
       }
-      setFileDownload({ name: opened.name, size: opened.size, received: 0 });
+      setFileDownload({ name: opened.name, size: opened.size, received: 0, paused: !online });
       const parts: BlobPart[] = [];
       let offset = 0;
       while (true) {
@@ -1952,7 +2023,7 @@ export default function App() {
           downloadId: opened.downloadId,
           downloadToken: opened.downloadToken,
           offset,
-        });
+        }, { timeoutMs: null, signal: abortController.signal });
         if (fileDownloadCancelRef.current) throw new Error('download_cancelled');
         const emptyComplete = opened.size === 0 && chunk.done && chunk.nextOffset === 0;
         if (chunk.offset !== offset || !Number.isSafeInteger(chunk.nextOffset)
@@ -1963,7 +2034,7 @@ export default function App() {
         if (bytes.byteLength !== chunk.nextOffset - offset) throw new Error('download_chunk_invalid');
         parts.push(bytes);
         offset = chunk.nextOffset;
-        setFileDownload({ name: opened.name, size: opened.size, received: offset });
+        setFileDownload({ name: opened.name, size: opened.size, received: offset, paused: !online });
         if (chunk.done) break;
       }
       completed = true;
@@ -1989,9 +2060,11 @@ export default function App() {
       }
       fileDownloadRef.current = false;
       fileDownloadCancelRef.current = false;
+      if (fileDownloadAbortRef.current === abortController) fileDownloadAbortRef.current = null;
+      await releaseDownloadWakeLock();
       setFileDownload(null);
     }
-  }, [reportTimelineError, request]);
+  }, [acquireDownloadWakeLock, online, releaseDownloadWakeLock, reportTimelineError, request]);
 
   const readVisualization = useCallback(async (path: string) => {
     const result = await request<VisualizationDocument>('visualization.read', { path });
@@ -2003,6 +2076,7 @@ export default function App() {
 
   const cancelFileDownload = useCallback(() => {
     fileDownloadCancelRef.current = true;
+    fileDownloadAbortRef.current?.abort();
   }, []);
 
   const filteredSessions = useMemo(() => {

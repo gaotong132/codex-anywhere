@@ -30,7 +30,8 @@ you control provides the remote meeting point.
 - **Choose how Codex works** — view or change the model, reasoning effort, and fast mode when the selected
   Codex model exposes those options.
 - **Use the results on mobile** — preview sent or generated images, open isolated Codex visualizations,
-  copy messages, and download linked local files after confirmation.
+  copy messages, and download linked local files after confirmation. Interrupted mobile transfers resume
+  after the approved browser reconnects.
 - **Handle supported approvals** — approve or reject requests owned by a run started through the
   connector. Requests already owned by Codex Desktop remain on the computer.
 - **Recover from network changes** — browser, relay, and connector reconnect and resynchronize without
@@ -75,7 +76,7 @@ not implement ACP.
 | Browser access | Single-use pairing followed by an approved Ed25519 device identity; no shared browser login token |
 | Application traffic | Authenticated X25519 exchange and XChaCha20-Poly1305 encryption between browser and connector |
 | Local computer | Outbound connection only; Windows connector credentials use current-user DPAPI |
-| Files | Root-bound previews, explicit download confirmation, short-lived capabilities, and sandboxed visualizations |
+| Files | Root-bound previews, confirmed resumable downloads bound to one approved device and file, and sandboxed visualizations |
 | Relay | Loopback-bound reference service, reduced container privileges, bounded logs, and device trust records only |
 
 The relay is still trusted infrastructure: it serves Web code, manages device trust, and can observe routing

@@ -7,6 +7,7 @@ type BridgeRequest = {
   payload?: Payload;
   requestId?: string;
   clientId?: string;
+  clientDeviceId?: string;
 };
 type CodexGateway = {
   child: unknown;
@@ -47,16 +48,19 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
   payload: Payload;
   requestId?: string;
   clientId?: string;
+  clientDeviceId?: string;
 };
 
 export function createRequestHandler({
   codex, desktop, attachments, visualizations, downloads, deviceId,
 }: Dependencies) {
   return async function handleRequest(message: BridgeRequest) {
-    const { action, payload = {}, requestId, clientId } = message;
+    const {
+      action, payload = {}, requestId, clientId, clientDeviceId,
+    } = message;
     try {
       const data = await dispatchAction({
-        action, payload, requestId, clientId,
+        action, payload, requestId, clientId, clientDeviceId,
         codex, desktop, attachments, visualizations, downloads, deviceId,
       });
       return { type: 'response', clientId, requestId, ok: true, data };
@@ -67,7 +71,7 @@ export function createRequestHandler({
 }
 
 async function dispatchAction({
-  action, payload, requestId, clientId,
+  action, payload, requestId, clientId, clientDeviceId,
   codex, desktop, attachments, visualizations, downloads, deviceId,
 }: DispatchContext) {
   if (action === 'connector.status') {
@@ -102,9 +106,10 @@ async function dispatchAction({
   if (action === 'attachment.upload') return attachments.save(payload);
   if (action === 'attachment.read') return attachments.read(payload);
   if (action === 'visualization.read') return visualizations.read(payload);
-  if (action === 'file.download.open') return downloads.open(payload, clientId);
-  if (action === 'file.download.chunk') return downloads.read(payload, clientId);
-  if (action === 'file.download.close') return downloads.close(payload, clientId);
+  const downloadOwner = clientDeviceId || clientId;
+  if (action === 'file.download.open') return downloads.open(payload, downloadOwner);
+  if (action === 'file.download.chunk') return downloads.read(payload, downloadOwner);
+  if (action === 'file.download.close') return downloads.close(payload, downloadOwner);
   if (action === 'turn.start') return startTurn({ codex, desktop, payload, clientId, requestId });
   if (action === 'turn.steer') {
     return {

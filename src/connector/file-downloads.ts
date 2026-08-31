@@ -10,7 +10,7 @@ import { secretMatches } from '../shared/protocol.js';
 import { isPathWithinRoot } from './path-policy.js';
 
 export const DOWNLOAD_CHUNK_BYTES = 384 * 1024;
-const DOWNLOAD_SESSION_TTL_MS = 2 * 60_000;
+const DOWNLOAD_SESSION_TTL_MS = 30 * 60_000;
 const DEFAULT_RATE_WINDOW_MS = 10_000;
 const DEFAULT_MAX_CHUNKS_PER_WINDOW = 200;
 const MAX_AUDIT_BYTES = 1024 * 1024;

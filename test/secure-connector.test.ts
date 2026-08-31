@@ -134,6 +134,53 @@ test('connector deduplicates replayed mutating requests for the same browser ide
   assert.equal(calls, 1);
 });
 
+test('connector forwards the stable browser identity separately from reconnect-scoped routing', async () => {
+  const browserIdentity = createDeviceIdentity();
+  const connectorIdentity = createDeviceIdentity();
+  const sent: Record<string, any>[] = [];
+  let handled: Record<string, any> | undefined;
+  const manager = new ConnectorSecureChannels({
+    identity: connectorIdentity,
+    deviceId: 'personal-pc',
+    send: (frame) => { sent.push(frame); return true; },
+    handleRequest: async (frame) => {
+      handled = frame;
+      return {
+        type: 'response', clientId: frame.clientId, requestId: frame.requestId,
+        ok: true, data: {},
+      };
+    },
+  });
+  const ephemeral = createSecureChannelEphemeralKeyPair();
+  const offer = createSecureChannelOffer({
+    identity: browserIdentity,
+    routeDeviceId: 'personal-pc',
+    ephemeralPublicKey: ephemeral.publicKey,
+  });
+  await manager.handle({ type: 'channel.offer', clientId: 'client-after-reconnect', offer });
+  const acceptance = sent.shift()!.accept;
+  const keys = deriveSecureChannelKeys({
+    side: 'initiator',
+    localSecretKey: ephemeral.secretKey,
+    peerEphemeralPublicKey: acceptance.transcript.responder.ephemeralPublicKey,
+    transcript: acceptance.transcript,
+  });
+  const browser = new SecureChannelCodec({ channelId: offer.channelId, side: 'initiator', keys });
+  await manager.handle({
+    type: 'channel.confirm', clientId: 'client-after-reconnect', channelId: offer.channelId,
+    signature: signSecureChannelTranscript(browserIdentity, acceptance.transcript),
+  });
+  sent.shift();
+  await manager.handle({
+    type: 'secure', clientId: 'client-after-reconnect',
+    envelope: browser.seal({
+      type: 'request', requestId: 'download-1', action: 'file.download.chunk', payload: {},
+    }),
+  });
+  assert.equal(handled?.clientId, 'client-after-reconnect');
+  assert.equal(handled?.clientDeviceId, browserIdentity.id);
+});
+
 test('connector secure channel rejects an offer for another route', async () => {
   const identity = createDeviceIdentity();
   const ephemeral = createSecureChannelEphemeralKeyPair();

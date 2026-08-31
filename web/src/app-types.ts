@@ -51,7 +51,7 @@ export type PendingApprovals = { approvals: Approval[]; externalApproval?: Appro
 export type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (reason: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout> | null;
   frame: Record<string, unknown>;
   acknowledged: boolean;
 };
@@ -87,4 +87,9 @@ export type DownloadedImage = { path: string; mimeType: string; size: number; da
 export type VisualizationDocument = { name: string; size: number; content?: string };
 export type OpenedDownload = { downloadId: string; downloadToken: string; name: string; size: number };
 export type DownloadFileChunk = { offset: number; nextOffset: number; done: boolean; data: string };
-export type FileDownloadState = { name: string; size: number; received: number };
+export type FileDownloadState = {
+  name: string;
+  size: number;
+  received: number;
+  paused: boolean;
+};

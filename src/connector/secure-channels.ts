@@ -19,6 +19,9 @@ type SecureChannelState = {
 };
 type CachedRequest = { fingerprint: string; response: Promise<JsonObject> };
 
+const DEFAULT_REQUEST_RESULT_TTL_MS = 2 * 60_000;
+const DOWNLOAD_REQUEST_RESULT_TTL_MS = 30 * 60_000;
+
 const DEDUPLICATED_ACTIONS = new Set([
   'attachment.upload',
   'file.download.open', 'file.download.chunk', 'file.download.close',
@@ -31,7 +34,10 @@ export class ConnectorSecureChannels {
   private readonly send: (frame: JsonObject) => boolean;
   private readonly handleRequest: (frame: JsonObject & { action: string }) => Promise<JsonObject>;
   private readonly channels = new Map<string, SecureChannelState>();
-  private readonly requestResults = new LRUCache<string, CachedRequest>({ max: 64, ttl: 2 * 60_000 });
+  private readonly requestResults = new LRUCache<string, CachedRequest>({
+    max: 64,
+    ttl: DEFAULT_REQUEST_RESULT_TTL_MS,
+  });
 
   constructor({
     identity,
@@ -168,10 +174,26 @@ export class ConnectorSecureChannels {
           throw new Error('secure_channel_request_conflict');
         }
         responsePromise = cached?.response
-          || this.handleRequest({ ...request, action: request.action, clientId });
-        if (!cached) this.requestResults.set(cacheKey, { fingerprint, response: responsePromise });
+          || this.handleRequest({
+            ...request,
+            action: request.action,
+            clientId,
+            clientDeviceId: state.acceptance.transcript.initiator.id,
+          });
+        if (!cached) {
+          this.requestResults.set(cacheKey, { fingerprint, response: responsePromise }, {
+            ttl: request.action.startsWith('file.download.')
+              ? DOWNLOAD_REQUEST_RESULT_TTL_MS
+              : DEFAULT_REQUEST_RESULT_TTL_MS,
+          });
+        }
       } else {
-        responsePromise = this.handleRequest({ ...request, action: request.action, clientId });
+        responsePromise = this.handleRequest({
+          ...request,
+          action: request.action,
+          clientId,
+          clientDeviceId: state.acceptance.transcript.initiator.id,
+        });
       }
       const response = await responsePromise;
       const { clientId: _clientId, ...payload } = response;
