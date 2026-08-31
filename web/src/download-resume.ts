@@ -1,11 +1,10 @@
 export type DownloadReadiness = {
-  visible: boolean;
   online: boolean;
   channelReady: boolean;
 };
 
-export function downloadCanContinue({ visible, online, channelReady }: DownloadReadiness) {
-  return visible && online && channelReady;
+export function downloadCanContinue({ online, channelReady }: DownloadReadiness) {
+  return online && channelReady;
 }
 
 type WaitForDownloadOptions = {

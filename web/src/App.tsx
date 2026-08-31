@@ -2026,7 +2026,6 @@ export default function App() {
   useEffect(() => {
     if (!fileDownloadRef.current) return;
     const paused = !downloadCanContinue({
-      visible: document.visibilityState === 'visible',
       online,
       channelReady: Boolean(secureChannelRef.current?.isReady()),
     });
@@ -2036,16 +2035,7 @@ export default function App() {
   useEffect(() => {
     const syncDownloadVisibility = () => {
       if (!fileDownloadRef.current) return;
-      const visible = document.visibilityState === 'visible';
-      setFileDownload((current) => (current ? {
-        ...current,
-        paused: !downloadCanContinue({
-          visible,
-          online: connectorOnlineRef.current,
-          channelReady: Boolean(secureChannelRef.current?.isReady()),
-        }),
-      } : current));
-      if (visible) void acquireDownloadWakeLock();
+      if (document.visibilityState === 'visible') void acquireDownloadWakeLock();
     };
     document.addEventListener('visibilitychange', syncDownloadVisibility);
     return () => document.removeEventListener('visibilitychange', syncDownloadVisibility);
@@ -2056,8 +2046,8 @@ export default function App() {
     const wakeLockSupported = Boolean((navigator as WakeLockNavigator).wakeLock?.request);
     const accepted = window.confirm(
       t(
-        `是否从这台电脑下载以下文件？\n\n${path}\n\n${wakeLockSupported ? '下载期间会尝试保持屏幕常亮；若系统仍暂停，回到本页后会从当前位置继续。' : '当前浏览器不支持可靠的后台下载，请保持屏幕亮起并停留在本页。'}`,
-        `Download this file from your computer?\n\n${path}\n\n${wakeLockSupported ? 'The page will try to keep the screen awake. If the system still pauses it, return here to resume from the current position.' : 'This browser cannot provide reliable background downloads. Keep the screen awake and stay on this page.'}`,
+        `是否从这台电脑下载以下文件？\n\n${path}\n\n${wakeLockSupported ? '下载期间会尝试保持屏幕常亮；切后台或息屏后会尽量继续，若被系统暂停，回到本页会从当前位置续传。' : '当前浏览器不保证后台下载；息屏或切后台后请保留本页，返回时会从当前位置续传。'}`,
+        `Download this file from your computer?\n\n${path}\n\n${wakeLockSupported ? 'The page will try to keep the screen awake. It will continue in the background when allowed and resume from the current position when you return.' : 'This browser cannot guarantee background downloads. Keep this page open; the transfer will resume from the current position when you return.'}`,
       ),
     );
     if (!accepted) return;
@@ -2076,7 +2066,6 @@ export default function App() {
         await waitForDownloadReady({
           signal: abortController.signal,
           isReady: () => downloadCanContinue({
-            visible: document.visibilityState === 'visible',
             online: connectorOnlineRef.current,
             channelReady: Boolean(secureChannelRef.current?.isReady()),
           }),
@@ -2126,7 +2115,6 @@ export default function App() {
           size: opened!.size,
           received: offset,
           paused: !downloadCanContinue({
-            visible: document.visibilityState === 'visible',
             online: connectorOnlineRef.current,
             channelReady: Boolean(secureChannelRef.current?.isReady()),
           }),
@@ -2134,6 +2122,12 @@ export default function App() {
         if (chunk.done) break;
       }
       completed = true;
+      await waitForDownloadReady({
+        signal: abortController.signal,
+        isReady: () => document.visibilityState === 'visible',
+        onPause: () => setFileDownload((current) => (current ? { ...current, paused: true } : current)),
+      });
+      setFileDownload((current) => (current ? { ...current, paused: false } : current));
       const url = URL.createObjectURL(new Blob(parts, { type: 'application/octet-stream' }));
       const link = document.createElement('a');
       link.href = url;

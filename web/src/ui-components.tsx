@@ -278,11 +278,11 @@ export function DownloadIndicator({
       <strong>{download.size > 0 ? `${progress}%` : t('准备中', 'Preparing')}</strong>
       <small>
         {download.paused
-          ? t('下载已安全暂停；保持本页打开，回到前台后会自动续传', 'Safely paused. Keep this page open; it will resume when you return.')
+          ? t('下载已安全暂停；保持本页打开，回到前台后会自动续传或保存', 'Safely paused. Keep this page open; it will resume or save when you return.')
           : download.protection === 'screen-awake'
-            ? t('已保持屏幕常亮，请停留在本页直到下载完成', 'Screen awake is active. Stay on this page until the download finishes.')
+            ? t('已尝试保持屏幕常亮；切到后台时会尽量继续传输', 'Screen awake is active; transfer will continue in the background when allowed.')
             : download.protection === 'foreground-only'
-              ? t('当前浏览器不支持可靠后台下载，请保持屏幕亮起并停留本页', 'Background download is not reliable in this browser. Keep the screen awake and stay here.')
+              ? t('当前浏览器不保证后台下载；请保留本页，返回后会自动续传', 'Background download is not guaranteed. Keep this page open; it will resume when you return.')
               : t('正在启用屏幕常亮…', 'Enabling screen awake…')}
       </small>
       <progress value={download.received} max={Math.max(1, download.size)} />
