@@ -87,6 +87,7 @@ export class CodexAppServer extends EventEmitter {
   pending: Map<number, PendingRpc>;
   approvals: Map<string, PendingApproval>;
   activeTurn: TurnContext | null;
+  private threadRelease: Promise<void>;
   sessionMetadata: Map<string, SessionMetadata>;
   sessionModelSettings: Map<string, RolloutModelSettings>;
   modelCatalogCache: { expiresAt: number; models: ModelOption[] } | null;
@@ -106,6 +107,7 @@ export class CodexAppServer extends EventEmitter {
     this.pending = new Map();
     this.approvals = new Map();
     this.activeTurn = null;
+    this.threadRelease = Promise.resolve();
     this.sessionMetadata = new Map();
     this.sessionModelSettings = new Map();
     this.modelCatalogCache = null;
@@ -406,7 +408,10 @@ export class CodexAppServer extends EventEmitter {
 
   async startTurn({ text, threadId, cwd, clientId, requestId }: StartTurnOptions) {
     if (this.activeTurn) throw new Error('another_turn_is_active');
+    await this.threadRelease;
+    if (this.activeTurn) throw new Error('another_turn_is_active');
     let resolvedThreadId = String(threadId || '').trim();
+    let subscribedThreadId = '';
     const isNewThread = !resolvedThreadId;
     if (!resolvedThreadId && !String(cwd || '').trim()) throw new Error('project_directory_required');
     let turnCwd = '';
@@ -452,6 +457,7 @@ export class CodexAppServer extends EventEmitter {
         resolvedThreadId = result?.thread?.id || result?.id || result?.threadId;
         if (!resolvedThreadId) throw new Error('codex_did_not_return_thread_id');
       }
+      subscribedThreadId = resolvedThreadId;
       if (this.activeTurn !== turnContext) throw new Error('turn_cancelled');
       const startResult = await this.rpcRaw('turn/start', {
         threadId: resolvedThreadId,
@@ -472,8 +478,22 @@ export class CodexAppServer extends EventEmitter {
       return { threadId: resolvedThreadId };
     } catch (error) {
       if (this.activeTurn === turnContext) this.activeTurn = null;
+      await this.releaseThread(subscribedThreadId);
       throw error;
     }
+  }
+
+  private releaseThread(threadId: unknown): Promise<void> {
+    const resolvedThreadId = String(threadId || '').trim();
+    if (!resolvedThreadId) return this.threadRelease;
+    const release = this.threadRelease
+      .catch(() => undefined)
+      .then(() => this.rpcRaw('thread/unsubscribe', { threadId: resolvedThreadId }))
+      .then(() => undefined);
+    this.threadRelease = release.catch((error) => {
+      this.emit('diagnostic', `Failed to release Codex thread ${resolvedThreadId}: ${String(error)}`);
+    });
+    return this.threadRelease;
   }
 
   async steerTurn({ text, threadId, clientId, requestId }: StartTurnOptions) {
@@ -555,7 +575,7 @@ export class CodexAppServer extends EventEmitter {
     this.activeTurn = null;
     this.clearApprovalsForThread(previous?.threadId);
     this.child.kill();
-    this.child = null;
+    this.handleExit(new Error('Codex app-server stopped'));
     this.emit('turn-event', {
       clientId: previous?.clientId,
       requestId: previous?.requestId,
@@ -566,8 +586,12 @@ export class CodexAppServer extends EventEmitter {
   }
 
   async close() {
-    if (this.child) this.child.kill();
-    this.child = null;
+    const previous = this.activeTurn;
+    this.activeTurn = null;
+    this.clearApprovalsForThread(previous?.threadId);
+    if (!this.child) return;
+    this.child.kill();
+    this.handleExit(new Error('Codex app-server closed'));
   }
 
   async rpcRaw<T = any>(method: string, params: JsonObject = {}, timeoutMs = RPC_TIMEOUT_MS): Promise<T> {
@@ -580,7 +604,16 @@ export class CodexAppServer extends EventEmitter {
       timer.unref?.();
       this.pending.set(id, { method, resolve, reject, timer });
     });
-    this.writeRpc({ jsonrpc: '2.0', id, method, params });
+    try {
+      this.writeRpc({ jsonrpc: '2.0', id, method, params });
+    } catch (error) {
+      const pending = this.pending.get(id);
+      if (pending) {
+        clearTimeout(pending.timer);
+        this.pending.delete(id);
+        pending.reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    }
     return promise;
   }
 
@@ -684,6 +717,7 @@ export class CodexAppServer extends EventEmitter {
       this.clearApprovalsForThread(previous?.threadId);
       this.emitTurn('turn.ended', { reason: 'completed', threadId: previous?.threadId, usage: params.usage || params.turn?.usage });
       this.activeTurn = null;
+      void this.releaseThread(previous?.threadId);
       return;
     }
     if (method === 'error' || method.includes('error')) {

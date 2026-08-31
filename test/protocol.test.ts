@@ -1812,6 +1812,71 @@ test('active app-server turns accept steering only for the matching turn', async
   );
 });
 
+test('completed app-server turns release their writer before the next turn resumes', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  codex.ensureStarted = async () => {};
+  const calls = [];
+  let releaseUnsubscribe;
+  let markUnsubscribeStarted;
+  const unsubscribeStarted = new Promise((resolve) => { markUnsubscribeStarted = resolve; });
+  const unsubscribeAllowed = new Promise((resolve) => { releaseUnsubscribe = resolve; });
+  let turnNumber = 0;
+  codex.rpcRaw = async (method, params) => {
+    calls.push({ method, params });
+    if (method === 'thread/read') return { thread: { id: 'thread-1', cwd: process.cwd() } };
+    if (method === 'thread/resume') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') return { turn: { id: `turn-${++turnNumber}` } };
+    if (method === 'thread/unsubscribe') {
+      markUnsubscribeStarted();
+      await unsubscribeAllowed;
+      return { status: 'unsubscribed' };
+    }
+    throw new Error(`unexpected method ${method}`);
+  };
+
+  await codex.startTurn({ text: 'first', threadId: 'thread-1' });
+  codex.handleNotification('turn/completed', { turn: { id: 'turn-1' } });
+  await unsubscribeStarted;
+  const nextTurn = codex.startTurn({ text: 'second', threadId: 'thread-1' });
+  await Promise.resolve();
+  assert.equal(calls.filter((call) => call.method === 'thread/resume').length, 1);
+  releaseUnsubscribe();
+  await nextTurn;
+  assert.equal(calls.filter((call) => call.method === 'thread/resume').length, 2);
+  assert.deepEqual(calls.filter((call) => call.method === 'thread/unsubscribe')[0], {
+    method: 'thread/unsubscribe', params: { threadId: 'thread-1' },
+  });
+});
+
+test('failed turn starts release a thread that was already resumed', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  codex.ensureStarted = async () => {};
+  const calls = [];
+  codex.rpcRaw = async (method, params) => {
+    calls.push({ method, params });
+    if (method === 'thread/read') return { thread: { id: 'thread-1', cwd: process.cwd() } };
+    if (method === 'thread/resume') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') throw new Error('turn_start_failed');
+    if (method === 'thread/unsubscribe') return { status: 'unsubscribed' };
+    throw new Error(`unexpected method ${method}`);
+  };
+
+  await assert.rejects(
+    () => codex.startTurn({ text: 'hello', threadId: 'thread-1' }),
+    /turn_start_failed/,
+  );
+  assert.equal(codex.activeTurn, null);
+  assert.deepEqual(calls.at(-1), {
+    method: 'thread/unsubscribe', params: { threadId: 'thread-1' },
+  });
+});
+
+test('RPC write failures do not leave pending requests behind', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  await assert.rejects(() => codex.rpcRaw('thread/read', { threadId: 'thread-1' }), /offline/);
+  assert.equal(codex.pending.size, 0);
+});
+
 test('non-writer resume errors are returned unchanged', async () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
