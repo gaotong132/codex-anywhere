@@ -29,7 +29,7 @@ function browserPath() {
     '/usr/bin/google-chrome',
     '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  ].filter(Boolean);
+  ].filter((candidate): candidate is string => Boolean(candidate));
   const browser = candidates.find((candidate) => existsSync(candidate));
   if (!browser) {
     throw new Error('No supported browser found. Set CODEX_ANYWHERE_BROWSER to an Edge or Chrome executable.');
@@ -37,11 +37,11 @@ function browserPath() {
   return browser;
 }
 
-function delay(milliseconds) {
+function delay(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function waitForPage(url) {
+async function waitForPage(url: string) {
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
     try {
@@ -55,7 +55,7 @@ async function waitForPage(url) {
   throw new Error(`Timed out waiting for ${url}`);
 }
 
-async function waitForFile(filePath) {
+async function waitForFile(filePath: string) {
   const deadline = Date.now() + 8_000;
   while (Date.now() < deadline) {
     if (existsSync(filePath)) return;
@@ -64,7 +64,7 @@ async function waitForFile(filePath) {
   throw new Error(`Browser did not create ${filePath}`);
 }
 
-async function capture(browser, view, viewportHeight, destination) {
+async function capture(browser: string, view: string, viewportHeight: number, destination: string) {
   const profile = path.join(captureRoot, `browser-${view}`);
   await mkdir(profile, { recursive: true });
   const child = spawn(browser, [
@@ -80,7 +80,7 @@ async function capture(browser, view, viewportHeight, destination) {
     `--screenshot=${destination}`,
     `${baseUrl}/promo.html?view=${view}`,
   ], { stdio: 'ignore', windowsHide: true });
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     child.once('error', reject);
     child.once('exit', (code) => code === 0 || existsSync(destination)
       ? resolve()
@@ -174,7 +174,12 @@ const background = Buffer.from(`
   </svg>
 `);
 
-async function roundedScreenshot(filePath, targetWidth, targetHeight, radius) {
+async function roundedScreenshot(
+  filePath: string,
+  targetWidth: number,
+  targetHeight: number,
+  radius: number,
+) {
   const mask = Buffer.from(`<svg width="${targetWidth}" height="${targetHeight}"><rect width="${targetWidth}" height="${targetHeight}" rx="${radius}" fill="#fff"/></svg>`);
   return sharp(filePath)
     .resize(targetWidth, targetHeight, { fit: 'cover' })
@@ -183,7 +188,14 @@ async function roundedScreenshot(filePath, targetWidth, targetHeight, radius) {
     .toBuffer();
 }
 
-async function phoneCapture(filePath, screenWidth, screenHeight, radius, angle, borderColor) {
+async function phoneCapture(
+  filePath: string,
+  screenWidth: number,
+  screenHeight: number,
+  radius: number,
+  angle: number,
+  borderColor: string,
+) {
   const frame = 9;
   const padding = 23;
   const shellWidth = screenWidth + frame * 2;
