@@ -79,15 +79,16 @@ import { MessageBubble, messagePresentationEqual } from '../web/src/message-bubb
 import { ConversationTimeline } from '../web/src/conversation-timeline.js';
 import { downloadCanContinue, waitForDownloadReady } from '../web/src/download-resume.js';
 import {
+  DownloadIndicator,
   resolveTypewriterUpdate,
   seedTypewriterText,
   TypewriterText,
 } from '../web/src/ui-components.js';
 
-test('mobile downloads pause until the page and encrypted channel are ready', async () => {
-  assert.equal(downloadCanContinue({ visible: true, online: true, channelReady: true }), true);
-  assert.equal(downloadCanContinue({ visible: false, online: true, channelReady: true }), false);
-  assert.equal(downloadCanContinue({ visible: true, online: false, channelReady: true }), false);
+test('mobile downloads continue while the encrypted channel is ready and pause on disconnect', async () => {
+  assert.equal(downloadCanContinue({ online: true, channelReady: true }), true);
+  assert.equal(downloadCanContinue({ online: false, channelReady: true }), false);
+  assert.equal(downloadCanContinue({ online: true, channelReady: false }), false);
 
   let ready = false;
   let pauses = 0;
@@ -103,6 +104,23 @@ test('mobile downloads pause until the page and encrypted channel are ready', as
   });
   assert.equal(pauses, 1);
   assert.equal(waits, 1);
+});
+
+test('mobile download status explains background limits and automatic resume', () => {
+  const foregroundOnly = renderToStaticMarkup(createElement(DownloadIndicator, {
+    download: {
+      name: 'artifact.zip', size: 100, received: 25, paused: false, protection: 'foreground-only',
+    },
+    onCancel: () => {},
+  }));
+  const paused = renderToStaticMarkup(createElement(DownloadIndicator, {
+    download: {
+      name: 'artifact.zip', size: 100, received: 25, paused: true, protection: 'screen-awake',
+    },
+    onCancel: () => {},
+  }));
+  assert.match(foregroundOnly, /不保证后台下载/);
+  assert.match(paused, /自动续传或保存/);
 });
 
 test('active Desktop writer errors are private and consecutive duplicates collapse', () => {
@@ -551,6 +569,32 @@ test('rollout history keeps complete final replies while bounding progress updat
   assert.equal(items[1].text.includes('已截断'), false);
 });
 
+test('task completion payload restores a final reply missing from streamed rows', () => {
+  const items = rolloutInternals.mapRolloutRows([
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-1' } },
+    { type: 'event_msg', payload: { type: 'agent_message', phase: 'commentary', message: 'working' } },
+    {
+      timestamp: '2026-08-31T01:02:03.000Z',
+      type: 'event_msg',
+      payload: { type: 'task_complete', turn_id: 'turn-1', last_agent_message: 'final result' },
+    },
+  ]);
+  assert.deepEqual(items.map((item) => [item.phase, item.text]), [
+    ['commentary', 'working'],
+    ['final_answer', 'final result'],
+  ]);
+  assert.equal(items[1].completedAt, Date.parse('2026-08-31T01:02:03.000Z'));
+});
+
+test('task completion payload does not duplicate an existing final reply', () => {
+  const items = rolloutInternals.mapRolloutRows([
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-1' } },
+    { type: 'event_msg', payload: { type: 'agent_message', phase: 'final_answer', message: 'done' } },
+    { type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn-1', last_agent_message: 'done' } },
+  ]);
+  assert.equal(items.filter((item) => item.phase === 'final_answer').length, 1);
+});
+
 test('history messages keep their real sent and completed times', () => {
   const startedAt = '2026-08-29T01:02:03.000Z';
   const completedAt = '2026-08-29T01:03:04.000Z';
@@ -743,6 +787,21 @@ test('history merge preserves a growing progress block identity for incremental 
   assert.equal(merged.length, 1);
   assert.equal(merged[0].id, 'stable-progress');
   assert.equal(merged[0].text, latest[0].text);
+});
+
+test('persisted progress absorbs a transient paragraph already included in the same turn', () => {
+  const current = [{
+    id: 'live-progress', kind: 'progress' as const, text: 'second update',
+    historyTurnId: 'turn-live', transient: true,
+  }];
+  const latest = [{
+    id: 'persisted-progress', kind: 'progress' as const,
+    text: 'first update\n\nsecond update', historyTurnId: 'turn-live',
+  }];
+  assert.deepEqual(
+    mergeHistorySnapshot(current, latest, new Set(['turn-live'])).map((item) => item.id),
+    ['persisted-progress'],
+  );
 });
 
 test('history merge keeps completed reply file changes when a new turn arrives', () => {
