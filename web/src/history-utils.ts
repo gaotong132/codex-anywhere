@@ -279,6 +279,9 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
     return hydrated;
   });
   const persistedItems = new Set(hydratedLatest.map(messageIdentity));
+  const persistedSnapshotItems = new Set(hydratedLatest
+    .map(persistedSnapshotIdentity)
+    .filter(Boolean));
   const persistedProgressByTurn = new Map<string, string[]>();
   for (const item of hydratedLatest) {
     if (item.kind !== 'progress' || !item.historyTurnId) continue;
@@ -344,6 +347,7 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
     !carriedProgressIds.has(item.id)
     && !duplicateFinalProgressIds.has(item.id)
     && !coveredTransientProgressIds.has(item.id)
+    && !(persistedSnapshotIdentity(item) && persistedSnapshotItems.has(persistedSnapshotIdentity(item)))
     && !(item.historyTurnId && latestTurnIds.has(item.historyTurnId) && !item.transient)
     && !(introducesNewTurn && item.transient && item.kind === 'assistant')
     && !(item.transient && persistedItems.has(messageIdentity(item)))
@@ -378,6 +382,20 @@ function matchOptimisticUsers(current: TimelineItem[], latest: TimelineItem[]) {
 
 function messageIdentity(item: TimelineItem) {
   return `${messageContentIdentity(item)}\0${item.attachment?.path || ''}\0${item.visualization?.path || ''}`;
+}
+
+function persistedSnapshotIdentity(item: TimelineItem) {
+  if (item.transient || item.completedAt == null) return '';
+  const rawTime = item.completedAt;
+  const completedAt = typeof rawTime === 'number'
+    ? (rawTime < 10_000_000_000 ? rawTime * 1_000 : rawTime)
+    : Date.parse(String(rawTime));
+  if (!Number.isFinite(completedAt)) return '';
+  return [
+    messageIdentity(item),
+    String(completedAt),
+    JSON.stringify(item.contexts || []),
+  ].join('\0');
 }
 
 function messageContentIdentity(item: TimelineItem) {

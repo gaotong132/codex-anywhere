@@ -804,6 +804,36 @@ test('persisted progress absorbs a transient paragraph already included in the s
   );
 });
 
+test('history merge deduplicates the same persisted row across page and live snapshot ids', () => {
+  const current = [{
+    id: 'page-message', kind: 'user' as const, text: '那几个 bug 都解决了吗？',
+    historyTurnId: 'rollout:thread:100:200', completedAt: '2026-08-31T15:27:42.215Z',
+    contexts: [{ kind: 'delegation' as const, sourceThreadId: 'source-thread' }],
+  }];
+  const latest = [{
+    id: 'live-message', kind: 'user' as const, text: '那几个 bug 都解决了吗？',
+    historyTurnId: 'tail:thread', completedAt: 1788190062215,
+    contexts: [{ kind: 'delegation' as const, sourceThreadId: 'source-thread' }],
+  }];
+
+  const merged = mergeHistorySnapshot(current, latest, new Set(['tail:thread']));
+  assert.deepEqual(merged.map((item) => item.id), ['live-message']);
+});
+
+test('history merge preserves intentionally repeated persisted messages with different times', () => {
+  const current = [{
+    id: 'first-message', kind: 'user' as const, text: '再试一次',
+    historyTurnId: 'rollout:thread:100:200', completedAt: 1_788_190_000_000,
+  }];
+  const latest = [{
+    id: 'second-message', kind: 'user' as const, text: '再试一次',
+    historyTurnId: 'tail:thread', completedAt: 1_788_190_060_000,
+  }];
+
+  const merged = mergeHistorySnapshot(current, latest, new Set(['tail:thread']));
+  assert.deepEqual(merged.map((item) => item.id), ['first-message', 'second-message']);
+});
+
 test('history merge keeps completed reply file changes when a new turn arrives', () => {
   const current = [{
     id: 'old-reply', kind: 'assistant' as const, text: 'implemented', historyTurnId: 'turn-old',
