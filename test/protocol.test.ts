@@ -56,12 +56,15 @@ import {
   composerPrimaryAction,
   friendlyError,
   initialBootstrapReady,
+  isCurrentSessionRequest,
   isEventForSelectedThread,
   isNearScrollBottom,
   isConnectionInterruption,
   markSessionAttentionRead,
   reconcileSessionAttention,
   replayPendingFrames,
+  sessionDeliveryMatchesTarget,
+  shouldAdoptStartedThread,
   shouldLoadOlderHistory,
   shouldPrefillOlderHistory,
 } from '../web/src/app-utils.js';
@@ -384,6 +387,19 @@ test('Desktop-owned active sessions accept direct delivery', () => {
   assert.equal(canSendToActiveDesktopTurn(false, 'waiting', null, 'thread-1'), false);
   assert.equal(canSendToActiveDesktopTurn(false, 'running', 'thread-1', 'thread-1'), false);
   assert.equal(canSendToActiveDesktopTurn(false, 'running', null, null), false);
+});
+
+test('message delivery remains bound to the session selected at send time', () => {
+  assert.equal(isCurrentSessionRequest('thread-a', 'thread-a', 4, 4), true);
+  assert.equal(isCurrentSessionRequest('thread-a', 'thread-b', 4, 4), false);
+  assert.equal(isCurrentSessionRequest('thread-a', 'thread-a', 4, 5), false);
+  assert.equal(sessionDeliveryMatchesTarget('thread-a', 'thread-a'), true);
+  assert.equal(sessionDeliveryMatchesTarget('thread-a', 'thread-b'), false);
+  assert.equal(sessionDeliveryMatchesTarget(null, 'new-thread'), true);
+  assert.equal(shouldAdoptStartedThread('thread-a', 'thread-a', false), true);
+  assert.equal(shouldAdoptStartedThread('thread-a', 'thread-b', false), false);
+  assert.equal(shouldAdoptStartedThread('thread-a', null, true), true);
+  assert.equal(shouldAdoptStartedThread('thread-a', 'thread-b', true), false);
 });
 
 test('automatic message following tolerates a small mobile bottom offset', () => {

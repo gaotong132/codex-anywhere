@@ -30,6 +30,7 @@ export function friendlyError(error: unknown) {
   if (message === 'turn_start_timeout') return t('等待原会话可写超时，消息没有发送，已恢复到输入框。', 'Timed out waiting for the session to become writable. The message was not sent and has been restored.');
   if (message === 'desktop_app_unavailable') return t('桌面 Codex 当前不可用，请打开桌面应用后重试。', 'Codex Desktop is unavailable. Open it and try again.');
   if (message === 'desktop_delivery_timeout') return t('桌面 Codex 没有及时确认接收，消息已恢复到输入框，请确认后再重试。', 'Codex Desktop did not confirm receipt in time. The message was restored; verify the desktop app before retrying.');
+  if (message === 'session_delivery_mismatch') return t('桌面返回了不同的会话标识，页面已阻止自动切换。请刷新会话列表后重试。', 'Desktop returned a different session ID, so the page blocked the automatic switch. Refresh the session list and try again.');
   if (message === 'model_config_turn_active') return t('当前任务仍在执行，完成后再修改模型配置。', 'Wait for the current run to finish before changing model settings.');
   if (message === 'model_not_available') return t('所选模型当前不可用，请重新选择。', 'The selected model is unavailable. Choose another model.');
   if (message === 'reasoning_effort_not_available') return t('当前模型不支持所选思考强度。', 'This model does not support the selected reasoning effort.');
@@ -151,6 +152,31 @@ export function canSendToActiveDesktopTurn(
   selectedThreadId: string | null,
 ) {
   return !running && state === 'running' && !ownedThreadId && Boolean(selectedThreadId);
+}
+
+export function isCurrentSessionRequest(
+  requestedThreadId: string | null,
+  selectedThreadId: string | null,
+  requestVersion: number,
+  selectedVersion: number,
+) {
+  return requestedThreadId === selectedThreadId && requestVersion === selectedVersion;
+}
+
+export function sessionDeliveryMatchesTarget(
+  requestedThreadId: string | null,
+  deliveredThreadId: string | null | undefined,
+) {
+  return !requestedThreadId || !deliveredThreadId || requestedThreadId === deliveredThreadId;
+}
+
+export function shouldAdoptStartedThread(
+  startedThreadId: string,
+  selectedThreadId: string | null,
+  pendingNewSession: boolean,
+) {
+  return Boolean(startedThreadId)
+    && (startedThreadId === selectedThreadId || (!selectedThreadId && pendingNewSession));
 }
 
 export function isNearScrollBottom(
