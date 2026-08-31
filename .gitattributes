@@ -8,3 +8,11 @@
 *.md text eol=lf
 *.ps1 text eol=crlf
 *.sh text eol=lf
+
+# Keep GitHub's language summary focused on product source. These files are
+# small platform-specific launch, deployment, and bundler entry points.
+scripts/*.ps1 linguist-detectable=false
+scripts/*.sh linguist-detectable=false
+scripts/*.vbs linguist-detectable=false
+web/*.html linguist-detectable=false
+Dockerfile linguist-detectable=false
