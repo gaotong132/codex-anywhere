@@ -40,10 +40,18 @@ test('arbitrary local files download through a client-bound capability without a
   assert.deepEqual(Buffer.concat([
     Buffer.from(first.data, 'base64'), Buffer.from(second.data, 'base64'),
   ]), contents);
-  await assert.rejects(() => downloads.read({ ...opened, offset: second.nextOffset }, 'client-a'), /download_capability_invalid/);
+  assert.deepEqual(
+    await downloads.read({ ...opened, offset: first.nextOffset }, 'client-a'),
+    second,
+  );
+  await assert.rejects(
+    () => downloads.read({ ...opened, offset: second.nextOffset }, 'client-a'),
+    /download_offset_invalid/,
+  );
+  await downloads.close(opened, 'client-a');
 });
 
-test('download requires confirmation and rejects another client, token guessing, and offset replay', async (t) => {
+test('download requires confirmation and only replays the latest chunk to its authorized client', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-download-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const path = join(directory, 'private.bin');
@@ -57,7 +65,7 @@ test('download requires confirmation and rejects another client, token guessing,
   await assert.rejects(() => downloads.read({ ...opened, downloadToken: 'guessed', offset: 0 }, 'client-a'), /download_capability_invalid/);
   await assert.rejects(() => downloads.read({ ...opened, offset: 1 }, 'client-a'), /download_offset_invalid/);
   const first = await downloads.read({ ...opened, offset: 0 }, 'client-a');
-  await assert.rejects(() => downloads.read({ ...opened, offset: 0 }, 'client-a'), /download_offset_invalid/);
+  assert.deepEqual(await downloads.read({ ...opened, offset: 0 }, 'client-a'), first);
   await downloads.close(opened, 'client-a');
   assert.equal(first.nextOffset, DOWNLOAD_CHUNK_BYTES);
 });

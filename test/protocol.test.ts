@@ -77,7 +77,11 @@ import {
 } from '../web/src/history-utils.js';
 import { MessageBubble, messagePresentationEqual } from '../web/src/message-bubble.js';
 import { ConversationTimeline } from '../web/src/conversation-timeline.js';
-import { downloadCanContinue, waitForDownloadReady } from '../web/src/download-resume.js';
+import {
+  downloadCanContinue,
+  runResumableDownloadRequest,
+  waitForDownloadReady,
+} from '../web/src/download-resume.js';
 import {
   DownloadIndicator,
   resolveTypewriterUpdate,
@@ -86,9 +90,10 @@ import {
 } from '../web/src/ui-components.js';
 
 test('mobile downloads continue while the encrypted channel is ready and pause on disconnect', async () => {
-  assert.equal(downloadCanContinue({ online: true, channelReady: true }), true);
-  assert.equal(downloadCanContinue({ online: false, channelReady: true }), false);
-  assert.equal(downloadCanContinue({ online: true, channelReady: false }), false);
+  assert.equal(downloadCanContinue({ visible: true, online: true, channelReady: true }), true);
+  assert.equal(downloadCanContinue({ visible: false, online: true, channelReady: true }), false);
+  assert.equal(downloadCanContinue({ visible: true, online: false, channelReady: true }), false);
+  assert.equal(downloadCanContinue({ visible: true, online: true, channelReady: false }), false);
 
   let ready = false;
   let pauses = 0;
@@ -106,6 +111,36 @@ test('mobile downloads continue while the encrypted channel is ready and pause o
   assert.equal(waits, 1);
 });
 
+test('mobile download requests retry a lost response without failing the transfer', async () => {
+  let attempts = 0;
+  let pauses = 0;
+  let resumes = 0;
+  let waits = 0;
+  const result = await runResumableDownloadRequest({
+    signal: new AbortController().signal,
+    isReady: () => true,
+    onPause: () => { pauses += 1; },
+    onResume: () => { resumes += 1; },
+    wait: async () => { waits += 1; },
+    request: async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error('request_timeout');
+      return 'resumed';
+    },
+  });
+  assert.equal(result, 'resumed');
+  assert.equal(attempts, 2);
+  assert.equal(pauses, 1);
+  assert.equal(resumes, 1);
+  assert.equal(waits, 1);
+
+  await assert.rejects(() => runResumableDownloadRequest({
+    signal: new AbortController().signal,
+    isReady: () => true,
+    request: async () => { throw new Error('download_file_changed'); },
+  }), /download_file_changed/);
+});
+
 test('mobile download status explains background limits and automatic resume', () => {
   const foregroundOnly = renderToStaticMarkup(createElement(DownloadIndicator, {
     download: {
@@ -115,12 +150,13 @@ test('mobile download status explains background limits and automatic resume', (
   }));
   const paused = renderToStaticMarkup(createElement(DownloadIndicator, {
     download: {
-      name: 'artifact.zip', size: 100, received: 25, paused: true, protection: 'screen-awake',
+      name: 'artifact.zip', size: 100, received: 25, paused: true,
+      pauseReason: 'background', protection: 'screen-awake',
     },
     onCancel: () => {},
   }));
   assert.match(foregroundOnly, /不保证后台下载/);
-  assert.match(paused, /自动续传或保存/);
+  assert.match(paused, /回到本页后会自动续传/);
 });
 
 test('active Desktop writer errors are private and consecutive duplicates collapse', () => {

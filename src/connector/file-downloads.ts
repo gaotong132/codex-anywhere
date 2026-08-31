@@ -32,17 +32,25 @@ type FileSnapshot = {
   dev: string;
   ino: string;
 };
+type DownloadChunk = {
+  offset: number;
+  nextOffset: number;
+  done: boolean;
+  data: string;
+};
 type DownloadSession = {
   id: string;
   token: string;
   clientId: string;
   path: string;
-  handle: FileHandle;
+  handle: FileHandle | null;
   name: string;
   snapshot: FileSnapshot;
   nextOffset: number;
   expiresAt: number;
   busy: boolean;
+  completed: boolean;
+  lastChunk: DownloadChunk | null;
 };
 type ClientRate = { windowStartedAt: number; chunks: number };
 
@@ -110,6 +118,8 @@ export class DownloadManager {
       nextOffset: 0,
       expiresAt: now + this.ttlMs,
       busy: false,
+      completed: false,
+      lastChunk: null,
     };
     this.sessions.set(session.id, session);
     await this.#audit('opened', session);
@@ -135,10 +145,14 @@ export class DownloadManager {
 
   async #readSession(session: DownloadSession, payload: DownloadPayload) {
     const offset = Number(payload?.offset);
-    if (!Number.isSafeInteger(offset) || offset < 0 || offset !== session.nextOffset) {
+    if (!Number.isSafeInteger(offset) || offset < 0) {
       throw new Error('download_offset_invalid');
     }
     this.#consumeRateLimit(session);
+    if (session.lastChunk?.offset === offset) return session.lastChunk;
+    if (session.completed || offset !== session.nextOffset || !session.handle) {
+      throw new Error('download_offset_invalid');
+    }
 
     const current = fileSnapshot(await session.handle.stat());
     if (!sameSnapshot(session.snapshot, current)) {
@@ -148,8 +162,10 @@ export class DownloadManager {
 
     const length = Math.min(DOWNLOAD_CHUNK_BYTES, session.snapshot.size - offset);
     if (length === 0) {
-      await this.#finish(session, 'completed');
-      return { offset, nextOffset: offset, done: true, data: '' };
+      const result = { offset, nextOffset: offset, done: true, data: '' };
+      session.lastChunk = result;
+      await this.#complete(session);
+      return result;
     }
 
     const buffer = Buffer.allocUnsafe(length);
@@ -167,7 +183,8 @@ export class DownloadManager {
       done,
       data: buffer.subarray(0, bytesRead).toString('base64'),
     };
-    if (done) await this.#finish(session, 'completed');
+    session.lastChunk = result;
+    if (done) await this.#complete(session);
     return result;
   }
 
@@ -175,7 +192,7 @@ export class DownloadManager {
     await this.#pruneExpired();
     const session = this.#authorize(payload, clientId);
     if (session.busy) throw new Error('download_in_progress');
-    await this.#finish(session, 'canceled');
+    await this.#finish(session, session.completed ? 'closed' : 'canceled');
     return { closed: true };
   }
 
@@ -223,8 +240,18 @@ export class DownloadManager {
   async #finish(session: DownloadSession, event: string) {
     if (this.sessions.get(session.id) !== session) return;
     this.sessions.delete(session.id);
-    await session.handle.close().catch(() => {});
+    await session.handle?.close().catch(() => {});
+    session.handle = null;
     await this.#audit(event, session);
+  }
+
+  async #complete(session: DownloadSession) {
+    if (session.completed) return;
+    session.completed = true;
+    session.expiresAt = this.clock() + this.ttlMs;
+    await session.handle?.close().catch(() => {});
+    session.handle = null;
+    await this.#audit('completed', session);
   }
 
   async #audit(event: string, session: DownloadSession) {

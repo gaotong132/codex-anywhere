@@ -1,10 +1,11 @@
 export type DownloadReadiness = {
+  visible: boolean;
   online: boolean;
   channelReady: boolean;
 };
 
-export function downloadCanContinue({ online, channelReady }: DownloadReadiness) {
-  return online && channelReady;
+export function downloadCanContinue({ visible, online, channelReady }: DownloadReadiness) {
+  return visible && online && channelReady;
 }
 
 type WaitForDownloadOptions = {
@@ -12,6 +13,11 @@ type WaitForDownloadOptions = {
   isReady: () => boolean;
   onPause?: () => void;
   wait?: (signal: AbortSignal) => Promise<void>;
+};
+
+type ResumableDownloadRequestOptions<T> = WaitForDownloadOptions & {
+  request: () => Promise<T>;
+  onResume?: () => void;
 };
 
 export async function waitForDownloadReady({
@@ -30,6 +36,40 @@ export async function waitForDownloadReady({
     await wait(signal);
   }
   if (signal.aborted) throw new Error('download_cancelled');
+}
+
+export async function runResumableDownloadRequest<T>({
+  signal,
+  isReady,
+  request,
+  onPause,
+  onResume,
+  wait = waitForResumeCheck,
+}: ResumableDownloadRequestOptions<T>) {
+  let recovering = false;
+  while (true) {
+    if (!isReady()) recovering = true;
+    await waitForDownloadReady({ signal, isReady, onPause, wait });
+    if (recovering) {
+      recovering = false;
+      onResume?.();
+    }
+    try {
+      return await request();
+    } catch (error) {
+      if (signal.aborted) throw new Error('download_cancelled');
+      if (!isRetryableDownloadInterruption(error)) throw error;
+      onPause?.();
+      recovering = true;
+      await wait(signal);
+    }
+  }
+}
+
+export function isRetryableDownloadInterruption(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return /^(?:request_timeout|secure_channel_not_ready|secure_channel_failed|download_in_progress|连接已断开|连接未建立|Connection closed|Connection is not established)$/i
+    .test(message.trim());
 }
 
 function waitForResumeCheck(signal: AbortSignal) {

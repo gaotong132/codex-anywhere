@@ -41,7 +41,11 @@ import {
   localFileName,
   safeDownloadName,
 } from './file-utils';
-import { downloadCanContinue, waitForDownloadReady } from './download-resume';
+import {
+  downloadCanContinue,
+  runResumableDownloadRequest,
+  waitForDownloadReady,
+} from './download-resume';
 import { t } from './i18n';
 import {
   formatDate,
@@ -2028,16 +2032,29 @@ export default function App() {
   useEffect(() => {
     if (!fileDownloadRef.current) return;
     const paused = !downloadCanContinue({
+      visible: document.visibilityState === 'visible',
       online,
       channelReady: Boolean(secureChannelRef.current?.isReady()),
     });
-    setFileDownload((current) => (current ? { ...current, paused } : current));
+    setFileDownload((current) => (current ? {
+      ...current,
+      paused,
+      pauseReason: paused
+        ? (document.visibilityState === 'visible' ? 'connection' : 'background')
+        : undefined,
+    } : current));
   }, [online]);
 
   useEffect(() => {
     const syncDownloadVisibility = () => {
       if (!fileDownloadRef.current) return;
-      if (document.visibilityState === 'visible') void acquireDownloadWakeLock();
+      if (document.visibilityState === 'visible') {
+        void acquireDownloadWakeLock();
+        return;
+      }
+      setFileDownload((current) => (current ? {
+        ...current, paused: true, pauseReason: 'background',
+      } : current));
     };
     document.addEventListener('visibilitychange', syncDownloadVisibility);
     return () => document.removeEventListener('visibilitychange', syncDownloadVisibility);
@@ -2048,8 +2065,8 @@ export default function App() {
     const wakeLockSupported = Boolean((navigator as WakeLockNavigator).wakeLock?.request);
     const accepted = window.confirm(
       t(
-        `是否从这台电脑下载以下文件？\n\n${path}\n\n${wakeLockSupported ? '下载期间会尝试保持屏幕常亮；切后台或息屏后会尽量继续，若被系统暂停，回到本页会从当前位置续传。' : '当前浏览器不保证后台下载；息屏或切后台后请保留本页，返回时会从当前位置续传。'}`,
-        `Download this file from your computer?\n\n${path}\n\n${wakeLockSupported ? 'The page will try to keep the screen awake. It will continue in the background when allowed and resume from the current position when you return.' : 'This browser cannot guarantee background downloads. Keep this page open; the transfer will resume from the current position when you return.'}`,
+        `是否从这台电脑下载以下文件？\n\n${path}\n\n${wakeLockSupported ? '下载期间会保持屏幕常亮。若手动息屏或切到后台，下载会安全暂停，回到本页后自动续传。' : '当前浏览器无法保证后台下载，请保持屏幕亮起；若息屏中断，回到本页后会自动续传。'}`,
+        `Download this file from your computer?\n\n${path}\n\n${wakeLockSupported ? 'The screen will stay awake during the download. If you lock it or leave the page, the transfer pauses safely and resumes when you return.' : 'This browser cannot guarantee background downloads. Keep the screen awake; if interrupted, the transfer resumes when you return.'}`,
       ),
     );
     if (!accepted) return;
@@ -2057,29 +2074,52 @@ export default function App() {
     fileDownloadCancelRef.current = false;
     const abortController = new AbortController();
     fileDownloadAbortRef.current = abortController;
+    const initiallyPaused = !downloadCanContinue({
+      visible: document.visibilityState === 'visible',
+      online,
+      channelReady: Boolean(secureChannelRef.current?.isReady()),
+    });
     setFileDownload({
-      name: localFileName(path), size: 0, received: 0, paused: !online, protection: 'checking',
+      name: localFileName(path),
+      size: 0,
+      received: 0,
+      paused: initiallyPaused,
+      pauseReason: initiallyPaused
+        ? (document.visibilityState === 'visible' ? 'connection' : 'background')
+        : undefined,
+      protection: 'checking',
     });
     void acquireDownloadWakeLock();
     let opened: OpenedDownload | null = null;
-    let completed = false;
     try {
-      const waitUntilReady = async () => {
-        await waitForDownloadReady({
+      const isReady = () => downloadCanContinue({
+        visible: document.visibilityState === 'visible',
+        online: connectorOnlineRef.current,
+        channelReady: Boolean(secureChannelRef.current?.isReady()),
+      });
+      const pauseDownload = () => setFileDownload((current) => (current ? {
+        ...current,
+        paused: true,
+        pauseReason: document.visibilityState === 'visible' ? 'connection' : 'background',
+      } : current));
+      const resumeDownload = () => setFileDownload((current) => (current ? {
+        ...current, paused: false, pauseReason: undefined,
+      } : current));
+      const resilientRequest = async <T,>(action: string, payload: Record<string, unknown>) => (
+        runResumableDownloadRequest<T>({
           signal: abortController.signal,
-          isReady: () => downloadCanContinue({
-            online: connectorOnlineRef.current,
-            channelReady: Boolean(secureChannelRef.current?.isReady()),
+          isReady,
+          onPause: pauseDownload,
+          onResume: resumeDownload,
+          request: () => request<T>(action, payload, {
+            timeoutMs: REQUEST_TIMEOUT_MS,
+            signal: abortController.signal,
           }),
-          onPause: () => setFileDownload((current) => (current ? { ...current, paused: true } : current)),
-        });
-        setFileDownload((current) => (current ? { ...current, paused: false } : current));
-      };
-      await waitUntilReady();
-      opened = await request<OpenedDownload>(
+        })
+      );
+      opened = await resilientRequest<OpenedDownload>(
         'file.download.open',
         { path, confirmed: true },
-        { timeoutMs: null, signal: abortController.signal },
       );
       if (!opened.downloadId || !opened.downloadToken || !Number.isSafeInteger(opened.size) || opened.size < 0) {
         throw new Error('download_capability_invalid');
@@ -2095,12 +2135,11 @@ export default function App() {
       let offset = 0;
       while (true) {
         if (fileDownloadCancelRef.current) throw new Error('download_cancelled');
-        await waitUntilReady();
-        const chunk = await request<DownloadFileChunk>('file.download.chunk', {
+        const chunk = await resilientRequest<DownloadFileChunk>('file.download.chunk', {
           downloadId: opened.downloadId,
           downloadToken: opened.downloadToken,
           offset,
-        }, { timeoutMs: null, signal: abortController.signal });
+        });
         if (fileDownloadCancelRef.current) throw new Error('download_cancelled');
         const emptyComplete = opened.size === 0 && chunk.done && chunk.nextOffset === 0;
         if (chunk.offset !== offset || !Number.isSafeInteger(chunk.nextOffset)
@@ -2111,25 +2150,25 @@ export default function App() {
         if (bytes.byteLength !== chunk.nextOffset - offset) throw new Error('download_chunk_invalid');
         parts.push(bytes);
         offset = chunk.nextOffset;
+        const transferPaused = !isReady();
         setFileDownload((current) => (current ? {
           ...current,
           name: opened!.name,
           size: opened!.size,
           received: offset,
-          paused: !downloadCanContinue({
-            online: connectorOnlineRef.current,
-            channelReady: Boolean(secureChannelRef.current?.isReady()),
-          }),
+          paused: transferPaused,
+          pauseReason: transferPaused
+            ? (document.visibilityState === 'visible' ? 'connection' : 'background')
+            : undefined,
         } : current));
         if (chunk.done) break;
       }
-      completed = true;
       await waitForDownloadReady({
         signal: abortController.signal,
         isReady: () => document.visibilityState === 'visible',
-        onPause: () => setFileDownload((current) => (current ? { ...current, paused: true } : current)),
+        onPause: pauseDownload,
       });
-      setFileDownload((current) => (current ? { ...current, paused: false } : current));
+      resumeDownload();
       const url = URL.createObjectURL(new Blob(parts, { type: 'application/octet-stream' }));
       const link = document.createElement('a');
       link.href = url;
@@ -2144,7 +2183,7 @@ export default function App() {
         reportTimelineError(error);
       }
     } finally {
-      if (opened && !completed) {
+      if (opened) {
         void request('file.download.close', {
           downloadId: opened.downloadId,
           downloadToken: opened.downloadToken,
