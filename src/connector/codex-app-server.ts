@@ -349,27 +349,42 @@ export class CodexAppServer extends EventEmitter {
       effort,
       serviceTier,
     };
+    let desktopOwned = false;
     try {
       await this.rpcRaw('thread/settings/update', params);
     } catch (error) {
-      if (!/thread not found/i.test(String(error instanceof Error ? error.message : error))) throw error;
-      let metadata = this.sessionMetadata.get(resolvedThreadId);
-      if (!metadata?.cwd) {
-        await this.listSessions();
-        metadata = this.sessionMetadata.get(resolvedThreadId);
+      const message = String(error instanceof Error ? error.message : error);
+      if (isActiveWriterError(error)) {
+        desktopOwned = true;
+      } else if (!/thread not found/i.test(message)) {
+        throw error;
       }
-      if (!metadata?.cwd) throw new Error('session_not_found');
-      await this.rpcRaw('thread/resume', {
-        threadId: resolvedThreadId,
-        cwd: metadata.cwd,
-        model: model.model,
-        serviceTier,
-        excludeTurns: true,
-      });
-      try {
-        await this.rpcRaw('thread/settings/update', params);
-      } finally {
-        await this.rpcRaw('thread/unsubscribe', { threadId: resolvedThreadId }).catch(() => undefined);
+      if (!desktopOwned) {
+        let metadata = this.sessionMetadata.get(resolvedThreadId);
+        if (!metadata?.cwd) {
+          await this.listSessions();
+          metadata = this.sessionMetadata.get(resolvedThreadId);
+        }
+        if (!metadata?.cwd) throw new Error('session_not_found');
+        try {
+          await this.rpcRaw('thread/resume', {
+            threadId: resolvedThreadId,
+            cwd: metadata.cwd,
+            model: model.model,
+            serviceTier,
+            excludeTurns: true,
+          });
+        } catch (resumeError) {
+          if (!isActiveWriterError(resumeError)) throw resumeError;
+          desktopOwned = true;
+        }
+        if (!desktopOwned) {
+          try {
+            await this.rpcRaw('thread/settings/update', params);
+          } finally {
+            await this.rpcRaw('thread/unsubscribe', { threadId: resolvedThreadId }).catch(() => undefined);
+          }
+        }
       }
     }
     const settings = {
@@ -379,6 +394,15 @@ export class CodexAppServer extends EventEmitter {
     };
     this.sessionModelSettings.set(resolvedThreadId, settings);
     return { ...settings, fastMode, models };
+  }
+
+  getDesktopTurnOverrides(threadId: unknown) {
+    const settings = this.sessionModelSettings.get(String(threadId || '').trim());
+    if (!settings) return {};
+    return {
+      ...(settings.model ? { model: settings.model } : {}),
+      ...(settings.reasoningEffort ? { thinking: settings.reasoningEffort } : {}),
+    };
   }
 
   async listModels(): Promise<ModelOption[]> {

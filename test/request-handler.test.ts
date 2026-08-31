@@ -18,6 +18,7 @@ function createDependencies(overrides = {}) {
       listApprovals: () => ({ approvals: [] }),
       respondApproval: async () => ({}),
       getControllerThreadId: () => 'controller-thread',
+      getDesktopTurnOverrides: () => ({}),
       isLargeSession: async () => false,
       canOwnSession: () => true,
       needsDesktopPermissionRecovery: async () => false,
@@ -172,6 +173,28 @@ test('active Desktop sessions receive follow-up messages immediately through Des
   });
   assert.equal(appServerCalls, 0);
   assert.deepEqual(response.data, { threadId: 'target-thread', delivery: 'desktop' });
+});
+
+test('an explicit model choice is applied to the next Desktop-owned turn', async () => {
+  let delivered;
+  const handle = createRequestHandler(createDependencies({
+    codex: {
+      getDesktopTurnOverrides: () => ({ model: 'gpt-5.6-sol', thinking: 'xhigh' }),
+    },
+    desktop: { sendMessage: async (message) => {
+      delivered = message;
+      return { threadId: message.threadId, delivery: 'desktop' };
+    } },
+  }));
+  const response = await handle(request('turn.start', {
+    threadId: 'target-thread', text: 'continue', preferDesktop: true,
+    model: 'stale-model', reasoningEffort: 'low',
+  }));
+  assert.deepEqual(delivered, {
+    threadId: 'target-thread', text: 'continue', requestId: 'request-1',
+    callerThreadId: 'controller-thread', model: 'gpt-5.6-sol', thinking: 'xhigh',
+  });
+  assert.equal(response.ok, true);
 });
 
 test('active Web-owned sessions steer the in-flight app-server turn', async () => {

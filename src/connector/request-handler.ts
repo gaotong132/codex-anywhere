@@ -23,6 +23,7 @@ type CodexGateway = {
   listApprovals(threadId: unknown, clientId?: string): any;
   respondApproval(approvalId: unknown, approved: boolean, threadId?: unknown): Promise<any>;
   getControllerThreadId(threadId: string): string;
+  getDesktopTurnOverrides(threadId: string): Payload;
   isLargeSession(threadId: string): Promise<boolean>;
   canOwnSession(threadId: string): boolean;
   needsDesktopPermissionRecovery(threadId: string): Promise<boolean>;
@@ -162,6 +163,7 @@ async function startTurn({
       text: payload.text,
       requestId,
       callerThreadId: codex.getControllerThreadId(threadId),
+      ...codex.getDesktopTurnOverrides(threadId),
     });
   }
   const largeSession = await codex.isLargeSession(threadId);
@@ -172,6 +174,7 @@ async function startTurn({
         text: payload.text,
         requestId,
         callerThreadId: codex.getControllerThreadId(threadId),
+        ...codex.getDesktopTurnOverrides(threadId),
       });
     } catch (error) {
       if (String(error instanceof Error ? error.message : error) !== 'desktop_app_unavailable') throw error;
@@ -193,6 +196,7 @@ async function startTurn({
       text: payload.text,
       requestId,
       callerThreadId: codex.getControllerThreadId(threadId),
+      ...codex.getDesktopTurnOverrides(threadId),
     });
   } catch (error) {
     if (String(error instanceof Error ? error.message : error) !== 'desktop_app_unavailable') throw error;

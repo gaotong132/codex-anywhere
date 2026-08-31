@@ -1728,6 +1728,48 @@ test('session model settings are catalog-backed and update subsequent turns', as
   }
 });
 
+test('Desktop-owned sessions remember an explicit model choice without taking the writer', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-desktop-model-config-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  try {
+    await writeFile(filePath, `${JSON.stringify({
+      type: 'event_msg', payload: { type: 'thread_settings_applied', thread_settings: {
+        model: 'gpt-5.6-sol', reasoning_effort: 'low', service_tier: 'default',
+      } },
+    })}\n`);
+    const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+    codex.ensureStarted = async () => {};
+    codex.sessionMetadata.set('thread-1', {
+      path: filePath, cwd: process.cwd(), canAcceptDirectInput: false,
+    });
+    codex.rpcRaw = async (method) => {
+      if (method === 'model/list') return { data: [{
+        id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol', description: 'Frontier',
+        supportedReasoningEfforts: [
+          { reasoningEffort: 'low', description: 'Low' },
+          { reasoningEffort: 'xhigh', description: 'Extra high' },
+        ],
+        defaultReasoningEffort: 'low',
+        serviceTiers: [{ id: 'default', name: 'Standard', description: 'Standard' }],
+        defaultServiceTier: 'default', isDefault: true,
+      }] };
+      if (method === 'thread/settings/update') throw new Error('thread not found: thread-1');
+      if (method === 'thread/resume') throw new Error('thread thread-1 already has an active writer');
+      throw new Error(`unexpected method ${method}`);
+    };
+
+    const updated = await codex.updateModelConfig('thread-1', {
+      model: 'gpt-5.6-sol', reasoningEffort: 'xhigh', fastMode: false,
+    });
+    assert.equal(updated.reasoningEffort, 'xhigh');
+    assert.deepEqual(codex.getDesktopTurnOverrides('thread-1'), {
+      model: 'gpt-5.6-sol', thinking: 'xhigh',
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('active Desktop writers return a conflict immediately without forking', async () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
