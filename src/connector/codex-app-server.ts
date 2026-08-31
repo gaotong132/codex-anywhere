@@ -763,7 +763,11 @@ export class CodexAppServer extends EventEmitter {
       clientId: this.activeTurn.clientId,
       requestId: this.activeTurn.requestId,
       event,
-      payload,
+      payload: {
+        ...payload,
+        threadId: this.activeTurn.threadId,
+        turnId: this.activeTurn.turnId,
+      },
     });
   }
 

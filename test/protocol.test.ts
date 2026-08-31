@@ -56,6 +56,7 @@ import {
   composerPrimaryAction,
   friendlyError,
   initialBootstrapReady,
+  isEventForSelectedThread,
   isNearScrollBottom,
   isConnectionInterruption,
   markSessionAttentionRead,
@@ -68,6 +69,7 @@ import {
   attachLatestAssistantFileChanges,
   historyFingerprint,
   historyItems,
+  isDuplicateFinalProgress,
   latestTurnProgressItemId,
   mergeHistorySnapshot,
   progressTypewriterKey,
@@ -254,6 +256,13 @@ test('session completion stays unread until the session is opened', () => {
     { id: 'thread-1', title: 'Deploy', status: 'completed' },
   ], 'thread-1');
   assert.deepEqual(completedWhileOpen, {});
+});
+
+test('live events update only the session they belong to', () => {
+  assert.equal(isEventForSelectedThread('thread-a', 'thread-a', 'thread-a'), true);
+  assert.equal(isEventForSelectedThread('thread-a', 'thread-b', 'thread-a'), false);
+  assert.equal(isEventForSelectedThread('', 'thread-a', 'thread-a'), true);
+  assert.equal(isEventForSelectedThread('', 'thread-b', 'thread-a'), false);
 });
 
 test('stop control is shown only for the selected Web-owned turn', () => {
@@ -665,6 +674,22 @@ test('history merge carries unpublished progress into its turn when a later turn
     'history-old-user', 'live-progress', 'history-old-answer', 'history-new-user',
   ]);
   assert.equal(merged[1], current[1]);
+});
+
+test('a finalized reply replaces an identical transient progress block', () => {
+  const duplicate = {
+    id: 'live-progress', kind: 'progress' as const, text: '任务已完成。',
+    historyTurnId: 'turn-live', transient: true,
+  };
+  const finalReply = {
+    id: 'history-final', kind: 'assistant' as const, text: '任务已完成。',
+    historyTurnId: 'turn-live', attachment: undefined,
+  };
+  assert.equal(isDuplicateFinalProgress(duplicate.text, finalReply.text), true);
+  assert.deepEqual(
+    mergeHistorySnapshot([duplicate], [finalReply], new Set(['turn-live'])),
+    [finalReply],
+  );
 });
 
 test('history merge preserves a growing progress block identity for incremental animation', () => {
@@ -1558,7 +1583,9 @@ test('app-server forwards only aggregate plan and diff progress', async () => {
   });
   const [plan] = await planEvent;
   assert.equal(plan.event, 'turn.progress');
-  assert.deepEqual(plan.payload, { plan: { current: 2, total: 2 } });
+  assert.deepEqual(plan.payload, {
+    threadId: 'thread-1', turnId: 'turn-1', plan: { current: 2, total: 2 },
+  });
 
   const diffEvent = once(codex, 'turn-event');
   codex.handleNotification('turn/diff/updated', {
@@ -1567,7 +1594,10 @@ test('app-server forwards only aggregate plan and diff progress', async () => {
   });
   const [diff] = await diffEvent;
   assert.equal(diff.event, 'turn.progress');
-  assert.deepEqual(diff.payload, { files: { changed: 1, additions: 1, deletions: 1 } });
+  assert.deepEqual(diff.payload, {
+    threadId: 'thread-1', turnId: 'turn-1',
+    files: { changed: 1, additions: 1, deletions: 1 },
+  });
   assert.equal(JSON.stringify(diff.payload).includes('private.ts'), false);
 });
 

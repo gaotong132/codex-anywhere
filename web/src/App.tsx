@@ -15,6 +15,7 @@ import {
   parseAssistantMessage,
   historyFingerprint,
   historyItems,
+  isDuplicateFinalProgress,
   latestTurnProgressItemId,
   loadKnownAttachments,
   mergeHistorySnapshot,
@@ -49,6 +50,7 @@ import {
   composerPrimaryAction,
   initialBootstrapReady,
   isConnectionInterruption,
+  isEventForSelectedThread,
   isNearScrollBottom,
   isSessionRunning,
   isTemporaryProjectPath,
@@ -760,8 +762,12 @@ export default function App() {
     const completedAt = Date.now();
     streamItemRef.current = null;
     setTimeline((items) => {
-      if (current?.kind === 'assistant' && items.some((item) => item.id === current.id)) {
-        return items.map((item) => item.id === current.id
+      const nextItems = current?.kind === 'progress'
+        && items.some((item) => item.id === current.id && isDuplicateFinalProgress(item.text, visibleText))
+        ? items.filter((item) => item.id !== current.id)
+        : items;
+      if (current?.kind === 'assistant' && nextItems.some((item) => item.id === current.id)) {
+        return nextItems.map((item) => item.id === current.id
           ? {
             ...item,
             text: visibleText,
@@ -771,7 +777,7 @@ export default function App() {
           }
           : item);
       }
-      return [...items, {
+      return [...nextItems, {
         id: makeId(), kind: 'assistant', text: visibleText, contexts: content.contexts, transient: true,
         ...(activeTurnIdRef.current ? { historyTurnId: activeTurnIdRef.current } : {}),
         ...(fileChanges ? { fileChanges } : {}),
@@ -1030,22 +1036,52 @@ export default function App() {
     }
     if (message.type !== 'event') return;
     const payload = message.payload || {};
+    const eventThreadId = String(payload.threadId || '');
+    if (
+      message.event !== 'turn.started'
+      && !isEventForSelectedThread(eventThreadId, threadIdRef.current, ownedTurnThreadIdRef.current)
+    ) {
+      if (eventThreadId) {
+        updateSessionAttention((current) => current[eventThreadId] === 'running'
+          ? current : { ...current, [eventThreadId]: 'running' });
+      }
+      if (message.event === 'turn.error' || message.event === 'turn.ended') {
+        if (eventThreadId && ownedTurnThreadIdRef.current === eventThreadId) {
+          runningRef.current = false;
+          ownedTurnThreadIdRef.current = null;
+          setRunning(false);
+          setOwnedTurnThreadId(null);
+          updateSessionAttention((current) => current[eventThreadId] === 'running'
+            ? { ...current, [eventThreadId]: 'unread' } : current);
+        }
+        void refreshSessions();
+      }
+      return;
+    }
     if (message.event === 'turn.started') {
+      const selectedThreadId = threadIdRef.current;
+      const previousOwnedThreadId = ownedTurnThreadIdRef.current;
+      const nextThreadId = String(payload.threadId || '');
+      activeTurnIdRef.current = String(payload.turnId || '');
+      runningRef.current = true;
+      ownedTurnThreadIdRef.current = nextThreadId || selectedThreadId || NEW_TURN_KEY;
+      setOwnedTurnThreadId(ownedTurnThreadIdRef.current);
+      setRunning(true);
+      if (nextThreadId && nextThreadId !== selectedThreadId && previousOwnedThreadId !== NEW_TURN_KEY) {
+        updateSessionAttention((current) => ({ ...current, [nextThreadId]: 'running' }));
+        return;
+      }
       setToolPurpose('');
       setActivityDetail('');
       setTurnProgress({});
       turnProgressRef.current = {};
       setLiveActivity('starting');
       setActivityStartedAt(Date.now());
-      const nextThreadId = String(payload.threadId || '');
-      activeTurnIdRef.current = String(payload.turnId || '');
-      setOwnedTurnThreadId(nextThreadId || threadIdRef.current || NEW_TURN_KEY);
       if (nextThreadId) {
         setThreadId(nextThreadId);
         threadIdRef.current = nextThreadId;
         localStorage.setItem('bridge.lastThreadId', nextThreadId);
         setCreatingNewSession(false);
-        setRunning(true);
         setExecutionState('running');
       }
     } else if (message.event === 'turn.delta') {
@@ -1099,6 +1135,8 @@ export default function App() {
       setActivityStartedAt(null);
       setTurnProgress({});
       turnProgressRef.current = {};
+      runningRef.current = false;
+      ownedTurnThreadIdRef.current = null;
       setRunning(false);
       setOwnedTurnThreadId(null);
       setExecutionState('failed');
@@ -1113,12 +1151,17 @@ export default function App() {
       setActivityStartedAt(null);
       setTurnProgress({});
       turnProgressRef.current = {};
+      runningRef.current = false;
+      ownedTurnThreadIdRef.current = null;
       setRunning(false);
       setOwnedTurnThreadId(null);
       setExecutionState((current) => current === 'failed' ? current : 'completed');
       void refreshSessions();
     }
-  }, [addTimeline, appendStream, beginSecureChannel, finishAssistant, finishInitialBootstrap, refreshSessions]);
+  }, [
+    addTimeline, appendStream, beginSecureChannel, finishAssistant, finishInitialBootstrap,
+    refreshSessions, updateSessionAttention,
+  ]);
 
   useEffect(() => { messageHandlerRef.current = handleBridgeMessage; }, [handleBridgeMessage]);
 
@@ -1789,8 +1832,10 @@ export default function App() {
       streamItemRef.current = null;
       if (!steering) activeTurnIdRef.current = '';
       if (!steering) {
+        runningRef.current = true;
         setRunning(true);
-        setOwnedTurnThreadId(threadIdRef.current || NEW_TURN_KEY);
+        ownedTurnThreadIdRef.current = threadIdRef.current || NEW_TURN_KEY;
+        setOwnedTurnThreadId(ownedTurnThreadIdRef.current);
         setExecutionState('running');
         setLiveActivity('starting');
         setActivityStartedAt(Date.now());

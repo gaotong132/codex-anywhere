@@ -60,6 +60,11 @@ export function progressTypewriterKey(item: Pick<TimelineItem, 'id' | 'historyTu
   return `progress:${item.historyTurnId || item.id}`;
 }
 
+export function isDuplicateFinalProgress(progressText: string, assistantText: string) {
+  const progress = canonicalMessageText(progressText);
+  return Boolean(progress) && progress === canonicalMessageText(assistantText);
+}
+
 export function latestTurnProgressItemId(items: TimelineItem[]) {
   let latestUserIndex = -1;
   for (let index = items.length - 1; index >= 0; index -= 1) {
@@ -268,10 +273,24 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
     return hydrated;
   });
   const persistedItems = new Set(hydratedLatest.map(messageIdentity));
+  const finalRepliesByTurn = new Map<string, Set<string>>();
+  for (const item of hydratedLatest) {
+    if (item.kind !== 'assistant' || !item.historyTurnId) continue;
+    const replies = finalRepliesByTurn.get(item.historyTurnId) || new Set<string>();
+    replies.add(canonicalMessageText(item.text));
+    finalRepliesByTurn.set(item.historyTurnId, replies);
+  }
+  const duplicateFinalProgressIds = new Set(current
+    .filter((item) => item.transient
+      && item.kind === 'progress'
+      && item.historyTurnId
+      && finalRepliesByTurn.get(item.historyTurnId)?.has(canonicalMessageText(item.text)))
+    .map((item) => item.id));
   const carriedProgress = current.filter((item) => item.transient
     && item.kind === 'progress'
     && item.historyTurnId
     && latestTurnIds.has(item.historyTurnId)
+    && !finalRepliesByTurn.get(item.historyTurnId)?.has(canonicalMessageText(item.text))
     && !persistedItems.has(messageIdentity(item)));
   const carriedProgressIds = new Set(carriedProgress.map((item) => item.id));
   const carriedProgressByTurn = new Map<string, TimelineItem[]>();
@@ -299,6 +318,7 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
   const firstMatch = current.findIndex((item) => item.historyTurnId && latestTurnIds.has(item.historyTurnId));
   const keep = (item: TimelineItem) => (
     !carriedProgressIds.has(item.id)
+    && !duplicateFinalProgressIds.has(item.id)
     && !(item.historyTurnId && latestTurnIds.has(item.historyTurnId) && !item.transient)
     && !(introducesNewTurn && item.transient && item.kind === 'assistant')
     && !(item.transient && persistedItems.has(messageIdentity(item)))

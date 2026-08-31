@@ -115,6 +115,15 @@ export function markSessionAttentionRead(current: SessionAttentionState, threadI
   return next;
 }
 
+export function isEventForSelectedThread(
+  eventThreadId: string,
+  selectedThreadId: string | null,
+  ownedThreadId: string | null,
+) {
+  const targetThreadId = eventThreadId || ownedThreadId || '';
+  return !targetThreadId || targetThreadId === selectedThreadId;
+}
+
 export function canStopOwnedTurn(running: boolean, ownedThreadId: string | null, selectedThreadId: string | null) {
   return running && Boolean(ownedThreadId) && ownedThreadId === selectedThreadId;
 }
