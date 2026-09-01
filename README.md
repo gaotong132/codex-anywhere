@@ -29,8 +29,8 @@ you control provides the remote meeting point.
   existing session supports it. Messages are sent directly; Codex Anywhere does not maintain a Web queue.
 - **Choose how Codex works** — view or change the model, reasoning effort, and fast mode when the selected
   Codex model exposes those options.
-- **Use the results on mobile** — preview sent or generated images, read linked Markdown files in the browser,
-  open isolated Codex visualizations, copy messages, and download local files after confirmation. Downloads try to keep the screen awake;
+- **Use the results on mobile** — preview sent or generated images, read linked Markdown files with Mermaid
+  diagrams in the browser, open isolated Codex visualizations, copy messages, and download local files after confirmation. Downloads try to keep the screen awake;
   a foreground transfer pauses safely and resumes after the approved browser reconnects.
 - **Handle supported approvals** — approve or reject requests owned by a run started through the
   connector. Requests already owned by Codex Desktop remain on the computer.

@@ -68,6 +68,8 @@ reviewed from the relay host with `./scripts/relay.sh approve`.
 - Markdown previews require an explicit click, accept only UTF-8 `.md` or `.markdown` files up to 2 MiB,
   and remain restricted to configured or managed local roots. The preview keeps the confirmed download path
   available without sending file contents through the relay in plaintext.
+- Mermaid code blocks load the renderer on demand with strict security, bounded input and edge counts, and
+  display the generated SVG as a non-executable image. Invalid diagrams fall back to their source code.
 - Interactive HTML is limited to Codex visualization roots and rendered in an opaque-origin,
   network-blocked sandbox.
 - The Web UI can act only on approvals owned by connector-started turns. An approval already owned by

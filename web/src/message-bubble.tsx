@@ -1,5 +1,7 @@
 import {
+  isValidElement,
   memo,
+  type ReactNode,
   useEffect,
   useMemo,
   useRef,
@@ -16,6 +18,7 @@ import {
 } from './file-utils';
 import { t } from './i18n';
 import { progressTypewriterKey, type TimelineItem } from './history-utils';
+import { isMermaidCodeClass, MermaidDiagram } from './mermaid-diagram';
 import { TypewriterText } from './ui-components';
 
 type MessageCopyState = 'idle' | 'copied' | 'failed';
@@ -167,6 +170,15 @@ const MessageMarkdown = memo(function MessageMarkdown({
   onDownloadFile: (path: string) => void;
 }) {
   const components = useMemo<Components>(() => ({
+    pre: ({ node: _node, children, ...props }) => {
+      const code = isValidElement<{ className?: string; children?: ReactNode }>(children)
+        && children.type === 'code' ? children : null;
+      if (code && isMermaidCodeClass(code.props.className)) {
+        const source = String(code.props.children ?? '').replace(/\n$/, '');
+        return <MermaidDiagram source={source} />;
+      }
+      return <pre {...props}>{children}</pre>;
+    },
     a: ({ node: _node, href, children, ...props }) => {
       const localPath = localFilePathFromHref(href) || localFilePathFromRelativeHref(href, basePath);
       return localPath

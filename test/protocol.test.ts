@@ -1183,6 +1183,28 @@ test('conversation loads the Markdown renderer outside the startup bundle', asyn
   assert.doesNotMatch(timelineSource, /import \{ MessageBubble \} from '\.\/message-bubble'/);
 });
 
+test('Mermaid code blocks use an on-demand diagram renderer and keep ordinary code unchanged', async () => {
+  const mermaidMarkup = renderToStaticMarkup(createElement(MessageBubble, {
+    item: { id: 'mermaid', kind: 'assistant', text: '```mermaid\ngraph TD\n  A --> B\n```' },
+    onDownloadFile: () => {},
+    onReadVisualization: async () => '',
+  }));
+  const codeMarkup = renderToStaticMarkup(createElement(MessageBubble, {
+    item: { id: 'code', kind: 'assistant', text: '```typescript\nconst answer = 42;\n```' },
+    onDownloadFile: () => {},
+    onReadVisualization: async () => '',
+  }));
+  const rendererSource = await readFile(resolve('web/src/mermaid-diagram.tsx'), 'utf8');
+
+  assert.match(mermaidMarkup, /class="mermaid-diagram loading"/);
+  assert.doesNotMatch(mermaidMarkup, /language-mermaid/);
+  assert.match(codeMarkup, /<pre><code class="language-typescript">/);
+  assert.match(rendererSource, /import\('mermaid'\)/);
+  assert.match(rendererSource, /securityLevel:\s*'strict'/);
+  assert.match(rendererSource, /suppressErrorRendering:\s*true/);
+  assert.match(rendererSource, /URL\.revokeObjectURL/);
+});
+
 test('progress animation waits until initial history hydration finishes', async () => {
   const timelineSource = await readFile(resolve('web/src/conversation-timeline.tsx'), 'utf8');
   const bubbleSource = await readFile(resolve('web/src/message-bubble.tsx'), 'utf8');

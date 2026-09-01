@@ -691,6 +691,22 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .markdown-preview-state { display: grid; min-height: 45dvh; place-items: center; align-content: center; gap: 12px; color: #8f9db1; font-size: 12px; text-align: center; }
 .markdown-preview-state button { height: 32px; border: 1px solid #354968; border-radius: 8px; padding: 0 12px; color: #aecaef; background: #18263a; cursor: pointer; }
 .markdown-preview-state.failed { color: #e8a4aa; }
+.mermaid-diagram {
+  display: grid;
+  min-height: 112px;
+  margin: 14px 0;
+  place-items: center;
+  overflow: auto;
+  border: 1px solid #2c3950;
+  border-radius: 10px;
+  padding: 14px;
+  background: #0c121c;
+  img { display: block; width: auto; max-width: 100%; height: auto; margin: auto; }
+  figcaption { color: #8f9db1; font-size: 12px; text-align: center; }
+  &.failed { place-items: stretch; gap: 10px; }
+  &.failed figcaption { color: #e8a4aa; }
+  &.failed pre { max-height: 320px; margin: 0; overflow: auto; }
+}
 .progress-card { position: relative; max-width: 820px; margin: 0 0 13px; overflow: hidden; border-left: 2px solid #42516a; color: #8290a5; }
 .progress-card summary { display: flex; align-items: center; gap: 7px; padding: 4px 11px; cursor: pointer; font-size: 12px; font-weight: 700; }
 .progress-card.live { border-left-color: #5f80be; animation: progress-arrive .32s ease-out both; }
