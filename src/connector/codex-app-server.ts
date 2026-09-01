@@ -1,8 +1,11 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { readFileSync, realpathSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import {
+  basename, dirname, isAbsolute, relative, resolve,
+} from 'node:path';
 import { createInterface } from 'node:readline';
 import { parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
 import { readRolloutModelSettings, readRolloutTail, type RolloutModelSettings } from './rollout-tail.js';
@@ -18,6 +21,9 @@ const DEFAULT_HISTORY_PAGE_SIZE = 6;
 const MAX_HISTORY_PAGE_SIZE = 10;
 const MAX_LIVE_PAGE_SIZE = 2;
 const LARGE_ROLLOUT_BYTES = 64 * 1024 * 1024;
+const PACKAGE_VERSION = String((JSON.parse(
+  readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+) as { version?: unknown }).version || '0.0.0');
 
 type JsonObject = Record<string, any>;
 type CodexAppServerOptions = {
@@ -146,13 +152,23 @@ export class CodexAppServer extends EventEmitter {
     child.stderr.setEncoding('utf8');
     child.stderr.on('data', (chunk) => this.emit('diagnostic', String(chunk).slice(-SUMMARY_LIMIT)));
     const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
-    lines.on('line', (line) => this.handleLine(line));
-    child.on('error', (error) => this.handleExit(error));
-    child.on('close', (code, signal) => this.handleExit(new Error(`codex app-server exited (${code ?? signal})`)));
-    await this.rpcRaw('initialize', {
-      clientInfo: { name: 'codex-anywhere', version: '0.1.0' },
-      capabilities: { experimentalApi: true },
+    lines.on('line', (line) => {
+      if (this.child === child) this.handleLine(line);
     });
+    child.on('error', (error) => this.handleExit(error, child));
+    child.on('close', (code, signal) => this.handleExit(
+      new Error(`codex app-server exited (${code ?? signal})`), child,
+    ));
+    try {
+      await this.rpcRaw('initialize', {
+        clientInfo: { name: 'codex-anywhere', version: PACKAGE_VERSION },
+        capabilities: { experimentalApi: true },
+      });
+    } catch (error) {
+      child.kill();
+      this.handleExit(error instanceof Error ? error : new Error(String(error)), child);
+      throw error;
+    }
   }
 
   async listSessions(options: { cwd?: string } = {}) {
@@ -596,10 +612,11 @@ export class CodexAppServer extends EventEmitter {
   async stopTurn() {
     if (!this.child) return { stopped: false };
     const previous = this.activeTurn;
+    const child = this.child;
     this.activeTurn = null;
     this.clearApprovalsForThread(previous?.threadId);
-    this.child.kill();
-    this.handleExit(new Error('Codex app-server stopped'));
+    child.kill();
+    this.handleExit(new Error('Codex app-server stopped'), child);
     this.emit('turn-event', {
       clientId: previous?.clientId,
       requestId: previous?.requestId,
@@ -614,8 +631,9 @@ export class CodexAppServer extends EventEmitter {
     this.activeTurn = null;
     this.clearApprovalsForThread(previous?.threadId);
     if (!this.child) return;
-    this.child.kill();
-    this.handleExit(new Error('Codex app-server closed'));
+    const child = this.child;
+    child.kill();
+    this.handleExit(new Error('Codex app-server closed'), child);
   }
 
   async rpcRaw<T = any>(method: string, params: JsonObject = {}, timeoutMs = RPC_TIMEOUT_MS): Promise<T> {
@@ -659,7 +677,7 @@ export class CodexAppServer extends EventEmitter {
       this.pending.delete(message.id);
       clearTimeout(pending.timer);
       if (message.error) pending.reject(new Error(message.error.message || JSON.stringify(message.error)));
-      else pending.resolve(message.result || message);
+      else pending.resolve(Object.hasOwn(message, 'result') ? message.result : message);
       return;
     }
     if (message.id != null && message.method) {
@@ -771,8 +789,8 @@ export class CodexAppServer extends EventEmitter {
     });
   }
 
-  handleExit(error: Error) {
-    if (!this.child) return;
+  handleExit(error: Error, child = this.child) {
+    if (!child || this.child !== child) return;
     this.child = null;
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
@@ -836,8 +854,15 @@ function approvedPermissions(requested: JsonObject = {}, allowedRoots: string[],
     const read = filterAllowedPaths(requestedFileSystem.read, allowedRoots);
     const write = filterAllowedPaths(requestedFileSystem.write, allowedRoots);
     const entries = (Array.isArray(requestedFileSystem.entries) ? requestedFileSystem.entries : [])
-      .filter((entry: JsonObject) => entry?.path?.type === 'path'
-        && isAllowedWorkspace(allowedRoots, entry.path.path));
+      .flatMap((entry: JsonObject) => {
+        if (entry?.path?.type !== 'path') return [];
+        try {
+          const path = resolveAllowedWorkspace(allowedRoots, entry.path.path);
+          return [{ ...entry, path: { ...entry.path, path } }];
+        } catch {
+          return [];
+        }
+      });
     if (read.length || write.length || entries.length) {
       permissions.fileSystem = {
         read: read.length ? read : null,
@@ -855,7 +880,10 @@ function approvedPermissions(requested: JsonObject = {}, allowedRoots: string[],
 function filterAllowedPaths(values: unknown, allowedRoots: string[]) {
   return (Array.isArray(values) ? values : [])
     .map((value) => String(value || '').trim())
-    .filter((value) => value && isAllowedWorkspace(allowedRoots, value));
+    .flatMap((value) => {
+      if (!value) return [];
+      try { return [resolveAllowedWorkspace(allowedRoots, value)]; } catch { return []; }
+    });
 }
 
 function summarizeItem(item: JsonObject) {
@@ -931,11 +959,13 @@ function isActiveWriterError(error: unknown) {
 function resolveAllowedWorkspace(roots: string[] | string, candidate: unknown) {
   const rawCandidate = String(candidate || '').trim();
   if (!rawCandidate) throw new Error('project_directory_required');
-  const requested = resolve(rawCandidate);
+  const requested = canonicalizeWorkspaceCandidate(rawCandidate);
   const allowedRoots = (Array.isArray(roots) ? roots : [roots])
     .map((root) => String(root || '').trim())
     .filter(Boolean)
-    .map((root) => resolve(root));
+    .flatMap((root) => {
+      try { return [realpathSync(resolve(root))]; } catch { return []; }
+    });
   for (const allowedRoot of allowedRoots) {
     const pathFromRoot = relative(allowedRoot, requested);
     if (!pathFromRoot || (!pathFromRoot.startsWith('..') && !isAbsolute(pathFromRoot))) {
@@ -943,6 +973,22 @@ function resolveAllowedWorkspace(roots: string[] | string, candidate: unknown) {
     }
   }
   throw new Error('workspace_outside_allowed_root');
+}
+
+function canonicalizeWorkspaceCandidate(candidate: string) {
+  let current = resolve(candidate);
+  const missingSegments: string[] = [];
+  while (true) {
+    try {
+      return resolve(realpathSync(current), ...missingSegments.reverse());
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('workspace_path_invalid');
+      const parent = dirname(current);
+      if (parent === current) throw new Error('workspace_path_invalid');
+      missingSegments.push(basename(current));
+      current = parent;
+    }
+  }
 }
 
 function isAllowedWorkspace(roots: string[] | string, candidate: unknown) {

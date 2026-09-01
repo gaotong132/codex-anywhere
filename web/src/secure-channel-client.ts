@@ -68,6 +68,7 @@ export class BrowserSecureChannel {
 
   handle(frame: JsonObject) {
     if (frame.type === 'channel.accept') {
+      if (frame.accept?.transcript?.channelId !== this.offer?.channelId) return true;
       this.accept(frame.accept as SecureChannelAcceptance);
       return true;
     }
@@ -75,16 +76,18 @@ export class BrowserSecureChannel {
       if (this.codec && frame.channelId === this.codec.channelId) {
         this.ready = true;
         this.onReady();
-      } else {
+      } else if (frame.channelId === this.activeChannelId()) {
         this.fail();
       }
       return true;
     }
     if (frame.type === 'channel.error') {
+      if (frame.channelId && frame.channelId !== this.activeChannelId()) return true;
       this.fail();
       return true;
     }
     if (frame.type === 'secure') {
+      if (frame.envelope?.channelId && frame.envelope.channelId !== this.activeChannelId()) return true;
       try {
         if (!this.ready || !this.codec) throw new Error('secure_channel_not_ready');
         this.onFrame(this.codec.open(frame.envelope as SecureChannelEnvelope));
@@ -119,6 +122,10 @@ export class BrowserSecureChannel {
     this.offer = null;
     this.ephemeral?.secretKey.fill(0);
     this.ephemeral = null;
+  }
+
+  private activeChannelId() {
+    return this.codec?.channelId || this.offer?.channelId || '';
   }
 
   private accept(acceptance: SecureChannelAcceptance) {

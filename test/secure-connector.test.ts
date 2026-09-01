@@ -200,3 +200,62 @@ test('connector secure channel rejects an offer for another route', async () => 
   assert.equal(sent[0].type, 'channel.error');
   assert.equal(sent[0].error, 'secure_channel_failed');
 });
+
+test('a response from a replaced channel cannot tear down the current channel', async () => {
+  const browserIdentity = createDeviceIdentity();
+  const sent: Record<string, any>[] = [];
+  let finishRequest: (() => void) | undefined;
+  const manager = new ConnectorSecureChannels({
+    identity: createDeviceIdentity(),
+    deviceId: 'personal-pc',
+    send: (frame) => { sent.push(frame); return true; },
+    handleRequest: (frame) => new Promise((resolve) => {
+      finishRequest = () => resolve({
+        type: 'response', clientId: frame.clientId, requestId: frame.requestId,
+        ok: true, data: {},
+      });
+    }),
+  });
+
+  async function connect() {
+    const ephemeral = createSecureChannelEphemeralKeyPair();
+    const offer = createSecureChannelOffer({
+      identity: browserIdentity,
+      routeDeviceId: 'personal-pc',
+      ephemeralPublicKey: ephemeral.publicKey,
+    });
+    await manager.handle({ type: 'channel.offer', clientId: 'client-1', offer });
+    const acceptance = sent.shift()!.accept;
+    const keys = deriveSecureChannelKeys({
+      side: 'initiator',
+      localSecretKey: ephemeral.secretKey,
+      peerEphemeralPublicKey: acceptance.transcript.responder.ephemeralPublicKey,
+      transcript: acceptance.transcript,
+    });
+    const codec = new SecureChannelCodec({ channelId: offer.channelId, side: 'initiator', keys });
+    await manager.handle({
+      type: 'channel.confirm', clientId: 'client-1', channelId: offer.channelId,
+      signature: signSecureChannelTranscript(browserIdentity, acceptance.transcript),
+    });
+    sent.shift();
+    return codec;
+  }
+
+  const first = await connect();
+  const oldRequest = manager.handle({
+    type: 'secure', clientId: 'client-1',
+    envelope: first.seal({ type: 'request', requestId: 'slow', action: 'echo', payload: {} }),
+  });
+  assert.deepEqual(first.open(sent.shift()!.envelope), { type: 'ack', requestId: 'slow' });
+
+  const current = await connect();
+  finishRequest?.();
+  await oldRequest;
+  assert.equal(sent.length, 0);
+  assert.equal(manager.sendEvent({
+    type: 'event', clientId: 'client-1', event: 'turn.delta', payload: { delta: 'current' },
+  }), true);
+  assert.deepEqual(current.open(sent.shift()!.envelope), {
+    type: 'event', event: 'turn.delta', payload: { delta: 'current' },
+  });
+});

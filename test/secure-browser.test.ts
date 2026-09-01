@@ -52,3 +52,43 @@ test('browser and connector secure-channel controllers exchange only encrypted a
     type: 'response', requestId: 'r1', ok: true, data: { sessions: [] },
   }]);
 });
+
+test('browser ignores delayed frames from a channel it already replaced', async () => {
+  const toConnector: Record<string, any>[] = [];
+  const toBrowser: Record<string, any>[] = [];
+  let errors = 0;
+  const connector = new ConnectorSecureChannels({
+    identity: createDeviceIdentity(),
+    deviceId: 'personal-pc',
+    send: (frame) => { toBrowser.push(frame); return true; },
+    handleRequest: async () => ({}),
+  });
+  const browser = new BrowserSecureChannel({
+    identity: createDeviceIdentity(),
+    routeDeviceId: 'personal-pc',
+    send: (frame) => { toConnector.push(frame); return true; },
+    onFrame: () => {},
+    onError: () => { errors += 1; },
+  });
+
+  browser.start();
+  const staleOffer = toConnector.shift()!;
+  browser.start();
+  const currentOffer = toConnector.shift()!;
+  browser.handle({
+    type: 'channel.error', channelId: staleOffer.offer.channelId, error: 'secure_channel_failed',
+  });
+
+  await connector.handle({ ...currentOffer, clientId: 'client-1' });
+  browser.handle(toBrowser.shift()!);
+  await connector.handle({ ...toConnector.shift()!, clientId: 'client-1' });
+  browser.handle(toBrowser.shift()!);
+  assert.equal(browser.isReady(), true);
+
+  browser.handle({
+    type: 'secure',
+    envelope: { channelId: staleOffer.offer.channelId },
+  });
+  assert.equal(browser.isReady(), true);
+  assert.equal(errors, 0);
+});

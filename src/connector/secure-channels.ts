@@ -196,6 +196,10 @@ export class ConnectorSecureChannels {
         });
       }
       const response = await responsePromise;
+      // A request can finish after the browser has replaced its channel. Never
+      // seal with the destroyed codec or let the stale request tear down the
+      // newly established channel.
+      if (this.channels.get(clientId) !== state || !state.confirmed) return;
       const { clientId: _clientId, ...payload } = response;
       this.send({ type: 'secure', clientId, envelope: state.codec.seal(payload) });
     } catch {
@@ -204,13 +208,16 @@ export class ConnectorSecureChannels {
   }
 
   private fail(clientId: string, channelId: unknown) {
+    const failedChannelId = String(channelId || '');
     const state = this.channels.get(clientId);
-    state?.codec.destroy();
-    this.channels.delete(clientId);
+    if (state && (!failedChannelId || state.acceptance.transcript.channelId === failedChannelId)) {
+      state.codec.destroy();
+      this.channels.delete(clientId);
+    }
     if (validClientId(clientId)) {
       this.send({
         type: 'channel.error', clientId,
-        channelId: String(channelId || ''), error: 'secure_channel_failed',
+        channelId: failedChannelId, error: 'secure_channel_failed',
       });
     }
   }

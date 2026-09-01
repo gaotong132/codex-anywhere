@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  appendFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
@@ -1729,10 +1731,13 @@ test('delegated mobile messages survive rollout refresh without duplicates', () 
   assert.equal(items[0].completedAt, Date.parse('2026-08-30T10:01:12.726Z'));
 });
 
-test('approval results stay inside workspace and keep network disabled', () => {
-  const approvalRoot = resolve('approval-root');
+test('approval results stay inside workspace and keep network disabled', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'codex-approval-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const approvalRoot = join(directory, 'approval-root');
   const approvalOutput = join(approvalRoot, 'output');
-  const outsideRoot = resolve('approval-private');
+  const outsideRoot = join(directory, 'approval-private');
+  await Promise.all([mkdir(approvalRoot), mkdir(outsideRoot)]);
   const result = internals.approvalResult(
     'item/permissions/requestApproval',
     true,
@@ -2228,6 +2233,23 @@ test('RPC write failures do not leave pending requests behind', async () => {
   assert.equal(codex.pending.size, 0);
 });
 
+test('RPC responses preserve valid falsy results', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  codex.writeRpc = () => {};
+  const response = codex.rpcRaw('feature/enabled');
+  codex.handleLine(JSON.stringify({ jsonrpc: '2.0', id: 1, result: false }));
+  assert.equal(await response, false);
+});
+
+test('a stale child exit cannot disconnect a replacement app-server process', () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  const staleChild = {} as typeof codex.child;
+  const currentChild = {} as typeof codex.child;
+  codex.child = currentChild;
+  codex.handleExit(new Error('old process closed'), staleChild);
+  assert.equal(codex.child, currentChild);
+});
+
 test('non-writer resume errors are returned unchanged', async () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
@@ -2241,19 +2263,29 @@ test('non-writer resume errors are returned unchanged', async () => {
   }), /thread_not_found/);
 });
 
-test('workspace selection cannot escape the configured root', () => {
-  const root = resolve('allowed-root');
+test('workspace selection cannot escape the configured root or a linked directory', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'codex-workspace-test-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const root = join(directory, 'allowed-root');
   const child = join(root, 'demo');
-  const secondRoot = resolve('second-root');
+  const secondRoot = join(directory, 'second-root');
+  const outsideRoot = join(directory, 'outside-root');
+  await Promise.all([mkdir(root), mkdir(secondRoot), mkdir(outsideRoot)]);
   assert.equal(
     internals.resolveAllowedWorkspace([root, secondRoot], child),
     child,
   );
   assert.equal(internals.resolveAllowedWorkspace([root, secondRoot], secondRoot), secondRoot);
   assert.equal(internals.isAllowedWorkspace([root, secondRoot], child), true);
-  assert.equal(internals.isAllowedWorkspace([root, secondRoot], resolve('outside-root')), false);
+  assert.equal(internals.isAllowedWorkspace([root, secondRoot], outsideRoot), false);
   assert.throws(
-    () => internals.resolveAllowedWorkspace([root, secondRoot], resolve('outside-root')),
+    () => internals.resolveAllowedWorkspace([root, secondRoot], outsideRoot),
+    /workspace_outside_allowed_root/,
+  );
+  const linkedOutside = join(root, 'linked-outside');
+  await symlink(outsideRoot, linkedOutside, process.platform === 'win32' ? 'junction' : 'dir');
+  assert.throws(
+    () => internals.resolveAllowedWorkspace(root, join(linkedOutside, 'nested-project')),
     /workspace_outside_allowed_root/,
   );
 });
