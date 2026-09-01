@@ -1218,7 +1218,7 @@ test('Mermaid code blocks use an on-demand diagram renderer and keep ordinary co
   assert.doesNotMatch(rendererSource, /URL\.createObjectURL/);
   assert.match(stylesSource, /svg foreignObject p \{ margin: 0; padding: 0; \}/);
   assert.match(stylesSource, /svg marker path, svg marker polygon, svg \.arrowheadPath/);
-  assert.match(stylesSource, /&\.sequence \.mermaid-diagram-svg svg \{ min-width: 1200px; max-width: none;/);
+  assert.match(stylesSource, /&\.sequence \.mermaid-diagram-svg svg \{ width: 100% !important; min-width: 0 !important; max-width: 100% !important;/);
 });
 
 test('progress animation waits until initial history hydration finishes', async () => {
