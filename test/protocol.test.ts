@@ -51,7 +51,12 @@ import {
   readRolloutTail,
 } from '../src/connector/rollout-tail.js';
 import { needsDesktopPermissionRecovery } from '../src/connector/session-permissions.js';
-import { isMarkdownFilePath, localFilePathFromRelativeHref } from '../web/src/file-utils.js';
+import {
+  isMarkdownFilePath,
+  isTextPreviewFilePath,
+  localFilePathFromRelativeHref,
+  localTextPreviewInfo,
+} from '../web/src/file-utils.js';
 import {
   canSendToActiveDesktopTurn,
   canStopOwnedTurn,
@@ -516,7 +521,9 @@ test('empty intermediate history pages keep one stable loading surface', () => {
     onScroll: () => undefined,
     onLoadOlder: () => undefined,
     onDownloadFile: () => undefined,
-    onReadMarkdown: async () => ({ name: '', size: 0, content: '' }),
+    onReadTextFile: async () => ({
+      name: '', size: 0, content: '', kind: 'text', language: 'plaintext',
+    }),
     onReadVisualization: async () => '',
   }));
 
@@ -995,11 +1002,31 @@ test('Windows file links survive Markdown sanitization for the local download ha
   assert.doesNotMatch(markup, /target="_blank"/);
 });
 
-test('only Markdown file links select the online preview flow', () => {
+test('supported Markdown, code, and text links select the online preview flow', () => {
   assert.equal(isMarkdownFilePath('D:\\project\\README.md'), true);
   assert.equal(isMarkdownFilePath('D:\\project\\guide.MARKDOWN'), true);
   assert.equal(isMarkdownFilePath('D:\\project\\archive.md.zip'), false);
   assert.equal(isMarkdownFilePath('D:\\project\\notes.txt'), false);
+  assert.equal(isTextPreviewFilePath('D:\\project\\ConvertTodosToScheduledSessions.ts'), true);
+  assert.equal(isTextPreviewFilePath('D:\\project\\component.TSX'), true);
+  assert.equal(isTextPreviewFilePath('D:\\project\\settings.yaml'), true);
+  assert.equal(isTextPreviewFilePath('D:\\project\\worker.log'), true);
+  assert.equal(isTextPreviewFilePath('D:\\project\\.env'), false);
+  assert.equal(isTextPreviewFilePath('D:\\project\\certificate.pem'), false);
+  assert.deepEqual(localTextPreviewInfo('D:\\project\\component.tsx'), {
+    kind: 'code', language: 'typescript',
+  });
+});
+
+test('code preview loads syntax highlighting on demand and sanitizes its markup', async () => {
+  const previewSource = await readFile(resolve('web/src/code-preview.tsx'), 'utf8');
+  const bubbleSource = await readFile(resolve('web/src/message-bubble.tsx'), 'utf8');
+  assert.match(previewSource, /import\('highlight\.js\/lib\/common'\)/);
+  assert.match(previewSource, /import\('dompurify'\)/);
+  assert.match(previewSource, /ALLOWED_TAGS:\s*\['span'\]/);
+  assert.match(previewSource, /MAX_HIGHLIGHT_CHARACTERS = 512 \* 1024/);
+  assert.match(bubbleSource, /<CodePreview content=\{filePreview\.content\} language=\{filePreview\.language\}/);
+  assert.match(bubbleSource, /onClick=\{\(\) => onDownloadFile\(filePreview\.path\)\}/);
 });
 
 test('Markdown preview resolves relative file links against the open document', () => {

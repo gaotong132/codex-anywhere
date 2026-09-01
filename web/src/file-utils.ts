@@ -1,4 +1,8 @@
 import { t } from './i18n';
+import {
+  describeTextPreviewFile,
+  type TextPreviewDescriptor,
+} from '../../src/shared/text-preview';
 
 export function localFilePathFromHref(href?: string) {
   if (!href) return null;
@@ -25,6 +29,16 @@ export function localFileName(path: string) {
 
 export function isMarkdownFilePath(path: string) {
   return /\.(?:md|markdown)$/i.test(String(path || '').trim());
+}
+
+export type LocalTextPreviewInfo = TextPreviewDescriptor;
+
+export function localTextPreviewInfo(path: string): LocalTextPreviewInfo | null {
+  return describeTextPreviewFile(localFileName(String(path || '')));
+}
+
+export function isTextPreviewFilePath(path: string) {
+  return Boolean(localTextPreviewInfo(path));
 }
 
 export function localFilePathFromRelativeHref(href: string | undefined, basePath?: string) {

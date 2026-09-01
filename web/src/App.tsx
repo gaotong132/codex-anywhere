@@ -123,7 +123,7 @@ import type {
   Session,
   SessionModelConfig,
   TurnStartResult,
-  MarkdownPreviewDocument,
+  TextPreviewDocument,
   VisualizationDocument,
 } from './app-types';
 
@@ -2303,12 +2303,14 @@ export default function App() {
     throw new Error('visualization_content_invalid');
   }, [request]);
 
-  const readMarkdown = useCallback(async (path: string) => {
-    const result = await request<MarkdownPreviewDocument>('file.markdown.read', { path });
+  const readTextFile = useCallback(async (path: string) => {
+    const result = await request<TextPreviewDocument>('file.text.read', { path });
     if (!result || typeof result.name !== 'string' || typeof result.content !== 'string'
       || !Number.isSafeInteger(result.size) || result.size < 0 || result.size > 2 * 1024 * 1024
+      || !['markdown', 'code', 'text'].includes(result.kind)
+      || typeof result.language !== 'string' || !/^[a-z0-9-]{1,32}$/.test(result.language)
       || result.content.includes('\0')) {
-      throw new Error('markdown_preview_content_invalid');
+      throw new Error('text_preview_content_invalid');
     }
     return result;
   }, [request]);
@@ -2541,7 +2543,7 @@ export default function App() {
           onScroll={handleMessageScroll}
           onLoadOlder={loadOlder}
           onDownloadFile={downloadLocalFile}
-          onReadMarkdown={readMarkdown}
+          onReadTextFile={readTextFile}
           onReadVisualization={readVisualization}
         />
         <div className="execution-strip">

@@ -11,11 +11,12 @@ import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markd
 import remarkGfm from 'remark-gfm';
 import { formatDate } from './app-utils';
 import {
-  isMarkdownFilePath,
+  localTextPreviewInfo,
   localFileName,
   localFilePathFromHref,
   localFilePathFromRelativeHref,
 } from './file-utils';
+import { CodePreview } from './code-preview';
 import { t } from './i18n';
 import { progressTypewriterKey, type TimelineItem } from './history-utils';
 import { isMermaidCodeClass, MermaidDiagram } from './mermaid-diagram';
@@ -28,14 +29,22 @@ export type MessageBubbleProps = {
   active?: boolean;
   imageSource?: string;
   onDownloadFile: (path: string) => void;
-  onReadMarkdown?: (path: string) => Promise<{ name: string; size: number; content: string }>;
+  onReadTextFile?: (path: string) => Promise<{
+    name: string;
+    size: number;
+    content: string;
+    kind: 'markdown' | 'code' | 'text';
+    language: string;
+  }>;
   onReadVisualization: (path: string) => Promise<string>;
 };
 
-type MarkdownPreviewState = {
+type FilePreviewState = {
   path: string;
   name: string;
   content: string;
+  kind: 'markdown' | 'code' | 'text';
+  language: string;
   status: 'loading' | 'ready' | 'failed';
 };
 
@@ -217,17 +226,17 @@ function MessageBubbleComponent({
   active = false,
   imageSource,
   onDownloadFile,
-  onReadMarkdown,
+  onReadTextFile,
   onReadVisualization,
 }: MessageBubbleProps) {
   const [imageExpanded, setImageExpanded] = useState(false);
   const [visualizationOpen, setVisualizationOpen] = useState(false);
   const [visualizationSource, setVisualizationSource] = useState('');
   const [visualizationStatus, setVisualizationStatus] = useState<'idle' | 'loading' | 'failed'>('idle');
-  const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewState | null>(null);
+  const [filePreview, setFilePreview] = useState<FilePreviewState | null>(null);
   const visualizationHistoryEntry = useRef(false);
   const visualizationRequestRef = useRef(0);
-  const markdownRequestRef = useRef(0);
+  const filePreviewRequestRef = useRef(0);
   const visualizationPathRef = useRef(item.visualization?.path);
   visualizationPathRef.current = item.visualization?.path;
   const copyable = item.kind === 'user' || item.kind === 'assistant';
@@ -242,23 +251,23 @@ function MessageBubbleComponent({
   }, [item.visualization?.path]);
   useEffect(() => () => {
     visualizationRequestRef.current += 1;
-    markdownRequestRef.current += 1;
+    filePreviewRequestRef.current += 1;
   }, []);
   useEffect(() => () => {
     if (visualizationSource.startsWith('blob:')) URL.revokeObjectURL(visualizationSource);
   }, [visualizationSource]);
   useEffect(() => {
-    if (!imageExpanded && !visualizationOpen && !markdownPreview) return undefined;
+    if (!imageExpanded && !visualizationOpen && !filePreview) return undefined;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setImageExpanded(false);
         if (visualizationOpen) closeVisualization();
-        if (markdownPreview) closeMarkdownPreview();
+        if (filePreview) closeFilePreview();
       }
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [imageExpanded, markdownPreview, visualizationOpen]);
+  }, [filePreview, imageExpanded, visualizationOpen]);
   useEffect(() => {
     if (!visualizationOpen) return undefined;
     const closeOnBack = () => {
@@ -320,31 +329,37 @@ function MessageBubbleComponent({
   }
 
   async function openLocalFile(path: string) {
-    if (!onReadMarkdown || !isMarkdownFilePath(path)) {
+    const previewInfo = localTextPreviewInfo(path);
+    if (!onReadTextFile || !previewInfo) {
       onDownloadFile(path);
       return;
     }
-    const requestVersion = ++markdownRequestRef.current;
-    setMarkdownPreview({
-      path, name: localFileName(path), content: '', status: 'loading',
+    const requestVersion = ++filePreviewRequestRef.current;
+    setFilePreview({
+      path, name: localFileName(path), content: '', status: 'loading', ...previewInfo,
     });
     try {
-      const document = await onReadMarkdown(path);
-      if (requestVersion !== markdownRequestRef.current) return;
-      setMarkdownPreview({
-        path, name: document.name || localFileName(path), content: document.content, status: 'ready',
+      const document = await onReadTextFile(path);
+      if (requestVersion !== filePreviewRequestRef.current) return;
+      setFilePreview({
+        path,
+        name: document.name || localFileName(path),
+        content: document.content,
+        kind: document.kind,
+        language: document.language,
+        status: 'ready',
       });
     } catch {
-      if (requestVersion !== markdownRequestRef.current) return;
-      setMarkdownPreview({
-        path, name: localFileName(path), content: '', status: 'failed',
+      if (requestVersion !== filePreviewRequestRef.current) return;
+      setFilePreview({
+        path, name: localFileName(path), content: '', status: 'failed', ...previewInfo,
       });
     }
   }
 
-  function closeMarkdownPreview() {
-    markdownRequestRef.current += 1;
-    setMarkdownPreview(null);
+  function closeFilePreview() {
+    filePreviewRequestRef.current += 1;
+    setFilePreview(null);
   }
 
   if (item.kind === 'progress') {
@@ -454,44 +469,43 @@ function MessageBubbleComponent({
             />
           </div>
         )}
-        {markdownPreview && (
+        {filePreview && (
           <div
             className="markdown-lightbox"
             role="dialog"
             aria-modal="true"
-            aria-label={t('Markdown 文件预览', 'Markdown file preview')}
+            aria-label={t('文件预览', 'File preview')}
           >
             <header>
-              <span title={markdownPreview.path}>{markdownPreview.name}</span>
+              <span title={filePreview.path}>{filePreview.name}</span>
               <div className="markdown-lightbox-actions">
-                <button type="button" onClick={() => onDownloadFile(markdownPreview.path)}>
+                <button type="button" onClick={() => onDownloadFile(filePreview.path)}>
                   {t('下载', 'Download')}
                 </button>
-                <button type="button" onClick={closeMarkdownPreview} aria-label={t('关闭预览', 'Close preview')}>
+                <button type="button" onClick={closeFilePreview} aria-label={t('关闭预览', 'Close preview')}>
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
                 </button>
               </div>
             </header>
-            <main aria-busy={markdownPreview.status === 'loading'}>
-              {markdownPreview.status === 'loading' && (
-                <div className="markdown-preview-state">{t('正在读取 Markdown 文件…', 'Loading Markdown file…')}</div>
+            <main aria-busy={filePreview.status === 'loading'}>
+              {filePreview.status === 'loading' && (
+                <div className="markdown-preview-state">{t('正在读取文件…', 'Loading file…')}</div>
               )}
-              {markdownPreview.status === 'failed' && (
+              {filePreview.status === 'failed' && (
                 <div className="markdown-preview-state failed">
                   <span>{t('预览失败，仍可下载文件。', 'Preview failed; the file can still be downloaded.')}</span>
-                  <button type="button" onClick={() => void openLocalFile(markdownPreview.path)}>
+                  <button type="button" onClick={() => void openLocalFile(filePreview.path)}>
                     {t('重试', 'Retry')}
                   </button>
                 </div>
               )}
-              {markdownPreview.status === 'ready' && (
+              {filePreview.status === 'ready' && filePreview.kind === 'markdown' && (
                 <article className="message assistant markdown-preview-content">
-                  <MessageMarkdown
-                    text={markdownPreview.content}
-                    basePath={markdownPreview.path}
-                    onDownloadFile={(path) => void openLocalFile(path)}
-                  />
+                  <MessageMarkdown text={filePreview.content} basePath={filePreview.path} onDownloadFile={(path) => void openLocalFile(path)} />
                 </article>
+              )}
+              {filePreview.status === 'ready' && filePreview.kind !== 'markdown' && (
+                <CodePreview content={filePreview.content} language={filePreview.language} />
               )}
             </main>
           </div>
@@ -531,7 +545,7 @@ function messageBubblePropsEqual(left: MessageBubbleProps, right: MessageBubbleP
   return left.active === right.active
     && left.imageSource === right.imageSource
     && left.onDownloadFile === right.onDownloadFile
-    && left.onReadMarkdown === right.onReadMarkdown
+    && left.onReadTextFile === right.onReadTextFile
     && left.onReadVisualization === right.onReadVisualization
     && messagePresentationEqual(left.item, right.item);
 }

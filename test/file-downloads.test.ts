@@ -192,3 +192,45 @@ test('Markdown previews are bounded, UTF-8, and restricted to configured roots',
   await assert.rejects(() => downloads.readMarkdown({ path: invalidUtf8 }), /markdown_preview_encoding_invalid/);
   await assert.rejects(() => downloads.readMarkdown({ path: tooLarge }), /markdown_preview_too_large/);
 });
+
+test('code previews are allowlisted, bounded, UTF-8, and restricted to configured roots', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-code-preview-test-'));
+  const allowedRoot = join(directory, 'allowed');
+  const outsideRoot = join(directory, 'outside');
+  await Promise.all([mkdir(allowedRoot), mkdir(outsideRoot)]);
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const typescript = join(allowedRoot, 'ConvertTodosToScheduledSessions.ts');
+  const plainText = join(allowedRoot, 'worker.log');
+  const markdown = join(allowedRoot, 'README.md');
+  const cmake = join(allowedRoot, 'CMakeLists.txt');
+  const sensitive = join(allowedRoot, '.env');
+  const outside = join(outsideRoot, 'private.ts');
+  const invalidUtf8 = join(allowedRoot, 'invalid.py');
+  await Promise.all([
+    writeFile(typescript, 'export const answer: number = 42;'),
+    writeFile(plainText, 'started'),
+    writeFile(markdown, '# Readme'),
+    writeFile(cmake, 'project(example)'),
+    writeFile(sensitive, 'TOKEN=secret'),
+    writeFile(outside, 'export const secret = true;'),
+    writeFile(invalidUtf8, Buffer.from([0xff, 0xfe, 0xfd])),
+  ]);
+  const downloads = new DownloadManager({
+    auditPath: null, allowedRoots: [allowedRoot], allowAnyFileDownload: true,
+  });
+  t.after(() => downloads.closeAll());
+
+  assert.deepEqual(await downloads.readText({ path: typescript }), {
+    name: 'ConvertTodosToScheduledSessions.ts',
+    size: Buffer.byteLength('export const answer: number = 42;'),
+    content: 'export const answer: number = 42;',
+    kind: 'code',
+    language: 'typescript',
+  });
+  assert.equal((await downloads.readText({ path: plainText })).kind, 'text');
+  assert.equal((await downloads.readText({ path: markdown })).kind, 'markdown');
+  assert.equal((await downloads.readText({ path: cmake })).language, 'cmake');
+  await assert.rejects(() => downloads.readText({ path: sensitive }), /text_preview_type_not_allowed/);
+  await assert.rejects(() => downloads.readText({ path: outside }), /text_preview_path_not_allowed/);
+  await assert.rejects(() => downloads.readText({ path: invalidUtf8 }), /text_preview_encoding_invalid/);
+});

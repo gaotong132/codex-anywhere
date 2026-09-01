@@ -7,10 +7,12 @@ import {
   basename, dirname, isAbsolute, join, resolve, win32,
 } from 'node:path';
 import { secretMatches } from '../shared/protocol.js';
+import { describeTextPreviewFile } from '../shared/text-preview.js';
 import { isPathWithinRoot } from './path-policy.js';
 
 export const DOWNLOAD_CHUNK_BYTES = 384 * 1024;
 export const MAX_MARKDOWN_PREVIEW_BYTES = 2 * 1024 * 1024;
+export const MAX_TEXT_PREVIEW_BYTES = MAX_MARKDOWN_PREVIEW_BYTES;
 const DOWNLOAD_SESSION_TTL_MS = 30 * 60_000;
 const DEFAULT_RATE_WINDOW_MS = 10_000;
 const DEFAULT_MAX_CHUNKS_PER_WINDOW = 200;
@@ -149,21 +151,45 @@ export class DownloadManager {
     if (!/\.(?:md|markdown)$/i.test(fileName(requestedPath))) {
       throw new Error('markdown_preview_type_not_allowed');
     }
-    const path = await canonicalDownloadPath(requestedPath);
+    const document = await this.#readTextFile(requestedPath, 'markdown_preview');
+    if (!/\.(?:md|markdown)$/i.test(document.name)) {
+      throw new Error('markdown_preview_type_not_allowed');
+    }
+    return document;
+  }
+
+  async readText(payload: DownloadPayload) {
+    const requestedPath = resolveDownloadPath(payload?.path);
+    if (!describeTextPreviewFile(fileName(requestedPath))) {
+      throw new Error('text_preview_type_not_allowed');
+    }
+    const document = await this.#readTextFile(requestedPath, 'text_preview');
+    const descriptor = describeTextPreviewFile(document.name);
+    if (!descriptor) throw new Error('text_preview_type_not_allowed');
+    return { ...document, ...descriptor };
+  }
+
+  async #readTextFile(requestedPath: string, errorPrefix: string) {
+    const path = await canonicalDownloadPath(requestedPath).catch((error) => {
+      if (error instanceof Error && error.message === 'download_file_not_found') {
+        throw new Error(`${errorPrefix}_not_found`);
+      }
+      throw error;
+    });
     if (!await pathAllowedByRoots(path, this.allowedRoots)) {
-      throw new Error('markdown_preview_path_not_allowed');
+      throw new Error(`${errorPrefix}_path_not_allowed`);
     }
     const handle = await open(path, 'r').catch((error) => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error('markdown_preview_not_found');
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`${errorPrefix}_not_found`);
       throw error;
     });
     try {
       const stats = await handle.stat();
-      if (!stats.isFile()) throw new Error('markdown_preview_not_a_file');
+      if (!stats.isFile()) throw new Error(`${errorPrefix}_not_a_file`);
       const initial = fileSnapshot(stats);
       if (!Number.isSafeInteger(initial.size) || initial.size < 0
-        || initial.size > MAX_MARKDOWN_PREVIEW_BYTES) {
-        throw new Error('markdown_preview_too_large');
+        || initial.size > MAX_TEXT_PREVIEW_BYTES) {
+        throw new Error(`${errorPrefix}_too_large`);
       }
       const bytes = Buffer.alloc(initial.size);
       let offset = 0;
@@ -174,15 +200,15 @@ export class DownloadManager {
       }
       const current = fileSnapshot(await handle.stat());
       if (offset !== initial.size || !sameSnapshot(initial, current)) {
-        throw new Error('markdown_preview_file_changed');
+        throw new Error(`${errorPrefix}_file_changed`);
       }
       let content;
       try {
         content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
       } catch {
-        throw new Error('markdown_preview_encoding_invalid');
+        throw new Error(`${errorPrefix}_encoding_invalid`);
       }
-      if (content.includes('\0')) throw new Error('markdown_preview_content_invalid');
+      if (content.includes('\0')) throw new Error(`${errorPrefix}_content_invalid`);
       return { name: fileName(path), size: bytes.length, content };
     } finally {
       await handle.close().catch(() => {});

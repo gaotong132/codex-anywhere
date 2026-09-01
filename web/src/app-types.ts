@@ -85,7 +85,13 @@ export type TurnStartResult = { threadId: string; delivery?: 'desktop' | 'appSer
 export type PendingImage = { file: File; transferPreview?: File; previewUrl: string };
 export type DownloadedImage = { path: string; mimeType: string; size: number; data: string };
 export type VisualizationDocument = { name: string; size: number; content?: string };
-export type MarkdownPreviewDocument = { name: string; size: number; content: string };
+export type TextPreviewDocument = {
+  name: string;
+  size: number;
+  content: string;
+  kind: 'markdown' | 'code' | 'text';
+  language: string;
+};
 export type OpenedDownload = { downloadId: string; downloadToken: string; name: string; size: number };
 export type DownloadFileChunk = { offset: number; nextOffset: number; done: boolean; data: string };
 export type FileDownloadState = {
