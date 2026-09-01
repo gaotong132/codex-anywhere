@@ -708,6 +708,8 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
     svg .node rect, svg .node circle, svg .node ellipse, svg .node polygon, svg .node path,
     svg rect.actor, svg rect.actor-top, svg rect.actor-bottom, svg rect.labelBox { fill: #1d3f66; stroke: #79a8dc; }
     svg .cluster rect, svg .cluster polygon, svg .cluster path { fill: #14243a; stroke: #547ba8; }
+    svg .note rect, svg rect.note { fill: #263d5c; stroke: #79a8dc; }
+    svg .noteText, svg .noteText tspan { color: #f4f7fb; fill: #f4f7fb; }
     svg .flowchart-link, svg .edgePaths path, svg .actor-line, svg .messageLine0, svg .messageLine1,
     svg .loopLine, svg .relationshipLine, svg .transition { fill: none; stroke: #a9c3e3; }
     svg marker path, svg marker polygon, svg .arrowheadPath { fill: #a9c3e3; stroke: #a9c3e3; }
@@ -717,6 +719,11 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
     svg foreignObject p { margin: 0; padding: 0; }
   }
   .mermaid-diagram-svg svg { display: block; width: auto; max-width: 100%; height: auto; margin: auto; color-scheme: dark; forced-color-adjust: none; }
+  &.sequence { place-items: stretch; overflow: hidden; }
+  &.sequence .mermaid-diagram-svg { overscroll-behavior-x: contain; touch-action: pan-x pan-y; }
+  @media (max-width: 700px) {
+    &.sequence .mermaid-diagram-svg svg { min-width: 1200px; max-width: none; margin-left: 0; }
+  }
   figcaption { color: #8f9db1; font-size: 12px; text-align: center; }
   &.failed { place-items: stretch; gap: 10px; }
   &.failed figcaption { color: #e8a4aa; }

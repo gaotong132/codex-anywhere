@@ -1212,10 +1212,13 @@ test('Mermaid code blocks use an on-demand diagram renderer and keep ordinary co
   assert.match(rendererSource, /applyMermaidPresentationFallback\(sanitizedSvg\)/);
   assert.match(rendererSource, /'marker path, marker polygon, \.arrowheadPath'/);
   assert.match(rendererSource, /fill:\s*theme\.primaryColor, stroke:\s*theme\.primaryBorderColor/);
+  assert.match(rendererSource, /setInlinePresentation\(element, 'fill', theme\.noteBkgColor\)/);
+  assert.match(rendererSource, /ready\$\{isSequenceDiagram \? ' sequence' : ''\}/);
   assert.match(rendererSource, /dangerouslySetInnerHTML=\{\{ __html: preview\.svg \}\}/);
   assert.doesNotMatch(rendererSource, /URL\.createObjectURL/);
   assert.match(stylesSource, /svg foreignObject p \{ margin: 0; padding: 0; \}/);
   assert.match(stylesSource, /svg marker path, svg marker polygon, svg \.arrowheadPath/);
+  assert.match(stylesSource, /&\.sequence \.mermaid-diagram-svg svg \{ min-width: 1200px; max-width: none;/);
 });
 
 test('progress animation waits until initial history hydration finishes', async () => {

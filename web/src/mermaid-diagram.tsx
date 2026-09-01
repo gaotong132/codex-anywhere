@@ -69,6 +69,15 @@ function setPresentationFallback(
   }
 }
 
+function setInlinePresentation(element: Element, property: PresentationProperty, value: string) {
+  const style = element.getAttribute('style')?.trim() ?? '';
+  element.setAttribute(
+    'style',
+    `${style ? `${style.replace(/;?$/, ';')} ` : ''}${property}: ${value};`,
+  );
+  element.setAttribute(property, value);
+}
+
 function applyPresentationFallbacks(
   root: Element,
   selector: string,
@@ -111,9 +120,13 @@ export function applyMermaidPresentationFallback(svg: string) {
   );
   applyPresentationFallbacks(
     root,
-    '.note rect, rect.note, .activation0, .activation1, .activation2',
-    { fill: theme.noteBkgColor, stroke: theme.noteBorderColor },
+    '.activation0, .activation1, .activation2',
+    { fill: theme.activationBkgColor, stroke: theme.activationBorderColor },
   );
+  root.querySelectorAll('.note rect, rect.note').forEach((element) => {
+    setInlinePresentation(element, 'fill', theme.noteBkgColor);
+    setInlinePresentation(element, 'stroke', theme.noteBorderColor);
+  });
   applyPresentationFallbacks(
     root,
     '.edgeLabel rect, .labelBkg, .edgeLabel .background',
@@ -182,6 +195,7 @@ function loadMermaid() {
 
 export function MermaidDiagram({ source }: { source: string }) {
   const [preview, setPreview] = useState<MermaidPreviewState>({ status: 'loading', svg: '' });
+  const isSequenceDiagram = /^\s*sequenceDiagram\b/im.test(source);
 
   useEffect(() => {
     let active = true;
@@ -214,7 +228,7 @@ export function MermaidDiagram({ source }: { source: string }) {
 
   if (preview.status === 'ready') {
     return (
-      <figure className="mermaid-diagram ready">
+      <figure className={`mermaid-diagram ready${isSequenceDiagram ? ' sequence' : ''}`}>
         <div
           className="mermaid-diagram-svg"
           role="img"
