@@ -69,7 +69,8 @@ reviewed from the relay host with `./scripts/relay.sh approve`.
   and remain restricted to configured or managed local roots. The preview keeps the confirmed download path
   available without sending file contents through the relay in plaintext.
 - Mermaid code blocks load the renderer on demand with strict security and bounded input and edge counts.
-  Generated SVG is sanitized again before inline display; invalid diagrams fall back to their source code.
+  Generated SVG is sanitized again before inline display and uses an explicit high-contrast dark theme;
+  invalid diagrams fall back to their source code.
 - Interactive HTML is limited to Codex visualization roots and rendered in an opaque-origin,
   network-blocked sandbox.
 - The Web UI can act only on approvals owned by connector-started turns. An approval already owned by

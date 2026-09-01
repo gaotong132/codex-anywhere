@@ -13,6 +13,45 @@ type MermaidRuntime = { mermaid: MermaidApi; purifier: DomPurifyApi };
 let mermaidLoad: Promise<MermaidRuntime> | undefined;
 let diagramSequence = 0;
 
+export const mermaidThemeVariables = {
+  darkMode: true,
+  background: '#0c121c',
+  primaryColor: '#1d3f66',
+  primaryTextColor: '#f4f7fb',
+  primaryBorderColor: '#79a8dc',
+  secondaryColor: '#294f45',
+  secondaryTextColor: '#f2fbf8',
+  secondaryBorderColor: '#78baa9',
+  tertiaryColor: '#18283d',
+  tertiaryTextColor: '#e8f0fb',
+  tertiaryBorderColor: '#5f7fa7',
+  lineColor: '#a9c3e3',
+  textColor: '#e7eef8',
+  mainBkg: '#1d3f66',
+  nodeBorder: '#79a8dc',
+  clusterBkg: '#14243a',
+  clusterBorder: '#547ba8',
+  defaultLinkColor: '#a9c3e3',
+  edgeLabelBackground: '#17263b',
+  nodeTextColor: '#f4f7fb',
+  noteBkgColor: '#263d5c',
+  noteTextColor: '#f4f7fb',
+  noteBorderColor: '#79a8dc',
+  actorBkg: '#1d3f66',
+  actorBorder: '#79a8dc',
+  actorTextColor: '#f4f7fb',
+  actorLineColor: '#8eadd2',
+  signalColor: '#c5d7ec',
+  signalTextColor: '#f4f7fb',
+  labelBoxBkgColor: '#1d3f66',
+  labelBoxBorderColor: '#79a8dc',
+  labelTextColor: '#f4f7fb',
+  loopTextColor: '#f4f7fb',
+  activationBorderColor: '#78baa9',
+  activationBkgColor: '#294f45',
+  sequenceNumberColor: '#0c121c',
+} as const;
+
 export function isMermaidCodeClass(className: unknown) {
   return typeof className === 'string'
     && className.split(/\s+/).some((value) => value.toLowerCase() === 'language-mermaid');
@@ -29,7 +68,9 @@ function loadMermaid() {
         suppressErrorRendering: true,
         maxTextSize: 50_000,
         maxEdges: 500,
-        theme: 'dark',
+        theme: 'base',
+        darkMode: true,
+        themeVariables: mermaidThemeVariables,
       });
       return { mermaid, purifier };
     }).catch((error: unknown) => {

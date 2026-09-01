@@ -1202,6 +1202,10 @@ test('Mermaid code blocks use an on-demand diagram renderer and keep ordinary co
   assert.match(rendererSource, /import\('mermaid'\)/);
   assert.match(rendererSource, /securityLevel:\s*'strict'/);
   assert.match(rendererSource, /suppressErrorRendering:\s*true/);
+  assert.match(rendererSource, /theme:\s*'base'/);
+  assert.match(rendererSource, /primaryColor:\s*'#1d3f66'/);
+  assert.match(rendererSource, /clusterBkg:\s*'#14243a'/);
+  assert.match(rendererSource, /lineColor:\s*'#a9c3e3'/);
   assert.match(rendererSource, /purifier\.sanitize/);
   assert.match(rendererSource, /HTML_INTEGRATION_POINTS:\s*\{ foreignobject: true \}/);
   assert.match(rendererSource, /dangerouslySetInnerHTML=\{\{ __html: preview\.svg \}\}/);
