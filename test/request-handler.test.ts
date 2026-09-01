@@ -42,6 +42,7 @@ function createDependencies(overrides = {}) {
     downloads: {
       open: async () => ({}),
       read: async () => ({}),
+      readMarkdown: async () => ({}),
       close: async () => ({}),
       ...overrides.downloads,
     },
@@ -97,6 +98,19 @@ test('visualization reads stay on the dedicated bounded connector path', async (
   const response = await handle(request('visualization.read', { path: 'C:\\artifact.html' }));
   assert.deepEqual(payload, { path: 'C:\\artifact.html' });
   assert.equal(response.data.name, 'concept.html');
+});
+
+test('Markdown previews use the bounded local file reader', async () => {
+  let payload;
+  const handle = createRequestHandler(createDependencies({
+    downloads: { readMarkdown: async (value) => {
+      payload = value;
+      return { name: 'README.md', size: 8, content: '# Readme' };
+    } },
+  }));
+  const response = await handle(request('file.markdown.read', { path: 'D:\\project\\README.md' }));
+  assert.deepEqual(payload, { path: 'D:\\project\\README.md' });
+  assert.equal(response.data.content, '# Readme');
 });
 
 test('session model configuration stays on the connector control path', async () => {

@@ -1,6 +1,6 @@
 {
   "name": "codex-anywhere",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A self-hosted mobile web bridge for your local Codex sessions.",
   "keywords": [
     "openai-codex",

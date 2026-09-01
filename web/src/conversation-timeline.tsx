@@ -27,6 +27,7 @@ type ConversationTimelineProps = {
   onScroll: UIEventHandler<HTMLDivElement>;
   onLoadOlder: () => void;
   onDownloadFile: (path: string) => void;
+  onReadMarkdown: (path: string) => Promise<{ name: string; size: number; content: string }>;
   onReadVisualization: (path: string) => Promise<string>;
 };
 
@@ -47,6 +48,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   onScroll,
   onLoadOlder,
   onDownloadFile,
+  onReadMarkdown,
   onReadVisualization,
 }: ConversationTimelineProps) {
   const resolvedItems = useMemo(() => timeline.map((item) => {
@@ -101,6 +103,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
                 : Boolean(item.transient))}
               imageSource={attachment ? attachmentUrls[attachment.path] : undefined}
               onDownloadFile={onDownloadFile}
+              onReadMarkdown={onReadMarkdown}
               onReadVisualization={onReadVisualization}
             />
           ))}

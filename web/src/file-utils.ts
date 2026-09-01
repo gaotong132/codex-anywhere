@@ -23,6 +23,24 @@ export function localFileName(path: string) {
   return path.split(/[\\/]/).at(-1) || t('本机文件', 'Local file');
 }
 
+export function isMarkdownFilePath(path: string) {
+  return /\.(?:md|markdown)$/i.test(String(path || '').trim());
+}
+
+export function localFilePathFromRelativeHref(href: string | undefined, basePath?: string) {
+  if (!href || !basePath || !/^[A-Za-z]:[\\/]/.test(basePath)) return null;
+  const value = href.trim();
+  if (!value || value.startsWith('#') || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) || value.startsWith('//')) {
+    return null;
+  }
+  let decoded;
+  try { decoded = decodeURIComponent(value).replace(/[?#].*$/, ''); } catch { return null; }
+  if (!decoded) return null;
+  const separator = Math.max(basePath.lastIndexOf('\\'), basePath.lastIndexOf('/'));
+  if (separator < 2) return null;
+  return `${basePath.slice(0, separator + 1)}${decoded.replace(/\//g, '\\')}`;
+}
+
 export function safeDownloadName(value: string) {
   return String(value || 'download').replace(/[\\/\u0000-\u001f\u007f]/g, '_').slice(0, 180) || 'download';
 }

@@ -65,6 +65,9 @@ reviewed from the relay host with `./scripts/relay.sh approve`.
   browser identity and one unchanged file. The capability expires after 30 minutes without progress and
   is not stored by the relay. The Web client tries to keep the screen awake; while hidden or disconnected,
   it stops requesting new chunks and resumes after the same browser reconnects.
+- Markdown previews require an explicit click, accept only UTF-8 `.md` or `.markdown` files up to 2 MiB,
+  and remain restricted to configured or managed local roots. The preview keeps the confirmed download path
+  available without sending file contents through the relay in plaintext.
 - Interactive HTML is limited to Codex visualization roots and rendered in an opaque-origin,
   network-blocked sandbox.
 - The Web UI can act only on approvals owned by connector-started turns. An approval already owned by

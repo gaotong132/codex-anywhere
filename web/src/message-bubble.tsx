@@ -8,7 +8,12 @@ import {
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatDate } from './app-utils';
-import { localFileName, localFilePathFromHref } from './file-utils';
+import {
+  isMarkdownFilePath,
+  localFileName,
+  localFilePathFromHref,
+  localFilePathFromRelativeHref,
+} from './file-utils';
 import { t } from './i18n';
 import { progressTypewriterKey, type TimelineItem } from './history-utils';
 import { TypewriterText } from './ui-components';
@@ -20,7 +25,15 @@ export type MessageBubbleProps = {
   active?: boolean;
   imageSource?: string;
   onDownloadFile: (path: string) => void;
+  onReadMarkdown?: (path: string) => Promise<{ name: string; size: number; content: string }>;
   onReadVisualization: (path: string) => Promise<string>;
+};
+
+type MarkdownPreviewState = {
+  path: string;
+  name: string;
+  content: string;
+  status: 'loading' | 'ready' | 'failed';
 };
 
 export function visualizationRequestIsCurrent(
@@ -145,15 +158,17 @@ function MessageContexts({ item }: { item: TimelineItem }) {
 const MessageMarkdown = memo(function MessageMarkdown({
   text,
   attachmentPath,
+  basePath,
   onDownloadFile,
 }: {
   text: string;
   attachmentPath?: string;
+  basePath?: string;
   onDownloadFile: (path: string) => void;
 }) {
   const components = useMemo<Components>(() => ({
     a: ({ node: _node, href, children, ...props }) => {
-      const localPath = localFilePathFromHref(href);
+      const localPath = localFilePathFromHref(href) || localFilePathFromRelativeHref(href, basePath);
       return localPath
         ? <a {...props} href={href} onClick={(event) => {
             event.preventDefault();
@@ -163,7 +178,7 @@ const MessageMarkdown = memo(function MessageMarkdown({
     },
     img: ({ node: _node, src, alt, ...props }) => {
       if (!src) return null;
-      const localPath = localFilePathFromHref(src);
+      const localPath = localFilePathFromHref(src) || localFilePathFromRelativeHref(src, basePath);
       if (!localPath) return <img {...props} src={src} alt={alt || ''} loading="lazy" />;
       if (attachmentPath === localPath) return null;
       return (
@@ -173,7 +188,7 @@ const MessageMarkdown = memo(function MessageMarkdown({
         }}>{alt || localFileName(localPath)}</a>
       );
     },
-  }), [attachmentPath, onDownloadFile]);
+  }), [attachmentPath, basePath, onDownloadFile]);
   return (
     <ReactMarkdown
       remarkPlugins={markdownPlugins}
@@ -190,14 +205,17 @@ function MessageBubbleComponent({
   active = false,
   imageSource,
   onDownloadFile,
+  onReadMarkdown,
   onReadVisualization,
 }: MessageBubbleProps) {
   const [imageExpanded, setImageExpanded] = useState(false);
   const [visualizationOpen, setVisualizationOpen] = useState(false);
   const [visualizationSource, setVisualizationSource] = useState('');
   const [visualizationStatus, setVisualizationStatus] = useState<'idle' | 'loading' | 'failed'>('idle');
+  const [markdownPreview, setMarkdownPreview] = useState<MarkdownPreviewState | null>(null);
   const visualizationHistoryEntry = useRef(false);
   const visualizationRequestRef = useRef(0);
+  const markdownRequestRef = useRef(0);
   const visualizationPathRef = useRef(item.visualization?.path);
   visualizationPathRef.current = item.visualization?.path;
   const copyable = item.kind === 'user' || item.kind === 'assistant';
@@ -210,21 +228,25 @@ function MessageBubbleComponent({
     clearVisualizationSource();
     setVisualizationStatus('idle');
   }, [item.visualization?.path]);
-  useEffect(() => () => { visualizationRequestRef.current += 1; }, []);
+  useEffect(() => () => {
+    visualizationRequestRef.current += 1;
+    markdownRequestRef.current += 1;
+  }, []);
   useEffect(() => () => {
     if (visualizationSource.startsWith('blob:')) URL.revokeObjectURL(visualizationSource);
   }, [visualizationSource]);
   useEffect(() => {
-    if (!imageExpanded && !visualizationOpen) return undefined;
+    if (!imageExpanded && !visualizationOpen && !markdownPreview) return undefined;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setImageExpanded(false);
         if (visualizationOpen) closeVisualization();
+        if (markdownPreview) closeMarkdownPreview();
       }
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [imageExpanded, visualizationOpen]);
+  }, [imageExpanded, markdownPreview, visualizationOpen]);
   useEffect(() => {
     if (!visualizationOpen) return undefined;
     const closeOnBack = () => {
@@ -285,6 +307,34 @@ function MessageBubbleComponent({
     }
   }
 
+  async function openLocalFile(path: string) {
+    if (!onReadMarkdown || !isMarkdownFilePath(path)) {
+      onDownloadFile(path);
+      return;
+    }
+    const requestVersion = ++markdownRequestRef.current;
+    setMarkdownPreview({
+      path, name: localFileName(path), content: '', status: 'loading',
+    });
+    try {
+      const document = await onReadMarkdown(path);
+      if (requestVersion !== markdownRequestRef.current) return;
+      setMarkdownPreview({
+        path, name: document.name || localFileName(path), content: document.content, status: 'ready',
+      });
+    } catch {
+      if (requestVersion !== markdownRequestRef.current) return;
+      setMarkdownPreview({
+        path, name: localFileName(path), content: '', status: 'failed',
+      });
+    }
+  }
+
+  function closeMarkdownPreview() {
+    markdownRequestRef.current += 1;
+    setMarkdownPreview(null);
+  }
+
   if (item.kind === 'progress') {
     return (
       <details className={`progress-card${active ? ' live' : ''}`} open>
@@ -306,7 +356,7 @@ function MessageBubbleComponent({
         <MessageMarkdown
           text={item.text}
           attachmentPath={item.attachment?.path}
-          onDownloadFile={onDownloadFile}
+          onDownloadFile={(path) => void openLocalFile(path)}
         />
         {item.attachment && (
           <figure className="message-image">
@@ -392,6 +442,48 @@ function MessageBubbleComponent({
             />
           </div>
         )}
+        {markdownPreview && (
+          <div
+            className="markdown-lightbox"
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('Markdown 文件预览', 'Markdown file preview')}
+          >
+            <header>
+              <span title={markdownPreview.path}>{markdownPreview.name}</span>
+              <div className="markdown-lightbox-actions">
+                <button type="button" onClick={() => onDownloadFile(markdownPreview.path)}>
+                  {t('下载', 'Download')}
+                </button>
+                <button type="button" onClick={closeMarkdownPreview} aria-label={t('关闭预览', 'Close preview')}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+                </button>
+              </div>
+            </header>
+            <main aria-busy={markdownPreview.status === 'loading'}>
+              {markdownPreview.status === 'loading' && (
+                <div className="markdown-preview-state">{t('正在读取 Markdown 文件…', 'Loading Markdown file…')}</div>
+              )}
+              {markdownPreview.status === 'failed' && (
+                <div className="markdown-preview-state failed">
+                  <span>{t('预览失败，仍可下载文件。', 'Preview failed; the file can still be downloaded.')}</span>
+                  <button type="button" onClick={() => void openLocalFile(markdownPreview.path)}>
+                    {t('重试', 'Retry')}
+                  </button>
+                </div>
+              )}
+              {markdownPreview.status === 'ready' && (
+                <article className="message assistant markdown-preview-content">
+                  <MessageMarkdown
+                    text={markdownPreview.content}
+                    basePath={markdownPreview.path}
+                    onDownloadFile={(path) => void openLocalFile(path)}
+                  />
+                </article>
+              )}
+            </main>
+          </div>
+        )}
       </div>
       {copyable && <MessageMetadata item={item} />}
     </div>
@@ -427,6 +519,7 @@ function messageBubblePropsEqual(left: MessageBubbleProps, right: MessageBubbleP
   return left.active === right.active
     && left.imageSource === right.imageSource
     && left.onDownloadFile === right.onDownloadFile
+    && left.onReadMarkdown === right.onReadMarkdown
     && left.onReadVisualization === right.onReadVisualization
     && messagePresentationEqual(left.item, right.item);
 }

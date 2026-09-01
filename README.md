@@ -29,8 +29,8 @@ you control provides the remote meeting point.
   existing session supports it. Messages are sent directly; Codex Anywhere does not maintain a Web queue.
 - **Choose how Codex works** — view or change the model, reasoning effort, and fast mode when the selected
   Codex model exposes those options.
-- **Use the results on mobile** — preview sent or generated images, open isolated Codex visualizations,
-  copy messages, and download linked local files after confirmation. Downloads try to keep the screen awake;
+- **Use the results on mobile** — preview sent or generated images, read linked Markdown files in the browser,
+  open isolated Codex visualizations, copy messages, and download local files after confirmation. Downloads try to keep the screen awake;
   a foreground transfer pauses safely and resumes after the approved browser reconnects.
 - **Handle supported approvals** — approve or reject requests owned by a run started through the
   connector. Requests already owned by Codex Desktop remain on the computer.
@@ -76,7 +76,7 @@ not implement ACP.
 | Browser access | Single-use pairing followed by an approved Ed25519 device identity; no shared browser login token |
 | Application traffic | Authenticated X25519 exchange and XChaCha20-Poly1305 encryption between browser and connector |
 | Local computer | Outbound connection only; Windows connector credentials use current-user DPAPI |
-| Files | Root-bound previews, confirmed resumable downloads bound to one approved device and file, and sandboxed visualizations |
+| Files | Root-bound image and Markdown previews, confirmed resumable downloads bound to one approved device and file, and sandboxed visualizations |
 | Relay | Loopback-bound reference service, reduced container privileges, bounded logs, and device trust records only |
 
 The relay is still trusted infrastructure: it serves Web code, manages device trust, and can observe routing

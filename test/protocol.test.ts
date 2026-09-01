@@ -51,6 +51,7 @@ import {
   readRolloutTail,
 } from '../src/connector/rollout-tail.js';
 import { needsDesktopPermissionRecovery } from '../src/connector/session-permissions.js';
+import { isMarkdownFilePath, localFilePathFromRelativeHref } from '../web/src/file-utils.js';
 import {
   canSendToActiveDesktopTurn,
   canStopOwnedTurn,
@@ -515,6 +516,7 @@ test('empty intermediate history pages keep one stable loading surface', () => {
     onScroll: () => undefined,
     onLoadOlder: () => undefined,
     onDownloadFile: () => undefined,
+    onReadMarkdown: async () => ({ name: '', size: 0, content: '' }),
     onReadVisualization: async () => '',
   }));
 
@@ -991,6 +993,26 @@ test('Windows file links survive Markdown sanitization for the local download ha
   assert.match(markup, /href="D:\/project\/android-ssh-egress-bridge-v0\.1\.1\.apk"/);
   assert.doesNotMatch(markup, /href=""/);
   assert.doesNotMatch(markup, /target="_blank"/);
+});
+
+test('only Markdown file links select the online preview flow', () => {
+  assert.equal(isMarkdownFilePath('D:\\project\\README.md'), true);
+  assert.equal(isMarkdownFilePath('D:\\project\\guide.MARKDOWN'), true);
+  assert.equal(isMarkdownFilePath('D:\\project\\archive.md.zip'), false);
+  assert.equal(isMarkdownFilePath('D:\\project\\notes.txt'), false);
+});
+
+test('Markdown preview resolves relative file links against the open document', () => {
+  assert.equal(
+    localFilePathFromRelativeHref('docs/guide.md', 'D:\\project\\README.md'),
+    'D:\\project\\docs\\guide.md',
+  );
+  assert.equal(
+    localFilePathFromRelativeHref('../CHANGELOG.md#latest', 'D:\\project\\docs\\guide.md'),
+    'D:\\project\\docs\\..\\CHANGELOG.md',
+  );
+  assert.equal(localFilePathFromRelativeHref('https://example.com/doc.md', 'D:\\project\\README.md'), null);
+  assert.equal(localFilePathFromRelativeHref('#section', 'D:\\project\\README.md'), null);
 });
 
 test('only active timeline items receive live motion classes', () => {

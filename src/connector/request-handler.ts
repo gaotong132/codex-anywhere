@@ -41,6 +41,7 @@ type Dependencies = {
   downloads: {
     open(payload: Payload, clientId?: string): Promise<any>;
     read(payload: Payload, clientId?: string): Promise<any>;
+    readMarkdown(payload: Payload): Promise<any>;
     close(payload: Payload, clientId?: string): Promise<any>;
   };
   deviceId: string;
@@ -117,6 +118,7 @@ async function dispatchAction({
   if (action === 'file.download.open') return downloads.open(payload, downloadOwner);
   if (action === 'file.download.chunk') return downloads.read(payload, downloadOwner);
   if (action === 'file.download.close') return downloads.close(payload, downloadOwner);
+  if (action === 'file.markdown.read') return downloads.readMarkdown(payload);
   if (action === 'turn.start') return startTurn({ codex, desktop, payload, clientId, requestId });
   if (action === 'turn.steer') {
     return {

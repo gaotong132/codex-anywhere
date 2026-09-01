@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   DOWNLOAD_CHUNK_BYTES,
+  MAX_MARKDOWN_PREVIEW_BYTES,
   DownloadManager,
 } from '../src/connector/file-downloads.js';
 
@@ -158,4 +159,36 @@ test('download defaults to configured roots and rejects sibling paths', async (t
     () => downloads.open({ path: deniedPath, confirmed: true }, 'denied-client'),
     /download_path_not_allowed/,
   );
+});
+
+test('Markdown previews are bounded, UTF-8, and restricted to configured roots', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-markdown-preview-test-'));
+  const allowedRoot = join(directory, 'allowed');
+  const outsideRoot = join(directory, 'outside');
+  await Promise.all([mkdir(allowedRoot), mkdir(outsideRoot)]);
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const markdown = join(allowedRoot, 'README.md');
+  const outside = join(outsideRoot, 'private.md');
+  const wrongType = join(allowedRoot, 'notes.txt');
+  const invalidUtf8 = join(allowedRoot, 'invalid.md');
+  const tooLarge = join(allowedRoot, 'large.markdown');
+  await Promise.all([
+    writeFile(markdown, '# 标题\n\n正文'),
+    writeFile(outside, '# private'),
+    writeFile(wrongType, '# text'),
+    writeFile(invalidUtf8, Buffer.from([0xff, 0xfe, 0xfd])),
+    writeFile(tooLarge, Buffer.alloc(MAX_MARKDOWN_PREVIEW_BYTES + 1, 0x61)),
+  ]);
+  const downloads = new DownloadManager({
+    auditPath: null, allowedRoots: [allowedRoot], allowAnyFileDownload: true,
+  });
+  t.after(() => downloads.closeAll());
+
+  assert.deepEqual(await downloads.readMarkdown({ path: markdown }), {
+    name: 'README.md', size: Buffer.byteLength('# 标题\n\n正文'), content: '# 标题\n\n正文',
+  });
+  await assert.rejects(() => downloads.readMarkdown({ path: outside }), /markdown_preview_path_not_allowed/);
+  await assert.rejects(() => downloads.readMarkdown({ path: wrongType }), /markdown_preview_type_not_allowed/);
+  await assert.rejects(() => downloads.readMarkdown({ path: invalidUtf8 }), /markdown_preview_encoding_invalid/);
+  await assert.rejects(() => downloads.readMarkdown({ path: tooLarge }), /markdown_preview_too_large/);
 });
