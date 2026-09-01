@@ -65,9 +65,14 @@ reviewed from the relay host with `./scripts/relay.sh approve`.
   browser identity and one unchanged file. The capability expires after 30 minutes without progress and
   is not stored by the relay. The Web client tries to keep the screen awake; while hidden or disconnected,
   it stops requesting new chunks and resumes after the same browser reconnects.
-- Markdown previews require an explicit click, accept only UTF-8 `.md` or `.markdown` files up to 2 MiB,
-  and remain restricted to configured or managed local roots. The preview keeps the confirmed download path
-  available without sending file contents through the relay in plaintext.
+- Local text previews require an explicit click, accept only allowlisted Markdown, source, config, or
+  plain-text names, and remain restricted to configured or managed local roots. The connector resolves the
+  canonical file path, requires a regular UTF-8 file no larger than 2 MiB, rejects embedded NUL bytes and
+  changing snapshots, and intentionally excludes sensitive extensions such as `.env`, `.pem`, and `.key`.
+- Source previews load the common syntax-highlighting runtime only when needed. Highlighted markup is
+  sanitized to classed `span` elements before insertion; unavailable languages and inputs above 512 KiB
+  fall back to escaped plain code. Every preview retains the separately confirmed download path without
+  sending file contents through the relay in plaintext.
 - Mermaid code blocks load the renderer on demand with strict security and bounded input and edge counts.
   Generated SVG is sanitized again before inline display and uses an explicit high-contrast dark theme;
   invalid diagrams fall back to their source code.
@@ -77,7 +82,8 @@ reviewed from the relay host with `./scripts/relay.sh approve`.
   Codex Desktop stays on the computer and is shown as non-actionable in the Web UI.
 
 Broad `-AllowedRoots`, `-AllowAnyFileDownload`, and `-EnableNetworkAccess` options increase connector
-authority and are disabled or narrow by default.
+authority and are disabled or narrow by default. `-AllowAnyFileDownload` expands only confirmed downloads;
+it does not expand the roots accepted by image or text previews.
 
 ## Trust boundary and honest limits
 

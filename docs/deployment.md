@@ -69,7 +69,12 @@ to a login shortcut.
 
 New sessions have no default workspace: choose a project in the Web UI. `-AllowedRoots` is optional and
 defaults to the connector checkout; specify additional roots only when those directories should be
-selectable. `-AllowAnyFileDownload` and `-EnableNetworkAccess` are explicit opt-ins.
+selectable or previewable. `-AllowAnyFileDownload` and `-EnableNetworkAccess` are explicit opt-ins.
+
+Inline image, Markdown, source-code, config, and text previews always remain root-bound. Enabling
+`-AllowAnyFileDownload` permits a confirmed download outside those roots; it does not silently expand
+preview access. Re-run the installer with the complete intended `-AllowedRoots` list when another project
+tree should be available in the Web UI.
 
 ## 3. Approve the connector and pair a browser
 
@@ -94,8 +99,10 @@ there is no shared browser token or recovery login.
 ```
 
 Open an existing session from the phone and send a harmless message. Confirm that the browser and Codex
-receive the update. Also verify that the public URL uses the intended transport and that
-`ECS-IP:3300` is unreachable externally.
+receive the update. If the conversation contains local links, click one Markdown file and one common
+source file: each should open a bounded preview, the source file should use syntax color when supported,
+and both previews should retain a Download button. Also verify that the public URL uses the intended
+transport and that `ECS-IP:3300` is unreachable externally.
 
 ## Operate and update
 
@@ -114,7 +121,20 @@ Run these commands in the ECS checkout:
 
 Keep relay and connector checkouts on the same revision. After updating the ECS, update the Windows
 checkout, run `npm ci`, and restart or reinstall the connector. Fully refresh browser tabs left open
-during a coordinated upgrade; the strict protocol does not support mixed versions.
+during a coordinated upgrade; a loaded tab keeps running its previous JavaScript until refreshed, and
+the strict protocol does not support mixed versions.
+
+## Troubleshoot local file links
+
+| Symptom | Check |
+| --- | --- |
+| A supported code link still downloads immediately | Update both checkouts, restart the connector, then fully refresh or reopen the browser tab |
+| The preview opens but reports failure | Confirm the file is regular UTF-8, no larger than 2 MiB, and inside `-AllowedRoots` |
+| Code is readable but has no syntax color | The recognized language is not in the lazy highlighter subset or the file exceeds the 512 KiB highlighting limit; plain escaped text is expected |
+| A binary, `.env`, certificate, or key file downloads instead | Sensitive, binary, and unrecognized formats intentionally never receive inline text preview |
+
+Preview access and download access are separate. `-AllowAnyFileDownload` affects only the confirmed
+download path and does not make an out-of-root file previewable.
 
 ## Supported configuration
 
@@ -132,8 +152,8 @@ Connector installer options:
 | Option | Default | Purpose |
 | --- | --- | --- |
 | `-BridgeUrl` | `ws://127.0.0.1:3300/ws` | Relay WebSocket endpoint |
-| `-AllowedRoots` | connector checkout | Local project roots available to new sessions and normal downloads |
-| `-AllowAnyFileDownload` | off | Allow confirmed downloads outside configured roots |
+| `-AllowedRoots` | connector checkout | Local roots available to new sessions, previews, and normal downloads |
+| `-AllowAnyFileDownload` | off | Allow confirmed downloads outside configured roots; never expands preview roots |
 | `-EnableNetworkAccess` | off | Allow connector-owned Codex turns to request network access |
 
 See the [security policy](SECURITY.md) before changing file roots, download scope, ingress, or connector

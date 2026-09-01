@@ -65,7 +65,12 @@ $connectorToken = Read-Host 'Connector token' -AsSecureString
 程序不可用时会回退到登录快捷方式。
 
 新会话没有默认工作目录，需要在 Web 界面选择项目。`-AllowedRoots` 可选，默认只允许连接器仓库；
-只有希望选择其他目录时才增加根目录。`-AllowAnyFileDownload` 和 `-EnableNetworkAccess` 都是显式开关。
+只有希望选择或预览其他目录时才增加根目录。`-AllowAnyFileDownload` 和 `-EnableNetworkAccess` 都是
+显式开关。
+
+图片、Markdown、源代码、配置和文本的内联预览始终受根目录限制。启用 `-AllowAnyFileDownload` 只会
+允许用户确认后下载根目录外的文件，不会静默扩大预览权限。需要在 Web 界面使用其他项目树时，请用
+完整的 `-AllowedRoots` 列表重新运行安装程序。
 
 ## 3. 批准连接器并配对浏览器
 
@@ -89,8 +94,10 @@ $connectorToken = Read-Host 'Connector token' -AsSecureString
 ./scripts/relay.sh status
 ```
 
-在手机打开一个已有会话并发送无害消息，确认浏览器和 Codex 都收到更新。同时确认公网入口使用了预期
-传输方式，并且外网不能访问 `ECS-IP:3300`。
+在手机打开一个已有会话并发送无害消息，确认浏览器和 Codex 都收到更新。如果会话中包含本机文件
+链接，再分别点击一个 Markdown 和常见源代码文件：两者都应打开有界预览，受支持的源文件应出现语法
+着色，而且预览页都应保留“下载”按钮。同时确认公网入口使用了预期传输方式，并且外网不能访问
+`ECS-IP:3300`。
 
 ## 日常管理与升级
 
@@ -108,7 +115,20 @@ $connectorToken = Read-Host 'Connector token' -AsSecureString
 | `./scripts/relay.sh update` | 快进更新 `main`、重建、重启并验证 |
 
 转发服务和连接器仓库应保持同一提交。更新 ECS 后，在 Windows 更新仓库、执行 `npm ci`，再重启或
-重新安装连接器。协调升级期间仍打开的浏览器页面需要完整刷新；严格协议不支持混用版本。
+重新安装连接器。协调升级期间仍打开的浏览器页面需要完整刷新；已加载页面会继续运行旧 JavaScript，
+直到刷新或重新打开，而且严格协议不支持混用版本。
+
+## 排查本机文件链接
+
+| 现象 | 检查项 |
+| --- | --- |
+| 支持的代码链接仍然直接下载 | 更新两端仓库、重启连接器，再完整刷新或重新打开浏览器页面 |
+| 预览弹出但提示失败 | 确认它是 `-AllowedRoots` 内、不超过 2 MiB 的普通 UTF-8 文件 |
+| 代码可读但没有语法着色 | 该语言不在按需高亮子集内，或文件超过 512 KiB 高亮上限；此时安全显示纯代码属于预期行为 |
+| 二进制、`.env`、证书或密钥文件进入下载流程 | 敏感、二进制和未识别格式有意不提供内联文本预览 |
+
+预览权限和下载权限相互独立。`-AllowAnyFileDownload` 只影响确认下载，不会让根目录外的文件变得
+可预览。
 
 ## 支持的配置
 
@@ -126,8 +146,8 @@ $connectorToken = Read-Host 'Connector token' -AsSecureString
 | 参数 | 默认值 | 用途 |
 | --- | --- | --- |
 | `-BridgeUrl` | `ws://127.0.0.1:3300/ws` | 转发服务 WebSocket 地址 |
-| `-AllowedRoots` | 连接器仓库 | 新会话和普通下载可使用的本机项目根目录 |
-| `-AllowAnyFileDownload` | 关闭 | 确认后允许下载配置根目录外的文件 |
+| `-AllowedRoots` | 连接器仓库 | 新会话、预览和普通下载可使用的本机项目根目录 |
+| `-AllowAnyFileDownload` | 关闭 | 确认后允许下载配置根目录外的文件；不会扩大预览根目录 |
 | `-EnableNetworkAccess` | 关闭 | 允许连接器持有的 Codex 轮次申请网络访问 |
 
 调整文件根目录、下载范围、入口或连接器网络访问前，请阅读[安全策略](SECURITY.zh-CN.md)。

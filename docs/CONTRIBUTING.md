@@ -23,10 +23,10 @@ attachment, file-access, or rendering behavior.
 
 | Path | Responsibility |
 | --- | --- |
-| `web/src` | React mobile UI, SCSS, localization, browser identity, history, and rendering |
+| `web/src` | React mobile UI, SCSS, localization, browser identity, history, previews, and rendering |
 | `src/server` | HTTP/WebSocket relay, endpoint authentication, routing, and device registry |
 | `src/connector` | Codex app-server/Desktop integration, history, files, approvals, and reconnect |
-| `src/shared` | Strict protocol, authentication, encryption, activity, and message primitives |
+| `src/shared` | Strict protocol, authentication, encryption, activity, message, and shared file-type primitives |
 | `test` | Integration, behavior, security, and regression tests |
 | `scripts` | Relay administration and Windows connector installation/watchdog |
 | `docs` / `deploy` | User documentation, diagrams, and optional ingress example |
@@ -37,8 +37,9 @@ attachment, file-access, or rendering behavior.
    a general remote shell, automatic forks, or automatic device trust.
 2. Never expose credentials, device identity material, raw tool output, or unnecessary local paths in
    logs or the Web UI.
-3. Keep explicit confirmation for local file downloads and privileged Codex actions. Desktop-owned
-   approvals must not be presented as Web-actionable.
+3. Keep explicit confirmation for local file downloads and privileged Codex actions. Inline previews
+   must stay bounded, root-restricted, type-allowlisted, and read-only. Desktop-owned approvals must not
+   be presented as Web-actionable.
 4. Treat protocol, filesystem, reconnect, rollout/history mapping, optimistic messages, and live animation
    changes as security- or correctness-sensitive. Add a regression test for the failure mode.
 5. Keep long-session work bounded and incremental. Avoid full-history reads, unstable React keys, and
@@ -47,18 +48,23 @@ attachment, file-access, or rendering behavior.
    change.
 
 The network protocol has one exact current version. Do not add plaintext, old-version, or
-missing-capability compatibility paths. A protocol change must update browser, relay, and connector
-together, bump the protocol version, and reject outdated peers in tests.
+missing-capability compatibility paths. A mandatory wire-format or capability change must update browser,
+relay, and connector together, bump the protocol version, and reject outdated peers in tests. A new
+coordinated action still requires browser/connector routing tests and same-revision deployment even when
+it does not change the mandatory capability set.
 
 Keep pull requests small enough to review and explain the user-facing result. Add a dependency only when
 it removes meaningful maintenance burden, is actively maintained, and does not weaken the browser,
-relay, or local-computer trust boundary.
+relay, or local-computer trust boundary. Load large renderers on demand, bound their input, sanitize any
+generated markup, and preserve a safe plain-text fallback.
 
 ## Extra checks
 
 - When `scripts/relay.sh` changes, run `sh -n scripts/relay.sh` in a POSIX shell.
 - Keep helper commands and both deployment guides synchronized.
-- Verify mobile layout for long titles, filenames, progress text, and three-line activity status.
+- Verify mobile layout for long titles, filenames, progress text, and three-line activity status. File
+  preview changes must also cover long code lines, syntax-highlight fallback, Download/Close controls,
+  and the binary or unsupported-file path.
 - After changing the mobile UI, run `npm run docs:hero` to regenerate the README hero from the
   docs-only React fixture. Set `CODEX_ANYWHERE_BROWSER` when Edge or Chrome is not auto-detected.
 - Before a release tag, confirm the package version, update all user documents, run checks and builds,

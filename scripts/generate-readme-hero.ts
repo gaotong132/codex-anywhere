@@ -152,8 +152,8 @@ const background = Buffer.from(`
           <circle cx="32" cy="29" r="12" fill="#1a3965"/>
           <rect x="26" y="23" width="12" height="12" rx="2" fill="none" stroke="#73a4ff" stroke-width="1.8"/>
           <path d="M27.5 32l3-3 2.5 2 2.5-3 2.5 4" fill="none" stroke="#73a4ff" stroke-width="1.5"/>
-          <text x="55" y="33" fill="#e8eef9" font-size="15" font-weight="700">Images &amp; files</text>
-          <text x="20" y="62" fill="#7e91ad" font-size="12">Send previews. Download results.</text>
+          <text x="55" y="33" fill="#e8eef9" font-size="15" font-weight="700">Code &amp; files</text>
+          <text x="20" y="62" fill="#7e91ad" font-size="12">Preview source. Download results.</text>
         </g>
         <g transform="translate(0 100)">
           <rect width="250" height="84" rx="16" fill="#101c30" stroke="#243e65"/>
