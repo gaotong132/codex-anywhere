@@ -701,8 +701,22 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   border-radius: 10px;
   padding: 14px;
   background: #0c121c;
-  .mermaid-diagram-svg { width: 100%; overflow: auto; }
-  .mermaid-diagram-svg svg { display: block; width: auto; max-width: 100%; height: auto; margin: auto; }
+  .mermaid-diagram-svg {
+    width: 100%;
+    overflow: auto;
+    color: #e7eef8;
+    svg .node rect, svg .node circle, svg .node ellipse, svg .node polygon, svg .node path,
+    svg rect.actor, svg rect.actor-top, svg rect.actor-bottom, svg rect.labelBox { fill: #1d3f66; stroke: #79a8dc; }
+    svg .cluster rect, svg .cluster polygon, svg .cluster path { fill: #14243a; stroke: #547ba8; }
+    svg .flowchart-link, svg .edgePaths path, svg .actor-line, svg .messageLine0, svg .messageLine1,
+    svg .loopLine, svg .relationshipLine, svg .transition { fill: none; stroke: #a9c3e3; }
+    svg marker path, svg marker polygon, svg .arrowheadPath { fill: #a9c3e3; stroke: #a9c3e3; }
+    svg text, svg tspan { fill: #f4f7fb; }
+    svg foreignObject, svg foreignObject * { color: #f4f7fb; }
+    svg foreignObject div { display: inline-block; line-height: 1.5; white-space: nowrap; }
+    svg foreignObject p { margin: 0; padding: 0; }
+  }
+  .mermaid-diagram-svg svg { display: block; width: auto; max-width: 100%; height: auto; margin: auto; color-scheme: dark; forced-color-adjust: none; }
   figcaption { color: #8f9db1; font-size: 12px; text-align: center; }
   &.failed { place-items: stretch; gap: 10px; }
   &.failed figcaption { color: #e8a4aa; }

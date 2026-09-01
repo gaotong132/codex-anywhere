@@ -1195,6 +1195,7 @@ test('Mermaid code blocks use an on-demand diagram renderer and keep ordinary co
     onReadVisualization: async () => '',
   }));
   const rendererSource = await readFile(resolve('web/src/mermaid-diagram.tsx'), 'utf8');
+  const stylesSource = await readFile(resolve('web/src/styles.scss'), 'utf8');
 
   assert.match(mermaidMarkup, /class="mermaid-diagram loading"/);
   assert.doesNotMatch(mermaidMarkup, /language-mermaid/);
@@ -1208,8 +1209,13 @@ test('Mermaid code blocks use an on-demand diagram renderer and keep ordinary co
   assert.match(rendererSource, /lineColor:\s*'#a9c3e3'/);
   assert.match(rendererSource, /purifier\.sanitize/);
   assert.match(rendererSource, /HTML_INTEGRATION_POINTS:\s*\{ foreignobject: true \}/);
+  assert.match(rendererSource, /applyMermaidPresentationFallback\(sanitizedSvg\)/);
+  assert.match(rendererSource, /'marker path, marker polygon, \.arrowheadPath'/);
+  assert.match(rendererSource, /fill:\s*theme\.primaryColor, stroke:\s*theme\.primaryBorderColor/);
   assert.match(rendererSource, /dangerouslySetInnerHTML=\{\{ __html: preview\.svg \}\}/);
   assert.doesNotMatch(rendererSource, /URL\.createObjectURL/);
+  assert.match(stylesSource, /svg foreignObject p \{ margin: 0; padding: 0; \}/);
+  assert.match(stylesSource, /svg marker path, svg marker polygon, svg \.arrowheadPath/);
 });
 
 test('progress animation waits until initial history hydration finishes', async () => {
