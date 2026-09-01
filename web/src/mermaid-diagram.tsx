@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react';
 import { t } from './i18n';
 
 type MermaidPreviewState =
-  | { status: 'loading'; url: '' }
-  | { status: 'ready'; url: string }
-  | { status: 'failed'; url: '' };
+  | { status: 'loading'; svg: '' }
+  | { status: 'ready'; svg: string }
+  | { status: 'failed'; svg: '' };
 
 type MermaidApi = (typeof import('mermaid'))['default'];
+type DomPurifyApi = (typeof import('dompurify'))['default'];
+type MermaidRuntime = { mermaid: MermaidApi; purifier: DomPurifyApi };
 
-let mermaidLoad: Promise<MermaidApi> | undefined;
+let mermaidLoad: Promise<MermaidRuntime> | undefined;
 let diagramSequence = 0;
 
 export function isMermaidCodeClass(className: unknown) {
@@ -18,7 +20,9 @@ export function isMermaidCodeClass(className: unknown) {
 
 function loadMermaid() {
   if (!mermaidLoad) {
-    mermaidLoad = import('mermaid').then(({ default: mermaid }) => {
+    mermaidLoad = Promise.all([import('mermaid'), import('dompurify')]).then(([
+      { default: mermaid }, { default: purifier },
+    ]) => {
       mermaid.initialize({
         startOnLoad: false,
         securityLevel: 'strict',
@@ -27,7 +31,7 @@ function loadMermaid() {
         maxEdges: 500,
         theme: 'dark',
       });
-      return mermaid;
+      return { mermaid, purifier };
     }).catch((error: unknown) => {
       mermaidLoad = undefined;
       throw error;
@@ -37,39 +41,46 @@ function loadMermaid() {
 }
 
 export function MermaidDiagram({ source }: { source: string }) {
-  const [preview, setPreview] = useState<MermaidPreviewState>({ status: 'loading', url: '' });
+  const [preview, setPreview] = useState<MermaidPreviewState>({ status: 'loading', svg: '' });
 
   useEffect(() => {
     let active = true;
-    let objectUrl = '';
     const diagramId = `codex-anywhere-mermaid-${++diagramSequence}`;
-    setPreview({ status: 'loading', url: '' });
+    setPreview({ status: 'loading', svg: '' });
 
     void loadMermaid()
-      .then((mermaid) => mermaid.render(diagramId, source))
-      .then(({ svg }) => {
-        objectUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-        if (!active) {
-          URL.revokeObjectURL(objectUrl);
-          objectUrl = '';
-          return;
-        }
-        setPreview({ status: 'ready', url: objectUrl });
+      .then(async ({ mermaid, purifier }) => {
+        const { svg } = await mermaid.render(diagramId, source);
+        const sanitizedSvg = purifier.sanitize(svg, {
+          ADD_TAGS: ['foreignobject'],
+          ADD_ATTR: ['dominant-baseline'],
+          HTML_INTEGRATION_POINTS: { foreignobject: true },
+          RETURN_TRUSTED_TYPE: false,
+        });
+        if (!/^\s*<svg(?:\s|>)/i.test(sanitizedSvg)) throw new Error('mermaid_svg_invalid');
+        return sanitizedSvg;
+      })
+      .then((svg) => {
+        if (active) setPreview({ status: 'ready', svg });
       })
       .catch(() => {
-        if (active) setPreview({ status: 'failed', url: '' });
+        if (active) setPreview({ status: 'failed', svg: '' });
       });
 
     return () => {
       active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [source]);
 
   if (preview.status === 'ready') {
     return (
       <figure className="mermaid-diagram ready">
-        <img src={preview.url} alt={t('Mermaid 图表', 'Mermaid diagram')} />
+        <div
+          className="mermaid-diagram-svg"
+          role="img"
+          aria-label={t('Mermaid 图表', 'Mermaid diagram')}
+          dangerouslySetInnerHTML={{ __html: preview.svg }}
+        />
       </figure>
     );
   }

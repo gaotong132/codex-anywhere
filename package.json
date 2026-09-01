@@ -39,6 +39,7 @@
     "@noble/ed25519": "3.2.0",
     "@noble/hashes": "2.4.0",
     "@scure/base": "2.4.0",
+    "dompurify": "3.4.14",
     "fast-xml-parser": "5.11.1",
     "file-type": "22.0.2",
     "lru-cache": "11.5.2",

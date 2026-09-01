@@ -701,7 +701,8 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   border-radius: 10px;
   padding: 14px;
   background: #0c121c;
-  img { display: block; width: auto; max-width: 100%; height: auto; margin: auto; }
+  .mermaid-diagram-svg { width: 100%; overflow: auto; }
+  .mermaid-diagram-svg svg { display: block; width: auto; max-width: 100%; height: auto; margin: auto; }
   figcaption { color: #8f9db1; font-size: 12px; text-align: center; }
   &.failed { place-items: stretch; gap: 10px; }
   &.failed figcaption { color: #e8a4aa; }

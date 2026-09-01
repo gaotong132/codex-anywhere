@@ -1202,7 +1202,10 @@ test('Mermaid code blocks use an on-demand diagram renderer and keep ordinary co
   assert.match(rendererSource, /import\('mermaid'\)/);
   assert.match(rendererSource, /securityLevel:\s*'strict'/);
   assert.match(rendererSource, /suppressErrorRendering:\s*true/);
-  assert.match(rendererSource, /URL\.revokeObjectURL/);
+  assert.match(rendererSource, /purifier\.sanitize/);
+  assert.match(rendererSource, /HTML_INTEGRATION_POINTS:\s*\{ foreignobject: true \}/);
+  assert.match(rendererSource, /dangerouslySetInnerHTML=\{\{ __html: preview\.svg \}\}/);
+  assert.doesNotMatch(rendererSource, /URL\.createObjectURL/);
 });
 
 test('progress animation waits until initial history hydration finishes', async () => {
