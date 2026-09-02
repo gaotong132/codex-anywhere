@@ -1034,7 +1034,7 @@ test('code preview loads syntax highlighting on demand and sanitizes its markup'
   assert.match(bubbleSource, /onClick=\{\(\) => onDownloadFile\(filePreview\.path\)\}/);
 });
 
-test('unified diff preview renders file sections, paired line numbers, and semantic rows', () => {
+test('unified diff preview renders only wrapped code rows with paired line numbers', async () => {
   const content = [
     'diff --git a/src/app.ts b/src/app.ts',
     '--- a/src/app.ts',
@@ -1056,15 +1056,25 @@ test('unified diff preview renders file sections, paired line numbers, and seman
   ]);
 
   const markup = renderToStaticMarkup(createElement(CodePreview, { content, language: 'diff' }));
-  assert.match(markup, /class="code-file-preview diff-file-preview"/);
+  assert.match(markup, /class="code-file-preview diff-file-preview wrap-lines"/);
   assert.match(markup, /class="diff-file-row"/);
   assert.match(markup, /class="diff-line deletion"/);
   assert.match(markup, /class="diff-line addition"/);
+  assert.match(markup, /class="diff-wrap-toggle" aria-pressed="true"/);
   assert.match(markup, /<code role="cell">before<\/code>/);
   assert.match(markup, /<code role="cell">after<\/code>/);
-  assert.match(markup, /<code role="cell">a\/src\/app\.ts<\/code>/);
-  assert.match(markup, /<code role="cell">b\/src\/app\.ts<\/code>/);
+  assert.doesNotMatch(markup, /<code role="cell">a\/src\/app\.ts<\/code>/);
+  assert.doesNotMatch(markup, /<code role="cell">b\/src\/app\.ts<\/code>/);
+  assert.doesNotMatch(markup, /@@ -10,2 \+20,2 @@/);
   assert.doesNotMatch(markup, /<code role="cell">[+-](?:before|after)<\/code>/);
+
+  const styles = await readFile(resolve('web/src/styles.scss'), 'utf8');
+  const responsiveStyles = await readFile(resolve('web/src/styles/_responsive.scss'), 'utf8');
+  const previewSource = await readFile(resolve('web/src/code-preview.tsx'), 'utf8');
+  assert.match(styles, /\.diff-file-preview\.wrap-lines \.diff-preview-grid \{ overflow-x: hidden; \}/);
+  assert.match(styles, /white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;/);
+  assert.match(responsiveStyles, /\.diff-file-preview\.wrap-lines \.diff-line \{ grid-template-columns: 36px 36px minmax\(0, 1fr\)/);
+  assert.match(previewSource, /setWrapDiffLines\(\(enabled\) => !enabled\)/);
 });
 
 test('Markdown preview resolves relative file links against the open document', () => {

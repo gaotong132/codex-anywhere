@@ -731,13 +731,22 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .code-file-preview .hljs-strong { font-weight: 800; }
 .diff-file-preview { border-color: #2c3c54; border-radius: 14px; background: #090f18; box-shadow: 0 18px 54px rgba(0, 0, 0, .28); }
 .diff-preview-toolbar {
-  display: flex; min-height: 38px; align-items: center; justify-content: space-between; gap: 12px;
+  display: flex; min-height: 38px; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap;
   padding: 8px 13px; border-color: #304159; color: #a8b7ca; background: linear-gradient(180deg, #162131, #111a27);
 }
+.diff-preview-actions { display: inline-flex; align-items: center; gap: 10px; }
 .diff-preview-legend { display: inline-flex; align-items: center; gap: 5px; color: #77869a; font-size: 9px; font-weight: 650; letter-spacing: 0; text-transform: none; }
 .diff-preview-legend i { width: 8px; height: 8px; border-radius: 2px; }
 .diff-preview-legend .addition { margin-left: 3px; background: #38b977; box-shadow: 0 0 0 3px rgba(56, 185, 119, .09); }
 .diff-preview-legend .deletion { margin-left: 6px; background: #e8616d; box-shadow: 0 0 0 3px rgba(232, 97, 109, .09); }
+.diff-wrap-toggle {
+  appearance: none; display: inline-flex; min-height: 24px; align-items: center; gap: 4px; padding: 2px 7px;
+  border: 1px solid #33445c; border-radius: 7px; color: #8291a5; background: #0d1622; font: 650 9px/1 ui-sans-serif, system-ui, sans-serif;
+  cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+}
+.diff-wrap-toggle:hover { border-color: #49617f; color: #b4c3d7; }
+.diff-wrap-toggle[aria-pressed="true"] { border-color: #3c6f62; color: #83d6b1; background: #10251f; }
+.diff-wrap-toggle:focus-visible { outline: 2px solid #68a9ff; outline-offset: 2px; }
 .diff-preview-grid { width: 100%; overflow-x: auto; overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch; }
 .diff-file-row, .diff-line {
   width: max-content; min-width: 100%; box-sizing: border-box; font: 12px/1.72 ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -759,19 +768,17 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .diff-line-number.old { left: 0; }
 .diff-line-number.new { left: 44px; }
 .diff-line code { display: block; width: auto; min-width: max-content; padding: 1px 14px; border: 0; color: inherit; background: transparent; font: inherit; white-space: pre; }
+.diff-file-preview.wrap-lines .diff-preview-grid { overflow-x: hidden; }
+.diff-file-preview.wrap-lines .diff-file-row, .diff-file-preview.wrap-lines .diff-line { width: 100%; min-width: 0; }
+.diff-file-preview.wrap-lines .diff-line { grid-template-columns: 44px 44px minmax(0, 1fr); }
+.diff-file-preview.wrap-lines .diff-line code {
+  width: 100%; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+}
 .diff-line.context code { color: #aeb9c9; }
 .diff-line.addition { color: #9ae6b9; background: rgba(25, 110, 69, .25); box-shadow: inset 3px 0 #38bb78; }
 .diff-line.addition .diff-line-number { color: #5eaa7e; background: #102a20; border-color: #1c4935; }
 .diff-line.deletion { color: #f3a6ad; background: rgba(133, 43, 52, .25); box-shadow: inset 3px 0 #e7636f; }
 .diff-line.deletion .diff-line-number { color: #bd7078; background: #2a171d; border-color: #51272f; }
-.diff-line.hunk { color: #a9c8f8; background: rgba(44, 78, 128, .25); }
-.diff-line.hunk .diff-line-number { background: #101d2e; border-color: #243c5b; }
-.diff-line.hunk code { padding-block: 4px; color: #8fb9f5; font-weight: 700; }
-.diff-line.path-old { color: #df8a93; background: rgba(91, 35, 43, .13); }
-.diff-line.path-new { color: #78d7a0; background: rgba(25, 92, 59, .13); }
-.diff-line.path-old .diff-line-number, .diff-line.path-new .diff-line-number, .diff-line.meta .diff-line-number { background: #0c131d; }
-.diff-line.path-old code, .diff-line.path-new code { padding-block: 3px; font-weight: 700; }
-.diff-line.meta { color: #6f7f94; background: #0b111a; }
 .mermaid-diagram {
   display: grid;
   min-height: 112px;

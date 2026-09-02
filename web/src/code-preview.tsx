@@ -73,10 +73,14 @@ function diffDisplayText(line: DiffPreviewLine) {
   if (line.kind === 'addition' || line.kind === 'deletion' || line.kind === 'context') {
     return line.text.slice(1) || ' ';
   }
-  if (line.kind === 'path-old' || line.kind === 'path-new') {
-    return line.text.replace(/^(?:---|\+\+\+)\s+/, '') || ' ';
-  }
   return line.text || ' ';
+}
+
+function isVisibleDiffLine(line: DiffPreviewLine) {
+  return line.kind === 'file'
+    || line.kind === 'addition'
+    || line.kind === 'deletion'
+    || line.kind === 'context';
 }
 
 function loadHighlightRuntime() {
@@ -97,6 +101,7 @@ function loadHighlightRuntime() {
 
 export function CodePreview({ content, language }: { content: string; language: string }) {
   const normalizedLanguage = String(language || 'plaintext').toLowerCase();
+  const [wrapDiffLines, setWrapDiffLines] = useState(true);
   const diffLines = useMemo(
     () => normalizedLanguage === 'diff' ? parseUnifiedDiffLines(content) : [],
     [content, normalizedLanguage],
@@ -150,16 +155,30 @@ export function CodePreview({ content, language }: { content: string; language: 
   };
   if (decoratedDiff) {
     return (
-      <section className="code-file-preview diff-file-preview" aria-label={t('代码变更', 'Code changes')}>
+      <section
+        className={`code-file-preview diff-file-preview${wrapDiffLines ? ' wrap-lines' : ''}`}
+        aria-label={t('代码变更', 'Code changes')}
+      >
         <div className="code-file-preview-language diff-preview-toolbar">
           <span>{t('统一 Diff', 'Unified diff')}</span>
-          <span className="diff-preview-legend" aria-hidden="true">
-            <i className="addition" />{t('新增', 'Added')}
-            <i className="deletion" />{t('删除', 'Deleted')}
+          <span className="diff-preview-actions">
+            <span className="diff-preview-legend" aria-hidden="true">
+              <i className="addition" />{t('新增', 'Added')}
+              <i className="deletion" />{t('删除', 'Deleted')}
+            </span>
+            <button
+              type="button"
+              className="diff-wrap-toggle"
+              aria-pressed={wrapDiffLines}
+              title={t(wrapDiffLines ? '关闭自动换行' : '开启自动换行', wrapDiffLines ? 'Disable wrapping' : 'Enable wrapping')}
+              onClick={() => setWrapDiffLines((enabled) => !enabled)}
+            >
+              <span aria-hidden="true">↵</span>{t('自动换行', 'Wrap')}
+            </button>
           </span>
         </div>
         <div className="diff-preview-grid" role="table">
-          {diffLines.map((line, index) => line.kind === 'file'
+          {diffLines.filter(isVisibleDiffLine).map((line, index) => line.kind === 'file'
             ? (
               <div className="diff-file-row" role="row" key={`${index}:${line.text}`} title={line.text}>
                 <svg viewBox="0 0 24 24" aria-hidden="true">
