@@ -1060,6 +1060,11 @@ test('unified diff preview renders file sections, paired line numbers, and seman
   assert.match(markup, /class="diff-file-row"/);
   assert.match(markup, /class="diff-line deletion"/);
   assert.match(markup, /class="diff-line addition"/);
+  assert.match(markup, /<code role="cell">before<\/code>/);
+  assert.match(markup, /<code role="cell">after<\/code>/);
+  assert.match(markup, /<code role="cell">a\/src\/app\.ts<\/code>/);
+  assert.match(markup, /<code role="cell">b\/src\/app\.ts<\/code>/);
+  assert.doesNotMatch(markup, /<code role="cell">[+-](?:before|after)<\/code>/);
 });
 
 test('Markdown preview resolves relative file links against the open document', () => {

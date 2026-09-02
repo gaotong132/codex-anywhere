@@ -69,6 +69,16 @@ function diffFileLabel(value: string) {
   return match?.[2] || value.replace(/^diff --git\s+/, '');
 }
 
+function diffDisplayText(line: DiffPreviewLine) {
+  if (line.kind === 'addition' || line.kind === 'deletion' || line.kind === 'context') {
+    return line.text.slice(1) || ' ';
+  }
+  if (line.kind === 'path-old' || line.kind === 'path-new') {
+    return line.text.replace(/^(?:---|\+\+\+)\s+/, '') || ' ';
+  }
+  return line.text || ' ';
+}
+
 function loadHighlightRuntime() {
   if (!runtimePromise) {
     runtimePromise = Promise.all([
@@ -162,7 +172,7 @@ export function CodePreview({ content, language }: { content: string; language: 
               <div className={`diff-line ${line.kind}`} role="row" key={`${index}:${line.text}`}>
                 <span className="diff-line-number old" role="cell">{line.oldLine ?? ''}</span>
                 <span className="diff-line-number new" role="cell">{line.newLine ?? ''}</span>
-                <code role="cell">{line.text || ' '}</code>
+                <code role="cell">{diffDisplayText(line)}</code>
               </div>
             ))}
         </div>
