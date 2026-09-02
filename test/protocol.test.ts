@@ -95,6 +95,7 @@ import {
   messagePresentationEqual,
   visualizationRequestIsCurrent,
 } from '../web/src/message-bubble.js';
+import { CodePreview, parseUnifiedDiffLines } from '../web/src/code-preview.js';
 import { ConversationTimeline } from '../web/src/conversation-timeline.js';
 import {
   initialConversationExecution,
@@ -1033,6 +1034,34 @@ test('code preview loads syntax highlighting on demand and sanitizes its markup'
   assert.match(bubbleSource, /onClick=\{\(\) => onDownloadFile\(filePreview\.path\)\}/);
 });
 
+test('unified diff preview renders file sections, paired line numbers, and semantic rows', () => {
+  const content = [
+    'diff --git a/src/app.ts b/src/app.ts',
+    '--- a/src/app.ts',
+    '+++ b/src/app.ts',
+    '@@ -10,2 +20,2 @@ component',
+    ' shared',
+    '-before',
+    '+after',
+    '---removed dashes',
+    '+++added pluses',
+  ].join('\n');
+  assert.deepEqual(parseUnifiedDiffLines(content).slice(3), [
+    { kind: 'hunk', text: '@@ -10,2 +20,2 @@ component', oldLine: null, newLine: null },
+    { kind: 'context', text: ' shared', oldLine: 10, newLine: 20 },
+    { kind: 'deletion', text: '-before', oldLine: 11, newLine: null },
+    { kind: 'addition', text: '+after', oldLine: null, newLine: 21 },
+    { kind: 'deletion', text: '---removed dashes', oldLine: 12, newLine: null },
+    { kind: 'addition', text: '+++added pluses', oldLine: null, newLine: 22 },
+  ]);
+
+  const markup = renderToStaticMarkup(createElement(CodePreview, { content, language: 'diff' }));
+  assert.match(markup, /class="code-file-preview diff-file-preview"/);
+  assert.match(markup, /class="diff-file-row"/);
+  assert.match(markup, /class="diff-line deletion"/);
+  assert.match(markup, /class="diff-line addition"/);
+});
+
 test('Markdown preview resolves relative file links against the open document', () => {
   assert.equal(
     localFilePathFromRelativeHref('docs/guide.md', 'D:\\project\\README.md'),
@@ -1211,6 +1240,16 @@ test('mobile header controls suppress transient tap rectangles without hiding ke
   );
   assert.match(stylesSource, /&:focus:not\(:focus-visible\)\s*\{\s*outline:\s*none;\s*\}/);
   assert.match(stylesSource, /\.icon-button\s*\{[\s\S]*?&:focus-visible\s*\{\s*outline:\s*2px solid #6798ff;/);
+});
+
+test('file-change action suppresses touch flash while retaining keyboard focus', async () => {
+  const stylesSource = await readFile(resolve('web/src/styles.scss'), 'utf8');
+  assert.match(
+    stylesSource,
+    /\.message-change-summary\s*\{[\s\S]*?&\.interactive\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/,
+  );
+  assert.match(stylesSource, /&\.interactive:hover,\s*&\.interactive:focus-visible\s*\{[^}]*background:\s*transparent;/);
+  assert.match(stylesSource, /&\.interactive:focus-visible\s*\{\s*outline:\s*2px solid #6798ff;/);
 });
 
 test('message presentation equality skips unchanged polling snapshots', () => {

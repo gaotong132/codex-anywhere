@@ -589,7 +589,16 @@ function MessageBubbleComponent({
           aria-label={t('本轮代码变更', 'Code changes for this turn')}
         >
           <header>
-            <span>{t('本轮代码变更', 'Code changes for this turn')}</span>
+            <div className="turn-diff-heading">
+              <span>{t('本轮代码变更', 'Code changes for this turn')}</span>
+              {item.fileChanges && (
+                <small>
+                  <span>{t(`${item.fileChanges.changed} 个文件`, `${item.fileChanges.changed} files`)}</span>
+                  <b className="additions">+{item.fileChanges.additions}</b>
+                  <b className="deletions">−{item.fileChanges.deletions}</b>
+                </small>
+              )}
+            </div>
             <div className="markdown-lightbox-actions">
               <button type="button" onClick={closeTurnDiff} aria-label={t('关闭代码变更', 'Close code changes')}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>

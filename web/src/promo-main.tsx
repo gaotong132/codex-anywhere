@@ -39,6 +39,17 @@ const previewImage = `data:image/svg+xml,${encodeURIComponent(`
     <circle cx="601" cy="111" r="17" fill="#3c7ae4"/>
   </svg>`)} `;
 
+const previewDiff = [
+  'diff --git a/web/src/App.tsx b/web/src/App.tsx',
+  '--- a/web/src/App.tsx',
+  '+++ b/web/src/App.tsx',
+  '@@ -42,2 +42,3 @@',
+  ' const compact = true;',
+  '-const follow = false;',
+  '+const follow = true;',
+  '+const mobileReady = true;',
+].join('\n');
+
 const conversationItems: TimelineItem[] = [
   {
     id: 'promo-user',
@@ -57,6 +68,7 @@ const conversationItems: TimelineItem[] = [
     id: 'promo-assistant',
     kind: 'assistant',
     text: 'The mobile release is ready.\n\n- Image delivery passed\n- Progress tracking verified\n\n[Download the build](C:/Mock/atlas-mobile.zip)',
+    historyTurnId: 'promo-turn',
     completedAt: '2026-08-30T10:03:00+08:00',
     fileChanges: { changed: 3, additions: 28, deletions: 11 },
   },
@@ -119,6 +131,10 @@ function ConversationPreview({ dimmed = false }: { dimmed?: boolean }) {
               item={item}
               imageSource={item.attachment ? previewImage : undefined}
               onDownloadFile={() => undefined}
+              onReadTurnDiff={async (turnId) => ({
+                threadId: 'promo-thread', turnId, size: new Blob([previewDiff]).size,
+                content: previewDiff, truncated: false,
+              })}
               onReadVisualization={async () => ''}
             />
           ))}
