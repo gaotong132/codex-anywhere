@@ -73,6 +73,10 @@ reviewed from the relay host with `./scripts/relay.sh approve`.
   sanitized to classed `span` elements before insertion; unavailable languages and inputs above 512 KiB
   fall back to escaped plain code. Every preview retains the separately confirmed download path without
   sending file contents through the relay in plaintext.
+- Per-turn diffs require an explicit click and are resolved only from the rollout path already associated
+  with an allowed session. The connector streams that rollout, isolates the requested turn, and returns at
+  most 512 KiB through the end-to-end encrypted channel. The relay does not store diff content, and the
+  connector never substitutes the current working-tree diff when an historical turn cannot be recovered.
 - Mermaid code blocks load the renderer on demand with strict security and bounded input and edge counts.
   Generated SVG is sanitized again before inline display and uses an explicit high-contrast dark theme;
   invalid diagrams fall back to their source code.

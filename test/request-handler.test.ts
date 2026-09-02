@@ -10,6 +10,7 @@ function createDependencies(overrides = {}) {
       listSessions: async () => [],
       readSession: async () => ({}),
       listSessionTurns: async () => ({}),
+      readTurnDiff: async (threadId, turnId) => ({ threadId, turnId, content: 'diff' }),
       readModelConfig: async () => ({ model: 'gpt-default' }),
       updateModelConfig: async (_threadId, value) => value,
       startTurn: async () => ({ threadId: 'started-thread' }),
@@ -128,6 +129,23 @@ test('code previews use the bounded local text reader', async () => {
   const response = await handle(request('file.text.read', { path: 'D:\\project\\worker.ts' }));
   assert.deepEqual(payload, { path: 'D:\\project\\worker.ts' });
   assert.equal(response.data.language, 'typescript');
+});
+
+test('turn diffs route through the bounded session and turn lookup', async () => {
+  const calls = [];
+  const handle = createRequestHandler(createDependencies({
+    codex: {
+      readTurnDiff: async (threadId, turnId) => {
+        calls.push({ threadId, turnId });
+        return { threadId, turnId, size: 4, content: 'diff', truncated: false };
+      },
+    },
+  }));
+  const response = await handle(request('session.turn.diff.read', {
+    threadId: 'thread-1', turnId: 'turn-2', ignoredPath: 'D:\\private',
+  }));
+  assert.deepEqual(calls, [{ threadId: 'thread-1', turnId: 'turn-2' }]);
+  assert.equal(response.data.content, 'diff');
 });
 
 test('session model configuration stays on the connector control path', async () => {

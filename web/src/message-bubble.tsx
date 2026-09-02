@@ -21,6 +21,7 @@ import { t } from './i18n';
 import { progressTypewriterKey, type TimelineItem } from './history-utils';
 import { isMermaidCodeClass, MermaidDiagram } from './mermaid-diagram';
 import { TypewriterText } from './ui-components';
+import type { TurnDiffDocument } from './app-types';
 
 type MessageCopyState = 'idle' | 'copied' | 'failed';
 
@@ -36,6 +37,7 @@ export type MessageBubbleProps = {
     kind: 'markdown' | 'code' | 'text';
     language: string;
   }>;
+  onReadTurnDiff?: (turnId: string) => Promise<TurnDiffDocument>;
   onReadVisualization: (path: string) => Promise<string>;
 };
 
@@ -45,6 +47,13 @@ type FilePreviewState = {
   content: string;
   kind: 'markdown' | 'code' | 'text';
   language: string;
+  status: 'loading' | 'ready' | 'failed';
+};
+
+type TurnDiffPreviewState = {
+  turnId: string;
+  content: string;
+  truncated: boolean;
   status: 'loading' | 'ready' | 'failed';
 };
 
@@ -70,7 +79,15 @@ function dateTimeValue(value: TimelineItem['completedAt']) {
   return Number.isFinite(date.getTime()) ? date.toISOString() : '';
 }
 
-function MessageMetadata({ item }: { item: TimelineItem }) {
+function MessageMetadata({
+  item,
+  onOpenDiff,
+  diffLoading = false,
+}: {
+  item: TimelineItem;
+  onOpenDiff?: () => void;
+  diffLoading?: boolean;
+}) {
   const [copyState, setCopyState] = useState<MessageCopyState>('idle');
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -99,21 +116,33 @@ function MessageMetadata({ item }: { item: TimelineItem }) {
       ? t('复制失败', 'Copy failed')
       : t('复制消息', 'Copy message');
   const completedDateTime = dateTimeValue(item.completedAt);
+  const changeSummaryTitle = item.fileChanges ? t(
+    `${item.fileChanges.changed} 个文件已更改，新增 ${item.fileChanges.additions} 行，删除 ${item.fileChanges.deletions} 行`,
+    `${item.fileChanges.changed} files changed, ${item.fileChanges.additions} additions, ${item.fileChanges.deletions} deletions`,
+  ) : '';
+  const changeSummary = item.fileChanges && (
+    <>
+      <span>{t(`${item.fileChanges.changed} 个文件已更改`, `${item.fileChanges.changed} files changed`)}</span>
+      <span className="additions">+{item.fileChanges.additions}</span>
+      <span className="deletions">−{item.fileChanges.deletions}</span>
+    </>
+  );
   return (
     <div className="message-meta">
-      {item.kind === 'assistant' && item.fileChanges && (
-        <span
-          className="message-change-summary"
-          title={t(
-            `${item.fileChanges.changed} 个文件已更改，新增 ${item.fileChanges.additions} 行，删除 ${item.fileChanges.deletions} 行`,
-            `${item.fileChanges.changed} files changed, ${item.fileChanges.additions} additions, ${item.fileChanges.deletions} deletions`,
-          )}
-        >
-          <span>{t(`${item.fileChanges.changed} 个文件已更改`, `${item.fileChanges.changed} files changed`)}</span>
-          <span className="additions">+{item.fileChanges.additions}</span>
-          <span className="deletions">−{item.fileChanges.deletions}</span>
-        </span>
-      )}
+      {item.kind === 'assistant' && item.fileChanges && (onOpenDiff
+        ? (
+          <button
+            className="message-change-summary interactive"
+            type="button"
+            title={changeSummaryTitle}
+            aria-label={t(`查看代码变更：${changeSummaryTitle}`, `View code changes: ${changeSummaryTitle}`)}
+            disabled={diffLoading}
+            onClick={onOpenDiff}
+          >
+            {changeSummary}
+          </button>
+        )
+        : <span className="message-change-summary" title={changeSummaryTitle}>{changeSummary}</span>)}
       {item.completedAt && completedDateTime
         ? <time className="message-time" dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
         : <span className="message-time placeholder" aria-hidden="true">00/00 00:00</span>}
@@ -227,6 +256,7 @@ function MessageBubbleComponent({
   imageSource,
   onDownloadFile,
   onReadTextFile,
+  onReadTurnDiff,
   onReadVisualization,
 }: MessageBubbleProps) {
   const [imageExpanded, setImageExpanded] = useState(false);
@@ -234,9 +264,11 @@ function MessageBubbleComponent({
   const [visualizationSource, setVisualizationSource] = useState('');
   const [visualizationStatus, setVisualizationStatus] = useState<'idle' | 'loading' | 'failed'>('idle');
   const [filePreview, setFilePreview] = useState<FilePreviewState | null>(null);
+  const [turnDiffPreview, setTurnDiffPreview] = useState<TurnDiffPreviewState | null>(null);
   const visualizationHistoryEntry = useRef(false);
   const visualizationRequestRef = useRef(0);
   const filePreviewRequestRef = useRef(0);
+  const turnDiffRequestRef = useRef(0);
   const visualizationPathRef = useRef(item.visualization?.path);
   visualizationPathRef.current = item.visualization?.path;
   const copyable = item.kind === 'user' || item.kind === 'assistant';
@@ -252,22 +284,28 @@ function MessageBubbleComponent({
   useEffect(() => () => {
     visualizationRequestRef.current += 1;
     filePreviewRequestRef.current += 1;
+    turnDiffRequestRef.current += 1;
   }, []);
+  useEffect(() => {
+    turnDiffRequestRef.current += 1;
+    setTurnDiffPreview(null);
+  }, [item.historyTurnId]);
   useEffect(() => () => {
     if (visualizationSource.startsWith('blob:')) URL.revokeObjectURL(visualizationSource);
   }, [visualizationSource]);
   useEffect(() => {
-    if (!imageExpanded && !visualizationOpen && !filePreview) return undefined;
+    if (!imageExpanded && !visualizationOpen && !filePreview && !turnDiffPreview) return undefined;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setImageExpanded(false);
         if (visualizationOpen) closeVisualization();
         if (filePreview) closeFilePreview();
+        if (turnDiffPreview) closeTurnDiff();
       }
     };
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [filePreview, imageExpanded, visualizationOpen]);
+  }, [filePreview, imageExpanded, turnDiffPreview, visualizationOpen]);
   useEffect(() => {
     if (!visualizationOpen) return undefined;
     const closeOnBack = () => {
@@ -360,6 +398,31 @@ function MessageBubbleComponent({
   function closeFilePreview() {
     filePreviewRequestRef.current += 1;
     setFilePreview(null);
+  }
+
+  async function openTurnDiff() {
+    const turnId = String(item.historyTurnId || '').trim();
+    if (!turnId || !onReadTurnDiff || turnDiffPreview?.status === 'loading') return;
+    const requestVersion = ++turnDiffRequestRef.current;
+    setTurnDiffPreview({ turnId, content: '', truncated: false, status: 'loading' });
+    try {
+      const document = await onReadTurnDiff(turnId);
+      if (requestVersion !== turnDiffRequestRef.current || document.turnId !== turnId) return;
+      setTurnDiffPreview({
+        turnId,
+        content: document.content,
+        truncated: document.truncated,
+        status: 'ready',
+      });
+    } catch {
+      if (requestVersion !== turnDiffRequestRef.current) return;
+      setTurnDiffPreview({ turnId, content: '', truncated: false, status: 'failed' });
+    }
+  }
+
+  function closeTurnDiff() {
+    turnDiffRequestRef.current += 1;
+    setTurnDiffPreview(null);
   }
 
   if (item.kind === 'progress') {
@@ -511,7 +574,51 @@ function MessageBubbleComponent({
           </div>
         )}
       </div>
-      {copyable && <MessageMetadata item={item} />}
+      {copyable && (
+        <MessageMetadata
+          item={item}
+          onOpenDiff={item.historyTurnId && onReadTurnDiff ? () => void openTurnDiff() : undefined}
+          diffLoading={turnDiffPreview?.status === 'loading'}
+        />
+      )}
+      {turnDiffPreview && (
+        <div
+          className="markdown-lightbox turn-diff-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('本轮代码变更', 'Code changes for this turn')}
+        >
+          <header>
+            <span>{t('本轮代码变更', 'Code changes for this turn')}</span>
+            <div className="markdown-lightbox-actions">
+              <button type="button" onClick={closeTurnDiff} aria-label={t('关闭代码变更', 'Close code changes')}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+              </button>
+            </div>
+          </header>
+          <main aria-busy={turnDiffPreview.status === 'loading'}>
+            {turnDiffPreview.status === 'loading' && (
+              <div className="markdown-preview-state">{t('正在读取本轮代码变更…', 'Loading code changes for this turn…')}</div>
+            )}
+            {turnDiffPreview.status === 'failed' && (
+              <div className="markdown-preview-state failed">
+                <span>{t('本轮代码变更不可用。', 'Code changes for this turn are unavailable.')}</span>
+                <button type="button" onClick={() => void openTurnDiff()}>{t('重试', 'Retry')}</button>
+              </div>
+            )}
+            {turnDiffPreview.status === 'ready' && (
+              <>
+                {turnDiffPreview.truncated && (
+                  <div className="turn-diff-truncated">
+                    {t('变更内容较大，已显示前 512 KiB。', 'This diff is large; showing the first 512 KiB.')}
+                  </div>
+                )}
+                <CodePreview content={turnDiffPreview.content} language="diff" />
+              </>
+            )}
+          </main>
+        </div>
+      )}
     </div>
   );
 }
@@ -546,6 +653,7 @@ function messageBubblePropsEqual(left: MessageBubbleProps, right: MessageBubbleP
     && left.imageSource === right.imageSource
     && left.onDownloadFile === right.onDownloadFile
     && left.onReadTextFile === right.onReadTextFile
+    && left.onReadTurnDiff === right.onReadTurnDiff
     && left.onReadVisualization === right.onReadVisualization
     && messagePresentationEqual(left.item, right.item);
 }

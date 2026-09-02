@@ -5,6 +5,7 @@ import {
   type TimelineItem,
 } from './history-utils';
 import { t } from './i18n';
+import type { TurnDiffDocument } from './app-types';
 
 const MessageBubble = lazy(() => import('./message-bubble').then((module) => ({
   default: module.MessageBubble,
@@ -34,6 +35,7 @@ type ConversationTimelineProps = {
     kind: 'markdown' | 'code' | 'text';
     language: string;
   }>;
+  onReadTurnDiff: (turnId: string) => Promise<TurnDiffDocument>;
   onReadVisualization: (path: string) => Promise<string>;
 };
 
@@ -55,6 +57,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   onLoadOlder,
   onDownloadFile,
   onReadTextFile,
+  onReadTurnDiff,
   onReadVisualization,
 }: ConversationTimelineProps) {
   const resolvedItems = useMemo(() => timeline.map((item) => {
@@ -110,6 +113,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
               imageSource={attachment ? attachmentUrls[attachment.path] : undefined}
               onDownloadFile={onDownloadFile}
               onReadTextFile={onReadTextFile}
+              onReadTurnDiff={onReadTurnDiff}
               onReadVisualization={onReadVisualization}
             />
           ))}

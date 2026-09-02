@@ -15,6 +15,7 @@ type CodexGateway = {
   listSessions(options: Payload): Promise<any[]>;
   readSession(threadId: string): Promise<any>;
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
+  readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
   updateModelConfig(threadId: string, value: Payload): Promise<any>;
   startTurn(options: Payload): Promise<Record<string, any>>;
@@ -105,6 +106,9 @@ async function dispatchAction({
       limit: payload.limit,
       mode: payload.mode,
     });
+  }
+  if (action === 'session.turn.diff.read') {
+    return codex.readTurnDiff(String(payload.threadId || ''), String(payload.turnId || ''));
   }
   if (action === 'session.model-config.read') {
     return codex.readModelConfig(String(payload.threadId || ''));

@@ -101,7 +101,8 @@ there is no shared browser token or recovery login.
 Open an existing session from the phone and send a harmless message. Confirm that the browser and Codex
 receive the update. If the conversation contains local links, click one Markdown file and one common
 source file: each should open a bounded preview, the source file should use syntax color when supported,
-and both previews should retain a Download button. Also verify that the public URL uses the intended
+and both previews should retain a Download button. If a completed reply reports file changes, tap the
+totals and confirm that the bounded diff belongs to that turn. Also verify that the public URL uses the intended
 transport and that `ECS-IP:3300` is unreachable externally.
 
 ## Operate and update

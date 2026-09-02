@@ -14,6 +14,11 @@ import { needsDesktopPermissionRecovery } from './session-permissions.js';
 import { resolveCodexExecutable } from './codex-executable.js';
 import { summarizePlanSteps, summarizeUnifiedDiff } from '../shared/turn-progress.js';
 import { summarizeToolActivity } from '../shared/activity-detail.js';
+import {
+  createTurnDiffDocument,
+  readRolloutTurnDiff,
+  type TurnDiffDocument,
+} from './turn-diffs.js';
 
 const RPC_TIMEOUT_MS = 20_000;
 const SUMMARY_LIMIT = 4_000;
@@ -21,6 +26,7 @@ const DEFAULT_HISTORY_PAGE_SIZE = 6;
 const MAX_HISTORY_PAGE_SIZE = 10;
 const MAX_LIVE_PAGE_SIZE = 2;
 const LARGE_ROLLOUT_BYTES = 64 * 1024 * 1024;
+const MAX_CACHED_TURN_DIFFS = 12;
 const PACKAGE_VERSION = String((JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 ) as { version?: unknown }).version || '0.0.0');
@@ -97,6 +103,7 @@ export class CodexAppServer extends EventEmitter {
   sessionMetadata: Map<string, SessionMetadata>;
   sessionModelSettings: Map<string, RolloutModelSettings>;
   modelCatalogCache: { expiresAt: number; models: ModelOption[] } | null;
+  turnDiffs: Map<string, TurnDiffDocument>;
 
   constructor(options: CodexAppServerOptions = {}) {
     super();
@@ -117,6 +124,7 @@ export class CodexAppServer extends EventEmitter {
     this.sessionMetadata = new Map();
     this.sessionModelSettings = new Map();
     this.modelCatalogCache = null;
+    this.turnDiffs = new Map();
   }
 
   async ensureStarted(): Promise<void> {
@@ -308,6 +316,38 @@ export class CodexAppServer extends EventEmitter {
   ) {
     if (!filePath) throw new Error('session_history_unavailable');
     return readRolloutTail({ filePath, threadId, ...options });
+  }
+
+  async readTurnDiff(threadId: unknown, turnId: unknown) {
+    const resolvedThreadId = String(threadId || '').trim();
+    const resolvedTurnId = String(turnId || '').trim();
+    if (!resolvedThreadId || resolvedThreadId.length > 256 || /[\0\r\n]/.test(resolvedThreadId)) {
+      throw new Error('thread_id_required');
+    }
+    if (!resolvedTurnId || resolvedTurnId.length > 256 || /[\0\r\n]/.test(resolvedTurnId)) {
+      throw new Error('turn_id_required');
+    }
+    const cached = this.turnDiffs.get(turnDiffKey(resolvedThreadId, resolvedTurnId));
+    if (cached) return cached;
+
+    try {
+      await this.ensureStarted();
+      let metadata = this.sessionMetadata.get(resolvedThreadId);
+      if (!metadata?.path || !metadata?.cwd) {
+        await this.listSessions();
+        metadata = this.sessionMetadata.get(resolvedThreadId);
+      }
+      if (!metadata?.path || !metadata.cwd || !isAllowedWorkspace(this.allowedRoots, metadata.cwd)) {
+        throw new Error('turn_diff_unavailable');
+      }
+      return await readRolloutTurnDiff({
+        filePath: metadata.path,
+        threadId: resolvedThreadId,
+        turnId: resolvedTurnId,
+      });
+    } catch {
+      throw new Error('turn_diff_unavailable');
+    }
   }
 
   async readModelConfig(threadId: unknown): Promise<SessionModelConfig> {
@@ -721,7 +761,14 @@ export class CodexAppServer extends EventEmitter {
     }
     if (method === 'turn/diff/updated') {
       const files = summarizeUnifiedDiff(params.diff);
-      if (files) this.emitTurn('turn.progress', { files });
+      if (files) {
+        const activeTurn = this.activeTurn;
+        const document = activeTurn
+          ? createTurnDiffDocument(activeTurn.threadId, activeTurn.turnId, params.diff)
+          : null;
+        if (document) this.rememberTurnDiff(document);
+        this.emitTurn('turn.progress', { files });
+      }
       return;
     }
     if (isReasoningMethod(method)) {
@@ -775,6 +822,17 @@ export class CodexAppServer extends EventEmitter {
     }
   }
 
+  rememberTurnDiff(document: TurnDiffDocument) {
+    const key = turnDiffKey(document.threadId, document.turnId);
+    this.turnDiffs.delete(key);
+    this.turnDiffs.set(key, document);
+    while (this.turnDiffs.size > MAX_CACHED_TURN_DIFFS) {
+      const oldest = this.turnDiffs.keys().next().value;
+      if (oldest === undefined) break;
+      this.turnDiffs.delete(oldest);
+    }
+  }
+
   emitTurn(event: string, payload: JsonObject) {
     if (!this.activeTurn) return;
     this.emit('turn-event', {
@@ -810,6 +868,10 @@ function isFastServiceTier(serviceTier: unknown, models: ModelOption[], selected
   const model = models.find((candidate) => candidate.model === String(selectedModel || ''));
   const tier = model?.serviceTiers.find((candidate) => candidate.id === tierId);
   return /(?:fast|priority)/i.test(`${tierId} ${tier?.name || ''}`);
+}
+
+function turnDiffKey(threadId: string, turnId: string) {
+  return `${threadId}\0${turnId}`;
 }
 
 function approvalKind(method: string) {

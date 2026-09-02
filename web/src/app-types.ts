@@ -92,6 +92,13 @@ export type TextPreviewDocument = {
   kind: 'markdown' | 'code' | 'text';
   language: string;
 };
+export type TurnDiffDocument = {
+  threadId: string;
+  turnId: string;
+  size: number;
+  content: string;
+  truncated: boolean;
+};
 export type OpenedDownload = { downloadId: string; downloadToken: string; name: string; size: number };
 export type DownloadFileChunk = { offset: number; nextOffset: number; done: boolean; data: string };
 export type FileDownloadState = {

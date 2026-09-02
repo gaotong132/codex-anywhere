@@ -24,7 +24,8 @@ connector computer; a small relay you control provides the remote meeting point.
 - **Continue real Codex sessions** — browse recent sessions, read Markdown history, send text or images,
   and start a task in an existing local project.
 - **Follow work as it happens** — see running and unread-complete sessions, progress updates, plan steps,
-  tool purpose, elapsed time, and file-change totals. Long histories load incrementally.
+  tool purpose, elapsed time, and file-change totals. Tap a completed turn's totals to inspect its bounded
+  unified diff. Long histories load incrementally.
 - **Guide an active task** — append text to a connector-owned run, or use Desktop delivery when the
   existing session supports it. Messages are sent directly; Codex Anywhere does not maintain a Web queue.
 - **Choose how Codex works** — view or change the model, reasoning effort, and fast mode when the selected
@@ -58,6 +59,13 @@ Text previews accept only regular UTF-8 files up to 2 MiB inside configured conn
 extensions such as `.env`, `.pem`, and `.key` are intentionally excluded. Every preview keeps a Download
 button, and highlighting falls back to escaped plain code if a language is unavailable or the input is
 too large to highlight efficiently.
+
+### Per-turn code changes
+
+When a completed reply shows file-change totals, tap them to open the unified diff produced by that Codex
+turn. The browser requests it only on demand; the connector reads the known session rollout incrementally,
+keeps turns isolated, and returns at most 512 KiB. Large diffs are marked as truncated, and unavailable
+legacy turns fail closed instead of falling back to the current working-tree diff.
 
 ## Architecture
 

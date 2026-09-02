@@ -50,6 +50,10 @@ import {
   readRolloutModelSettings,
   readRolloutTail,
 } from '../src/connector/rollout-tail.js';
+import {
+  createTurnDiffDocument,
+  readRolloutTurnDiff,
+} from '../src/connector/turn-diffs.js';
 import { needsDesktopPermissionRecovery } from '../src/connector/session-permissions.js';
 import {
   isMarkdownFilePath,
@@ -1091,6 +1095,24 @@ test('message time and copy action render outside the message card', () => {
   assert.match(markup, /<\/div><div class="message-meta">/);
 });
 
+test('completed file-change totals become an explicit per-turn diff action', () => {
+  const markup = renderToStaticMarkup(createElement(MessageBubble, {
+    item: {
+      id: 'diff-message', kind: 'assistant' as const, text: '完成', historyTurnId: 'turn-diff',
+      fileChanges: { changed: 2, additions: 8, deletions: 3 },
+    },
+    onDownloadFile: () => undefined,
+    onReadTurnDiff: async () => ({
+      threadId: 'thread-1', turnId: 'turn-diff', size: 4, content: 'diff', truncated: false,
+    }),
+    onReadVisualization: async () => '',
+  }));
+
+  assert.match(markup, /<button class="message-change-summary interactive"/);
+  assert.match(markup, /查看代码变更/);
+  assert.match(markup, /2 个文件已更改/);
+});
+
 test('delegation metadata does not add hidden layout inside user bubbles', () => {
   const markup = renderToStaticMarkup(createElement(MessageBubble, {
     item: {
@@ -1577,6 +1599,64 @@ test('turn progress extracts only aggregate patch statistics', () => {
   });
 });
 
+test('turn diff reader isolates one rollout turn and formats patch-only file changes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-turn-diff-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const row = (value) => `${JSON.stringify(value)}\n`;
+  try {
+    await writeFile(filePath, [
+      row({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-first' } }),
+      row({ type: 'event_msg', payload: { type: 'patch_apply_end', success: true, changes: {
+        'src/first.ts': { type: 'update', unified_diff: '@@ -1 +1 @@\n-old\n+new' },
+        'src/created.ts': { type: 'add', content: 'export const created = true;\n' },
+      } } }),
+      row({ type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn-first' } }),
+      row({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-second' } }),
+      row({ type: 'event_msg', payload: { type: 'patch_apply_end', success: true, changes: {
+        'src/private-second.ts': { type: 'update', unified_diff: '@@ -1 +1 @@\n-secret\n+hidden' },
+      } } }),
+    ].join(''));
+
+    const result = await readRolloutTurnDiff({ filePath, threadId: 'thread-1', turnId: 'turn-first' });
+    assert.equal(result.truncated, false);
+    assert.equal(result.size, Buffer.byteLength(result.content));
+    assert.match(result.content, /diff --git a\/src\/first\.ts b\/src\/first\.ts/);
+    assert.match(result.content, /\+export const created = true;/);
+    assert.doesNotMatch(result.content, /private-second|secret|hidden/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test('latest cumulative diff replaces earlier patches and large live diffs stay bounded', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-turn-diff-snapshot-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const row = (value) => `${JSON.stringify(value)}\n`;
+  const cumulative = 'diff --git a/src/current.ts b/src/current.ts\n--- a/src/current.ts\n+++ b/src/current.ts\n@@ -1 +1 @@\n-before\n+after';
+  try {
+    await writeFile(filePath, [
+      row({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-current' } }),
+      row({ type: 'event_msg', payload: { type: 'patch_apply_end', success: true, changes: {
+        'src/replaced.ts': { type: 'update', unified_diff: '@@ -1 +1 @@\n-old\n+temporary' },
+      } } }),
+      row({ type: 'event_msg', payload: { type: 'turn_diff', diff: cumulative } }),
+      row({ type: 'event_msg', payload: { type: 'task_complete', turn_id: 'turn-current' } }),
+    ].join(''));
+
+    const result = await readRolloutTurnDiff({ filePath, threadId: 'thread-1', turnId: 'turn-current' });
+    assert.equal(result.content, cumulative);
+    assert.doesNotMatch(result.content, /replaced|temporary/);
+
+    const bounded = createTurnDiffDocument('thread-1', 'turn-large', `diff --git a/a b/a\n${'+x\n'.repeat(300_000)}`);
+    assert.ok(bounded);
+    assert.equal(bounded.truncated, true);
+    assert.ok(bounded.size <= 512 * 1024);
+    assert.equal(bounded.size, Buffer.byteLength(bounded.content));
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('rollout tail exposes active plan and aggregate file progress', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-rollout-progress-'));
   const filePath = join(directory, 'rollout.jsonl');
@@ -1949,6 +2029,13 @@ test('app-server forwards only aggregate plan and diff progress', async () => {
     files: { changed: 1, additions: 1, deletions: 1 },
   });
   assert.equal(JSON.stringify(diff.payload).includes('private.ts'), false);
+  assert.deepEqual(await codex.readTurnDiff('thread-1', 'turn-1'), {
+    threadId: 'thread-1',
+    turnId: 'turn-1',
+    size: Buffer.byteLength('diff --git a/private.ts b/private.ts\n--- a/private.ts\n+++ b/private.ts\n@@ -1 +1 @@\n-old\n+new'),
+    content: 'diff --git a/private.ts b/private.ts\n--- a/private.ts\n+++ b/private.ts\n@@ -1 +1 @@\n-old\n+new',
+    truncated: false,
+  });
 });
 
 test('conversation history uses a lightweight bounded descending cursor page', async () => {

@@ -124,6 +124,7 @@ import type {
   SessionModelConfig,
   TurnStartResult,
   TextPreviewDocument,
+  TurnDiffDocument,
   VisualizationDocument,
 } from './app-types';
 
@@ -2315,6 +2316,23 @@ export default function App() {
     return result;
   }, [request]);
 
+  const readTurnDiff = useCallback(async (turnId: string) => {
+    const selectedThreadId = String(threadId || '').trim();
+    const selectedTurnId = String(turnId || '').trim();
+    if (!selectedThreadId || !selectedTurnId) throw new Error('turn_diff_unavailable');
+    const result = await request<TurnDiffDocument>('session.turn.diff.read', {
+      threadId: selectedThreadId,
+      turnId: selectedTurnId,
+    });
+    if (!result || result.threadId !== selectedThreadId || result.turnId !== selectedTurnId
+      || typeof result.content !== 'string' || result.content.includes('\0')
+      || !Number.isSafeInteger(result.size) || result.size <= 0 || result.size > 512 * 1024
+      || new Blob([result.content]).size !== result.size || typeof result.truncated !== 'boolean') {
+      throw new Error('turn_diff_content_invalid');
+    }
+    return result;
+  }, [request, threadId]);
+
   const cancelFileDownload = useCallback(() => {
     fileDownloadCancelRef.current = true;
     fileDownloadAbortRef.current?.abort();
@@ -2544,6 +2562,7 @@ export default function App() {
           onLoadOlder={loadOlder}
           onDownloadFile={downloadLocalFile}
           onReadTextFile={readTextFile}
+          onReadTurnDiff={readTurnDiff}
           onReadVisualization={readVisualization}
         />
         <div className="execution-strip">
