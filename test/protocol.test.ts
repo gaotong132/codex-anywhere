@@ -80,7 +80,6 @@ import {
   sessionDeliveryMatchesTarget,
   shouldAdoptStartedThread,
   shouldLoadOlderHistory,
-  shouldPrefillOlderHistory,
 } from '../web/src/app-utils.js';
 import { RunDetailsSheet } from '../web/src/live-activity.js';
 import {
@@ -617,25 +616,10 @@ test('older history loads only near the top with another page available', () => 
   assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, 'next', true, true), false);
 });
 
-test('top-scroll pagination is not gated by a previous scroll direction', async () => {
+test('top-scroll pagination waits for browsing away from the latest edge without using stale direction state', async () => {
   const appSource = await readFile(resolve('web/src/App.tsx'), 'utf8');
-  assert.match(appSource, /if \(shouldLoadOlderHistory\(/);
+  assert.match(appSource, /if \(browsingOlder && shouldLoadOlderHistory\(/);
   assert.doesNotMatch(appSource, /currentScrollTop < previousScrollTop/);
-});
-
-test('older history prefill runs only when the list cannot leave the top trigger area', () => {
-  assert.equal(shouldPrefillOlderHistory(
-    { scrollHeight: 1_000, clientHeight: 900 }, 'next', true, false,
-  ), true);
-  assert.equal(shouldPrefillOlderHistory(
-    { scrollHeight: 1_000, clientHeight: 700 }, 'next', true, false,
-  ), false);
-  assert.equal(shouldPrefillOlderHistory(
-    { scrollHeight: 1_000, clientHeight: 900 }, null, true, false,
-  ), false);
-  assert.equal(shouldPrefillOlderHistory(
-    { scrollHeight: 1_000, clientHeight: 900 }, 'next', true, true,
-  ), false);
 });
 
 test('older history shows a spinner and explicit state while a page is loading', async () => {
@@ -645,6 +629,7 @@ test('older history shows a spinner and explicit state while a page is loading',
   assert.match(timelineSource, /正在加载更早记录…/);
   assert.match(timelineSource, /加载失败，点击重试/);
   assert.match(timelineSource, /new IntersectionObserver/);
+  assert.match(timelineSource, /!olderHistoryAutoLoadEnabled/);
 });
 
 test('empty intermediate history pages keep a visible pagination control', () => {
@@ -657,6 +642,7 @@ test('empty intermediate history pages keep a visible pagination control', () =>
     nextCursor: 'rollout:v1:1048576',
     historyLoading: false,
     olderHistoryError: false,
+    olderHistoryAutoLoadEnabled: false,
     timeline: [],
     knownAttachments: {},
     attachmentUrls: {},

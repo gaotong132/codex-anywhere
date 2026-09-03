@@ -23,6 +23,7 @@ type ConversationTimelineProps = {
   nextCursor: string | null;
   historyLoading: boolean;
   olderHistoryError: boolean;
+  olderHistoryAutoLoadEnabled: boolean;
   timeline: TimelineItem[];
   knownAttachments: Record<string, KnownAttachment>;
   attachmentUrls: Record<string, string>;
@@ -53,6 +54,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   nextCursor,
   historyLoading,
   olderHistoryError,
+  olderHistoryAutoLoadEnabled,
   timeline,
   knownAttachments,
   attachmentUrls,
@@ -81,6 +83,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
     const root = messageListRef.current;
     const sentinel = olderHistorySentinelRef.current;
     if (!root || !sentinel || !threadId || !initialHistoryLoaded || !nextCursor
+      || !olderHistoryAutoLoadEnabled
       || historyLoading || olderHistoryError || typeof IntersectionObserver === 'undefined') return undefined;
     let requested = false;
     const observer = new IntersectionObserver((entries) => {
@@ -91,7 +94,10 @@ export const ConversationTimeline = memo(function ConversationTimeline({
     }, { root, rootMargin: '160px 0px 0px', threshold: 0 });
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [historyLoading, initialHistoryLoaded, messageListRef, nextCursor, olderHistoryError, onLoadOlder, threadId]);
+  }, [
+    historyLoading, initialHistoryLoaded, messageListRef, nextCursor, olderHistoryAutoLoadEnabled,
+    olderHistoryError, onLoadOlder, threadId,
+  ]);
 
   return (
     <div className="message-list" ref={messageListRef} onScroll={onScroll}>

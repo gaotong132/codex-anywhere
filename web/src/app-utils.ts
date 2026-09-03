@@ -202,19 +202,6 @@ export function shouldLoadOlderHistory(
   return Boolean(nextCursor) && initialHistoryLoaded && !historyLoading && metrics.scrollTop <= threshold;
 }
 
-export function shouldPrefillOlderHistory(
-  metrics: Pick<HTMLElement, 'scrollHeight' | 'clientHeight'>,
-  nextCursor: string | null,
-  initialHistoryLoaded: boolean,
-  historyLoading: boolean,
-  threshold = 160,
-) {
-  return Boolean(nextCursor)
-    && initialHistoryLoaded
-    && !historyLoading
-    && metrics.scrollHeight - metrics.clientHeight <= threshold;
-}
-
 export function initialBootstrapReady(
   authenticated: boolean,
   sessionsInitialized: boolean,

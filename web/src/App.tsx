@@ -66,7 +66,6 @@ import {
   sessionDeliveryMatchesTarget,
   shouldAdoptStartedThread,
   shouldLoadOlderHistory,
-  shouldPrefillOlderHistory,
   type SessionAttentionState,
 } from './app-utils';
 import {
@@ -254,6 +253,7 @@ export default function App() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [olderHistoryError, setOlderHistoryError] = useState(false);
+  const [olderHistoryAutoLoadEnabled, setOlderHistoryAutoLoadEnabled] = useState(false);
   const [initialHistoryLoaded, setInitialHistoryLoaded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
@@ -444,12 +444,6 @@ export default function App() {
       observer.disconnect();
     };
   }, [initialBootstrapPending, threadId]);
-
-  const updateAutoFollowLatest = useCallback(() => {
-    const element = messageListRef.current;
-    if (!element) return;
-    autoFollowLatestRef.current = isNearScrollBottom(element);
-  }, []);
 
   useEffect(() => {
     if (executionState !== 'completed') return;
@@ -1389,6 +1383,7 @@ export default function App() {
     attachmentLoadsRef.current.clear();
     setNextCursor(null);
     setOlderHistoryError(false);
+    setOlderHistoryAutoLoadEnabled(false);
     setInitialHistoryLoaded(!nextThreadId);
     setHistoryLoading(false);
     liveHistoryHydratedThreadRef.current = null;
@@ -1535,21 +1530,14 @@ export default function App() {
   const handleMessageScroll = useCallback(() => {
     const element = messageListRef.current;
     if (!element) return;
-    updateAutoFollowLatest();
-    if (shouldLoadOlderHistory(
+    const followingLatest = isNearScrollBottom(element);
+    const browsingOlder = element.scrollHeight - element.scrollTop - element.clientHeight > 2;
+    autoFollowLatestRef.current = followingLatest;
+    if (browsingOlder) setOlderHistoryAutoLoadEnabled(true);
+    if (browsingOlder && shouldLoadOlderHistory(
       element, nextCursor, initialHistoryLoaded, historyLoading,
     )) loadOlder();
-  }, [historyLoading, initialHistoryLoaded, loadOlder, nextCursor, updateAutoFollowLatest]);
-
-  useEffect(() => {
-    const element = messageListRef.current;
-    if (!olderHistoryError && element && shouldPrefillOlderHistory(
-      element, nextCursor, initialHistoryLoaded, historyLoading,
-    )) loadOlder();
-  }, [
-    historyLoading, initialBootstrapPending, initialHistoryLoaded, loadOlder, nextCursor,
-    olderHistoryError, timeline,
-  ]);
+  }, [historyLoading, initialHistoryLoaded, loadOlder, nextCursor]);
 
   const chooseImage = useCallback(async (file?: File) => {
     if (!file) return;
@@ -2432,6 +2420,7 @@ export default function App() {
           nextCursor={nextCursor}
           historyLoading={historyLoading}
           olderHistoryError={olderHistoryError}
+          olderHistoryAutoLoadEnabled={olderHistoryAutoLoadEnabled}
           timeline={timeline}
           knownAttachments={knownAttachments}
           attachmentUrls={attachmentUrls}

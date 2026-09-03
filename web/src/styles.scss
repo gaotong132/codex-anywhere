@@ -629,6 +629,7 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   padding: 24px max(22px, calc((100% - 860px) / 2));
   overflow-y: auto;
   overflow-x: hidden;
+  overflow-anchor: none;
   overscroll-behavior: contain;
   scrollbar-width: none;
   -ms-overflow-style: none;
