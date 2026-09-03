@@ -203,7 +203,8 @@ run_as_service_user env HOME="$USER_HOME" "$NPM_BIN" run build:node
 systemctl daemon-reload
 
 if [ "$NO_START" -eq 0 ]; then
-  systemctl enable --now "$SERVICE_NAME"
+  systemctl enable "$SERVICE_NAME"
+  systemctl restart "$SERVICE_NAME"
   sleep 1
   systemctl is-active --quiet "$SERVICE_NAME" || {
     journalctl -u "$SERVICE_NAME" -n 30 --no-pager >&2 || true
