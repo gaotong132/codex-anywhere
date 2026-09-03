@@ -2,7 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { MessageBubble } from './message-bubble';
 import type { TimelineItem } from './history-utils';
 import { PresenceIndicator } from './presence-indicator';
-import { SidebarIcon } from './ui-components';
+import { CustomSelect, SidebarIcon } from './ui-components';
 import './styles.scss';
 import './promo.scss';
 
@@ -180,14 +180,26 @@ function SessionDrawerPreview() {
             <button className="sidebar-tool mobile-only" type="button" tabIndex={-1}><SidebarIcon name="panel-close" /></button>
           </div>
         </div>
-        <label className="environment-picker">
+        <div className="environment-picker">
           <span className="environment-picker-label">Execution environment</span>
-          <span className="environment-picker-status online" aria-hidden="true" />
-          <select value="ecs" onChange={() => {}} tabIndex={-1} aria-label="Execution environment">
-            <option value="ecs">ECS · 24×7 · Online</option>
-          </select>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
-        </label>
+          <CustomSelect
+            className="environment-picker-select"
+            value="ecs"
+            onChange={() => {}}
+            ariaLabel="Execution environment"
+            options={[{
+              value: 'ecs', label: 'ECS · 24×7', description: 'Online',
+              leading: <span className="environment-status-dot online" />,
+            }]}
+            triggerContent={(
+              <>
+                <span className="environment-status-dot online" aria-hidden="true" />
+                <strong>ECS · 24×7</strong>
+                <small>Online</small>
+              </>
+            )}
+          />
+        </div>
         <nav className="session-list">
           {sessions.map((session) => (
             <button

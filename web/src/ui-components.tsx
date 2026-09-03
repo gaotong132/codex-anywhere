@@ -8,6 +8,7 @@ export type CustomSelectOption = {
   value: string;
   label: string;
   description?: string;
+  leading?: ReactNode;
 };
 
 export function CustomSelect({
@@ -99,6 +100,9 @@ export function CustomSelect({
     <div
       className={`custom-select${open ? ' open' : ''}${className ? ` ${className}` : ''}`}
       ref={rootRef}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+      }}
     >
       <button
         ref={triggerRef}
@@ -128,11 +132,12 @@ export function CustomSelect({
               role="option"
               tabIndex={-1}
               aria-selected={index === selectedIndex}
-              className={`custom-select-option${index === activeIndex ? ' active' : ''}${index === selectedIndex ? ' selected' : ''}`}
+              className={`custom-select-option${option.leading ? ' has-leading' : ''}${index === activeIndex ? ' active' : ''}${index === selectedIndex ? ' selected' : ''}`}
               title={option.label}
               onPointerMove={() => setActiveIndex(index)}
               onClick={() => choose(index)}
             >
+              {option.leading && <span className="custom-select-option-leading" aria-hidden="true">{option.leading}</span>}
               <span><strong>{option.label}</strong>{option.description && <small>{option.description}</small>}</span>
               {index === selectedIndex && <i aria-hidden="true">✓</i>}
             </button>

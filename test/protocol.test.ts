@@ -295,7 +295,11 @@ test('session sidebar sorts recent sessions and renders current execution state 
   assert.ok(markup.indexOf('Current task') < markup.indexOf('Older task'));
   assert.match(markup, /session-card active running/);
   assert.match(markup, />beta</);
-  assert.match(markup, /ECS · 24×7 · 在线/);
+  assert.match(markup, /environment-picker-select/);
+  assert.match(markup, /aria-haspopup="listbox"/);
+  assert.match(markup, /ECS · 24×7/);
+  assert.match(markup, />在线</);
+  assert.doesNotMatch(markup, /<select/);
 });
 
 test('session rename dialog exposes a bounded mobile-friendly form', () => {
