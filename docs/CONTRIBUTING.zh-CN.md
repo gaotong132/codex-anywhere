@@ -30,6 +30,10 @@ npm run build
 | `scripts` | 转发服务管理，以及 Windows、Linux 连接器安装和守护 |
 | `docs` / `deploy` | 用户文档、示意图和可选入口示例 |
 
+顶层 UI 与 app-server 适配器只承担编排职责。浏览器请求的生命周期与重放放在
+`bridge-request-manager`，按执行环境/会话隔离的模型与权限状态放在 `session-configuration`；连接器的
+工作区策略、审批映射与历史投影分别留在聚焦的 `src/connector` 模块中，避免重新堆回进程/RPC 适配器。
+
 ## 设计约束
 
 1. 保持单用户、自托管架构，不加入遥测、托管会话存储、通用远程 Shell、自动 fork 或自动设备信任。

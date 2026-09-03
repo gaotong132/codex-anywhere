@@ -1,13 +1,10 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { readFileSync, realpathSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import {
-  basename, dirname, isAbsolute, relative, resolve,
-} from 'node:path';
+import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
-import { parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
 import {
   readRolloutContextUsage,
   readRolloutModelSettings,
@@ -15,11 +12,9 @@ import {
   readRolloutTail,
   type RolloutModelSettings,
 } from './rollout-tail.js';
-import { extractGeneratedImageAttachment } from './generated-images.js';
 import { needsDesktopPermissionRecovery } from './session-permissions.js';
 import { resolveCodexExecutable } from './codex-executable.js';
 import { summarizePlanSteps, summarizeUnifiedDiff } from '../shared/turn-progress.js';
-import { summarizeToolActivity } from '../shared/activity-detail.js';
 import { publicError } from '../shared/protocol.js';
 import {
   normalizePermissionMode,
@@ -27,6 +22,22 @@ import {
   type PermissionMode,
 } from '../shared/permission-mode.js';
 import { normalizeSessionName } from '../shared/session-name.js';
+import {
+  extractText,
+  isReasoningMethod,
+  mapTurns,
+  summarizeItem,
+} from './app-server-history.js';
+import {
+  approvalDecisionSummary,
+  approvalKind,
+  approvalResult,
+  approvalSummary,
+  approvedPermissions,
+  permissionSettings,
+  type PendingApproval,
+} from './app-server-permissions.js';
+import { isAllowedWorkspace, resolveAllowedWorkspace } from './workspace-policy.js';
 import {
   createTurnDiffDocument,
   readRolloutTurnDiff,
@@ -57,14 +68,6 @@ type PendingRpc = {
   resolve: (value: any) => void;
   reject: (reason: Error) => void;
   timer: NodeJS.Timeout;
-};
-type PendingApproval = {
-  id: string | number;
-  method: string;
-  params: JsonObject;
-  threadId: string;
-  kind: string;
-  summary: string;
 };
 type SessionMetadata = { cwd: string; path: string; canAcceptDirectInput: boolean };
 type ModelOption = {
@@ -838,7 +841,7 @@ export class CodexAppServer extends EventEmitter {
     const approvalId = String(message.id);
     const threadId = String(params.threadId || params.conversationId || this.activeTurn?.threadId || '');
     const kind = approvalKind(method);
-    const summary = approvalSummary(method, params);
+    const summary = approvalSummary(method, params, SUMMARY_LIMIT);
     this.approvals.set(approvalId, {
       id: message.id, method, params, threadId, kind, summary,
     });
@@ -973,299 +976,8 @@ function turnDiffKey(threadId: string, turnId: string) {
   return `${threadId}\0${turnId}`;
 }
 
-function approvalKind(method: string) {
-  if (/commandExecution|execCommand/i.test(method)) return 'command';
-  if (/fileChange|applyPatch/i.test(method)) return 'file-change';
-  if (/permissions/i.test(method)) return 'permission';
-  if (/requestUserInput/i.test(method)) return 'user-input';
-  return 'action';
-}
-
-function approvalSummary(method: string, params: JsonObject) {
-  const value = params.command || params.reason || params.grantRoot || params.permissions
-    || params.path || params.input || method;
-  const text = typeof value === 'string' ? value : JSON.stringify(value);
-  return text.slice(0, SUMMARY_LIMIT);
-}
-
-function approvalDecisionSummary(pending: PendingApproval) {
-  if (pending.kind === 'command') {
-    return summarizeToolActivity({
-      type: 'commandExecution',
-      command: pending.params.command,
-      parsed_cmd: pending.params.parsedCommand || pending.params.parsed_cmd,
-    }) || 'command';
-  }
-  if (pending.kind === 'file-change') {
-    const path = String(pending.params.path || pending.params.filePath || '').trim();
-    return path ? `file-change · ${basename(path)}` : 'file-change';
-  }
-  return pending.kind;
-}
-
-function approvalResult(
-  method: string,
-  approved: boolean,
-  params: JsonObject = {},
-  allowedRoots: string[] = [],
-  networkAccess = false,
-) {
-  if (/permissions\/requestApproval/i.test(method)) {
-    return approved
-      ? { permissions: approvedPermissions(params.permissions, allowedRoots, networkAccess), scope: 'turn' }
-      : { permissions: {}, scope: 'turn' };
-  }
-  if (/applyPatchApproval|execCommandApproval/i.test(method)) {
-    return {
-      decision: approved ? 'approved' : { denied: { rejection: 'Rejected from Codex Anywhere' } },
-    };
-  }
-  return { decision: approved ? 'accept' : 'decline' };
-}
-
-function approvedPermissions(requested: JsonObject = {}, allowedRoots: string[], networkAccess: boolean) {
-  const permissions: JsonObject = {};
-  const requestedFileSystem = requested?.fileSystem;
-  if (requestedFileSystem && typeof requestedFileSystem === 'object') {
-    const read = filterAllowedPaths(requestedFileSystem.read, allowedRoots);
-    const write = filterAllowedPaths(requestedFileSystem.write, allowedRoots);
-    const entries = (Array.isArray(requestedFileSystem.entries) ? requestedFileSystem.entries : [])
-      .flatMap((entry: JsonObject) => {
-        if (entry?.path?.type !== 'path') return [];
-        try {
-          const path = resolveAllowedWorkspace(allowedRoots, entry.path.path);
-          return [{ ...entry, path: { ...entry.path, path } }];
-        } catch {
-          return [];
-        }
-      });
-    if (read.length || write.length || entries.length) {
-      permissions.fileSystem = {
-        read: read.length ? read : null,
-        write: write.length ? write : null,
-        ...(entries.length ? { entries } : {}),
-      };
-    }
-  }
-  if (networkAccess && requested?.network?.enabled === true) {
-    permissions.network = { enabled: true };
-  }
-  return permissions;
-}
-
-function permissionSettings(mode: PermissionMode, cwd: string, networkAccess: boolean) {
-  if (mode === 'full') {
-    return {
-      thread: {
-        approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access',
-        config: { sandbox_mode: 'danger-full-access' },
-      },
-      turn: {
-        approvalPolicy: 'never', approvalsReviewer: 'user',
-        sandboxPolicy: { type: 'dangerFullAccess' },
-      },
-    };
-  }
-  return {
-    thread: {
-      approvalPolicy: 'on-request',
-      approvalsReviewer: mode === 'auto' ? 'auto_review' : 'user',
-      sandbox: 'workspace-write',
-      config: {
-        sandbox_mode: 'workspace-write',
-        sandbox_workspace_write: {
-          writable_roots: [cwd],
-          network_access: networkAccess,
-          exclude_tmpdir_env_var: false,
-          exclude_slash_tmp: false,
-        },
-      },
-    },
-    turn: {
-      approvalPolicy: 'on-request',
-      approvalsReviewer: mode === 'auto' ? 'auto_review' : 'user',
-      sandboxPolicy: {
-        type: 'workspaceWrite', writableRoots: [cwd], networkAccess,
-        excludeTmpdirEnvVar: false, excludeSlashTmp: false,
-      },
-    },
-  };
-}
-
-function filterAllowedPaths(values: unknown, allowedRoots: string[]) {
-  return (Array.isArray(values) ? values : [])
-    .map((value) => String(value || '').trim())
-    .flatMap((value) => {
-      if (!value) return [];
-      try { return [resolveAllowedWorkspace(allowedRoots, value)]; } catch { return []; }
-    });
-}
-
-function summarizeItem(item: JsonObject) {
-  const detail = summarizeToolActivity(item);
-  return {
-    type: item.type || '',
-    status: item.status || '',
-    ...(detail ? { detail } : {}),
-  };
-}
-
-function isReasoningMethod(method: string) {
-  return /reasoning/i.test(method) && /delta|summary|completed/i.test(method);
-}
-
-function extractText(value: any): string {
-  if (!value) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value.text === 'string') return value.text;
-  if (typeof value.delta === 'string') return value.delta;
-  if (typeof value.message === 'string') return value.message;
-  if (typeof value.summary === 'string') return value.summary;
-  if (Array.isArray(value.summary)) return value.summary.map(extractText).filter(Boolean).join('\n');
-  if (Array.isArray(value.content)) return value.content.map(extractText).filter(Boolean).join('\n');
-  if (Array.isArray(value.input)) return value.input.map(extractText).filter(Boolean).join('\n');
-  if (value.item) return extractText(value.item);
-  return '';
-}
-
-function mapTurns(turns: unknown) {
-  return (Array.isArray(turns) ? turns : []).map((turn: JsonObject) => {
-    const rawItems = Array.isArray(turn.items) ? turn.items : [];
-    const items: JsonObject[] = rawItems
-      .filter((item: JsonObject) => {
-        const type = String(item.type || '');
-        return Boolean(extractGeneratedImageAttachment(item))
-          || (!/reasoning|command|tool|webSearch|fileChange|system|developer/i.test(type)
-            && /user|agent|assistant|message/i.test(type));
-      })
-      .map((item: JsonObject) => {
-        const attachment = extractGeneratedImageAttachment(item);
-        const userMessage = /user/i.test(String(item.type || ''));
-        const completedAt = item.completedAt || item.updatedAt || item.createdAt || item.timestamp
-          || (userMessage ? turn.startedAt : turn.completedAt) || null;
-        const timing = completedAt ? { completedAt } : {};
-        if (attachment) {
-          return {
-            type: 'agentMessage', phase: 'final_answer', status: item.status || '', text: '', attachment,
-            ...timing,
-          };
-        }
-        const content = userMessage
-          ? parseUserMessage(extractText(item)) : parseAssistantMessage(extractText(item));
-        return {
-          type: item.type,
-          phase: item.phase || '',
-          status: item.status || '',
-          ...content,
-          ...timing,
-        };
-      })
-      .filter((item: JsonObject) => item.text || item.attachment);
-    const toolSummary = summarizeTurnTools(rawItems);
-    if (toolSummary) {
-      const finalIndex = items.findIndex((item: JsonObject) => item.phase === 'final_answer');
-      items.splice(finalIndex < 0 ? items.length : finalIndex, 0, {
-        type: 'timelineNotice', text: '', notice: toolSummary,
-        completedAt: turn.completedAt || null,
-      });
-    }
-    const status = String(turn.status?.type || turn.status || '');
-    if (/failed|aborted|error/i.test(status)) {
-      const detailValue = turn.error?.message || turn.error || turn.message || turn.reason;
-      const rawDetail = typeof detailValue === 'string' ? detailValue.trim() : '';
-      const detail = rawDetail ? publicError(rawDetail).slice(0, 500) : '';
-      items.push({
-        type: 'timelineNotice', text: '',
-        notice: {
-          kind: 'turnStatus',
-          status: /aborted/i.test(status) ? 'aborted' : /error/i.test(status) ? 'error' : 'failed',
-          ...(detail ? { detail } : {}),
-        },
-        completedAt: turn.completedAt || null,
-      });
-    }
-    return {
-      id: turn.id,
-      status,
-      startedAt: turn.startedAt || null,
-      completedAt: turn.completedAt || null,
-      items,
-    };
-  });
-}
-
-function summarizeTurnTools(items: JsonObject[]) {
-  const counts = {
-    commands: 0, edits: 0, searches: 0, connectedTools: 0, generations: 0, other: 0,
-  };
-  let total = 0;
-  for (const item of items) {
-    const type = String(item?.type || '');
-    if (!/command|tool|webSearch|fileChange|mcp/i.test(type)
-      || /output/i.test(type)) continue;
-    const label = summarizeToolActivity(item).split(' · ')[0]?.toLowerCase() || '';
-    if (!label) continue;
-    const field = /command|exec_command/.test(label) ? 'commands'
-      : /file.?change|apply_patch|patch/.test(label) ? 'edits'
-        : /web|search/.test(label) ? 'searches'
-          : /image.?gen/.test(label) ? 'generations'
-            : /mcp/.test(label) ? 'connectedTools'
-              : 'other';
-    counts[field] += 1;
-    total += 1;
-  }
-  return total ? {
-    kind: 'toolSummary', total,
-    ...Object.fromEntries(Object.entries(counts).filter(([, count]) => count > 0)),
-  } : undefined;
-}
-
 function isActiveWriterError(error: unknown) {
   return /already has an active writer/i.test(String(error instanceof Error ? error.message : error || ''));
-}
-
-function resolveAllowedWorkspace(roots: string[] | string, candidate: unknown) {
-  const rawCandidate = String(candidate || '').trim();
-  if (!rawCandidate) throw new Error('project_directory_required');
-  const requested = canonicalizeWorkspaceCandidate(rawCandidate);
-  const allowedRoots = (Array.isArray(roots) ? roots : [roots])
-    .map((root) => String(root || '').trim())
-    .filter(Boolean)
-    .flatMap((root) => {
-      try { return [realpathSync(resolve(root))]; } catch { return []; }
-    });
-  for (const allowedRoot of allowedRoots) {
-    const pathFromRoot = relative(allowedRoot, requested);
-    if (!pathFromRoot || (!pathFromRoot.startsWith('..') && !isAbsolute(pathFromRoot))) {
-      return requested;
-    }
-  }
-  throw new Error('workspace_outside_allowed_root');
-}
-
-function canonicalizeWorkspaceCandidate(candidate: string) {
-  let current = resolve(candidate);
-  const missingSegments: string[] = [];
-  while (true) {
-    try {
-      return resolve(realpathSync(current), ...missingSegments.reverse());
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error('workspace_path_invalid');
-      const parent = dirname(current);
-      if (parent === current) throw new Error('workspace_path_invalid');
-      missingSegments.push(basename(current));
-      current = parent;
-    }
-  }
-}
-
-function isAllowedWorkspace(roots: string[] | string, candidate: unknown) {
-  try {
-    resolveAllowedWorkspace(roots, candidate);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export const internals = {

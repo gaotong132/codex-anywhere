@@ -9,6 +9,7 @@ import {
 import type { ExecutionState, Session } from './app-types';
 import { t } from './i18n';
 import { SidebarIcon } from './ui-components';
+import { environmentDisplayName } from './execution-environments';
 
 type SessionSidebarProps = {
   open: boolean;
@@ -151,9 +152,3 @@ export const SessionSidebar = memo(function SessionSidebar({
     </aside>
   );
 });
-
-function environmentDisplayName(environmentId: string) {
-  if (environmentId === 'personal-pc') return t('我的电脑', 'My computer');
-  if (environmentId === 'ecs') return t('ECS · 24×7', 'ECS · 24×7');
-  return environmentId;
-}

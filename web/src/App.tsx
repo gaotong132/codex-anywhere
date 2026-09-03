@@ -63,7 +63,6 @@ import {
   markSessionAttentionRead,
   projectLabel,
   reconcileSessionAttention,
-  replayPendingFrames,
   sessionDeliveryMatchesTarget,
   shouldAdoptStartedThread,
   shouldLoadOlderHistory,
@@ -75,15 +74,34 @@ import {
   DownloadIndicator,
   seedTypewriterText,
   SidebarIcon,
-  TypewriterText,
 } from './ui-components';
 import { ConversationTimeline } from './conversation-timeline';
 import { useConversationExecution } from './conversation-execution';
 import { SessionSidebar } from './session-sidebar';
 import { SessionRenameDialog } from './session-rename-dialog';
+import {
+  epochMillis,
+  liveEventActivity,
+  LiveActivityStatus,
+  safeActivityKind,
+} from './live-activity';
+import { ModelConfigControl } from './model-config-control';
+import { StartupScreen } from './startup-screen';
+import {
+  SESSION_PERMISSION_MODE_KEY,
+  useSessionConfiguration,
+} from './session-configuration';
+import {
+  BridgeRequestManager,
+  DEFAULT_BRIDGE_REQUEST_TIMEOUT_MS,
+  type BridgeRequestOptions as RequestOptions,
+} from './bridge-request-manager';
 import { BrowserSecureChannel } from './secure-channel-client';
 import {
   DEFAULT_ENVIRONMENT_ID,
+  environmentOfflineLabel,
+  environmentOnlineLabel,
+  environmentShortName,
   loadEnvironmentValue,
   loadKnownEnvironmentIds,
   loadSelectedEnvironmentId,
@@ -104,7 +122,6 @@ import { PresenceIndicator } from './presence-indicator';
 import { PermissionModeControl } from './permission-mode-control';
 import {
   normalizePermissionMode,
-  type PermissionMode,
 } from '../../src/shared/permission-mode';
 import {
   normalizeTurnProgress,
@@ -131,22 +148,15 @@ import type {
   Approval,
   AwaitingDesktopTurn,
   BridgeMessage,
-  ConnectorStatus,
   DownloadedImage,
   DownloadFileChunk,
   FileDownloadState,
   FollowState,
   HistoryPage,
-  LiveActivityKind,
-  ModelConfigDraft,
-  ModelOption,
   OpenedDownload,
   PendingImage,
   PendingApprovals,
-  PendingRequest,
   Session,
-  SessionModelConfig,
-  SessionPermissionConfig,
   TurnStartResult,
   TextPreviewDocument,
   TurnDiffDocument,
@@ -154,8 +164,6 @@ import type {
 } from './app-types';
 
 const HISTORY_PAGE_SIZE = 6;
-const REQUEST_TIMEOUT_MS = 30_000;
-const TURN_START_REQUEST_TIMEOUT_MS = 11 * 60_000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
 const CLIENT_HEARTBEAT_MS = 20_000;
 const CLIENT_STALE_AFTER_MS = 55_000;
@@ -164,10 +172,8 @@ const INITIAL_BOOTSTRAP_TIMEOUT_MS = 10_000;
 const SESSION_ATTENTION_KEY = 'bridge.sessionAttention.v1';
 const LAST_THREAD_KEY = 'bridge.lastThreadId';
 const NEW_SESSION_CWD_KEY = 'bridge.newSessionCwd';
-const PERMISSION_MODE_KEY = 'bridge.permissionMode';
 const PENDING_PAIRING_KEY = 'bridge.pendingPairing.v1';
 const NEW_TURN_KEY = '__new_turn__';
-type RequestOptions = { timeoutMs?: number | null; signal?: AbortSignal };
 type ScreenWakeLockSentinel = { released: boolean; release(): Promise<void> };
 type WakeLockNavigator = Navigator & {
   wakeLock?: { request(type: 'screen'): Promise<ScreenWakeLockSentinel> };
@@ -212,339 +218,6 @@ function storeSessionAttention(environmentId: string, value: SessionAttentionSta
   storeEnvironmentValue(SESSION_ATTENTION_KEY, environmentId, JSON.stringify(value));
 }
 
-const ACTIVITY_LABELS: Record<LiveActivityKind, [string, string]> = {
-  starting: ['正在启动', 'Starting'],
-  planning: ['正在规划', 'Planning'],
-  command: ['正在执行', 'Running'],
-  editing: ['正在修改文件', 'Editing files'],
-  searching: ['正在搜索', 'Searching'],
-  connectedTool: ['正在处理', 'Using a tool'],
-  generating: ['正在生成图片', 'Generating an image'],
-  waiting: ['正在等待', 'Waiting'],
-  checking: ['正在检查结果', 'Checking results'],
-  responding: ['正在整理回复', 'Preparing a response'],
-  working: ['正在处理', 'Working'],
-};
-
-function safeActivityKind(value: unknown): LiveActivityKind {
-  return Object.hasOwn(ACTIVITY_LABELS, String(value || ''))
-    ? String(value) as LiveActivityKind : 'working';
-}
-
-function activityLabel(kind: LiveActivityKind) {
-  return t(...ACTIVITY_LABELS[kind]);
-}
-
-function environmentDisplayName(environmentId: string) {
-  if (environmentId === DEFAULT_ENVIRONMENT_ID) return t('我的电脑', 'My computer');
-  if (environmentId === 'ecs') return t('ECS', 'ECS');
-  return environmentId;
-}
-
-function environmentOnlineLabel(environmentId: string) {
-  return t(
-    `${environmentDisplayName(environmentId)}在线`,
-    `${environmentDisplayName(environmentId)} online`,
-  );
-}
-
-function environmentOfflineLabel(environmentId: string) {
-  return t(
-    `${environmentDisplayName(environmentId)}离线`,
-    `${environmentDisplayName(environmentId)} offline`,
-  );
-}
-
-function liveEventActivity(payload: Record<string, unknown>): LiveActivityKind {
-  const type = String(payload.type || '').toLowerCase();
-  const name = String(payload.name || '').toLowerCase();
-  if (/websearch|web_search/.test(type) || /web.?search/.test(name)) return 'searching';
-  if (/commandexecution|command_execution/.test(type) || /command|shell|exec/.test(name)) return 'command';
-  if (/image/.test(type) || /image.?gen/.test(name)) return 'generating';
-  return 'connectedTool';
-}
-
-function epochMillis(value: unknown) {
-  if (typeof value === 'number' && Number.isFinite(value)) return value > 10_000_000_000 ? value : value * 1_000;
-  const parsed = Date.parse(String(value || ''));
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function elapsedLabel(startedAt: number | null, now: number) {
-  if (!startedAt) return '';
-  const totalSeconds = Math.max(0, Math.floor((now - startedAt) / 1_000));
-  const hours = Math.floor(totalSeconds / 3_600);
-  const minutes = Math.floor((totalSeconds % 3_600) / 60);
-  const seconds = totalSeconds % 60;
-  return hours
-    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-    : `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
-
-function LiveActivityStatus({
-  kind, purpose, detail, progress, startedAt,
-}: {
-  kind: LiveActivityKind;
-  purpose: string;
-  detail: string;
-  progress: TurnProgress;
-  startedAt: number | null;
-}) {
-  const [clock, setClock] = useState(Date.now());
-  const elapsed = elapsedLabel(startedAt, clock);
-  const hasMetrics = Boolean(progress.plan || progress.files);
-  useEffect(() => {
-    if (!startedAt) return;
-    setClock(Date.now());
-    const timer = setInterval(() => setClock(Date.now()), 1_000);
-    return () => clearInterval(timer);
-  }, [startedAt]);
-  return (
-    <div
-      className={`tool-purpose${purpose ? ' has-purpose' : ''}${hasMetrics ? ' has-metrics' : ''}`}
-      role="status"
-      aria-live="polite"
-      aria-label={[purpose, detail || activityLabel(kind), elapsed].filter(Boolean).join(' · ')}
-      title={[purpose, detail || activityLabel(kind), elapsed].filter(Boolean).join(' · ')}
-    >
-      <div className="activity-content">
-        {purpose && (
-          <div className="activity-line activity-purpose-line">
-            <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
-          </div>
-        )}
-        <div className="activity-line activity-detail-line">
-          <ToolActivityDetail detail={detail} kind={kind} />
-        </div>
-        {hasMetrics && (
-          <div className="activity-line activity-secondary">
-            <span className="activity-metrics">
-              {progress.plan && (
-                <TypewriterText
-                  active
-                  className="status-change"
-                  key={`plan:${progress.plan.current}:${progress.plan.total}`}
-                  showCaret={false}
-                  text={t(`第 ${progress.plan.current} / ${progress.plan.total} 步`, `Step ${progress.plan.current} / ${progress.plan.total}`)}
-                />
-              )}
-              {progress.files && (
-                <TypewriterText
-                  active
-                  className="status-change"
-                  completeContent={<>
-                    {t(`${progress.files.changed} 个文件已更改`, `${progress.files.changed} files changed`)}
-                    {' '}<b className="additions">+{progress.files.additions}</b>
-                    {' '}<b className="deletions">-{progress.files.deletions}</b>
-                  </>}
-                  key={`files:${progress.files.changed}:${progress.files.additions}:${progress.files.deletions}`}
-                  showCaret={false}
-                  text={t(
-                    `${progress.files.changed} 个文件已更改 +${progress.files.additions} -${progress.files.deletions}`,
-                    `${progress.files.changed} files changed +${progress.files.additions} -${progress.files.deletions}`,
-                  )}
-                />
-              )}
-            </span>
-          </div>
-        )}
-      </div>
-      {startedAt && <time className="activity-elapsed">{elapsed}</time>}
-    </div>
-  );
-}
-
-function ToolActivityDetail({ detail, kind }: { detail: string; kind: LiveActivityKind }) {
-  const completed = detail.startsWith('✓ ');
-  const text = completed ? detail.slice(2) : detail || activityLabel(kind);
-  const [checkedDetail, setCheckedDetail] = useState('');
-  const [typedText, setTypedText] = useState('');
-  useEffect(() => {
-    if (!completed) {
-      setCheckedDetail('');
-      return;
-    }
-    if (typedText === text) setCheckedDetail(detail);
-  }, [completed, detail, text, typedText]);
-  return <>
-    <TypewriterText
-      active
-      as="strong"
-      className="status-change"
-      key={text}
-      text={text}
-      onComplete={() => {
-        setTypedText(text);
-        if (completed) setCheckedDetail(detail);
-      }}
-    />
-    {completed && checkedDetail === detail && (
-      <span className="activity-complete-check" key={detail} aria-hidden="true">✓</span>
-    )}
-  </>;
-}
-
-function reasoningEffortLabel(value: string) {
-  const labels: Record<string, [string, string]> = {
-    none: ['无', 'None'], minimal: ['极低', 'Minimal'], low: ['低', 'Low'], medium: ['中', 'Medium'],
-    high: ['高', 'High'], xhigh: ['极高', 'X-high'], max: ['最高', 'Max'], ultra: ['超高', 'Ultra'],
-  };
-  return labels[value] ? t(...labels[value]) : value;
-}
-
-function fastTierAvailable(model: ModelOption | undefined) {
-  return Boolean(model?.serviceTiers.some((tier) => /(?:fast|priority)/i.test(`${tier.id} ${tier.name}`)));
-}
-
-function ModelConfigControl({
-  config, loading, disabled, onSave,
-}: {
-  config: SessionModelConfig | null;
-  loading: boolean;
-  disabled: boolean;
-  onSave: (draft: ModelConfigDraft) => Promise<void>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [draft, setDraft] = useState<ModelConfigDraft | null>(null);
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const selectedModel = config?.models.find((model) => model.model === config.model);
-  const draftModel = config?.models.find((model) => model.model === draft?.model);
-
-  useEffect(() => {
-    setOpen(false);
-    setError('');
-    setDraft(config ? {
-      model: config.model,
-      reasoningEffort: config.reasoningEffort,
-      fastMode: config.fastMode,
-    } : null);
-  }, [config]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const close = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', close);
-    return () => document.removeEventListener('pointerdown', close);
-  }, [open]);
-
-  const save = async () => {
-    if (!draft || saving || disabled) return;
-    setSaving(true);
-    setError('');
-    try {
-      await onSave(draft);
-      setOpen(false);
-    } catch (saveError) {
-      setError(friendlyError(saveError));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const displayModel = selectedModel?.displayName || config?.model || t('自动选择', 'Automatic');
-  return (
-    <div className={`model-config${open ? ' open' : ''}`} ref={rootRef}>
-      <button
-        className="model-config-summary"
-        type="button"
-        disabled={!config || loading}
-        onClick={() => setOpen((current) => !current)}
-        aria-expanded={open}
-        title={disabled ? t('会话执行中，可预选并在结束后保存', 'Preselect now and save after the task finishes') : t('配置后续轮次', 'Configure subsequent turns')}
-      >
-        <span className="model-config-model">{loading ? t('读取模型…', 'Loading model…') : displayModel}</span>
-        <span>{config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort) : t('默认思考', 'Default reasoning')}</span>
-        <span className={config?.fastMode ? 'fast active' : 'fast'}>{config?.fastMode ? t('快速', 'Fast') : t('标准', 'Standard')}</span>
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
-      </button>
-      {open && draft && config && (
-        <div className="model-config-popover">
-          <header>
-            <strong>{t('后续轮次配置', 'Next-turn settings')}</strong>
-            <span>{disabled ? t('当前正在执行，可预选并在结束后保存', 'Preselect now and save after the task finishes') : t('保存后用于该会话的后续消息', 'Applies to subsequent messages in this task')}</span>
-          </header>
-          <div className="model-config-field">
-            <span>{t('模型', 'Model')}</span>
-            <CustomSelect
-              value={draft.model}
-              disabled={saving}
-              ariaLabel={t('选择模型', 'Select model')}
-              options={config.models.map((model) => ({
-                value: model.model,
-                label: model.displayName,
-                description: model.description,
-              }))}
-              onChange={(value) => {
-                const nextModel = config.models.find((model) => model.model === value);
-                if (!nextModel) return;
-                const effortSupported = nextModel.supportedReasoningEfforts
-                  .some((option) => option.reasoningEffort === draft.reasoningEffort);
-                setDraft({
-                  model: nextModel.model,
-                  reasoningEffort: effortSupported ? draft.reasoningEffort : nextModel.defaultReasoningEffort,
-                  fastMode: draft.fastMode && fastTierAvailable(nextModel),
-                });
-              }}
-            />
-          </div>
-          <div className="model-config-field">
-            <span>{t('思考强度', 'Reasoning')}</span>
-            <CustomSelect
-              value={draft.reasoningEffort}
-              disabled={saving}
-              ariaLabel={t('选择思考强度', 'Select reasoning effort')}
-              options={(draftModel?.supportedReasoningEfforts || []).map((option) => ({
-                value: option.reasoningEffort,
-                label: reasoningEffortLabel(option.reasoningEffort),
-                description: option.description,
-              }))}
-              onChange={(value) => setDraft({ ...draft, reasoningEffort: value })}
-            />
-          </div>
-          <label className={`model-fast-toggle${fastTierAvailable(draftModel) ? '' : ' unavailable'}`}>
-            <span><strong>{t('快速模式', 'Fast mode')}</strong><small>{fastTierAvailable(draftModel)
-              ? t('使用模型支持的低延迟服务层', 'Use the model’s low-latency service tier')
-              : t('当前模型不支持', 'Not available for this model')}</small></span>
-            <input
-              type="checkbox"
-              checked={draft.fastMode}
-              disabled={saving || !fastTierAvailable(draftModel)}
-              onChange={(event) => setDraft({ ...draft, fastMode: event.target.checked })}
-            />
-            <i aria-hidden="true" />
-          </label>
-          {error && <p role="alert">{error}</p>}
-          <footer>
-            <button type="button" onClick={() => setOpen(false)}>{t('取消', 'Cancel')}</button>
-            <button className="primary-action" type="button" disabled={disabled || saving} onClick={() => void save()}>
-              {saving ? t('保存中…', 'Saving…') : t('保存', 'Save')}
-            </button>
-          </footer>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StartupScreen({ status }: { status: string }) {
-  return (
-    <main className="startup-shell" aria-busy="true" aria-live="polite">
-      <div className="startup-visual" aria-hidden="true">
-        <div className="startup-orbit"><i /><i /><i /></div>
-        <div className="startup-mark"><span>C</span><i /></div>
-      </div>
-      <div className="startup-copy">
-        <strong>CODEX ANYWHERE</strong>
-        <span>{status || t('正在恢复上次会话…', 'Restoring your last session…')}</span>
-        <div className="startup-pulse" aria-hidden="true"><i /><i /><i /></div>
-      </div>
-    </main>
-  );
-}
 
 export default function App() {
   const [pairingCredential, setPairingCredential] = useState<BrowserPairingCredential | null>(loadInitialBrowserPairing);
@@ -574,11 +247,6 @@ export default function App() {
   const [sessionSearch, setSessionSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
-  const [modelConfig, setModelConfig] = useState<SessionModelConfig | null>(null);
-  const [modelConfigLoading, setModelConfigLoading] = useState(false);
-  const [connectorStatus, setConnectorStatus] = useState<ConnectorStatus | null>(null);
-  const [permissionConfig, setPermissionConfig] = useState<SessionPermissionConfig | null>(null);
-  const [permissionConfigLoading, setPermissionConfigLoading] = useState(false);
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -623,7 +291,6 @@ export default function App() {
   const [stopConfirmationArmed, setStopConfirmationArmed] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
-  const pendingRef = useRef(new Map<string, PendingRequest>());
   const pairingCredentialRef = useRef(pairingCredential);
   const approvedDeviceRef = useRef(hasApprovedBrowserDevice());
   const authAttemptModeRef = useRef<'device' | 'pairing'>('device');
@@ -668,6 +335,13 @@ export default function App() {
   const runningRef = useRef(running);
   const ownedTurnThreadIdRef = useRef(ownedTurnThreadId);
   const sessionAttentionRef = useRef(sessionAttention);
+  const requestManagerRef = useRef<BridgeRequestManager | null>(null);
+  if (!requestManagerRef.current) {
+    requestManagerRef.current = new BridgeRequestManager({
+      isConnected: () => socketRef.current?.readyState === WebSocket.OPEN,
+      send: (frame) => secureChannelRef.current?.sendFrame(frame) === true,
+    });
+  }
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
   useEffect(() => { environmentIdRef.current = environmentId; }, [environmentId]);
@@ -894,153 +568,20 @@ export default function App() {
     action: string,
     payload: Record<string, unknown>,
     options: RequestOptions = {},
-  ): Promise<T> => {
-    const socket = socketRef.current;
-    if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error(t('连接未建立', 'Connection is not established')));
-    const requestId = makeId();
-    const timeoutMs = options.timeoutMs === undefined
-      ? (action === 'turn.start' ? TURN_START_REQUEST_TIMEOUT_MS : REQUEST_TIMEOUT_MS)
-      : options.timeoutMs;
-    return new Promise<T>((resolve, reject) => {
-      let onAbort: (() => void) | null = null;
-      const cleanup = () => {
-        pendingRef.current.delete(requestId);
-        if (pending.timer) clearTimeout(pending.timer);
-        if (onAbort) options.signal?.removeEventListener('abort', onAbort);
-      };
-      const frame = { type: 'request', requestId, action, payload };
-      const pending: PendingRequest = {
-        resolve: (value) => { cleanup(); resolve(value as T); },
-        reject: (reason) => { cleanup(); reject(reason); },
-        timer: null,
-        frame,
-        acknowledged: false,
-      };
-      onAbort = () => pending.reject(new Error('download_cancelled'));
-      if (options.signal?.aborted) {
-        pending.reject(new Error('download_cancelled'));
-        return;
-      }
-      if (timeoutMs != null) {
-        pending.timer = setTimeout(() => {
-          pending.reject(new Error(action === 'turn.start' ? 'turn_start_timeout' : 'request_timeout'));
-        }, timeoutMs);
-      }
-      options.signal?.addEventListener('abort', onAbort, { once: true });
-      pendingRef.current.set(requestId, pending);
-      try {
-        if (!secureChannelRef.current?.sendFrame(frame)) throw new Error('secure_channel_not_ready');
-      } catch {
-        pending.reject(new Error(t('连接已断开', 'Connection closed')));
-      }
-    });
-  }, []);
+  ): Promise<T> => requestManagerRef.current!.request<T>(action, payload, options), []);
 
-  useEffect(() => {
-    if (!online) {
-      setConnectorStatus(null);
-      return undefined;
-    }
-    let disposed = false;
-    void request<ConnectorStatus>('connector.status', {})
-      .then((status) => { if (!disposed) setConnectorStatus(status); })
-      .catch(() => { if (!disposed) setConnectorStatus(null); });
-    return () => { disposed = true; };
-  }, [environmentId, online, request]);
-
-  useEffect(() => {
-    if (!online || !connectorStatus) {
-      setPermissionConfig(null);
-      setPermissionConfigLoading(online);
-      return undefined;
-    }
-    if (!threadId) {
-      setPermissionConfig({
-        mode: normalizePermissionMode(loadEnvironmentValue(PERMISSION_MODE_KEY, environmentId)),
-        editable: true,
-        networkAccess: connectorStatus.capabilities.networkAccess,
-        allowFullAccess: connectorStatus.capabilities.fullAccess,
-      });
-      setPermissionConfigLoading(false);
-      return undefined;
-    }
-    let disposed = false;
-    setPermissionConfig(null);
-    setPermissionConfigLoading(true);
-    void request<SessionPermissionConfig>('session.permissions.read', { threadId })
-      .then((config) => {
-        if (!disposed && threadIdRef.current === threadId) setPermissionConfig(config);
-      })
-      .catch(() => {
-        if (!disposed && threadIdRef.current === threadId) setPermissionConfig(null);
-      })
-      .finally(() => {
-        if (!disposed && threadIdRef.current === threadId) setPermissionConfigLoading(false);
-      });
-    return () => { disposed = true; };
-  }, [connectorStatus, environmentId, online, request, threadId]);
-
-  const savePermissionMode = useCallback(async (mode: PermissionMode) => {
-    const targetThreadId = threadIdRef.current;
-    let nextConfig: SessionPermissionConfig;
-    if (targetThreadId) {
-      nextConfig = await request<SessionPermissionConfig>('session.permissions.update', {
-        threadId: targetThreadId, mode,
-      });
-    } else {
-      if (!connectorStatus) throw new Error(t('执行环境尚未就绪', 'Execution environment is not ready'));
-      if (mode === 'full' && !connectorStatus.capabilities.fullAccess) {
-        throw new Error(t('此执行节点未开放完全访问', 'Full access is not enabled on this connector'));
-      }
-      nextConfig = {
-        mode,
-        editable: true,
-        networkAccess: connectorStatus.capabilities.networkAccess,
-        allowFullAccess: connectorStatus.capabilities.fullAccess,
-      };
-    }
-    storeEnvironmentValue(PERMISSION_MODE_KEY, environmentIdRef.current, mode);
-    if (threadIdRef.current === targetThreadId) setPermissionConfig(nextConfig);
-  }, [connectorStatus, request]);
-
-  useEffect(() => {
-    if (!threadId || !online) {
-      setModelConfig(null);
-      setModelConfigLoading(false);
-      return undefined;
-    }
-    let disposed = false;
-    setModelConfigLoading(true);
-    void request<SessionModelConfig>('session.model-config.read', { threadId })
-      .then((config) => {
-        if (!disposed && threadIdRef.current === threadId) setModelConfig(config);
-      })
-      .catch(() => {
-        if (!disposed && threadIdRef.current === threadId) setModelConfig(null);
-      })
-      .finally(() => {
-        if (!disposed && threadIdRef.current === threadId) setModelConfigLoading(false);
-      });
-    return () => { disposed = true; };
-  }, [online, request, threadId]);
-
-  const saveModelConfig = useCallback(async (draft: ModelConfigDraft) => {
-    const targetThreadId = threadIdRef.current;
-    if (!targetThreadId) throw new Error('thread_id_required');
-    const config = await request<SessionModelConfig>('session.model-config.update', {
-      threadId: targetThreadId,
-      ...draft,
-    });
-    if (threadIdRef.current === targetThreadId) setModelConfig(config);
-  }, [request]);
+  const {
+    modelConfig,
+    modelConfigLoading,
+    permissionConfig,
+    permissionConfigLoading,
+    saveModelConfig,
+    savePermissionMode,
+  } = useSessionConfiguration({ environmentId, online, threadId, request });
 
   const replayPendingRequests = useCallback(() => {
-    const channel = secureChannelRef.current;
-    if (!channel?.isReady()) return 0;
-    return replayPendingFrames(
-      pendingRef.current.values(),
-      (frame) => channel.sendFrame(frame),
-    );
+    if (!secureChannelRef.current?.isReady()) return 0;
+    return requestManagerRef.current!.replay();
   }, []);
 
   const timelineAttachments = useMemo(() => {
@@ -1192,11 +733,7 @@ export default function App() {
       return;
     }
     if (message.type === 'pong') return;
-    if (message.type === 'ack' && message.requestId) {
-      const pending = pendingRef.current.get(message.requestId);
-      if (pending) pending.acknowledged = true;
-      return;
-    }
+    if (requestManagerRef.current!.handle(message)) return;
     if (message.type === 'presence') {
       const devices = normalizeEnvironmentIds(message.devices);
       onlineEnvironmentIdsRef.current = devices;
@@ -1223,15 +760,6 @@ export default function App() {
           if (!secureChannelRef.current) beginSecureChannel(routeDeviceId);
         }
       }
-      return;
-    }
-    if (message.type === 'response' && message.requestId) {
-      const pending = pendingRef.current.get(message.requestId);
-      if (!pending) return;
-      pendingRef.current.delete(message.requestId);
-      if (pending.timer) clearTimeout(pending.timer);
-      if (message.ok) pending.resolve(message.data);
-      else pending.reject(new Error(message.error || t('请求失败', 'Request failed')));
       return;
     }
     if (message.type !== 'event') return;
@@ -1381,9 +909,7 @@ export default function App() {
   useEffect(() => { messageHandlerRef.current = handleBridgeMessage; }, [handleBridgeMessage]);
 
   const rejectPendingRequests = useCallback((message: string) => {
-    for (const pending of pendingRef.current.values()) {
-      pending.reject(new Error(message));
-    }
+    requestManagerRef.current!.rejectAll(message);
   }, []);
 
   const clearReconnectTimer = useCallback(() => {
@@ -2170,7 +1696,7 @@ export default function App() {
       const action = steering ? 'turn.steer' : 'turn.start';
       const selectedPermissionMode = isExistingSession
         ? permissionConfig?.mode
-        : normalizePermissionMode(loadEnvironmentValue(PERMISSION_MODE_KEY, environmentIdRef.current));
+        : normalizePermissionMode(loadEnvironmentValue(SESSION_PERMISSION_MODE_KEY, environmentIdRef.current));
       const data = await request<TurnStartResult>(action, {
         text: turnText,
         threadId: targetThreadId,
@@ -2439,7 +1965,7 @@ export default function App() {
     const sourceEnvironmentId = environmentIdRef.current;
     const selectionVersion = selectedRequestRef.current;
     const wakeLockSupported = Boolean((navigator as WakeLockNavigator).wakeLock?.request);
-    const sourceName = environmentDisplayName(environmentIdRef.current);
+    const sourceName = environmentShortName(environmentIdRef.current);
     const accepted = window.confirm(
       t(
         `是否从${sourceName}下载以下文件？\n\n${path}\n\n${wakeLockSupported ? '下载期间会保持屏幕常亮。若手动息屏或切到后台，下载会安全暂停，回到本页后自动续传。' : '当前浏览器无法保证后台下载，请保持屏幕亮起；若息屏中断，回到本页后会自动续传。'}`,
@@ -2491,7 +2017,7 @@ export default function App() {
           onPause: pauseDownload,
           onResume: resumeDownload,
           request: () => request<T>(action, payload, {
-            timeoutMs: REQUEST_TIMEOUT_MS,
+            timeoutMs: DEFAULT_BRIDGE_REQUEST_TIMEOUT_MS,
             signal: abortController.signal,
           }),
         })
@@ -2839,7 +2365,7 @@ export default function App() {
                   <SidebarIcon name="edit" />
                 </button>
               )}
-              <span>{environmentDisplayName(environmentId)}</span>
+              <span>{environmentShortName(environmentId)}</span>
             </div>
             <div className="conversation-controls">
               <ModelConfigControl

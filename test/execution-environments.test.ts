@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   DEFAULT_ENVIRONMENT_ID,
+  environmentDisplayName,
+  environmentOfflineLabel,
+  environmentOnlineLabel,
+  environmentShortName,
   environmentStorageKey,
   loadEnvironmentValue,
   loadKnownEnvironmentIds,
@@ -25,6 +29,14 @@ test('execution environment inventory is normalized, stable, and keeps the local
     mergeKnownEnvironmentIds(['studio'], ['ecs', 'studio'], 'offline-lab'),
     ['ecs', 'offline-lab', 'personal-pc', 'studio'],
   );
+});
+
+test('execution environment labels are defined in one place', () => {
+  assert.equal(environmentDisplayName('personal-pc'), '我的电脑');
+  assert.equal(environmentDisplayName('ecs'), 'ECS · 24×7');
+  assert.equal(environmentShortName('ecs'), 'ECS');
+  assert.equal(environmentOnlineLabel('ecs'), 'ECS在线');
+  assert.equal(environmentOfflineLabel('lab'), 'lab离线');
 });
 
 test('selected and known execution environments persist without trusting malformed storage', () => {

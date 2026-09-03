@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 export const DEFAULT_ENVIRONMENT_ID = 'personal-pc';
 
 const SELECTED_ENVIRONMENT_KEY = 'bridge.selectedEnvironment.v1';
@@ -9,6 +11,31 @@ type StorageWriter = Pick<Storage, 'getItem' | 'setItem'>;
 
 export function normalizeEnvironmentId(value: unknown) {
   return String(value || '').trim().slice(0, 128);
+}
+
+export function environmentDisplayName(environmentId: string) {
+  if (environmentId === DEFAULT_ENVIRONMENT_ID) return t('我的电脑', 'My computer');
+  if (environmentId === 'ecs') return t('ECS · 24×7', 'ECS · 24×7');
+  return environmentId;
+}
+
+export function environmentShortName(environmentId: string) {
+  if (environmentId === 'ecs') return t('ECS', 'ECS');
+  return environmentDisplayName(environmentId);
+}
+
+export function environmentOnlineLabel(environmentId: string) {
+  return t(
+    `${environmentShortName(environmentId)}在线`,
+    `${environmentShortName(environmentId)} online`,
+  );
+}
+
+export function environmentOfflineLabel(environmentId: string) {
+  return t(
+    `${environmentShortName(environmentId)}离线`,
+    `${environmentShortName(environmentId)} offline`,
+  );
 }
 
 export function normalizeEnvironmentIds(value: unknown) {

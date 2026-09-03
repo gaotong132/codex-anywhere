@@ -31,6 +31,11 @@ attachment, file-access, or rendering behavior.
 | `scripts` | Relay administration plus Windows and Linux connector installation/watchdogs |
 | `docs` / `deploy` | User documentation, diagrams, and optional ingress example |
 
+Keep the top-level UI and app-server adapter as orchestration layers. Browser request lifetime and replay
+belong in `bridge-request-manager`; environment/session-scoped model and permission state belong in
+`session-configuration`. Connector workspace policy, approval mapping, and history projection stay in
+their focused `src/connector` modules instead of accumulating in the process/RPC adapter.
+
 ## Design rules
 
 1. Preserve the single-user, self-hosted architecture. Do not add telemetry, hosted conversation storage,
