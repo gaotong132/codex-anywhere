@@ -617,6 +617,12 @@ test('older history loads only near the top with another page available', () => 
   assert.equal(shouldLoadOlderHistory({ scrollTop: 80 }, 'next', true, true), false);
 });
 
+test('top-scroll pagination is not gated by a previous scroll direction', async () => {
+  const appSource = await readFile(resolve('web/src/App.tsx'), 'utf8');
+  assert.match(appSource, /if \(shouldLoadOlderHistory\(/);
+  assert.doesNotMatch(appSource, /currentScrollTop < previousScrollTop/);
+});
+
 test('older history prefill runs only when the list cannot leave the top trigger area', () => {
   assert.equal(shouldPrefillOlderHistory(
     { scrollHeight: 1_000, clientHeight: 900 }, 'next', true, false,

@@ -313,7 +313,6 @@ export default function App() {
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const messageContentRef = useRef<HTMLDivElement | null>(null);
   const preserveScrollHeightRef = useRef<number | null>(null);
-  const previousMessageScrollTopRef = useRef(0);
   const shouldScrollBottomRef = useRef(false);
   const autoFollowLatestRef = useRef(true);
   const streamItemRef = useRef<{ id: string; kind: TimelineKind; sourceItemId: string } | null>(null);
@@ -409,12 +408,10 @@ export default function App() {
     if (preserveScrollHeightRef.current != null) {
       element.scrollTop += element.scrollHeight - preserveScrollHeightRef.current;
       preserveScrollHeightRef.current = null;
-      previousMessageScrollTopRef.current = element.scrollTop;
     } else if (shouldScrollBottomRef.current || autoFollowLatestRef.current) {
       shouldScrollBottomRef.current = false;
       const scrollToLatest = () => {
         element.scrollTop = element.scrollHeight;
-        previousMessageScrollTopRef.current = element.scrollTop;
       };
       scrollToLatest();
       const frame = requestAnimationFrame(scrollToLatest);
@@ -1381,7 +1378,6 @@ export default function App() {
     setTimeline([]);
     setContextUsage(null);
     preserveScrollHeightRef.current = null;
-    previousMessageScrollTopRef.current = 0;
     olderHistoryLoadingRef.current = false;
     setAttachmentUrls({});
     attachmentLoadsRef.current.clear();
@@ -1532,11 +1528,8 @@ export default function App() {
   const handleMessageScroll = useCallback(() => {
     const element = messageListRef.current;
     if (!element) return;
-    const previousScrollTop = previousMessageScrollTopRef.current;
-    const currentScrollTop = Math.max(0, element.scrollTop);
-    previousMessageScrollTopRef.current = currentScrollTop;
     updateAutoFollowLatest();
-    if (currentScrollTop < previousScrollTop && shouldLoadOlderHistory(
+    if (shouldLoadOlderHistory(
       element, nextCursor, initialHistoryLoaded, historyLoading,
     )) loadOlder();
   }, [historyLoading, initialHistoryLoaded, loadOlder, nextCursor, updateAutoFollowLatest]);
