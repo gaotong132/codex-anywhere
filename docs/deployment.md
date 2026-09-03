@@ -154,6 +154,10 @@ and both previews should retain a Download button. If a completed reply reports 
 totals, confirm that the bounded diff belongs to that turn, and toggle line wrapping once. When Codex
 reports context accounting, confirm that the top-right activity ring shows usage and reveals exact token
 details on hover or tap; a session that has compacted should keep a compaction marker in its timeline.
+For a long session, browse upward once and confirm that the older-history indicator appears, the current
+reading position does not jump, and a failed request offers retry. For a connector-owned test run, open
+the running-status strip and verify that Stop interrupts only that run; Desktop-owned work should instead
+explain that it must be stopped on the computer.
 When multiple connectors are approved, open the sidebar, switch execution environments, and confirm that
 the top-bar badge, session list, remembered workspace, and online state change together. Start one harmless
 session on each node and confirm that returning to the other node never mixes their history or files. Also
@@ -181,7 +185,7 @@ Fully refresh browser tabs left open
 during a coordinated upgrade; a loaded tab keeps running its previous JavaScript until refreshed, and
 the strict protocol does not support mixed versions.
 
-## Troubleshoot local file links
+## Troubleshoot
 
 | Symptom | Check |
 | --- | --- |
@@ -190,6 +194,9 @@ the strict protocol does not support mixed versions.
 | Code is readable but has no syntax color | The recognized language is not in the lazy highlighter subset or the file exceeds the 512 KiB highlighting limit; plain escaped text is expected |
 | A binary, `.env`, certificate, or key file downloads instead | Sensitive, binary, and unrecognized formats intentionally never receive inline text preview |
 | The context ring is empty | Update both checkouts and fully refresh the browser; the selected session must also contain token accounting reported by Codex |
+| Older history does not load | Scroll away from the latest edge and continue upward; automatic paging is intentionally disabled until the user starts browsing older content. Use the visible retry control after a request failure |
+| The session list opens before a running Desktop badge appears | This is expected: app-server sessions return immediately and Desktop activity is merged asynchronously on a later poll |
+| Stop is unavailable for a running task | Only the exact turn owned by the selected connector can be interrupted from Web. Desktop-owned work must be stopped on the computer |
 | An expected environment is missing | Confirm its systemd/Windows connector is running and approved, then wait for relay presence to refresh |
 | A Linux session cannot continue after its first turn | Confirm `CODEX_CONNECTOR_MODE=headless`, update the checkout, and restart the systemd service |
 

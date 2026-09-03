@@ -18,7 +18,7 @@ type DesktopMessage = {
   model?: unknown;
   thinking?: unknown;
 };
-type DesktopThread = { id: string; status: string };
+export type DesktopThreadStatus = { id: string; status: string };
 type ToolCall = { tool: string; arguments: JsonObject; callerThreadId: string; callId: string };
 type PendingNativeRequest = {
   resolve: (value: any) => void;
@@ -350,7 +350,7 @@ function parseToolPayload(result: JsonObject): JsonObject {
 }
 
 export function mergeDesktopSessionStatuses<T extends { id: string; status?: string }>(
-  sessions: T[], desktopThreads: DesktopThread[], locallyActiveThreadId = '',
+  sessions: T[], desktopThreads: DesktopThreadStatus[], locallyActiveThreadId = '',
 ) {
   const statuses = new Map((desktopThreads || []).map((thread) => [thread.id, thread.status]));
   return (sessions || []).map((session) => {

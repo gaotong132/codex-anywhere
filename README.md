@@ -31,9 +31,13 @@ the selected connector node; a small relay you control provides the remote meeti
   tool purpose, elapsed time, and file-change totals. The status ring tracks current context usage and
   reveals token details on hover or tap, while compaction events stay visible in the timeline. Completed
   turns keep compact tool summaries, configuration changes, and failure or cancellation reasons. Tap a
-  completed turn's totals to inspect its bounded unified diff. Long histories load incrementally.
+  completed turn's totals to inspect its bounded unified diff. Long histories open at the latest page and
+  load older pages only after you browse upward, preserving your reading position and exposing retryable
+  loading failures.
 - **Guide an active task** — append text to a connector-owned run, or use Desktop delivery when the
-  existing session supports it. Messages are sent directly; Codex Anywhere does not maintain a Web queue.
+  existing session supports it. Open the running-status strip for elapsed time and a stop control when the
+  selected connector owns that exact turn. Messages are sent directly; Codex Anywhere does not maintain a
+  Web queue.
 - **Choose how Codex works** — view or change the model, reasoning effort, fast mode, and approval mode.
   Headless connectors support user approval, Codex auto-review, or an explicitly enabled full-access mode;
   the selection and new-task default stay scoped to the current execution environment.
@@ -107,8 +111,9 @@ Each connector starts its own Codex app-server. A Windows connector uses `deskto
 sessions keep Desktop delivery and bounded adaptive history polling. A Linux/ECS connector uses `headless`
 mode and owns new and resumed sessions through its app-server, so work can continue without a desktop
 login. Connector-owned runs support native events, steering, stopping, Web approvals, and per-task
-permission modes. Codex Anywhere
-does not implement ACP.
+permission modes. Desktop activity is optional status enrichment: session listing returns from app-server
+data immediately, then merges a short-lived Desktop status cache on a later poll so an unavailable Desktop
+bridge cannot hold up startup. Codex Anywhere does not implement ACP.
 
 ## Security at a glance
 
@@ -169,7 +174,7 @@ npm run build
 
 Application source and tests use strict TypeScript. The generated JavaScript in `build/` and bundled Web
 assets in `dist/` are build output and are not committed. See [Contributing](docs/CONTRIBUTING.md) for the
-repository map and protocol rules.
+repository map and protocol rules. Release highlights are recorded in the [changelog](CHANGELOG.md).
 
 ## Community
 

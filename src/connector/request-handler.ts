@@ -1,5 +1,8 @@
 import { publicError } from '../shared/protocol.js';
-import { mergeDesktopSessionStatuses } from './codex-desktop.js';
+import {
+  mergeDesktopSessionStatuses,
+  type DesktopThreadStatus,
+} from './codex-desktop.js';
 
 type Payload = Record<string, any>;
 type BridgeRequest = {
@@ -33,7 +36,7 @@ type CodexGateway = {
   needsDesktopPermissionRecovery(threadId: string): Promise<boolean>;
 };
 type DesktopGateway = {
-  listThreads(options: Payload): Promise<any[]>;
+  listThreads(options: Payload): Promise<DesktopThreadStatus[]>;
   readThreadState(options: Payload): Promise<any>;
   sendMessage(options: Payload): Promise<any>;
   renameThread(options: Payload): Promise<any>;
@@ -61,7 +64,7 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
   requestId?: string;
   clientId?: string;
   clientDeviceId?: string;
-  getDesktopThreads(): any[];
+  getDesktopThreads(): DesktopThreadStatus[];
   refreshDesktopThreads(callerThreadId: unknown): void;
 };
 
@@ -72,7 +75,7 @@ export function createRequestHandler({
   deviceLabel = deviceId, mode = desktop ? 'desktop' : 'headless',
   networkAccess = false, allowFullAccess = false,
 }: Dependencies) {
-  let desktopStatusCache: { threads: any[]; updatedAt: number } | null = null;
+  let desktopStatusCache: { threads: DesktopThreadStatus[]; updatedAt: number } | null = null;
   let desktopStatusRefresh: Promise<void> | null = null;
   const getDesktopThreads = () => (
     desktopStatusCache && Date.now() - desktopStatusCache.updatedAt <= DESKTOP_STATUS_CACHE_MS

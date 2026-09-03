@@ -294,6 +294,31 @@ test('session listing returns immediately and merges asynchronously cached Deskt
   assert.equal((await locallyActive(request('sessions.list'))).data.sessions[0].status, 'active');
 });
 
+test('session listing coalesces Desktop status refreshes while one is in flight', async () => {
+  const sessions = [{ id: 'thread-1', status: 'notLoaded' }];
+  let desktopCalls = 0;
+  let resolveDesktopStatus;
+  const handle = createRequestHandler(createDependencies({
+    codex: { listSessions: async () => sessions },
+    desktop: {
+      listThreads: () => {
+        desktopCalls += 1;
+        return new Promise((resolve) => { resolveDesktopStatus = resolve; });
+      },
+    },
+  }));
+
+  await Promise.all([
+    handle(request('sessions.list')),
+    handle(request('sessions.list')),
+    handle(request('sessions.list')),
+  ]);
+  assert.equal(desktopCalls, 1);
+  resolveDesktopStatus([{ id: 'thread-1', status: 'active' }]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal((await handle(request('sessions.list'))).data.sessions[0].status, 'active');
+});
+
 test('existing sessions are always delivered through Desktop without bridge takeover', async () => {
   let delivered;
   let appServerCalls = 0;

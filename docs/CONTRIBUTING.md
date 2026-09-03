@@ -48,12 +48,17 @@ their focused `src/connector` modules instead of accumulating in the process/RPC
 4. Treat protocol, filesystem, reconnect, rollout/history mapping, optimistic messages, and live animation
    changes as security- or correctness-sensitive. Add a regression test for the failure mode.
 5. Keep long-session work bounded and incremental. Avoid full-history reads, unstable React keys, and
-   animation state derived from changing transport snapshots.
+   animation state derived from changing transport snapshots. Open the latest page first, enable older-page
+   loading only after explicit upward browsing, preserve the scroll anchor, and surface retryable failures.
 6. Treat an execution environment as an isolation boundary. Requests, secure channels, session selection,
    unread state, remembered paths, downloads, and attachment recovery must never silently move to another
    connector route. Switching environments may leave accepted work running on the previous node.
 7. Update English and Simplified Chinese docs together when behavior, setup, trust boundaries, or commands
    change.
+8. Treat Codex Desktop status as best-effort enrichment. Session listing and startup must not wait for it;
+   coalesce concurrent refreshes, bound native calls, and keep app-server state as the fallback.
+9. Stop only the connector-owned turn whose thread identity matches the current session. Do not substitute
+   process termination, task archival, or a Desktop-owned action for the official app-server interrupt.
 
 The network protocol has one exact current version. Do not add plaintext, old-version, or
 missing-capability compatibility paths. A mandatory wire-format or capability change must update browser,
