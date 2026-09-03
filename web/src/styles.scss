@@ -202,9 +202,9 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   gap: 2px;
   margin: 1px 0 8px;
   padding: 6px 7px 7px;
-  border: 1px solid #29354a;
+  border: 0;
   border-radius: 10px;
-  background: linear-gradient(135deg, rgba(31, 47, 75, .54), rgba(14, 21, 33, .9));
+  background: #111925;
 }
 .environment-picker-label {
   padding: 0 3px;
@@ -225,16 +225,23 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   strong { min-width: 0; color: #dbe7fb; font-size: 12px; font-weight: 700; @include truncate; }
   small { color: #71839f; font-size: 9px; font-weight: 600; }
   svg { width: 14px; height: 14px; }
-  &:hover { border-color: rgba(73, 103, 151, .5); background: rgba(23, 36, 57, .7); }
+  &:hover, &:focus-visible { border-color: transparent; background: transparent; box-shadow: none; }
 }
 .environment-picker-select.custom-select.open .custom-select-trigger {
   border-color: transparent;
-  background: rgba(16, 27, 44, .92);
+  background: transparent;
   box-shadow: none;
 }
-.environment-picker-select .custom-select-menu { right: -8px; left: -8px; min-width: 0; }
+.environment-picker-select .custom-select-menu {
+  right: -7px;
+  left: -7px;
+  min-width: 0;
+  border-color: rgba(255, 255, 255, .1);
+  background: #111925;
+}
 .environment-picker-select .custom-select-option { min-height: 40px; }
 .environment-picker-select .custom-select-option small { font-size: 9px; }
+.environment-picker-select .custom-select-option.active { background: #1b2431; }
 .environment-status-dot {
   width: 7px;
   height: 7px;
