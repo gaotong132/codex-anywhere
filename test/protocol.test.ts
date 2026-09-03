@@ -134,6 +134,7 @@ test('presence indicator renders context usage as a compact outer ring', () => {
 
   assert.match(markup, /presence-context-ring/);
   assert.match(markup, /viewBox="0 0 30 30"/);
+  assert.match(markup, /r="12.5"/);
   assert.match(markup, /transform="rotate\(-90 15 15\)"/);
   assert.match(markup, /stroke-dasharray="82 18"/);
   assert.match(markup, /context-high/);
