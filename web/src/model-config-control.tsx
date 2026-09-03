@@ -8,10 +8,29 @@ import type { ModelConfigDraft, ModelOption, SessionModelConfig } from './app-ty
 
 function reasoningEffortLabel(value: string) {
   const labels: Record<string, [string, string]> = {
-    none: ['无', 'None'], minimal: ['极低', 'Minimal'], low: ['低', 'Low'], medium: ['中', 'Medium'],
-    high: ['高', 'High'], xhigh: ['极高', 'X-high'], max: ['最高', 'Max'], ultra: ['超高', 'Ultra'],
+    none: ['无', 'None'], minimal: ['轻度', 'Light'], low: ['轻度', 'Light'], medium: ['中', 'Medium'],
+    high: ['高', 'High'], xhigh: ['极高', 'X-high'], max: ['极高', 'X-high'], ultra: ['极高', 'X-high'],
   };
   return labels[value] ? t(...labels[value]) : value;
+}
+
+const REASONING_SLIDER_LEVELS = new Set(['low', 'medium', 'high', 'xhigh']);
+
+function reasoningSliderOptions(model: ModelOption | undefined) {
+  const standard = model?.supportedReasoningEfforts
+    .filter((option) => REASONING_SLIDER_LEVELS.has(option.reasoningEffort)) || [];
+  return standard.length ? standard : model?.supportedReasoningEfforts || [];
+}
+
+function reasoningSliderValue(model: ModelOption | undefined, value: string) {
+  const options = reasoningSliderOptions(model);
+  if (options.some((option) => option.reasoningEffort === value)) return value;
+  if ((value === 'max' || value === 'ultra')
+    && options.some((option) => option.reasoningEffort === 'xhigh')) return 'xhigh';
+  if (options.some((option) => option.reasoningEffort === model?.defaultReasoningEffort)) {
+    return model!.defaultReasoningEffort;
+  }
+  return options[0]?.reasoningEffort || value;
 }
 
 function fastTierAvailable(model: ModelOption | undefined) {
@@ -33,7 +52,7 @@ export function ModelConfigControl({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const selectedModel = config?.models.find((model) => model.model === config.model);
   const draftModel = config?.models.find((model) => model.model === draft?.model);
-  const effortOptions = draftModel?.supportedReasoningEfforts || [];
+  const effortOptions = reasoningSliderOptions(draftModel);
   const effortIndex = Math.max(0, effortOptions
     .findIndex((option) => option.reasoningEffort === draft?.reasoningEffort));
   const effortProgress = effortOptions.length > 1 ? (effortIndex / (effortOptions.length - 1)) * 100 : 100;
@@ -41,11 +60,16 @@ export function ModelConfigControl({
   useEffect(() => {
     setOpen(false);
     setError('');
-    setDraft(config ? {
+    if (!config) {
+      setDraft(null);
+      return;
+    }
+    const model = config.models.find((candidate) => candidate.model === config.model);
+    setDraft({
       model: config.model,
-      reasoningEffort: config.reasoningEffort,
+      reasoningEffort: reasoningSliderValue(model, config.reasoningEffort),
       fastMode: config.fastMode,
-    } : null);
+    });
   }, [config]);
 
   useEffect(() => {
@@ -126,11 +150,9 @@ export function ModelConfigControl({
               onChange={(value) => {
                 const nextModel = config.models.find((model) => model.model === value);
                 if (!nextModel) return;
-                const effortSupported = nextModel.supportedReasoningEfforts
-                  .some((option) => option.reasoningEffort === draft.reasoningEffort);
                 setDraft({
                   model: nextModel.model,
-                  reasoningEffort: effortSupported ? draft.reasoningEffort : nextModel.defaultReasoningEffort,
+                  reasoningEffort: reasoningSliderValue(nextModel, draft.reasoningEffort),
                   fastMode: draft.fastMode && fastTierAvailable(nextModel),
                 });
               }}
@@ -162,9 +184,10 @@ export function ModelConfigControl({
               ))}
             </span>
           </label>
-          <p className="model-config-hint">{disabled
-            ? t('当前正在执行，可预选并在结束后保存', 'Preselect now and save after the task finishes')
-            : t('保存后用于该会话的后续消息', 'Applies to subsequent messages in this task')}</p>
+          {disabled && <p className="model-config-hint">{t(
+            '当前正在执行，可预选并在结束后保存',
+            'Preselect now and save after the task finishes',
+          )}</p>}
           {error && <p role="alert">{error}</p>}
           <footer>
             <button type="button" onClick={() => setOpen(false)}>{t('取消', 'Cancel')}</button>

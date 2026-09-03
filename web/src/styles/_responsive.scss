@@ -28,7 +28,7 @@
     .model-config-summary { gap: 3px; }
     .model-config-summary > span { padding: 0 5px; }
     .model-config-summary .model-config-model { max-width: 90px; }
-    .model-config-popover { position: fixed; top: calc(66px + env(safe-area-inset-top)); right: 12px; left: 12px; width: auto; transform: none; }
+    .model-config-popover { position: fixed; top: calc(66px + env(safe-area-inset-top)); right: 20px; left: 20px; width: auto; transform: none; }
     .permission-mode-summary { width: 27px; justify-content: center; padding: 0; }
     .permission-mode-summary > span, .permission-mode-summary > i { display: none; }
     .permission-mode-popover { position: fixed; top: calc(66px + env(safe-area-inset-top)); right: 12px; left: 12px; width: auto; transform: none; }
