@@ -40,9 +40,9 @@ export function PresenceIndicator({
       ? ' context-high'
       : '';
   return (
-    <span
+    <button
+      type="button"
       className={`presence ${online ? 'online' : 'offline'} ${online ? executionState : ''}${usageTone}`}
-      role="status"
       aria-live="polite"
       aria-label={label}
       title={label}
@@ -62,7 +62,8 @@ export function PresenceIndicator({
         )}
       </svg>
       <i aria-hidden="true" />
+      {contextLabel && <span className="presence-context-popover" aria-hidden="true">{contextLabel}</span>}
       <span className="visually-hidden">{label}</span>
-    </span>
+    </button>
   );
 }

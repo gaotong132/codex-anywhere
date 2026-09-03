@@ -137,6 +137,8 @@ test('presence indicator renders context usage as a compact outer ring', () => {
   assert.match(markup, /context-high/);
   assert.match(markup, /data-context-percent="82"/);
   assert.match(markup, /上下文 82%/);
+  assert.match(markup, /presence-context-popover/);
+  assert.match(markup, /^<button type="button"/);
 });
 
 test('presence indicator marks critical context usage and tolerates missing usage', () => {

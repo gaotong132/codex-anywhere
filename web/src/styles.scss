@@ -388,10 +388,13 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   flex: 0 0 30px;
   display: grid;
   place-items: center;
+  padding: 0;
   border: 1px solid #2b3443;
   border-radius: 50%;
   color: #9aa6b8;
   background: rgba(20, 26, 37, .75);
+  appearance: none;
+  cursor: help;
 
   .presence-context-ring {
     position: absolute;
@@ -414,6 +417,30 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   }
   &.context-high .presence-context-value { stroke: #e0a05e; filter: drop-shadow(0 0 2px rgba(224, 160, 94, .4)); }
   &.context-critical .presence-context-value { stroke: #ef6672; filter: drop-shadow(0 0 3px rgba(239, 102, 114, .45)); }
+  .presence-context-popover {
+    position: absolute;
+    z-index: 5;
+    top: calc(100% + 9px);
+    right: 0;
+    width: max-content;
+    max-width: min(260px, calc(100vw - 24px));
+    padding: 7px 9px;
+    border: 1px solid #2b3a51;
+    border-radius: 8px;
+    color: #b9c7da;
+    background: rgba(14, 20, 31, .97);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+    font-size: 10px;
+    line-height: 1.35;
+    text-align: right;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-3px);
+    transition: opacity .15s ease, transform .15s ease;
+  }
+  &:hover .presence-context-popover,
+  &:focus .presence-context-popover { opacity: 1; transform: translateY(0); }
 
   &.online {
     border-color: rgba(75, 126, 225, .55);
