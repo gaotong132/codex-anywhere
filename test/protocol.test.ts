@@ -1294,6 +1294,7 @@ test('unified diff preview renders only wrapped code rows with paired line numbe
   const markup = renderToStaticMarkup(createElement(CodePreview, { content, language: 'diff' }));
   assert.match(markup, /class="code-file-preview diff-file-preview wrap-lines"/);
   assert.match(markup, /class="diff-file-row"/);
+  assert.match(markup, /class="diff-file-path" role="cell">src\/app\.ts<\/span>/);
   assert.match(markup, /class="diff-line deletion"/);
   assert.match(markup, /class="diff-line addition"/);
   assert.match(markup, /class="diff-wrap-toggle" aria-pressed="true"/);
@@ -1308,6 +1309,7 @@ test('unified diff preview renders only wrapped code rows with paired line numbe
   const responsiveStyles = await readFile(resolve('web/src/styles/_responsive.scss'), 'utf8');
   const previewSource = await readFile(resolve('web/src/code-preview.tsx'), 'utf8');
   assert.match(styles, /\.diff-file-preview\.wrap-lines \.diff-preview-grid \{ overflow-x: hidden; \}/);
+  assert.match(styles, /\.diff-file-row \.diff-file-path \{[\s\S]*direction: rtl; text-align: left; text-overflow: ellipsis;/);
   assert.match(styles, /white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;/);
   assert.match(responsiveStyles, /\.diff-file-preview\.wrap-lines \.diff-line \{ grid-template-columns: 36px 36px minmax\(0, 1fr\)/);
   assert.match(previewSource, /setWrapDiffLines\(\(enabled\) => !enabled\)/);

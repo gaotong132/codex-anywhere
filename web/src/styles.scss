@@ -930,7 +930,9 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 }
 .diff-file-row:first-child { border-top: 0; }
 .diff-file-row svg { width: 15px; height: 15px; flex: 0 0 15px; fill: none; stroke: #83adf0; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.diff-file-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-file-row .diff-file-path {
+  min-width: 0; overflow: hidden; direction: rtl; text-align: left; text-overflow: ellipsis; white-space: nowrap;
+}
 .diff-line { display: grid; min-height: 22px; grid-template-columns: 44px 44px minmax(max-content, 1fr); color: #aeb9c9; background: #0a1019; }
 .diff-line:hover { filter: brightness(1.08); }
 .diff-line-number {

@@ -184,7 +184,7 @@ export function CodePreview({ content, language }: { content: string; language: 
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M7 3h7l4 4v14H7zM14 3v5h5M10 13h5M10 17h5" />
                 </svg>
-                <span role="cell">{diffFileLabel(line.text)}</span>
+                <span className="diff-file-path" role="cell">{diffFileLabel(line.text)}</span>
               </div>
             )
             : (
