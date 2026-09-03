@@ -15,6 +15,7 @@ type ConversationTimelineProps = {
   messageListRef: RefObject<HTMLDivElement | null>;
   messageContentRef: RefObject<HTMLDivElement | null>;
   threadId: string | null;
+  environmentId: string;
   creatingNewSession: boolean;
   initialHistoryLoaded: boolean;
   nextCursor: string | null;
@@ -43,6 +44,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   messageListRef,
   messageContentRef,
   threadId,
+  environmentId,
   creatingNewSession,
   initialHistoryLoaded,
   nextCursor,
@@ -61,12 +63,12 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   onReadVisualization,
 }: ConversationTimelineProps) {
   const resolvedItems = useMemo(() => timeline.map((item) => {
-    const attachment = resolveTimelineAttachment(item, threadId, knownAttachments);
+    const attachment = resolveTimelineAttachment(item, threadId, knownAttachments, environmentId);
     return {
       attachment,
       item: attachment && !item.attachment ? { ...item, attachment } : item,
     };
-  }), [knownAttachments, threadId, timeline]);
+  }), [environmentId, knownAttachments, threadId, timeline]);
   const awaitingVisibleHistory = Boolean(
     threadId && !timeline.length && (historyLoading || nextCursor),
   );

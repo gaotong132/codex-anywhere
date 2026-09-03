@@ -180,6 +180,14 @@ function SessionDrawerPreview() {
             <button className="sidebar-tool mobile-only" type="button" tabIndex={-1}><SidebarIcon name="panel-close" /></button>
           </div>
         </div>
+        <label className="environment-picker">
+          <span className="environment-picker-label">Execution environment</span>
+          <span className="environment-picker-status online" aria-hidden="true" />
+          <select value="ecs" onChange={() => {}} tabIndex={-1} aria-label="Execution environment">
+            <option value="ecs">ECS · 24×7 · Online</option>
+          </select>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+        </label>
         <nav className="session-list">
           {sessions.map((session) => (
             <button

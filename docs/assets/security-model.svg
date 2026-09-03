@@ -84,22 +84,22 @@
       <rect width="365" height="410" rx="24" fill="#101e2d" stroke="#2d6b5b" stroke-width="2"/>
       <rect x="24" y="22" width="52" height="52" rx="15" fill="url(#teal)"/>
       <path d="M35 39h30v22H35zM40 67h20M46 61v6M54 61v6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="92" y="45" fill="#f0f5fc" font-size="19" font-weight="750">Trusted local computer</text>
-      <text x="92" y="66" fill="#789a91" font-size="12">Connector, Codex and project files</text>
+      <text x="92" y="45" fill="#f0f5fc" font-size="19" font-weight="750">Trusted execution node</text>
+      <text x="92" y="66" fill="#789a91" font-size="12">Windows computer or headless ECS</text>
 
       <g transform="translate(24 98)">
         <rect width="317" height="72" rx="14" fill="#0c1922" stroke="#285546"/>
         <text x="18" y="27" fill="#c6e6dc" font-size="13" font-weight="700">Outbound connector only</text>
-        <text x="18" y="50" fill="#779a90" font-size="12">No public inbound port on this computer</text>
+        <text x="18" y="50" fill="#779a90" font-size="12">No public PC port · loopback on relay host</text>
       </g>
       <g transform="translate(24 184)">
         <rect width="317" height="72" rx="14" fill="#0c1922" stroke="#285546"/>
-        <text x="18" y="27" fill="#c6e6dc" font-size="13" font-weight="700">Windows credential protection</text>
-        <text x="18" y="50" fill="#779a90" font-size="12">Connector token and key use user DPAPI</text>
+        <text x="18" y="27" fill="#c6e6dc" font-size="13" font-weight="700">Platform credential protection</text>
+        <text x="18" y="50" fill="#779a90" font-size="12">DPAPI on Windows · mode 0600 on Linux</text>
       </g>
       <g transform="translate(24 270)">
         <rect width="317" height="108" rx="14" fill="#0e1b25" stroke="#34725f"/>
-        <text x="18" y="28" fill="#c6e6dc" font-size="13" font-weight="700">Local data stays local</text>
+        <text x="18" y="28" fill="#c6e6dc" font-size="13" font-weight="700">Data stays on the selected node</text>
         <text x="18" y="55" fill="#789c91" font-size="12">Codex execution and projects stay here.</text>
         <text x="18" y="77" fill="#789c91" font-size="12">Downloads require confirmation, a short-</text>
         <text x="18" y="95" fill="#789c91" font-size="12">lived capability and an allowed path.</text>

@@ -92,3 +92,20 @@ test('browser ignores delayed frames from a channel it already replaced', async 
   assert.equal(browser.isReady(), true);
   assert.equal(errors, 0);
 });
+
+test('browser ignores frames routed from another execution environment', () => {
+  let errors = 0;
+  const browser = new BrowserSecureChannel({
+    identity: createDeviceIdentity(),
+    routeDeviceId: 'ecs',
+    send: () => true,
+    onFrame: () => {},
+    onError: () => { errors += 1; },
+  });
+  browser.start();
+
+  assert.equal(browser.handle({
+    type: 'channel.error', deviceId: 'personal-pc', error: 'connector_offline',
+  }), true);
+  assert.equal(errors, 0);
+});

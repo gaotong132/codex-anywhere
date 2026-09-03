@@ -430,7 +430,7 @@ function authenticateSocket({
   });
   safeSend(socket, {
     type: 'auth.ok', role, clientId: id,
-    devices: [...connectors.keys()],
+    devices: [...connectors.keys()].sort(),
     protocol,
     authMode,
   });
@@ -526,7 +526,7 @@ function broadcastPresence(
 ) {
   const payload = {
     type: 'presence',
-    devices: [...connectors.keys()],
+    devices: [...connectors.keys()].sort(),
   };
   for (const socket of clients.values()) safeSend(socket, payload);
 }

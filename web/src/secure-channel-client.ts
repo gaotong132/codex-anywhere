@@ -67,6 +67,7 @@ export class BrowserSecureChannel {
   }
 
   handle(frame: JsonObject) {
+    if (frame.deviceId && frame.deviceId !== this.routeDeviceId) return true;
     if (frame.type === 'channel.accept') {
       if (frame.accept?.transcript?.channelId !== this.offer?.channelId) return true;
       this.accept(frame.accept as SecureChannelAcceptance);

@@ -4,7 +4,7 @@ import type { ExecutionState, FollowState, Session } from './app-types';
 export const makeId = () => crypto.randomUUID();
 
 export function presenceLabel(online: boolean, state: ExecutionState, fallback: string) {
-  if (!online) return fallback || t('本机连接器离线', 'Local connector offline');
+  if (!online) return fallback || t('当前执行环境离线', 'Current environment offline');
   if (state === 'waiting') return t('正在等待桌面会话空闲', 'Waiting for the desktop session');
   if (state === 'running') return t('Codex 正在执行', 'Codex is running');
   if (state === 'failed') return t('本轮执行失败', 'Run failed');
@@ -21,7 +21,7 @@ export function followLabel(state: FollowState) {
 
 export function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || t('请求失败', 'Request failed'));
-  if (message === 'connector_offline') return t('本机连接器离线，请确认电脑已开机且连接器正在运行。', 'The local connector is offline. Make sure the computer and connector are running.');
+  if (message === 'connector_offline') return t('当前执行环境离线，请确认对应连接器正在运行。', 'The current environment is offline. Make sure its connector is running.');
   if (message === 'another_turn_is_active') return t('当前已有一个任务在运行，请等待完成或先停止。', 'Another task is running. Wait for it to finish or stop it first.');
   if (message === 'project_directory_required') return t('新会话必须选择或填写项目目录。', 'Choose or enter a project directory for the new session.');
   if (message === 'session_project_directory_unavailable') return t('该会话没有可用的项目目录，无法通过连接器继续。', 'This session has no project directory available to the connector.');
@@ -41,14 +41,14 @@ export function friendlyError(error: unknown) {
   if (message === 'attachment_invalid_base64' || message === 'attachment_size_mismatch' || message === 'attachment_content_mismatch') {
     return t('图片内容校验失败，请重新选择后再试。', 'Image validation failed. Select the image again and retry.');
   }
-  if (message === 'download_file_not_found') return t('本机文件不存在，可能已被移动或删除。', 'The local file does not exist; it may have been moved or deleted.');
+  if (message === 'download_file_not_found') return t('执行环境中的文件不存在，可能已被移动或删除。', 'The file does not exist in the execution environment; it may have been moved or deleted.');
   if (message === 'download_not_a_file') return t('该链接不是可下载的普通文件。', 'This link does not point to a downloadable regular file.');
   if (message === 'download_path_not_allowed') return t('该文件不在连接器允许下载的目录中。', 'The file is outside the connector download roots.');
   if (message === 'download_file_changed') return t('文件在下载过程中发生变化，请重新点击下载。', 'The file changed during download. Click the link again.');
   if (message === 'download_capability_invalid') return t('下载授权已失效或不属于当前页面，请重新点击文件链接。', 'The download permission expired or belongs to another page. Click the file link again.');
   if (message === 'download_rate_limited') return t('下载请求过快，请稍后重新点击文件链接。', 'Download requests are too frequent. Wait and click the file link again.');
-  if (message === 'download_confirmation_required') return t('需要在当前页面确认后才能下载本机文件。', 'Confirm the download on this page first.');
-  if (message.startsWith('download_')) return t('本机文件下载失败，请检查电脑连接后重试。', 'Local file download failed. Check the computer connection and retry.');
+  if (message === 'download_confirmation_required') return t('需要在当前页面确认后才能下载执行环境中的文件。', 'Confirm the download from the execution environment on this page first.');
+  if (message.startsWith('download_')) return t('文件下载失败，请检查当前执行环境的连接后重试。', 'File download failed. Check the current environment connection and retry.');
   if (/already has an active writer/i.test(message)) {
     return t(
       '当前会话仍在桌面 Codex 中执行，暂时无法从手机插入消息。消息已保留在输入框，请稍后重试。',

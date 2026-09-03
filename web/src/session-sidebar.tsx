@@ -12,6 +12,9 @@ import { SidebarIcon } from './ui-components';
 
 type SessionSidebarProps = {
   open: boolean;
+  environmentId: string;
+  environmentIds: string[];
+  onlineEnvironmentIds: string[];
   sessions: Session[];
   selectedThreadId: string | null;
   executionState: ExecutionState;
@@ -20,6 +23,7 @@ type SessionSidebarProps = {
   search: string;
   onSearchOpenChange: (open: boolean) => void;
   onSearchChange: (search: string) => void;
+  onEnvironmentChange: (environmentId: string) => void;
   onNewSession: () => void;
   onClose: () => void;
   onSelect: (session: Session) => void;
@@ -31,6 +35,9 @@ type SessionSidebarProps = {
  */
 export const SessionSidebar = memo(function SessionSidebar({
   open,
+  environmentId,
+  environmentIds,
+  onlineEnvironmentIds,
   sessions,
   selectedThreadId,
   executionState,
@@ -39,6 +46,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   search,
   onSearchOpenChange,
   onSearchChange,
+  onEnvironmentChange,
   onNewSession,
   onClose,
   onSelect,
@@ -77,6 +85,22 @@ export const SessionSidebar = memo(function SessionSidebar({
           </button>
         </div>
       </div>
+      <label className="environment-picker">
+        <span className="environment-picker-label">{t('执行环境', 'Execution environment')}</span>
+        <span className={`environment-picker-status ${onlineEnvironmentIds.includes(environmentId) ? 'online' : 'offline'}`} aria-hidden="true" />
+        <select
+          value={environmentId}
+          onChange={(event) => onEnvironmentChange(event.target.value)}
+          aria-label={t('切换执行环境', 'Switch execution environment')}
+        >
+          {environmentIds.map((id) => (
+            <option value={id} key={id}>
+              {environmentDisplayName(id)} · {onlineEnvironmentIds.includes(id) ? t('在线', 'Online') : t('离线', 'Offline')}
+            </option>
+          ))}
+        </select>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+      </label>
       {searchOpen && (
         <label className="compact-search session-search-panel">
           <span className="compact-search-icon"><SidebarIcon name="search" /></span>
@@ -127,3 +151,9 @@ export const SessionSidebar = memo(function SessionSidebar({
     </aside>
   );
 });
+
+function environmentDisplayName(environmentId: string) {
+  if (environmentId === 'personal-pc') return t('我的电脑', 'My computer');
+  if (environmentId === 'ecs') return t('ECS · 24×7', 'ECS · 24×7');
+  return environmentId;
+}

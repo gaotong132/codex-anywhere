@@ -81,6 +81,18 @@ import { ConversationTimeline } from './conversation-timeline';
 import { useConversationExecution } from './conversation-execution';
 import { SessionSidebar } from './session-sidebar';
 import { BrowserSecureChannel } from './secure-channel-client';
+import {
+  DEFAULT_ENVIRONMENT_ID,
+  loadEnvironmentValue,
+  loadKnownEnvironmentIds,
+  loadSelectedEnvironmentId,
+  mergeKnownEnvironmentIds,
+  normalizeEnvironmentId,
+  normalizeEnvironmentIds,
+  storeEnvironmentValue,
+  storeKnownEnvironmentIds,
+  storeSelectedEnvironmentId,
+} from './execution-environments';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
 import {
   normalizeContextUsage,
@@ -133,7 +145,6 @@ import type {
   VisualizationDocument,
 } from './app-types';
 
-const DEVICE_ID = 'personal-pc';
 const HISTORY_PAGE_SIZE = 6;
 const REQUEST_TIMEOUT_MS = 30_000;
 const TURN_START_REQUEST_TIMEOUT_MS = 11 * 60_000;
@@ -143,6 +154,8 @@ const CLIENT_STALE_AFTER_MS = 55_000;
 const SESSION_STATUS_REFRESH_MS = 6_000;
 const INITIAL_BOOTSTRAP_TIMEOUT_MS = 10_000;
 const SESSION_ATTENTION_KEY = 'bridge.sessionAttention.v1';
+const LAST_THREAD_KEY = 'bridge.lastThreadId';
+const NEW_SESSION_CWD_KEY = 'bridge.newSessionCwd';
 const PENDING_PAIRING_KEY = 'bridge.pendingPairing.v1';
 const NEW_TURN_KEY = '__new_turn__';
 type RequestOptions = { timeoutMs?: number | null; signal?: AbortSignal };
@@ -173,9 +186,11 @@ function loadInitialBrowserPairing() {
   }
 }
 
-function loadSessionAttention(): SessionAttentionState {
+function loadSessionAttention(environmentId = DEFAULT_ENVIRONMENT_ID): SessionAttentionState {
   try {
-    const stored = JSON.parse(localStorage.getItem(SESSION_ATTENTION_KEY) || '{}') as Record<string, unknown>;
+    const stored = JSON.parse(
+      loadEnvironmentValue(SESSION_ATTENTION_KEY, environmentId) || '{}',
+    ) as Record<string, unknown>;
     return Object.fromEntries(Object.entries(stored)
       .filter(([id, state]) => id && (state === 'running' || state === 'unread'))
       .slice(-200)) as SessionAttentionState;
@@ -184,8 +199,8 @@ function loadSessionAttention(): SessionAttentionState {
   }
 }
 
-function storeSessionAttention(value: SessionAttentionState) {
-  try { localStorage.setItem(SESSION_ATTENTION_KEY, JSON.stringify(value)); } catch { /* keep in memory */ }
+function storeSessionAttention(environmentId: string, value: SessionAttentionState) {
+  storeEnvironmentValue(SESSION_ATTENTION_KEY, environmentId, JSON.stringify(value));
 }
 
 const ACTIVITY_LABELS: Record<LiveActivityKind, [string, string]> = {
@@ -209,6 +224,26 @@ function safeActivityKind(value: unknown): LiveActivityKind {
 
 function activityLabel(kind: LiveActivityKind) {
   return t(...ACTIVITY_LABELS[kind]);
+}
+
+function environmentDisplayName(environmentId: string) {
+  if (environmentId === DEFAULT_ENVIRONMENT_ID) return t('我的电脑', 'My computer');
+  if (environmentId === 'ecs') return t('ECS', 'ECS');
+  return environmentId;
+}
+
+function environmentOnlineLabel(environmentId: string) {
+  return t(
+    `${environmentDisplayName(environmentId)}在线`,
+    `${environmentDisplayName(environmentId)} online`,
+  );
+}
+
+function environmentOfflineLabel(environmentId: string) {
+  return t(
+    `${environmentDisplayName(environmentId)}离线`,
+    `${environmentDisplayName(environmentId)} offline`,
+  );
 }
 
 function liveEventActivity(payload: Record<string, unknown>): LiveActivityKind {
@@ -505,8 +540,14 @@ function StartupScreen({ status }: { status: string }) {
 export default function App() {
   const [pairingCredential, setPairingCredential] = useState<BrowserPairingCredential | null>(loadInitialBrowserPairing);
   const [pairingDialogOpen, setPairingDialogOpen] = useState(false);
+  const initialEnvironmentIdRef = useRef(loadSelectedEnvironmentId());
+  const [environmentId, setEnvironmentId] = useState(initialEnvironmentIdRef.current);
+  const [environmentIds, setEnvironmentIds] = useState(() => mergeKnownEnvironmentIds(
+    loadKnownEnvironmentIds(), [], initialEnvironmentIdRef.current,
+  ));
+  const [onlineEnvironmentIds, setOnlineEnvironmentIds] = useState<string[]>([]);
   const [newSessionCwd, setNewSessionCwd] = useState(() => {
-    const stored = localStorage.getItem('bridge.newSessionCwd') || '';
+    const stored = loadEnvironmentValue(NEW_SESSION_CWD_KEY, initialEnvironmentIdRef.current) || '';
     return isTemporaryProjectPath(stored) ? '' : stored;
   });
   const [authenticated, setAuthenticated] = useState(false);
@@ -518,7 +559,9 @@ export default function App() {
   const [online, setOnline] = useState(false);
   const [statusText, setStatusText] = useState(t('未连接', 'Disconnected'));
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [sessionAttention, setSessionAttention] = useState<SessionAttentionState>(loadSessionAttention);
+  const [sessionAttention, setSessionAttention] = useState<SessionAttentionState>(() => (
+    loadSessionAttention(initialEnvironmentIdRef.current)
+  ));
   const [sessionSearch, setSessionSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -575,6 +618,8 @@ export default function App() {
   const reconnectAttemptRef = useRef(0);
   const reconnectWantedRef = useRef(false);
   const socketAuthenticatedRef = useRef(false);
+  const environmentIdRef = useRef(environmentId);
+  const onlineEnvironmentIdsRef = useRef<string[]>([]);
   const connectorOnlineRef = useRef(false);
   const secureChannelRef = useRef<BrowserSecureChannel | null>(null);
   const messageHandlerRef = useRef<(message: BridgeMessage) => void>(() => {});
@@ -612,6 +657,7 @@ export default function App() {
   const sessionAttentionRef = useRef(sessionAttention);
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
+  useEffect(() => { environmentIdRef.current = environmentId; }, [environmentId]);
   useEffect(() => { pairingCredentialRef.current = pairingCredential; }, [pairingCredential]);
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { ownedTurnThreadIdRef.current = ownedTurnThreadId; }, [ownedTurnThreadId]);
@@ -634,7 +680,7 @@ export default function App() {
     setSessionAttention((current) => {
       const next = update(current);
       sessionAttentionRef.current = next;
-      if (next !== current) storeSessionAttention(next);
+      if (next !== current) storeSessionAttention(environmentIdRef.current, next);
       return next;
     });
   }, []);
@@ -768,7 +814,9 @@ export default function App() {
     setKnownAttachments((current) => {
       const next = {
         ...current,
-        [attachmentRegistryKey(targetThreadId, text)]: { ...attachment, savedAt: Date.now() },
+        [attachmentRegistryKey(targetThreadId, text, environmentIdRef.current)]: {
+          ...attachment, savedAt: Date.now(),
+        },
       };
       const limited = Object.fromEntries(Object.entries(next)
         .sort((left, right) => left[1].savedAt - right[1].savedAt)
@@ -847,7 +895,7 @@ export default function App() {
         if (pending.timer) clearTimeout(pending.timer);
         if (onAbort) options.signal?.removeEventListener('abort', onAbort);
       };
-      const frame = { type: 'request', requestId, action, payload, deviceId: DEVICE_ID };
+      const frame = { type: 'request', requestId, action, payload };
       const pending: PendingRequest = {
         resolve: (value) => { cleanup(); resolve(value as T); },
         reject: (reason) => { cleanup(); reject(reason); },
@@ -918,11 +966,11 @@ export default function App() {
   const timelineAttachments = useMemo(() => {
     const attachments = new Map<string, ImageAttachment>();
     for (const item of timeline) {
-      const attachment = resolveTimelineAttachment(item, threadId, knownAttachments);
+      const attachment = resolveTimelineAttachment(item, threadId, knownAttachments, environmentId);
       if (attachment) attachments.set(attachment.path, attachment);
     }
     return [...attachments.values()];
-  }, [knownAttachments, threadId, timeline]);
+  }, [environmentId, knownAttachments, threadId, timeline]);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === threadId) || null,
@@ -987,13 +1035,13 @@ export default function App() {
     }
   }, [request, updateSessionAttention]);
 
-  const beginSecureChannel = useCallback(() => {
+  const beginSecureChannel = useCallback((routeDeviceId = environmentIdRef.current) => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     secureChannelRef.current?.clear();
     const channel = new BrowserSecureChannel({
       identity: loadOrCreateBrowserDeviceIdentity(),
-      routeDeviceId: DEVICE_ID,
+      routeDeviceId,
       send: (frame) => {
         if (socketRef.current !== socket || socket.readyState !== WebSocket.OPEN) return false;
         socket.send(JSON.stringify(frame));
@@ -1001,15 +1049,15 @@ export default function App() {
       },
       onFrame: (frame) => messageHandlerRef.current(frame as BridgeMessage),
       onReady: () => {
-        if (secureChannelRef.current !== channel) return;
+        if (secureChannelRef.current !== channel || environmentIdRef.current !== routeDeviceId) return;
         connectorOnlineRef.current = true;
         setOnline(true);
-        setStatusText(t('电脑在线', 'Computer online'));
+        setStatusText(environmentOnlineLabel(routeDeviceId));
         replayPendingRequests();
         void refreshSessions();
       },
       onError: () => {
-        if (secureChannelRef.current !== channel) return;
+        if (secureChannelRef.current !== channel || environmentIdRef.current !== routeDeviceId) return;
         connectorOnlineRef.current = false;
         setOnline(false);
         setStatusText(t('安全通道中断，正在重连…', 'Secure channel interrupted. Reconnecting…'));
@@ -1038,18 +1086,27 @@ export default function App() {
       setAuthenticated(true);
       setConnecting(false);
       setConnectionEpoch((current) => current + 1);
-      const connected = Boolean(message.devices?.includes(DEVICE_ID));
+      const devices = normalizeEnvironmentIds(message.devices);
+      onlineEnvironmentIdsRef.current = devices;
+      setOnlineEnvironmentIds(devices);
+      setEnvironmentIds((current) => {
+        const next = mergeKnownEnvironmentIds(current, devices, environmentIdRef.current);
+        storeKnownEnvironmentIds(next);
+        return next;
+      });
+      const routeDeviceId = environmentIdRef.current;
+      const connected = devices.includes(routeDeviceId);
       if (connected) {
         connectorOnlineRef.current = false;
         setOnline(false);
         setStatusText(t('正在建立安全通道…', 'Establishing secure channel…'));
-        beginSecureChannel();
+        beginSecureChannel(routeDeviceId);
       } else {
         secureChannelRef.current?.clear();
         secureChannelRef.current = null;
         connectorOnlineRef.current = false;
         setOnline(false);
-        setStatusText(t('电脑离线', 'Computer offline'));
+        setStatusText(environmentOfflineLabel(routeDeviceId));
         finishInitialBootstrap();
       }
       return;
@@ -1061,20 +1118,29 @@ export default function App() {
       return;
     }
     if (message.type === 'presence') {
-      const connected = Boolean(message.devices?.includes(DEVICE_ID));
+      const devices = normalizeEnvironmentIds(message.devices);
+      onlineEnvironmentIdsRef.current = devices;
+      setOnlineEnvironmentIds(devices);
+      setEnvironmentIds((current) => {
+        const next = mergeKnownEnvironmentIds(current, devices, environmentIdRef.current);
+        storeKnownEnvironmentIds(next);
+        return next;
+      });
+      const routeDeviceId = environmentIdRef.current;
+      const connected = devices.includes(routeDeviceId);
       if (!connected) {
         secureChannelRef.current?.clear();
         secureChannelRef.current = null;
         connectorOnlineRef.current = false;
         setOnline(false);
-        setStatusText(t('电脑离线', 'Computer offline'));
+        setStatusText(environmentOfflineLabel(routeDeviceId));
         finishInitialBootstrap();
       } else {
         if (!secureChannelRef.current?.isReady()) {
           connectorOnlineRef.current = false;
           setOnline(false);
           setStatusText(t('正在建立安全通道…', 'Establishing secure channel…'));
-          if (!secureChannelRef.current) beginSecureChannel();
+          if (!secureChannelRef.current) beginSecureChannel(routeDeviceId);
         }
       }
       return;
@@ -1139,7 +1205,7 @@ export default function App() {
       if (nextThreadId) {
         setThreadId(nextThreadId);
         threadIdRef.current = nextThreadId;
-        localStorage.setItem('bridge.lastThreadId', nextThreadId);
+        storeEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current, nextThreadId);
         setCreatingNewSession(false);
       }
     } else if (message.event === 'turn.delta') {
@@ -1325,6 +1391,8 @@ export default function App() {
         && ![4003, 4403, 4406, 4407, 4429].includes(event.code);
       socketRef.current = null;
       socketAuthenticatedRef.current = false;
+      onlineEnvironmentIdsRef.current = [];
+      setOnlineEnvironmentIds([]);
       connectorOnlineRef.current = false;
       secureChannelRef.current?.clear();
       secureChannelRef.current = null;
@@ -1692,7 +1760,7 @@ export default function App() {
     setThreadId(nextThreadId);
     threadIdRef.current = nextThreadId;
     setCreatingNewSession(false);
-    if (nextThreadId) localStorage.setItem('bridge.lastThreadId', nextThreadId);
+    if (nextThreadId) storeEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current, nextThreadId);
     setTimeline([]);
     setContextUsage(null);
     preserveScrollHeightRef.current = null;
@@ -1717,6 +1785,56 @@ export default function App() {
     if (nextThreadId) void loadHistory(nextThreadId, null, requestVersion);
   }, [loadHistory, resetExecutionPresentation, updateSessionAttention]);
 
+  const selectEnvironment = useCallback((value: string) => {
+    const nextEnvironmentId = normalizeEnvironmentId(value);
+    if (!nextEnvironmentId || nextEnvironmentId === environmentIdRef.current) {
+      setDrawerOpen(false);
+      return;
+    }
+
+    selectedRequestRef.current += 1;
+    fileDownloadCancelRef.current = true;
+    fileDownloadAbortRef.current?.abort();
+    rejectPendingRequests(t('已切换执行环境', 'Execution environment changed'));
+    setFileDownload(null);
+    secureChannelRef.current?.clear();
+    secureChannelRef.current = null;
+    connectorOnlineRef.current = false;
+    runningRef.current = false;
+    ownedTurnThreadIdRef.current = null;
+    setOnline(false);
+    setEnvironmentId(nextEnvironmentId);
+    environmentIdRef.current = nextEnvironmentId;
+    storeSelectedEnvironmentId(nextEnvironmentId);
+    setEnvironmentIds((current) => {
+      const next = mergeKnownEnvironmentIds(current, onlineEnvironmentIdsRef.current, nextEnvironmentId);
+      storeKnownEnvironmentIds(next);
+      return next;
+    });
+    const nextAttention = loadSessionAttention(nextEnvironmentId);
+    setSessionAttention(nextAttention);
+    sessionAttentionRef.current = nextAttention;
+    setSessions([]);
+    setSessionsInitialized(false);
+    setSessionSearch('');
+    setSearchOpen(false);
+    setNewSessionDialogOpen(false);
+    setNewSessionCwd(() => {
+      const stored = loadEnvironmentValue(NEW_SESSION_CWD_KEY, nextEnvironmentId) || '';
+      return isTemporaryProjectPath(stored) ? '' : stored;
+    });
+    selectSession(null);
+    resetExecution();
+
+    const connectorAvailable = onlineEnvironmentIdsRef.current.includes(nextEnvironmentId);
+    if (socketAuthenticatedRef.current && connectorAvailable) {
+      setStatusText(t('正在建立安全通道…', 'Establishing secure channel…'));
+      beginSecureChannel(nextEnvironmentId);
+    } else {
+      setStatusText(environmentOfflineLabel(nextEnvironmentId));
+    }
+  }, [beginSecureChannel, rejectPendingRequests, resetExecution, selectSession]);
+
   const beginNewSession = useCallback(() => {
     setNewSessionPrompt('');
     setNewSessionImage(null);
@@ -1730,7 +1848,7 @@ export default function App() {
 
   useEffect(() => {
     if (!authenticated || !online || !connectionEpoch || creatingNewSession || threadId) return;
-    const previousThreadId = localStorage.getItem('bridge.lastThreadId');
+    const previousThreadId = loadEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current);
     if (!previousThreadId) return;
     selectSession({ id: previousThreadId, title: '' });
     optimisticRestoreRef.current = previousThreadId;
@@ -1746,7 +1864,7 @@ export default function App() {
 
   useEffect(() => {
     if (!authenticated || creatingNewSession || threadId || !sessions.length) return;
-    const previousThreadId = localStorage.getItem('bridge.lastThreadId');
+    const previousThreadId = loadEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current);
     const initialSession = sessions.find((session) => session.id === previousThreadId) || sessions[0];
     selectSession(initialSession);
   }, [authenticated, creatingNewSession, selectSession, sessions, threadId]);
@@ -1880,7 +1998,9 @@ export default function App() {
       addTimeline('error', t('请先填写新会话的项目目录。', 'Enter a project directory for the new session.'));
       return;
     }
-    if (!isExistingSession) localStorage.setItem('bridge.newSessionCwd', projectCwd);
+    if (!isExistingSession) {
+      storeEnvironmentValue(NEW_SESSION_CWD_KEY, environmentIdRef.current, projectCwd);
+    }
     sendingRef.current = true;
     let turnText = text;
     let visibleText = text;
@@ -1893,6 +2013,12 @@ export default function App() {
       if (image) {
         const encoded = await fileToBase64(image.file);
         const previewEncoded = image.transferPreview ? await fileToBase64(image.transferPreview) : '';
+        if (!isCurrentSessionRequest(
+          targetThreadId, threadIdRef.current, selectionVersion, selectedRequestRef.current,
+        )) {
+          setUploading(false);
+          return;
+        }
         const uploaded = await request<UploadedImage>('attachment.upload', {
           name: image.file.name,
           mimeType: image.file.type,
@@ -1983,7 +2109,7 @@ export default function App() {
             updateExecution({ ownedTurnThreadId: ownedTurnThreadIdRef.current });
             setThreadId(data.threadId);
             threadIdRef.current = data.threadId;
-            localStorage.setItem('bridge.lastThreadId', data.threadId);
+            storeEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current, data.threadId);
             setCreatingNewSession(false);
           } else {
             updateSessionAttention((current) => ({ ...current, [data.threadId]: 'running' }));
@@ -2064,7 +2190,13 @@ export default function App() {
   }, [creatingNewSession, pendingImage, prompt, running, sendTurn, uploading]);
 
   const stopTurn = useCallback(async () => {
-    try { await request('turn.stop', {}); } catch (error) { reportTimelineError(error); }
+    const selectionVersion = selectedRequestRef.current;
+    try {
+      await request('turn.stop', {});
+    } catch (error) {
+      if (selectionVersion === selectedRequestRef.current) reportTimelineError(error);
+    }
+    if (selectionVersion !== selectedRequestRef.current) return;
     runningRef.current = false;
     ownedTurnThreadIdRef.current = null;
     awaitingDesktopTurnRef.current = null;
@@ -2074,6 +2206,7 @@ export default function App() {
   const answerApproval = useCallback(async (approved: boolean) => {
     if (!approval || approval.actionable === false) return;
     const current = approval;
+    const selectionVersion = selectedRequestRef.current;
     setApproval(null);
     try {
       await request('approval.respond', {
@@ -2082,8 +2215,10 @@ export default function App() {
         approved,
       });
     } catch (error) {
-      setApproval(current);
-      reportTimelineError(error);
+      if (selectionVersion === selectedRequestRef.current) {
+        setApproval(current);
+        reportTimelineError(error);
+      }
     }
   }, [approval, reportTimelineError, request]);
 
@@ -2199,11 +2334,14 @@ export default function App() {
 
   const downloadLocalFile = useCallback(async (path: string) => {
     if (fileDownloadRef.current) return;
+    const sourceEnvironmentId = environmentIdRef.current;
+    const selectionVersion = selectedRequestRef.current;
     const wakeLockSupported = Boolean((navigator as WakeLockNavigator).wakeLock?.request);
+    const sourceName = environmentDisplayName(environmentIdRef.current);
     const accepted = window.confirm(
       t(
-        `是否从这台电脑下载以下文件？\n\n${path}\n\n${wakeLockSupported ? '下载期间会保持屏幕常亮。若手动息屏或切到后台，下载会安全暂停，回到本页后自动续传。' : '当前浏览器无法保证后台下载，请保持屏幕亮起；若息屏中断，回到本页后会自动续传。'}`,
-        `Download this file from your computer?\n\n${path}\n\n${wakeLockSupported ? 'The screen will stay awake during the download. If you lock it or leave the page, the transfer pauses safely and resumes when you return.' : 'This browser cannot guarantee background downloads. Keep the screen awake; if interrupted, the transfer resumes when you return.'}`,
+        `是否从${sourceName}下载以下文件？\n\n${path}\n\n${wakeLockSupported ? '下载期间会保持屏幕常亮。若手动息屏或切到后台，下载会安全暂停，回到本页后自动续传。' : '当前浏览器无法保证后台下载，请保持屏幕亮起；若息屏中断，回到本页后会自动续传。'}`,
+        `Download this file from ${sourceName}?\n\n${path}\n\n${wakeLockSupported ? 'The screen will stay awake during the download. If you lock it or leave the page, the transfer pauses safely and resumes when you return.' : 'This browser cannot guarantee background downloads. Keep the screen awake; if interrupted, the transfer resumes when you return.'}`,
       ),
     );
     if (!accepted) return;
@@ -2231,7 +2369,9 @@ export default function App() {
     try {
       const isReady = () => downloadCanContinue({
         visible: document.visibilityState === 'visible',
-        online: connectorOnlineRef.current,
+        online: connectorOnlineRef.current
+          && environmentIdRef.current === sourceEnvironmentId
+          && selectedRequestRef.current === selectionVersion,
         channelReady: Boolean(secureChannelRef.current?.isReady()),
       });
       const pauseDownload = () => setFileDownload((current) => (current ? {
@@ -2302,9 +2442,16 @@ export default function App() {
       }
       await waitForDownloadReady({
         signal: abortController.signal,
-        isReady: () => document.visibilityState === 'visible',
+        isReady: () => document.visibilityState === 'visible'
+          && environmentIdRef.current === sourceEnvironmentId
+          && selectedRequestRef.current === selectionVersion,
         onPause: pauseDownload,
       });
+      if (fileDownloadCancelRef.current
+        || environmentIdRef.current !== sourceEnvironmentId
+        || selectedRequestRef.current !== selectionVersion) {
+        throw new Error('download_cancelled');
+      }
       resumeDownload();
       const url = URL.createObjectURL(new Blob(parts, { type: 'application/octet-stream' }));
       const link = document.createElement('a');
@@ -2320,17 +2467,22 @@ export default function App() {
         reportTimelineError(error);
       }
     } finally {
-      if (opened) {
+      const ownsDownload = fileDownloadAbortRef.current === abortController;
+      if (opened
+        && environmentIdRef.current === sourceEnvironmentId
+        && selectedRequestRef.current === selectionVersion) {
         void request('file.download.close', {
           downloadId: opened.downloadId,
           downloadToken: opened.downloadToken,
         }).catch(() => {});
       }
-      fileDownloadRef.current = false;
-      fileDownloadCancelRef.current = false;
-      if (fileDownloadAbortRef.current === abortController) fileDownloadAbortRef.current = null;
-      await releaseDownloadWakeLock();
-      setFileDownload(null);
+      if (ownsDownload) {
+        fileDownloadRef.current = false;
+        fileDownloadCancelRef.current = false;
+        fileDownloadAbortRef.current = null;
+        await releaseDownloadWakeLock();
+        setFileDownload(null);
+      }
     }
   }, [acquireDownloadWakeLock, online, releaseDownloadWakeLock, reportTimelineError, request]);
 
@@ -2416,7 +2568,7 @@ export default function App() {
         <section className="login-card">
           <div className="brand-mark">C</div>
           <p className="eyebrow">PRIVATE BRIDGE</p>
-          <h1>{t('连接本机 Codex', 'Connect to local Codex')}</h1>
+          <h1>{t('连接 Codex Anywhere', 'Connect to Codex Anywhere')}</h1>
           <p className="login-copy">{t('使用管理员生成的十分钟单次配对链接连接这台设备。', 'Connect this device with a ten-minute, single-use pairing link from the administrator.')}</p>
           <button type="button" className="pair-device-button" onClick={() => setPairingDialogOpen(true)}>
             {connecting ? t('连接中…', 'Connecting…') : t('输入配对链接', 'Enter pairing link')}
@@ -2441,6 +2593,9 @@ export default function App() {
       {drawerOpen && <button className="drawer-backdrop" aria-label={t('关闭会话列表', 'Close session list')} onClick={closeDrawer} />}
       <SessionSidebar
         open={drawerOpen}
+        environmentId={environmentId}
+        environmentIds={environmentIds}
+        onlineEnvironmentIds={onlineEnvironmentIds}
         sessions={sessions}
         selectedThreadId={threadId}
         executionState={executionState}
@@ -2449,6 +2604,7 @@ export default function App() {
         search={sessionSearch}
         onSearchOpenChange={setSearchOpen}
         onSearchChange={setSessionSearch}
+        onEnvironmentChange={selectEnvironment}
         onNewSession={beginNewSession}
         onClose={closeDrawer}
         onSelect={selectSession}
@@ -2560,7 +2716,10 @@ export default function App() {
             <SidebarIcon name="panel-open" />
           </button>
           <div className="conversation-heading">
-            <strong>{activeSession?.title || (threadId ? t('Codex 会话', 'Codex session') : creatingNewSession ? t('新会话', 'New session') : t('最近会话', 'Recent session'))}</strong>
+            <div className="conversation-title">
+              <strong>{activeSession?.title || (threadId ? t('Codex 会话', 'Codex session') : creatingNewSession ? t('新会话', 'New session') : t('最近会话', 'Recent session'))}</strong>
+              <span>{environmentDisplayName(environmentId)}</span>
+            </div>
             <ModelConfigControl
               config={modelConfig}
               loading={modelConfigLoading}
@@ -2580,6 +2739,7 @@ export default function App() {
           messageListRef={messageListRef}
           messageContentRef={messageContentRef}
           threadId={threadId}
+          environmentId={environmentId}
           creatingNewSession={creatingNewSession}
           initialHistoryLoaded={initialHistoryLoaded}
           nextCursor={nextCursor}
@@ -2680,7 +2840,7 @@ export default function App() {
                   ? t('向当前任务追加指令…', 'Steer the current run…')
                   : directDesktopDeliveryAvailable
                     ? t('直接发送到当前任务…', 'Send to the current run…')
-                  : online ? t('发送给本机 Codex…', 'Send to local Codex…') : t('本机连接器离线', 'Local connector is offline')}
+                  : online ? t('发送给当前 Codex…', 'Send to the current Codex…') : t('当前执行环境离线', 'Current environment is offline')}
               disabled={!online || uploading}
             />
             <div className="composer-actions">

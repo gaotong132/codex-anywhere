@@ -17,14 +17,15 @@ Do not put credentials, private addresses, conversation content, or local paths 
 
 ## What is protected
 
-- Codex, projects, attachments, and generated files stay on the connector computer. That computer accepts
-  no public inbound connection.
+- Codex, projects, attachments, and generated files stay on the selected connector node. Personal
+  computers accept no public inbound connection; a same-host ECS connector uses the relay's loopback entry.
 - The relay has no conversation database and does not intentionally persist messages, previews,
   visualizations, or download chunks. It persists only device trust state.
 - A browser enrolls through a ten-minute, single-use pairing link, then authenticates with its approved
   Ed25519 key. There is no shared browser token or recovery login.
-- A connector needs its connector-only secret and an administrator-approved Ed25519 identity. Windows
-  protects both connector credentials with current-user DPAPI.
+- Every connector needs its connector-only secret and a separately administrator-approved Ed25519
+  identity. Windows protects both connector credentials with current-user DPAPI. The Linux installer uses
+  a mode-0600 systemd environment file and a mode-0600 identity under the service account.
 - Browser and connector authenticate ephemeral X25519 keys, then protect application frames with
   XChaCha20-Poly1305. The relay routes ciphertext and can see metadata, timing, and approximate size—not
   message or file content.
@@ -55,7 +56,8 @@ sequenceDiagram
 ```
 
 Connectors do not use browser pairing. Their first signed connection appears as pending and must be
-reviewed from the relay host with `./scripts/relay.sh approve`.
+reviewed from the relay host with `./scripts/relay.sh approve`. Adding a second execution environment never
+inherits trust from the first one.
 
 ## Files, previews, and approvals
 
@@ -88,6 +90,10 @@ reviewed from the relay host with `./scripts/relay.sh approve`.
   the full approval request.
 - The Web UI can act only on approvals owned by connector-started turns. An approval already owned by
   Codex Desktop stays on the computer and is shown as non-actionable in the Web UI.
+- The selected connector route is part of the authenticated secure-channel transcript. Switching routes
+  destroys the browser's old channel, rejects its pending requests, and keeps session selection, unread
+  state, workspace memory, and attachment lookup scoped to the new environment. A task already accepted by
+  the old node continues there and is resynchronized when the user switches back.
 
 Broad `-AllowedRoots`, `-AllowAnyFileDownload`, and `-EnableNetworkAccess` options increase connector
 authority and are disabled or narrow by default. `-AllowAnyFileDownload` expands only confirmed downloads;
@@ -97,9 +103,10 @@ it does not expand the roots accepted by image or text previews.
 
 The ECS/VPS is trusted infrastructure because it serves the Web application and manages device trust.
 A compromised relay administrator can replace future Web code or trust records, approve an attacker,
-observe metadata, or deny service. A compromised connector computer or approved browser profile retains
-that endpoint's authority. End-to-end encryption reduces relay exposure; it does not make the deployment
-zero-trust.
+observe metadata, or deny service. A compromised connector node or approved browser profile retains that
+endpoint's authority. When the relay host also runs the ECS connector, the host administrator can directly
+access that connector's credentials, Codex account, and ECS workspaces; end-to-end encryption only isolates
+the relay process from application frames. It does not make the deployment zero-trust.
 
 Direct `ws://` is supported and application frames remain encrypted, but HTTP/WS does not protect Web
 delivery, pairing, metadata, or availability from the network. Prefer WSS, a VPN, or a secure tunnel on
@@ -113,6 +120,8 @@ replace Codex permission review.
 - Keep the reference port bound to ECS loopback and publish it through a maintained ingress or private
   network. Use SSH keys, patch the host, and restrict firewall rules.
 - Keep `.env` and the device-registry volume private. Back them up only when the backup is encrypted.
+- Keep `/etc/codex-anywhere/connector.env`, the Linux connector identity, the service account's Codex
+  credentials, and its workspace roots private. Do not use the whole home directory as an allowed root.
 - Set `BRIDGE_TRUST_PROXY=1` only when a trusted proxy is the sole ingress and overwrites `X-Real-IP`.
 - Disable proxy access logs or retain them briefly; relay container logs are size-bounded by default.
 - Approve only a request you just initiated. Revoke lost, retired, or unexpected devices.
@@ -133,7 +142,7 @@ The running relay reloads the registry and closes a revoked connection, normally
 ## If access may be compromised
 
 1. Revoke the affected browser or connector. Treat a copied device private key as a compromised endpoint.
-2. If the connector secret leaked, replace `BRIDGE_CONNECTOR_TOKEN`, reinstall the Windows connector
-   credential, and restart the relay and connector.
+2. If the connector secret leaked, replace `BRIDGE_CONNECTOR_TOKEN`, reinstall every connector credential,
+   and restart the relay and all connectors.
 3. Review the ECS, ingress, browser extensions, clipboard, shell history, and related infrastructure
    credentials. Do not publish forensic data that contains conversation or identity material.

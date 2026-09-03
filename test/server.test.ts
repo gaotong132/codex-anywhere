@@ -417,6 +417,37 @@ test('server routes secure-channel control and ciphertext frames without reading
   clientConnection.socket.close();
 });
 
+test('server advertises and independently routes multiple connector environments', async (t) => {
+  const server = createBridgeServer({ connectorToken: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+
+  const local = await authenticateSocket({
+    url, role: 'connector', token: TOKEN, deviceId: 'personal-pc', registry: server.deviceRegistry,
+  });
+  const ecs = await authenticateSocket({
+    url, role: 'connector', token: TOKEN, deviceId: 'ecs', registry: server.deviceRegistry,
+  });
+  const browser = await authenticateSocket({ url, role: 'client', registry: server.deviceRegistry });
+  assert.deepEqual(browser.auth.devices, ['ecs', 'personal-pc']);
+
+  browser.socket.send(JSON.stringify({
+    type: 'channel.offer', deviceId: 'personal-pc',
+    offer: { initiator: browser.identity, marker: 'local' },
+  }));
+  browser.socket.send(JSON.stringify({
+    type: 'channel.offer', deviceId: 'ecs',
+    offer: { initiator: browser.identity, marker: 'ecs' },
+  }));
+  assert.equal((await nextJson(local.socket)).offer.marker, 'local');
+  assert.equal((await nextJson(ecs.socket)).offer.marker, 'ecs');
+
+  local.socket.close();
+  ecs.socket.close();
+  browser.socket.close();
+});
+
 test('browser shared-token authentication is not supported', async (t) => {
   const server = createBridgeServer({ connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');

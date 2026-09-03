@@ -3,7 +3,7 @@
 English | [简体中文](CONTRIBUTING.zh-CN.md)
 
 Thanks for improving Codex Anywhere. Keep changes aligned with its purpose: a single-user, self-hosted
-mobile Web bridge for Codex running on the user's own computer.
+mobile Web bridge for Codex running on the user's own execution nodes.
 
 ## Get started
 
@@ -28,7 +28,7 @@ attachment, file-access, or rendering behavior.
 | `src/connector` | Codex app-server/Desktop integration, history, files, approvals, and reconnect |
 | `src/shared` | Strict protocol, authentication, encryption, activity, message, and shared file-type primitives |
 | `test` | Integration, behavior, security, and regression tests |
-| `scripts` | Relay administration and Windows connector installation/watchdog |
+| `scripts` | Relay administration plus Windows and Linux connector installation/watchdogs |
 | `docs` / `deploy` | User documentation, diagrams, and optional ingress example |
 
 ## Design rules
@@ -44,7 +44,10 @@ attachment, file-access, or rendering behavior.
    changes as security- or correctness-sensitive. Add a regression test for the failure mode.
 5. Keep long-session work bounded and incremental. Avoid full-history reads, unstable React keys, and
    animation state derived from changing transport snapshots.
-6. Update English and Simplified Chinese docs together when behavior, setup, trust boundaries, or commands
+6. Treat an execution environment as an isolation boundary. Requests, secure channels, session selection,
+   unread state, remembered paths, downloads, and attachment recovery must never silently move to another
+   connector route. Switching environments may leave accepted work running on the previous node.
+7. Update English and Simplified Chinese docs together when behavior, setup, trust boundaries, or commands
    change.
 
 The network protocol has one exact current version. Do not add plaintext, old-version, or
@@ -60,8 +63,10 @@ generated markup, and preserve a safe plain-text fallback.
 
 ## Extra checks
 
-- When `scripts/relay.sh` changes, run `sh -n scripts/relay.sh` in a POSIX shell.
+- When POSIX service scripts change, run `sh -n` on each changed script.
 - Keep helper commands and both deployment guides synchronized.
+- For multi-environment changes, test at least two simultaneous connector routes and both `desktop` and
+  `headless` delivery modes.
 - Verify mobile layout for long titles, filenames, progress text, and three-line activity status. File
   preview changes must also cover long code lines, syntax-highlight fallback, Download/Close controls,
   and the binary or unsupported-file path.

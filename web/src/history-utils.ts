@@ -439,18 +439,26 @@ function canonicalMessageText(text: string) {
     .trim();
 }
 
-export function attachmentRegistryKey(threadId: string, text: string) {
-  return `${threadId}\0${canonicalMessageText(text)}`;
+export function attachmentRegistryKey(
+  threadId: string,
+  text: string,
+  environmentId = 'personal-pc',
+) {
+  return `${environmentId}\0${threadId}\0${canonicalMessageText(text)}`;
 }
 
 export function resolveTimelineAttachment(
   item: TimelineItem,
   threadId: string | null,
   knownAttachments: Record<string, KnownAttachment>,
+  environmentId = 'personal-pc',
 ) {
   if (item.attachment) return item.attachment;
   if (!threadId) return undefined;
-  return knownAttachments[attachmentRegistryKey(threadId, item.text)];
+  return knownAttachments[attachmentRegistryKey(threadId, item.text, environmentId)]
+    || (environmentId === 'personal-pc'
+      ? knownAttachments[`${threadId}\0${canonicalMessageText(item.text)}`]
+      : undefined);
 }
 
 export function loadKnownAttachments(): Record<string, KnownAttachment> {

@@ -263,6 +263,9 @@ test('late visualization responses cannot replace the currently selected artifac
 test('session sidebar sorts recent sessions and renders current execution state independently', () => {
   const markup = renderToStaticMarkup(createElement(SessionSidebar, {
     open: true,
+    environmentId: 'ecs',
+    environmentIds: ['ecs', 'personal-pc'],
+    onlineEnvironmentIds: ['ecs'],
     sessions: [
       { id: 'older', title: 'Older task', cwd: 'D:\\work\\alpha', updatedAt: 10 },
       { id: 'current', title: 'Current task', cwd: 'D:\\work\\beta', updatedAt: 20 },
@@ -274,6 +277,7 @@ test('session sidebar sorts recent sessions and renders current execution state 
     search: '',
     onSearchOpenChange: () => {},
     onSearchChange: () => {},
+    onEnvironmentChange: () => {},
     onNewSession: () => {},
     onClose: () => {},
     onSelect: () => {},
@@ -281,6 +285,7 @@ test('session sidebar sorts recent sessions and renders current execution state 
   assert.ok(markup.indexOf('Current task') < markup.indexOf('Older task'));
   assert.match(markup, /session-card active running/);
   assert.match(markup, />beta</);
+  assert.match(markup, /ECS · 24×7 · 在线/);
 });
 
 test('active Desktop writer errors are private and consecutive duplicates collapse', () => {

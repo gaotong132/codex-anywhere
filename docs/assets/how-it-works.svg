@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="690" viewBox="0 0 1400 690" role="img" aria-labelledby="title desc">
   <title id="title">How Codex Anywhere works</title>
-  <desc id="desc">A browser and outbound local connector exchange end-to-end encrypted application frames through a self-hosted WebSocket relay connected to Codex Desktop.</desc>
+  <desc id="desc">A browser selects an outbound Windows or headless ECS connector through a self-hosted relay, with a separate end-to-end encrypted channel for each execution environment.</desc>
   <defs>
     <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#07101d"/>
@@ -26,7 +26,7 @@
   <circle cx="707" cy="332" r="270" fill="#2e6bd0" opacity=".055"/>
 
   <text x="70" y="78" fill="#f2f6fc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="750">How it works</text>
-  <text x="70" y="111" fill="#8091aa" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">A tiny relay joins your browser to Codex while application traffic stays end-to-end encrypted.</text>
+  <text x="70" y="111" fill="#8091aa" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">Choose your computer or a 24×7 ECS node; each route keeps a separate end-to-end encrypted channel.</text>
 
   <g font-family="Inter,Segoe UI,Arial,sans-serif" filter="url(#shadow2)">
     <g transform="translate(70 205)">
@@ -52,16 +52,16 @@
       <path d="M62 56h121v61H62z" fill="#102b2a"/>
       <path d="M95 146h55M110 133v13M135 133v13" stroke="#6b9c8f" stroke-width="2" stroke-linecap="round"/>
       <path d="M82 83h30m-15-15 15 15-15 15" fill="none" stroke="#59dfa4" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="122" y="158" text-anchor="middle" fill="#eef4fd" font-size="17" font-weight="700">Local connector</text>
-      <text x="122" y="178" text-anchor="middle" fill="#71849f" font-size="11">Outbound connection only</text>
+      <text x="122" y="158" text-anchor="middle" fill="#eef4fd" font-size="17" font-weight="700">Selected connector</text>
+      <text x="122" y="178" text-anchor="middle" fill="#71849f" font-size="11">Windows or ECS · outbound only</text>
     </g>
 
     <g transform="translate(1085 205)">
       <rect width="245" height="190" rx="22" fill="#151a2d" stroke="#4b4574"/>
       <circle cx="122" cy="83" r="49" fill="#242044" stroke="#8175dc" stroke-width="2"/>
       <path d="M100 70c13-16 32-16 45 0m-45 27c13 16 32 16 45 0M96 83h52" fill="none" stroke="#a99ff3" stroke-width="3" stroke-linecap="round"/>
-      <text x="122" y="158" text-anchor="middle" fill="#eef4fd" font-size="17" font-weight="700">Codex Desktop</text>
-      <text x="122" y="178" text-anchor="middle" fill="#71849f" font-size="11">Sessions, tools and approvals</text>
+      <text x="122" y="158" text-anchor="middle" fill="#eef4fd" font-size="17" font-weight="700">Codex runtime</text>
+      <text x="122" y="178" text-anchor="middle" fill="#71849f" font-size="11">Desktop or headless app-server</text>
     </g>
   </g>
 
@@ -72,8 +72,8 @@
   </g>
   <g font-family="Inter,Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" text-anchor="middle">
     <g transform="translate(357 266)"><rect x="-62" y="-15" width="124" height="25" rx="12" fill="#152743" stroke="#2f5386"/><text y="3" fill="#9bb9e8">WS/WSS + E2EE</text></g>
-    <g transform="translate(697 266)"><rect x="-62" y="-15" width="124" height="25" rx="12" fill="#152743" stroke="#2f5386"/><text y="3" fill="#9bb9e8">E2EE + WS/WSS</text></g>
-    <g transform="translate(1042 266)"><rect x="-50" y="-15" width="100" height="25" rx="12" fill="#1a263d" stroke="#465777"/><text y="3" fill="#a9b8cf">Local IPC</text></g>
+    <g transform="translate(697 266)"><rect x="-62" y="-15" width="124" height="25" rx="12" fill="#152743" stroke="#2f5386"/><text y="3" fill="#9bb9e8">Selected E2EE route</text></g>
+    <g transform="translate(1042 266)"><rect x="-50" y="-15" width="100" height="25" rx="12" fill="#1a263d" stroke="#465777"/><text y="3" fill="#a9b8cf">Local process</text></g>
   </g>
 
   <g transform="translate(70 465)" font-family="Inter,Segoe UI,Arial,sans-serif">
@@ -81,26 +81,26 @@
       <rect width="395" height="140" rx="20" fill="#0e192a" stroke="#263b5a"/>
       <circle cx="34" cy="34" r="16" fill="url(#blue2)"/>
       <text x="34" y="39" text-anchor="middle" fill="#fff" font-size="14" font-weight="800">1</text>
-      <text x="62" y="32" fill="#e9f0fa" font-size="15" font-weight="700">New app-server sessions</text>
-      <text x="62" y="54" fill="#7185a1" font-size="12">Codex app-server JSON-RPC</text>
+      <text x="62" y="32" fill="#e9f0fa" font-size="15" font-weight="700">Windows · desktop mode</text>
+      <text x="62" y="54" fill="#7185a1" font-size="12">Desktop ownership + app-server</text>
       <path d="M24 84h344" stroke="#22344f"/>
-      <text x="24" y="109" fill="#94a9c6" font-size="13">Native delta events can stream through WSS.</text>
+      <text x="24" y="109" fill="#94a9c6" font-size="13">Existing Desktop sessions keep their writer.</text>
     </g>
     <g transform="translate(432)">
       <rect width="465" height="140" rx="20" fill="#0e192a" stroke="#263b5a"/>
       <circle cx="34" cy="34" r="16" fill="url(#green2)"/>
       <text x="34" y="39" text-anchor="middle" fill="#fff" font-size="14" font-weight="800">2</text>
-      <text x="62" y="32" fill="#e9f0fa" font-size="15" font-weight="700">Existing desktop sessions</text>
-      <text x="62" y="54" fill="#7185a1" font-size="12">Desktop delivery + bounded rollout tail</text>
+      <text x="62" y="32" fill="#e9f0fa" font-size="15" font-weight="700">Linux / ECS · headless mode</text>
+      <text x="62" y="54" fill="#7185a1" font-size="12">Codex app-server owns resumed sessions</text>
       <path d="M24 84h417" stroke="#22344f"/>
-      <text x="24" y="109" fill="#94a9c6" font-size="13">Adaptive polling follows visible progress over the same WSS.</text>
+      <text x="24" y="109" fill="#94a9c6" font-size="13">Runs continuously without a Desktop login.</text>
     </g>
     <g transform="translate(934)">
       <rect width="326" height="140" rx="20" fill="#11192a" stroke="#343c58"/>
       <text x="24" y="34" fill="#e9f0fa" font-size="15" font-weight="700">Security boundary</text>
       <path d="M24 55h278" stroke="#2a334b"/>
       <circle cx="30" cy="82" r="4" fill="#55dda1"/>
-      <text x="44" y="87" fill="#94a4ba" font-size="12">Files and execution stay local</text>
+      <text x="44" y="87" fill="#94a4ba" font-size="12">Files stay on the selected node</text>
       <circle cx="30" cy="109" r="4" fill="#55dda1"/>
       <text x="44" y="114" fill="#94a4ba" font-size="12">Authenticated E2EE required</text>
     </g>

@@ -137,6 +137,13 @@ case "$command_name" in
     ensure_environment
     docker compose up -d --build
     wait_for_health
+    if command -v systemctl >/dev/null 2>&1 \
+      && systemctl is-enabled codex-anywhere-connector.service >/dev/null 2>&1; then
+      systemctl restart codex-anywhere-connector.service
+      systemctl is-active --quiet codex-anywhere-connector.service \
+        || die 'Relay updated, but the local headless connector did not restart.'
+      printf 'Headless connector restarted.\n'
+    fi
     ;;
   help|-h|--help)
     show_help
