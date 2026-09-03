@@ -6,6 +6,7 @@ import { normalizeSessionName } from '../shared/session-name.js';
 const PIPE_PREFIX = 'codex-browser-use-';
 const MAX_FRAME_BYTES = 4 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 15_000;
+const STATUS_ENRICHMENT_TIMEOUT_MS = 1_000;
 
 type JsonObject = Record<string, any>;
 type DesktopClientOptions = { timeoutMs?: number };
@@ -111,7 +112,7 @@ export class CodexDesktopClient {
       arguments: { limit: Math.min(50, Math.max(1, Number(limit) || 50)) },
       callerThreadId: caller,
       callId: `bridge-list-${randomUUID()}`,
-    });
+    }, { timeoutMs: STATUS_ENRICHMENT_TIMEOUT_MS, resetOnError: false });
     if (result?.success !== true) throw new Error('desktop_thread_list_failed');
     const payload = parseToolPayload(result);
     const rows = [
@@ -149,8 +150,13 @@ export class CodexDesktopClient {
     };
   }
 
-  async callTool({ tool, arguments: toolArguments, callerThreadId, callId }: ToolCall): Promise<JsonObject> {
-    const client = await this.getClient();
+  async callTool(
+    { tool, arguments: toolArguments, callerThreadId, callId }: ToolCall,
+    options: { timeoutMs?: number; resetOnError?: boolean } = {},
+  ): Promise<JsonObject> {
+    const timeoutMs = Number.isFinite(options.timeoutMs)
+      ? Math.max(250, Number(options.timeoutMs)) : this.timeoutMs;
+    const client = await this.getClient(timeoutMs);
     try {
       return await client.request('tools/call', {
         arguments: toolArguments,
@@ -159,15 +165,17 @@ export class CodexDesktopClient {
         threadId: callerThreadId,
         tool,
         turnId: callId,
-      }, this.timeoutMs);
+      }, timeoutMs);
     } catch (error) {
-      client.close();
-      if (this.client === client) this.client = null;
+      if (options.resetOnError !== false) {
+        client.close();
+        if (this.client === client) this.client = null;
+      }
       throw error;
     }
   }
 
-  async getClient(): Promise<NativePipeClient> {
+  async getClient(timeoutMs = this.timeoutMs): Promise<NativePipeClient> {
     if (this.client?.connected) return this.client;
     if (process.platform !== 'win32') throw new Error('desktop_app_unavailable');
     let names;
@@ -177,7 +185,7 @@ export class CodexDesktopClient {
       throw new Error('desktop_app_unavailable');
     }
     const candidates = await Promise.all(names.map((name) => probePipe(
-      `\\\\.\\pipe\\${name}`, Math.min(this.timeoutMs, 5_000),
+      `\\\\.\\pipe\\${name}`, Math.min(timeoutMs, 5_000),
     )));
     const client = candidates.find(Boolean);
     for (const candidate of candidates) {
