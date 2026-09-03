@@ -205,8 +205,6 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   border: 1px solid #29354a;
   border-radius: 10px;
   background: linear-gradient(135deg, rgba(31, 47, 75, .54), rgba(14, 21, 33, .9));
-
-  &:focus-within { border-color: #5884dd; box-shadow: 0 0 0 2px rgba(72, 120, 218, .14); }
 }
 .environment-picker-label {
   padding: 0 3px;
@@ -229,7 +227,11 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   svg { width: 14px; height: 14px; }
   &:hover { border-color: rgba(73, 103, 151, .5); background: rgba(23, 36, 57, .7); }
 }
-.environment-picker-select.custom-select.open .custom-select-trigger { background: rgba(16, 27, 44, .92); }
+.environment-picker-select.custom-select.open .custom-select-trigger {
+  border-color: transparent;
+  background: rgba(16, 27, 44, .92);
+  box-shadow: none;
+}
 .environment-picker-select .custom-select-menu { right: -8px; left: -8px; min-width: 0; }
 .environment-picker-select .custom-select-option { min-height: 40px; }
 .environment-picker-select .custom-select-option small { font-size: 9px; }
