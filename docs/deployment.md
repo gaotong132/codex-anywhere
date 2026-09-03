@@ -102,8 +102,11 @@ Open an existing session from the phone and send a harmless message. Confirm tha
 receive the update. If the conversation contains local links, click one Markdown file and one common
 source file: each should open a bounded preview, the source file should use syntax color when supported,
 and both previews should retain a Download button. If a completed reply reports file changes, tap the
-totals and confirm that the bounded diff belongs to that turn. Also verify that the public URL uses the intended
-transport and that `ECS-IP:3300` is unreachable externally.
+totals, confirm that the bounded diff belongs to that turn, and toggle line wrapping once. When Codex
+reports context accounting, confirm that the top-right activity ring shows usage and reveals exact token
+details on hover or tap; a session that has compacted should keep a compaction marker in its timeline.
+Also verify that the public URL uses the intended transport and that `ECS-IP:3300` is unreachable
+externally.
 
 ## Operate and update
 
@@ -133,6 +136,7 @@ the strict protocol does not support mixed versions.
 | The preview opens but reports failure | Confirm the file is regular UTF-8, no larger than 2 MiB, and inside `-AllowedRoots` |
 | Code is readable but has no syntax color | The recognized language is not in the lazy highlighter subset or the file exceeds the 512 KiB highlighting limit; plain escaped text is expected |
 | A binary, `.env`, certificate, or key file downloads instead | Sensitive, binary, and unrecognized formats intentionally never receive inline text preview |
+| The context ring is empty | Update both checkouts and fully refresh the browser; the selected session must also contain token accounting reported by Codex |
 
 Preview access and download access are separate. `-AllowAnyFileDownload` affects only the confirmed
 download path and does not make an out-of-root file previewable.

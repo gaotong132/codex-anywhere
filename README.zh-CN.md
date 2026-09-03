@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)
-[![Release](https://img.shields.io/github/v/release/gaotong132/codex-anywhere?display_name=tag)](https://github.com/gaotong132/codex-anywhere/releases/latest)
+[![Version](https://img.shields.io/github/v/tag/gaotong132/codex-anywhere?sort=semver)](https://github.com/gaotong132/codex-anywhere/tags)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <p align="center">
@@ -23,8 +23,9 @@ Codex Anywhere 是一个面向单用户、自托管场景的 Codex Web 桥接工
 - **继续真实 Codex 会话**：浏览最近会话和 Markdown 历史，发送文字或图片，也可以在已有本机项目中
   新建任务。
 - **跟随执行过程**：查看运行中和完成未读状态，以及进度、计划步骤、工具目的、执行时间和文件变更；
-  随时了解当前上下文用量和压缩节点；已完成轮次会在时间线保留精简的工具汇总、配置变化、失败或中止
-  原因。点击已完成轮次的变更统计可以查看有界 unified diff；长会话按页加载。
+  右上角状态环会显示当前上下文用量，悬停或点击可查看 Token 明细，上下文压缩事件则保留在时间线中；
+  已完成轮次会显示精简的工具汇总、配置变化、失败或中止原因。点击变更统计可以查看有界 unified diff；
+  长会话按页加载。
 - **随时补充下一步**：连接器持有的运行中任务可以追加文字；已有 Desktop 会话在支持时使用桌面投递。
   消息直接发送，Web 端不维护排队队列。
 - **配置 Codex**：在当前模型支持时，查看或修改模型、思考强度和快速模式。
@@ -59,7 +60,15 @@ Codex Anywhere 刻意保持小而专注：它不是多用户网关、通用远�
 
 已完成回复显示文件变更统计时，点击即可打开该轮 Codex 产生的 unified diff。浏览器只在点击后请求；
 连接器从已知会话的 rollout 中增量读取、严格隔离轮次，并且最多返回 512 KiB。超大 Diff 会明确标记
-截断；无法恢复的旧轮次会安全失败，不会退化成可能混入其他修改的当前工作区 Diff。
+截断；无法恢复的旧轮次会安全失败，不会退化成可能混入其他修改的当前工作区 Diff。预览会显示新旧
+行号和文件边界，并可在窄屏上按需开启自动换行。
+
+### 上下文与时间线诊断
+
+Codex 提供 Token 统计时，右上角活动状态环也会显示模型上下文窗口的当前用量；悬停或点击状态环可查看
+准确 Token 数，高用量和临界用量会使用不同颜色。上下文压缩会作为独立时间线节点显示压缩次数，以及
+可获得的压缩前后用量。已完成轮次会保留工具、命令、编辑和其他操作的精简计数，以及有界的模型配置
+变化、失败或中止原因；这些汇总不会复制原始推理、工具参数或工具输出。
 
 ## 架构
 

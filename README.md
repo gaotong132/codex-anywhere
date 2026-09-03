@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 [![CI](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)
-[![Release](https://img.shields.io/github/v/release/gaotong132/codex-anywhere?display_name=tag)](https://github.com/gaotong132/codex-anywhere/releases/latest)
+[![Version](https://img.shields.io/github/v/tag/gaotong132/codex-anywhere?sort=semver)](https://github.com/gaotong132/codex-anywhere/tags)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 <p align="center">
@@ -24,10 +24,10 @@ connector computer; a small relay you control provides the remote meeting point.
 - **Continue real Codex sessions** — browse recent sessions, read Markdown history, send text or images,
   and start a task in an existing local project.
 - **Follow work as it happens** — see running and unread-complete sessions, progress updates, plan steps,
-  tool purpose, elapsed time, current context usage, compaction points, and file-change totals. Completed
-  turns keep compact tool summaries, configuration changes, and failure or cancellation reasons in the
-  timeline. Tap a completed turn's totals to inspect its bounded unified diff. Long histories load
-  incrementally.
+  tool purpose, elapsed time, and file-change totals. The status ring tracks current context usage and
+  reveals token details on hover or tap, while compaction events stay visible in the timeline. Completed
+  turns keep compact tool summaries, configuration changes, and failure or cancellation reasons. Tap a
+  completed turn's totals to inspect its bounded unified diff. Long histories load incrementally.
 - **Guide an active task** — append text to a connector-owned run, or use Desktop delivery when the
   existing session supports it. Messages are sent directly; Codex Anywhere does not maintain a Web queue.
 - **Choose how Codex works** — view or change the model, reasoning effort, and fast mode when the selected
@@ -67,7 +67,17 @@ too large to highlight efficiently.
 When a completed reply shows file-change totals, tap them to open the unified diff produced by that Codex
 turn. The browser requests it only on demand; the connector reads the known session rollout incrementally,
 keeps turns isolated, and returns at most 512 KiB. Large diffs are marked as truncated, and unavailable
-legacy turns fail closed instead of falling back to the current working-tree diff.
+legacy turns fail closed instead of falling back to the current working-tree diff. The preview includes
+old and new line numbers, file boundaries, and an optional line-wrapping control for narrow screens.
+
+### Context and timeline diagnostics
+
+When Codex reports token accounting, the top-right activity ring also shows how much of the model context
+window is in use. Hover over or tap the ring for the exact token count; the ring changes tone at high and
+critical usage. Context compactions appear as dedicated timeline markers with their sequence and available
+before/after totals. Completed turns retain compact counts for tools, commands, edits, and other actions,
+plus bounded model-setting changes and failure or cancellation reasons. Raw reasoning, tool arguments, and
+tool output are not copied into these summaries.
 
 ## Architecture
 
