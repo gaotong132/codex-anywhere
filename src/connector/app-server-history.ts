@@ -1,5 +1,7 @@
 import { summarizeToolActivity } from '../shared/activity-detail.js';
-import { parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
+import {
+  parseAssistantMessage, parseInjectedUserMessage, parseUserMessage,
+} from '../shared/message-content.js';
 import { publicError } from '../shared/protocol.js';
 import { extractGeneratedImageAttachment } from './generated-images.js';
 
@@ -38,13 +40,15 @@ export function mapTurns(turns: unknown) {
     const items: JsonObject[] = rawItems
       .filter((item: JsonObject) => {
         const type = String(item.type || '');
-        return Boolean(extractGeneratedImageAttachment(item))
+        return Boolean(parseInjectedUserMessage(item))
+          || Boolean(extractGeneratedImageAttachment(item))
           || (!/reasoning|command|tool|webSearch|fileChange|system|developer/i.test(type)
             && /user|agent|assistant|message/i.test(type));
       })
       .map((item: JsonObject) => {
+        const injectedUserMessage = parseInjectedUserMessage(item);
         const attachment = extractGeneratedImageAttachment(item);
-        const userMessage = /user/i.test(String(item.type || ''));
+        const userMessage = Boolean(injectedUserMessage) || /user/i.test(String(item.type || ''));
         const completedAt = item.completedAt || item.updatedAt || item.createdAt || item.timestamp
           || (userMessage ? turn.startedAt : turn.completedAt) || null;
         const timing = completedAt ? { completedAt } : {};
@@ -54,10 +58,10 @@ export function mapTurns(turns: unknown) {
             ...timing,
           };
         }
-        const content = userMessage
-          ? parseUserMessage(extractText(item)) : parseAssistantMessage(extractText(item));
+        const content = injectedUserMessage || (userMessage
+          ? parseUserMessage(extractText(item)) : parseAssistantMessage(extractText(item)));
         return {
-          type: item.type,
+          type: injectedUserMessage ? 'userMessage' : item.type,
           phase: item.phase || '',
           status: item.status || '',
           ...content,

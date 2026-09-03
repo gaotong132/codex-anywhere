@@ -41,6 +41,17 @@ export function parseAssistantMessage(value: unknown): ParsedMessageContent {
   return parseMessageContent(value, 'assistant');
 }
 
+export function parseInjectedUserMessage(value: unknown): ParsedMessageContent | null {
+  if (!value || typeof value !== 'object') return null;
+  const item = value as Record<string, unknown>;
+  const expectedContext = String(item.name || '') === 'send_message_to_thread'
+    ? 'delegation' : String(item.name || '') === 'automation_update' ? 'automation' : '';
+  if (!expectedContext || typeof item.output !== 'string') return null;
+  const content = parseUserMessage(item.output);
+  return content.text && content.contexts.some((context) => context.kind === expectedContext)
+    ? content : null;
+}
+
 export function displayUserMessage(value: unknown) {
   return parseUserMessage(value).text;
 }

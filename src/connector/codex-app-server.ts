@@ -22,6 +22,7 @@ import {
   type PermissionMode,
 } from '../shared/permission-mode.js';
 import { normalizeSessionName } from '../shared/session-name.js';
+import { parseInjectedUserMessage } from '../shared/message-content.js';
 import {
   extractText,
   isReasoningMethod,
@@ -307,9 +308,13 @@ export class CodexAppServer extends EventEmitter {
       const contextUsage = !cursor && metadata?.path
         ? await readRolloutContextUsage(metadata.path).catch(() => undefined)
         : undefined;
+      const rawTurns = Array.isArray(result?.data) ? result.data : [];
+      const hydratedTurns = mode === 'conversation'
+        ? await this.hydrateInjectedTurnInputs(resolvedThreadId, rawTurns)
+        : rawTurns;
       return {
         threadId: resolvedThreadId,
-        turns: mapTurns(result?.data),
+        turns: mapTurns(hydratedTurns),
         nextCursor: result?.nextCursor || null,
         truncated: false,
         source: 'appServer',
@@ -322,6 +327,30 @@ export class CodexAppServer extends EventEmitter {
       }
       throw error;
     }
+  }
+
+  async hydrateInjectedTurnInputs(threadId: string, turns: JsonObject[]) {
+    const summaries = mapTurns(turns);
+    return Promise.all(turns.map(async (turn, index) => {
+      const summaryItems = summaries[index]?.items || [];
+      const hasVisibleUserInput = summaryItems.some((item: JsonObject) => item.type === 'userMessage');
+      if (!summaryItems.length || hasVisibleUserInput || !turn?.id) return turn;
+      try {
+        const result = await this.rpcRaw('thread/items/list', {
+          threadId, turnId: turn.id, limit: 4, sortDirection: 'asc',
+        });
+        const injected = (Array.isArray(result?.data) ? result.data : [])
+          .map((entry: JsonObject) => entry?.item || entry)
+          .find((item: JsonObject) => Boolean(parseInjectedUserMessage(item)));
+        return injected
+          ? { ...turn, items: [injected, ...(Array.isArray(turn.items) ? turn.items : [])] }
+          : turn;
+      } catch {
+        // Older app-server builds may not expose item pagination. Keep the
+        // lightweight summary instead of failing the whole history page.
+        return turn;
+      }
+    }));
   }
 
   async isLargeSession(threadId: unknown) {

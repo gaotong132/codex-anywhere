@@ -1,6 +1,8 @@
 import { open } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { normalizeToolPurpose, parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
+import {
+  normalizeToolPurpose, parseAssistantMessage, parseInjectedUserMessage, parseUserMessage,
+} from '../shared/message-content.js';
 import type { MessageContext } from '../shared/message-content.js';
 import { summarizeToolActivity } from '../shared/activity-detail.js';
 import type { ContextCompaction, ContextUsage } from '../shared/context-compaction.js';
@@ -1070,13 +1072,7 @@ function toolOutputUserMessage(row: RolloutRow) {
       && /^(?:FunctionCallOutput|CustomToolCallOutput)$/i.test(String(payload.item?.type || ''))
       ? payload.item
       : null;
-  if (!item || typeof item.output !== 'string') return null;
-  const expectedContext = String(item.name || '') === 'send_message_to_thread'
-    ? 'delegation' : String(item.name || '') === 'automation_update' ? 'automation' : '';
-  if (!expectedContext) return null;
-  const content = parseUserMessage(item.output);
-  return content.text && content.contexts.some((context) => context.kind === expectedContext)
-    ? content : null;
+  return parseInjectedUserMessage(item);
 }
 
 function isFinalAssistantRow(row: RolloutRow) {

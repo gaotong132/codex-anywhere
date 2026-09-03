@@ -2232,6 +2232,17 @@ test('scheduled task prompts survive modern automation tool outputs without dupl
     kind: 'automation', automationId: 'daily-release',
     currentTimeIso: '2026-09-03T13:15:49.870Z', decision: undefined,
   }]);
+
+  const appServerTurns = internals.mapTurns([{ id: 'scheduled-turn', startedAt: 1788441350, items: [{
+    type: 'functionCallOutput', name: 'automation_update', output: heartbeat,
+  }] }]);
+  assert.equal(appServerTurns[0].items.length, 1);
+  assert.equal(appServerTurns[0].items[0].type, 'userMessage');
+  assert.equal(appServerTurns[0].items[0].text, '执行现网升级');
+  assert.deepEqual(appServerTurns[0].items[0].contexts, [{
+    kind: 'automation', automationId: 'daily-release',
+    currentTimeIso: '2026-09-03T13:15:49.870Z', decision: undefined,
+  }]);
 });
 
 test('approval results stay inside workspace and keep network disabled', async (t) => {
@@ -2395,6 +2406,46 @@ test('conversation history uses a lightweight bounded descending cursor page', a
   const result = await codex.listSessionTurns('thread-1', { cursor: 'next-page', limit: 999 });
   assert.equal(result.turns.length, 1);
   assert.equal(result.nextCursor, 'more');
+});
+
+test('conversation history selectively hydrates injected task inputs omitted from summaries', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  codex.ensureStarted = async () => {};
+  const calls = [];
+  codex.rpcRaw = async (method, params) => {
+    calls.push({ method, params });
+    if (method === 'thread/turns/list') {
+      return { data: [{
+        id: 'scheduled-turn', status: 'completed', startedAt: 1788441350,
+        items: [{
+          type: 'agentMessage', phase: 'final_answer',
+          text: '<heartbeat><automation_id>daily-release</automation_id><decision>DONT_NOTIFY</decision><message>没有变化</message></heartbeat>',
+        }],
+      }] };
+    }
+    assert.equal(method, 'thread/items/list');
+    return { data: [{ item: {
+      type: 'functionCallOutput', name: 'automation_update',
+      output: '<heartbeat><automation_id>daily-release</automation_id><current_time_iso>2026-09-03T13:15:49.870Z</current_time_iso><instructions>执行现网升级</instructions></heartbeat>',
+    } }] };
+  };
+
+  const result = await codex.listSessionTurns('thread-1');
+  assert.equal(result.turns[0].items[0].type, 'userMessage');
+  assert.equal(result.turns[0].items[0].text, '执行现网升级');
+  assert.equal(result.turns[0].items[0].contexts[0].kind, 'automation');
+  assert.deepEqual(calls, [
+    {
+      method: 'thread/turns/list',
+      params: { threadId: 'thread-1', limit: 6, sortDirection: 'desc', itemsView: 'summary' },
+    },
+    {
+      method: 'thread/items/list',
+      params: {
+        threadId: 'thread-1', turnId: 'scheduled-turn', limit: 4, sortDirection: 'asc',
+      },
+    },
+  ]);
 });
 
 test('large conversation history keeps rollout cursors on the bounded file reader', async () => {
