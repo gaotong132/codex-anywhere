@@ -1443,7 +1443,7 @@ test('mobile header controls suppress transient tap rectangles without hiding ke
   const stylesSource = await readFile(resolve('web/src/styles.scss'), 'utf8');
   assert.match(
     stylesSource,
-    /\.topbar\s*>\s*\.icon-button,\s*\n\.model-config-summary\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;[\s\S]*?touch-action:\s*manipulation;/,
+    /\.topbar\s*>\s*\.icon-button,\s*\n\.model-config-summary,\s*\n\.permission-mode-summary\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;[\s\S]*?touch-action:\s*manipulation;/,
   );
   assert.match(stylesSource, /&:focus:not\(:focus-visible\)\s*\{\s*outline:\s*none;\s*\}/);
   assert.match(stylesSource, /\.icon-button\s*\{[\s\S]*?&:focus-visible\s*\{\s*outline:\s*2px solid #6798ff;/);
