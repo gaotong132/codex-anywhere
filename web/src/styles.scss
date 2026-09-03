@@ -293,11 +293,11 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .session-unread-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #6ea8ff; box-shadow: 0 0 0 2px rgba(110, 168, 255, .2); }
 .session-meta time { flex: 0 0 auto; margin-left: auto; }
 .visually-hidden { position: absolute !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: -1px !important; overflow: hidden !important; clip: rect(0, 0, 0, 0) !important; white-space: nowrap !important; border: 0 !important; }
-.presence i { width: 7px; height: 7px; border-radius: 50%; background: #5b6575; }
+.presence i { position: relative; z-index: 3; width: 7px; height: 7px; border-radius: 50%; background: #5b6575; }
 @keyframes session-running-pulse { 0% { box-shadow: 0 0 0 0 rgba(57, 201, 121, .42); } 70%, 100% { box-shadow: 0 0 0 6px rgba(57, 201, 121, 0); } }
 .empty-list { color: #6f7b8d; text-align: center; }
 
-.conversation { min-width: 0; min-height: 0; height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto auto auto; overflow: hidden; background: #0a0e16; }
+.conversation { min-width: 0; min-height: 0; height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto auto; overflow: hidden; background: #0a0e16; }
 .topbar {
   position: relative;
   z-index: 12;
@@ -393,6 +393,28 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   color: #9aa6b8;
   background: rgba(20, 26, 37, .75);
 
+  .presence-context-ring {
+    position: absolute;
+    z-index: 2;
+    inset: -3px;
+    width: 36px;
+    height: 36px;
+    overflow: visible;
+    pointer-events: none;
+    transform: rotate(-90deg);
+  }
+  .presence-context-track,
+  .presence-context-value { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .presence-context-track { stroke: rgba(101, 118, 145, .22); }
+  .presence-context-value {
+    stroke: #63a0ff;
+    stroke-linecap: round;
+    transition: stroke .2s ease, stroke-dasharray .28s ease;
+    filter: drop-shadow(0 0 2px rgba(89, 151, 255, .38));
+  }
+  &.context-high .presence-context-value { stroke: #e0a05e; filter: drop-shadow(0 0 2px rgba(224, 160, 94, .4)); }
+  &.context-critical .presence-context-value { stroke: #ef6672; filter: drop-shadow(0 0 3px rgba(239, 102, 114, .45)); }
+
   &.online {
     border-color: rgba(75, 126, 225, .55);
     background: rgba(44, 91, 181, .12);
@@ -412,6 +434,7 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
       border-right-color: rgba(119, 165, 255, .25);
       border-radius: 50%;
       animation: presence-orbit 1.15s linear infinite;
+      z-index: 1;
     }
   }
 
@@ -461,17 +484,6 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .empty-conversation { min-height: 100%; display: grid; align-content: center; justify-items: center; padding: 30px; color: #758196; text-align: center; }
 .empty-conversation h2 { margin: 16px 0 5px; color: #dfe6f1; font-size: 19px; }
 .empty-conversation p { margin: 0; font-size: 13px; }
-.session-context:empty { height: 0; padding: 0; border: 0; }
-.session-context { padding: 12px max(18px, calc((100% - 860px) / 2)); border-bottom: 1px solid $panel-divider; background: #0d121c; }
-.context-usage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 220px); align-items: center; gap: 14px; color: #8492a6; font-size: 11px; }
-.context-usage-label { min-width: 0; display: flex; align-items: baseline; gap: 7px; }
-.context-usage-label strong { color: #a8b5c8; font-weight: 650; }
-.context-usage-label b { color: #75c59d; font-variant-numeric: tabular-nums; font-weight: 750; }
-.context-usage-label small { min-width: 0; overflow: hidden; color: #66758b; text-overflow: ellipsis; white-space: nowrap; }
-.context-usage-meter { height: 4px; overflow: hidden; border-radius: 999px; background: #1c2533; }
-.context-usage-meter i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #3a77ca, #55bd91); transition: width .25s ease; }
-.context-usage.high .context-usage-label b { color: #e0a36f; }
-.context-usage.high .context-usage-meter i { background: linear-gradient(90deg, #cf8a4e, #dc665f); }
 .new-session-overlay {
   position: fixed;
   z-index: 50;

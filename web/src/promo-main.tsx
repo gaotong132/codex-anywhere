@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { MessageBubble } from './message-bubble';
 import type { TimelineItem } from './history-utils';
+import { PresenceIndicator } from './presence-indicator';
 import { SidebarIcon } from './ui-components';
 import './styles.scss';
 import './promo.scss';
@@ -97,7 +98,12 @@ function ConversationHeader({ dimmed = false }: { dimmed?: boolean }) {
         <strong>Atlas production rollout</strong>
         <ModelSummary />
       </div>
-      <span className="presence online running" role="status"><i aria-hidden="true" /></span>
+      <PresenceIndicator
+        online
+        executionState="running"
+        statusText="Codex is working"
+        contextUsage={{ tokens: 176_947, contextWindow: 258_400 }}
+      />
     </header>
   );
 }
@@ -122,7 +128,6 @@ function ConversationPreview({ dimmed = false }: { dimmed?: boolean }) {
   return (
     <section className={`conversation promo-conversation${dimmed ? ' promo-dimmed' : ''}`}>
       <ConversationHeader dimmed={dimmed} />
-      <div className="session-context" />
       <div className="message-list">
         <div className="message-list-content">
           {conversationItems.map((item) => (

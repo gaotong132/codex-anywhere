@@ -98,6 +98,10 @@ import {
 import { CodePreview, parseUnifiedDiffLines } from '../web/src/code-preview.js';
 import { ConversationTimeline } from '../web/src/conversation-timeline.js';
 import {
+  contextUsagePresentation,
+  PresenceIndicator,
+} from '../web/src/presence-indicator.js';
+import {
   initialConversationExecution,
   patchConversationExecution,
   resetConversationExecutionPresentation,
@@ -114,6 +118,46 @@ import {
   seedTypewriterText,
   TypewriterText,
 } from '../web/src/ui-components.js';
+
+test('presence indicator renders context usage as a compact outer ring', () => {
+  assert.deepEqual(
+    contextUsagePresentation({ tokens: 81_500, contextWindow: 100_000 }),
+    { percent: 82, detail: '81,500 / 100,000 Token' },
+  );
+
+  const markup = renderToStaticMarkup(createElement(PresenceIndicator, {
+    online: true,
+    executionState: 'running',
+    statusText: '',
+    contextUsage: { tokens: 81_500, contextWindow: 100_000 },
+  }));
+
+  assert.match(markup, /presence-context-ring/);
+  assert.match(markup, /stroke-dasharray="82 18"/);
+  assert.match(markup, /context-high/);
+  assert.match(markup, /data-context-percent="82"/);
+  assert.match(markup, /上下文 82%/);
+});
+
+test('presence indicator marks critical context usage and tolerates missing usage', () => {
+  const critical = renderToStaticMarkup(createElement(PresenceIndicator, {
+    online: true,
+    executionState: 'idle',
+    statusText: '',
+    contextUsage: { tokens: 95_000, contextWindow: 100_000 },
+  }));
+  const unavailable = renderToStaticMarkup(createElement(PresenceIndicator, {
+    online: false,
+    executionState: 'idle',
+    statusText: '',
+    contextUsage: null,
+  }));
+
+  assert.match(critical, /context-critical/);
+  assert.match(critical, /stroke-dasharray="95 5"/);
+  assert.doesNotMatch(unavailable, /presence-context-value/);
+  assert.doesNotMatch(unavailable, /data-context-percent/);
+});
 
 test('mobile downloads continue while the encrypted channel is ready and pause on disconnect', async () => {
   assert.equal(downloadCanContinue({ visible: true, online: true, channelReady: true }), true);

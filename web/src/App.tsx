@@ -61,7 +61,6 @@ import {
   isTemporaryProjectPath,
   makeId,
   markSessionAttentionRead,
-  presenceLabel,
   projectLabel,
   reconcileSessionAttention,
   replayPendingFrames,
@@ -88,6 +87,7 @@ import {
   type ContextUsage,
 } from '../../src/shared/context-compaction';
 import type { TimelineNotice } from '../../src/shared/timeline-notice';
+import { PresenceIndicator } from './presence-indicator';
 import {
   normalizeTurnProgress,
   type TurnFileProgress,
@@ -499,36 +499,6 @@ function StartupScreen({ status }: { status: string }) {
         <div className="startup-pulse" aria-hidden="true"><i /><i /><i /></div>
       </div>
     </main>
-  );
-}
-
-function ContextUsageStatus({ usage }: { usage: ContextUsage }) {
-  const percent = usage.tokens !== undefined && usage.contextWindow
-    ? Math.min(100, Math.max(0, Math.round(usage.tokens / usage.contextWindow * 100)))
-    : null;
-  const detail = usage.tokens !== undefined && usage.contextWindow
-    ? `${usage.tokens.toLocaleString()} / ${usage.contextWindow.toLocaleString()} Token`
-    : usage.tokens !== undefined
-      ? `${usage.tokens.toLocaleString()} Token`
-      : t('上下文容量未知', 'Context capacity unknown');
-  return (
-    <div className={`context-usage${percent !== null && percent >= 80 ? ' high' : ''}`} title={detail}>
-      <span className="context-usage-label">
-        <strong>{t('上下文', 'Context')}</strong>
-        <b>{percent === null ? '—' : `${percent}%`}</b>
-        <small>{detail}</small>
-      </span>
-      <span
-        className="context-usage-meter"
-        role="progressbar"
-        aria-label={t('上下文用量', 'Context usage')}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={percent ?? undefined}
-      >
-        <i style={{ width: `${percent || 0}%` }} />
-      </span>
-    </div>
   );
 }
 
@@ -2598,21 +2568,13 @@ export default function App() {
               onSave={saveModelConfig}
             />
           </div>
-          <span
-            className={`presence ${online ? 'online' : 'offline'} ${online ? executionState : ''}`}
-            role="status"
-            aria-live="polite"
-            aria-label={presenceLabel(online, executionState, statusText)}
-            title={presenceLabel(online, executionState, statusText)}
-          >
-            <i aria-hidden="true" />
-            <span className="visually-hidden">{presenceLabel(online, executionState, statusText)}</span>
-          </span>
+          <PresenceIndicator
+            online={online}
+            executionState={executionState}
+            statusText={statusText}
+            contextUsage={contextUsage}
+          />
         </header>
-
-        <div className="session-context">
-          {contextUsage && <ContextUsageStatus usage={contextUsage} />}
-        </div>
 
         <ConversationTimeline
           messageListRef={messageListRef}
