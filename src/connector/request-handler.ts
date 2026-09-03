@@ -61,13 +61,33 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
   requestId?: string;
   clientId?: string;
   clientDeviceId?: string;
+  getDesktopThreads(): any[];
+  refreshDesktopThreads(callerThreadId: unknown): void;
 };
+
+const DESKTOP_STATUS_CACHE_MS = 15_000;
 
 export function createRequestHandler({
   codex, desktop, attachments, visualizations, downloads, deviceId,
   deviceLabel = deviceId, mode = desktop ? 'desktop' : 'headless',
   networkAccess = false, allowFullAccess = false,
 }: Dependencies) {
+  let desktopStatusCache: { threads: any[]; updatedAt: number } | null = null;
+  let desktopStatusRefresh: Promise<void> | null = null;
+  const getDesktopThreads = () => (
+    desktopStatusCache && Date.now() - desktopStatusCache.updatedAt <= DESKTOP_STATUS_CACHE_MS
+      ? desktopStatusCache.threads : []
+  );
+  const refreshDesktopThreads = (callerThreadId: unknown) => {
+    const caller = String(callerThreadId || '').trim();
+    if (mode !== 'desktop' || !desktop || !caller || desktopStatusRefresh) return;
+    desktopStatusRefresh = desktop.listThreads({ callerThreadId: caller, limit: 50 })
+      .then((threads) => {
+        desktopStatusCache = { threads: Array.isArray(threads) ? threads : [], updatedAt: Date.now() };
+      })
+      .catch(() => { /* app-server status remains the fallback when Desktop is unavailable */ })
+      .finally(() => { desktopStatusRefresh = null; });
+  };
   return async function handleRequest(message: BridgeRequest) {
     const {
       action, payload = {}, requestId, clientId, clientDeviceId,
@@ -76,7 +96,7 @@ export function createRequestHandler({
       const data = await dispatchAction({
         action, payload, requestId, clientId, clientDeviceId,
         codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode,
-        networkAccess, allowFullAccess,
+        networkAccess, allowFullAccess, getDesktopThreads, refreshDesktopThreads,
       });
       return { type: 'response', clientId, requestId, ok: true, data };
     } catch (error) {
@@ -88,7 +108,7 @@ export function createRequestHandler({
 async function dispatchAction({
   action, payload, requestId, clientId, clientDeviceId,
   codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode,
-  networkAccess, allowFullAccess,
+  networkAccess, allowFullAccess, getDesktopThreads, refreshDesktopThreads,
 }: DispatchContext) {
   if (action === 'connector.status') {
     return {
@@ -103,12 +123,8 @@ async function dispatchAction({
   }
   if (action === 'sessions.list') {
     const sessions = await codex.listSessions({ cwd: payload.cwd });
-    let desktopThreads = [];
-    if (mode === 'desktop' && desktop) {
-      try {
-        desktopThreads = await desktop.listThreads({ callerThreadId: sessions[0]?.id, limit: 50 });
-      } catch { /* app-server status remains the fallback when Desktop is unavailable */ }
-    }
+    const desktopThreads = getDesktopThreads();
+    refreshDesktopThreads(sessions[0]?.id);
     return {
       sessions: mergeDesktopSessionStatuses(
         sessions,

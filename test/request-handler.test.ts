@@ -266,12 +266,16 @@ test('session model configuration stays on the connector control path', async ()
   assert.deepEqual(calls.map((call) => call.action), ['read', 'update']);
 });
 
-test('session listing merges live Desktop status and tolerates Desktop absence', async () => {
+test('session listing returns immediately and merges asynchronously cached Desktop status', async () => {
   const sessions = [{ id: 'thread-1', status: 'notLoaded' }];
+  let resolveDesktopStatus;
   const available = createRequestHandler(createDependencies({
     codex: { listSessions: async () => sessions },
-    desktop: { listThreads: async () => [{ id: 'thread-1', status: 'active' }] },
+    desktop: { listThreads: () => new Promise((resolve) => { resolveDesktopStatus = resolve; }) },
   }));
+  assert.equal((await available(request('sessions.list'))).data.sessions[0].status, 'notLoaded');
+  resolveDesktopStatus([{ id: 'thread-1', status: 'active' }]);
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal((await available(request('sessions.list'))).data.sessions[0].status, 'active');
 
   const unavailable = createRequestHandler(createDependencies({
