@@ -383,6 +383,13 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .conversation-controls { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 7px; }
 .conversation-title { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 7px; }
 .conversation-title > strong { @include truncate; min-width: 0; font-size: 15px; }
+.session-rename-button {
+  width: 22px; height: 22px; flex: 0 0 22px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 6px; color: #728098; background: transparent;
+  &:hover:not(:disabled) { color: #bfd1ef; background: rgba(67, 94, 139, .2); }
+  &:focus-visible { outline: 2px solid #6798ff; outline-offset: 1px; }
+  &:disabled { opacity: .42; }
+  .sidebar-tool-icon { width: 13px; height: 13px; stroke-width: 1.9; }
+}
 .conversation-title > span {
   flex: 0 0 auto;
   padding: 2px 6px;
@@ -651,6 +658,9 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   background: #0e1420;
   box-shadow: 0 28px 90px rgba(0, 0, 0, .58);
 }
+.rename-session-dialog { width: min(440px, 100%); }
+.session-name-limit { justify-self: end; margin-top: -8px; color: #69768a; font-size: 10px; }
+.session-name-limit.invalid { color: #ff9ba4; }
 .new-session-dialog-head { padding: 20px 22px 16px; border-bottom: 1px solid #252f40; }
 .new-session-dialog-head .eyebrow { margin: 0 0 7px; font-size: 9px; }
 .new-session-dialog-head h2 { margin: 0; color: #edf3fc; font-size: 20px; letter-spacing: -.02em; }

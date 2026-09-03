@@ -80,6 +80,7 @@ import {
 import { ConversationTimeline } from './conversation-timeline';
 import { useConversationExecution } from './conversation-execution';
 import { SessionSidebar } from './session-sidebar';
+import { SessionRenameDialog } from './session-rename-dialog';
 import { BrowserSecureChannel } from './secure-channel-client';
 import {
   DEFAULT_ENVIRONMENT_ID,
@@ -614,6 +615,7 @@ export default function App() {
   const [fileDownload, setFileDownload] = useState<FileDownloadState | null>(null);
   const [creatingNewSession, setCreatingNewSession] = useState(false);
   const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [newSessionPrompt, setNewSessionPrompt] = useState('');
   const [newSessionImage, setNewSessionImage] = useState<PendingImage | null>(null);
   const [newSessionError, setNewSessionError] = useState('');
@@ -1897,6 +1899,7 @@ export default function App() {
     setSessionSearch('');
     setSearchOpen(false);
     setNewSessionDialogOpen(false);
+    setRenameDialogOpen(false);
     setNewSessionCwd(() => {
       const stored = loadEnvironmentValue(NEW_SESSION_CWD_KEY, nextEnvironmentId) || '';
       return isTemporaryProjectPath(stored) ? '' : stored;
@@ -1923,6 +1926,22 @@ export default function App() {
     setNewSessionDialogOpen(true);
   }, []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+
+  const renameSession = useCallback(async (name: string) => {
+    const targetThreadId = threadIdRef.current;
+    const requestVersion = selectedRequestRef.current;
+    if (!targetThreadId) throw new Error('thread_id_required');
+    const renamed = await request<{ threadId: string; title: string }>('session.rename', {
+      threadId: targetThreadId,
+      name,
+    });
+    if (!isCurrentSessionRequest(
+      targetThreadId, threadIdRef.current, requestVersion, selectedRequestRef.current,
+    )) return;
+    setSessions((current) => current.map((session) => session.id === targetThreadId
+      ? { ...session, title: renamed.title }
+      : session));
+  }, [request]);
 
   useEffect(() => {
     if (!authenticated || !online || !connectionEpoch || creatingNewSession || threadId) return;
@@ -2793,6 +2812,13 @@ export default function App() {
         </div>
       )}
 
+      <SessionRenameDialog
+        open={renameDialogOpen}
+        initialName={activeSession?.title || ''}
+        onClose={() => setRenameDialogOpen(false)}
+        onRename={renameSession}
+      />
+
       <section className="conversation">
         <header className="topbar">
           <button className="icon-button mobile-only" onClick={() => setDrawerOpen(true)} aria-label={t('展开会话列表', 'Expand session list')} title={t('展开会话列表', 'Expand session list')}>
@@ -2801,6 +2827,18 @@ export default function App() {
           <div className="conversation-heading">
             <div className="conversation-title">
               <strong>{activeSession?.title || (threadId ? t('Codex 会话', 'Codex session') : creatingNewSession ? t('新会话', 'New session') : t('最近会话', 'Recent session'))}</strong>
+              {threadId && (
+                <button
+                  className="session-rename-button"
+                  type="button"
+                  disabled={!online}
+                  onClick={() => setRenameDialogOpen(true)}
+                  aria-label={t('修改会话名称', 'Rename session')}
+                  title={t('修改会话名称', 'Rename session')}
+                >
+                  <SidebarIcon name="edit" />
+                </button>
+              )}
               <span>{environmentDisplayName(environmentId)}</span>
             </div>
             <div className="conversation-controls">

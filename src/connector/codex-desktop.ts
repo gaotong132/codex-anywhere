@@ -1,6 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import net from 'node:net';
+import { normalizeSessionName } from '../shared/session-name.js';
 
 const PIPE_PREFIX = 'codex-browser-use-';
 const MAX_FRAME_BYTES = 4 * 1024 * 1024;
@@ -66,6 +67,40 @@ export class CodexDesktopClient {
       throw new Error(`desktop_delivery_failed:${message || 'unknown error'}`);
     }
     return { threadId: targetThreadId, delivery: 'desktop' };
+  }
+
+  async renameThread({ threadId, name, callerThreadId }: {
+    threadId?: unknown;
+    name?: unknown;
+    callerThreadId?: unknown;
+  }) {
+    const targetThreadId = String(threadId || '').trim();
+    const caller = String(callerThreadId || '').trim();
+    if (!targetThreadId || targetThreadId.length > 256 || /[\0\r\n]/.test(targetThreadId) || !caller) {
+      throw new Error('thread_id_required');
+    }
+    const title = normalizeSessionName(name);
+    let result: JsonObject;
+    try {
+      result = await this.callTool({
+        tool: 'set_thread_title',
+        arguments: { threadId: targetThreadId, title },
+        callerThreadId: caller,
+        callId: `bridge-rename-${randomUUID()}`,
+      });
+    } catch (error) {
+      const desktopError = error as DesktopHostError;
+      if (/timeout/i.test(String(desktopError?.message || error))) throw new Error('desktop_rename_timeout');
+      if (desktopError?.code === 'desktop_host_error') {
+        throw new Error(`desktop_rename_failed:${desktopError.message || 'unknown error'}`);
+      }
+      throw new Error('desktop_app_unavailable');
+    }
+    if (result?.success !== true) {
+      const message = result?.contentItems?.map((item: JsonObject) => item?.text).filter(Boolean).join('\n');
+      throw new Error(`desktop_rename_failed:${message || 'unknown error'}`);
+    }
+    return { threadId: targetThreadId, title };
   }
 
   async listThreads({ callerThreadId, limit = 50 }: { callerThreadId?: unknown; limit?: number } = {}) {

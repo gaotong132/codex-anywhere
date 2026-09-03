@@ -24,8 +24,9 @@ the selected connector node; a small relay you control provides the remote meeti
 - **Switch execution environments** — choose a personal computer or a 24×7 headless ECS connector from
   the same browser. Sessions, unread state, remembered workspace, attachments, and requests stay scoped
   to the selected environment so matching thread IDs or paths cannot cross nodes.
-- **Continue real Codex sessions** — browse recent sessions, read Markdown history, send text or images,
-  and start a task in an existing local project.
+- **Continue real Codex sessions** — browse and rename recent sessions, read Markdown history, send text or
+  images, and start a task in an existing local project. Renames are written back to the original task on
+  the selected execution node.
 - **Follow work as it happens** — see running and unread-complete sessions, progress updates, plan steps,
   tool purpose, elapsed time, and file-change totals. The status ring tracks current context usage and
   reveals token details on hover or tap, while compaction events stay visible in the timeline. Completed

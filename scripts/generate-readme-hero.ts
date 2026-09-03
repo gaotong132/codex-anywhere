@@ -245,5 +245,5 @@ try {
   console.log(outputPath);
 } finally {
   vite.kill();
-  await rm(captureRoot, { recursive: true, force: true });
+  await rm(captureRoot, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
 }

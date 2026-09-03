@@ -25,6 +25,7 @@ const DOWNLOAD_REQUEST_RESULT_TTL_MS = 30 * 60_000;
 const DEDUPLICATED_ACTIONS = new Set([
   'attachment.upload',
   'file.download.open', 'file.download.chunk', 'file.download.close',
+  'session.rename',
   'turn.start', 'turn.steer', 'turn.stop', 'approval.respond',
 ]);
 

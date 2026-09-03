@@ -26,6 +26,7 @@ import {
   PERMISSION_MODES,
   type PermissionMode,
 } from '../shared/permission-mode.js';
+import { normalizeSessionName } from '../shared/session-name.js';
 import {
   createTurnDiffDocument,
   readRolloutTurnDiff,
@@ -249,6 +250,17 @@ export class CodexAppServer extends EventEmitter {
       turns: history.turns,
       nextCursor: history.nextCursor,
     };
+  }
+
+  async renameSession(threadId: unknown, value: unknown) {
+    await this.ensureStarted();
+    const resolvedThreadId = String(threadId || '').trim();
+    if (!resolvedThreadId || resolvedThreadId.length > 256 || /[\0\r\n]/.test(resolvedThreadId)) {
+      throw new Error('thread_id_required');
+    }
+    const name = normalizeSessionName(value);
+    await this.rpcRaw('thread/name/set', { threadId: resolvedThreadId, name });
+    return { threadId: resolvedThreadId, title: name };
   }
 
   async listSessionTurns(threadId: unknown, options: { mode?: string; limit?: unknown; cursor?: unknown } = {}) {

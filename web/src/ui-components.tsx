@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboard
 import { t } from './i18n';
 import type { FileDownloadState } from './app-types';
 
-type SidebarIconName = 'plus' | 'search' | 'panel-open' | 'panel-close';
+type SidebarIconName = 'plus' | 'search' | 'edit' | 'panel-open' | 'panel-close';
 
 export type CustomSelectOption = {
   value: string;
@@ -256,6 +256,9 @@ export function SidebarIcon({ name }: { name: SidebarIconName }) {
   }
   if (name === 'search') {
     return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5" /><path d="m14.7 14.7 4.8 4.8" /></svg>;
+  }
+  if (name === 'edit') {
+    return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16v4Z" /><path d="m13.5 6.5 4 4" /></svg>;
   }
   if (name === 'panel-open') {
     return <svg className="sidebar-tool-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6" /></svg>;

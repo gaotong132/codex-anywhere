@@ -14,6 +14,7 @@ type CodexGateway = {
   activeTurn: unknown;
   listSessions(options: Payload): Promise<any[]>;
   readSession(threadId: string): Promise<any>;
+  renameSession(threadId: string, name: unknown): Promise<any>;
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
   readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
@@ -35,6 +36,7 @@ type DesktopGateway = {
   listThreads(options: Payload): Promise<any[]>;
   readThreadState(options: Payload): Promise<any>;
   sendMessage(options: Payload): Promise<any>;
+  renameThread(options: Payload): Promise<any>;
 };
 type Dependencies = {
   codex: CodexGateway;
@@ -116,6 +118,18 @@ async function dispatchAction({
     };
   }
   if (action === 'session.read') return codex.readSession(String(payload.threadId || ''));
+  if (action === 'session.rename') {
+    const threadId = String(payload.threadId || '');
+    if (mode === 'desktop') {
+      if (!desktop) throw new Error('desktop_app_unavailable');
+      return desktop.renameThread({
+        threadId,
+        name: payload.name,
+        callerThreadId: codex.getControllerThreadId(threadId),
+      });
+    }
+    return codex.renameSession(threadId, payload.name);
+  }
   if (action === 'session.turns.list') {
     return codex.listSessionTurns(String(payload.threadId || ''), {
       cursor: payload.cursor,

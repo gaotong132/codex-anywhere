@@ -39,6 +39,7 @@ import {
   summarizeUnifiedDiff,
 } from '../src/shared/turn-progress.js';
 import { summarizeToolActivity } from '../src/shared/activity-detail.js';
+import { normalizeSessionName } from '../src/shared/session-name.js';
 import { CodexAppServer, internals } from '../src/connector/codex-app-server.js';
 import {
   CodexDesktopClient,
@@ -109,6 +110,7 @@ import {
   resetConversationExecutionPresentation,
 } from '../web/src/conversation-execution.js';
 import { SessionSidebar } from '../web/src/session-sidebar.js';
+import { SessionRenameDialog } from '../web/src/session-rename-dialog.js';
 import {
   downloadCanContinue,
   runResumableDownloadRequest,
@@ -290,6 +292,19 @@ test('session sidebar sorts recent sessions and renders current execution state 
   assert.match(markup, /ECS · 24×7 · 在线/);
 });
 
+test('session rename dialog exposes a bounded mobile-friendly form', () => {
+  const markup = renderToStaticMarkup(createElement(SessionRenameDialog, {
+    open: true,
+    initialName: 'Overnight deploy',
+    onClose: () => {},
+    onRename: async () => {},
+  }));
+  assert.match(markup, /修改会话名称/);
+  assert.match(markup, /value="Overnight deploy"/);
+  assert.match(markup, /100/);
+  assert.match(markup, /type="submit"/);
+});
+
 test('active Desktop writer errors are private and consecutive duplicates collapse', () => {
   const text = friendlyError(new Error(
     'desktop_delivery_failed:thread private-thread-id already has an active writer',
@@ -417,6 +432,29 @@ test('desktop follow-up includes the caller required by the native app protocol'
   assert.equal(call.params.arguments.model, 'gpt-5.6-sol');
   assert.equal(call.params.arguments.thinking, 'high');
   assert.equal(call.params.threadId, 'controller-thread');
+});
+
+test('desktop session rename uses the native task title tool', async () => {
+  const desktop = new CodexDesktopClient();
+  let call;
+  desktop.callTool = async (request) => {
+    call = request;
+    return { success: true };
+  };
+  assert.deepEqual(await desktop.renameThread({
+    threadId: 'target-thread', name: '  Mobile follow-up  ', callerThreadId: 'controller-thread',
+  }), { threadId: 'target-thread', title: 'Mobile follow-up' });
+  assert.equal(call.tool, 'set_thread_title');
+  assert.deepEqual(call.arguments, { threadId: 'target-thread', title: 'Mobile follow-up' });
+  assert.equal(call.callerThreadId, 'controller-thread');
+});
+
+test('session names are trimmed and bounded before reaching either execution environment', () => {
+  assert.equal(normalizeSessionName('  Release checklist  '), 'Release checklist');
+  assert.equal(normalizeSessionName('😀'.repeat(100)), '😀'.repeat(100));
+  assert.throws(() => normalizeSessionName('  '), /session_name_required/);
+  assert.throws(() => normalizeSessionName('x'.repeat(101)), /session_name_too_long/);
+  assert.throws(() => normalizeSessionName('line\nbreak'), /session_name_invalid/);
 });
 
 test('desktop task list status overrides stale app-server session status', () => {
@@ -2496,6 +2534,22 @@ test('Desktop-owned sessions remember an explicit model choice without taking th
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('headless session rename uses the native app-server name method', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  codex.ensureStarted = async () => {};
+  let call;
+  codex.rpcRaw = async (method, params) => {
+    call = { method, params };
+    return {};
+  };
+  assert.deepEqual(await codex.renameSession('thread-1', '  ECS overnight task  '), {
+    threadId: 'thread-1', title: 'ECS overnight task',
+  });
+  assert.deepEqual(call, {
+    method: 'thread/name/set', params: { threadId: 'thread-1', name: 'ECS overnight task' },
+  });
 });
 
 test('active Desktop writers return a conflict immediately without forking', async () => {

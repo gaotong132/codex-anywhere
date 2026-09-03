@@ -29,6 +29,11 @@ export function friendlyError(error: unknown) {
   if (message === 'request_timeout') return t('请求超过 30 秒没有响应，请稍后重试。', 'The request timed out after 30 seconds. Try again shortly.');
   if (message === 'turn_start_timeout') return t('等待原会话可写超时，消息没有发送，已恢复到输入框。', 'Timed out waiting for the session to become writable. The message was not sent and has been restored.');
   if (message === 'desktop_app_unavailable') return t('桌面 Codex 当前不可用，请打开桌面应用后重试。', 'Codex Desktop is unavailable. Open it and try again.');
+  if (message === 'session_name_required') return t('请输入会话名称。', 'Enter a session name.');
+  if (message === 'session_name_too_long') return t('会话名称不能超过 100 个字符。', 'Session names cannot exceed 100 characters.');
+  if (message === 'session_name_invalid') return t('会话名称包含不支持的控制字符。', 'The session name contains unsupported control characters.');
+  if (message === 'desktop_rename_timeout') return t('桌面 Codex 没有及时确认改名，请稍后重试。', 'Codex Desktop did not confirm the rename in time. Try again shortly.');
+  if (message.startsWith('desktop_rename_failed:')) return t('桌面 Codex 未能修改会话名称，请确认桌面应用可用后重试。', 'Codex Desktop could not rename the task. Make sure the desktop app is available and try again.');
   if (message === 'desktop_delivery_timeout') return t('桌面 Codex 没有及时确认接收，消息已恢复到输入框，请确认后再重试。', 'Codex Desktop did not confirm receipt in time. The message was restored; verify the desktop app before retrying.');
   if (message === 'session_delivery_mismatch') return t('桌面返回了不同的会话标识，页面已阻止自动切换。请刷新会话列表后重试。', 'Desktop returned a different session ID, so the page blocked the automatic switch. Refresh the session list and try again.');
   if (message === 'model_config_turn_active') return t('当前任务仍在执行，完成后再修改模型配置。', 'Wait for the current run to finish before changing model settings.');

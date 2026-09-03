@@ -9,6 +9,7 @@ function createDependencies(overrides = {}) {
       activeTurn: null,
       listSessions: async () => [],
       readSession: async () => ({}),
+      renameSession: async (threadId, name) => ({ threadId, title: name }),
       listSessionTurns: async () => ({}),
       readTurnDiff: async (threadId, turnId) => ({ threadId, turnId, content: 'diff' }),
       readModelConfig: async () => ({ model: 'gpt-default' }),
@@ -31,6 +32,7 @@ function createDependencies(overrides = {}) {
       listThreads: async () => [],
       readThreadState: async () => ({ status: 'idle', waitingOnApproval: false }),
       sendMessage: async ({ threadId }) => ({ threadId, delivery: 'desktop' }),
+      renameThread: async ({ threadId, name }) => ({ threadId, title: name }),
       ...overrides.desktop,
     },
     attachments: {
@@ -132,6 +134,36 @@ test('Desktop permission modes remain owned by the computer', async () => {
   assert.equal(response.ok, false);
   assert.match(response.error, /desktop_permission_mode_managed_on_computer/);
   assert.equal(updates, 0);
+});
+
+test('session rename stays inside the selected execution environment', async () => {
+  const desktopCalls = [];
+  const desktopHandle = createRequestHandler(createDependencies({
+    desktop: { renameThread: async (value) => { desktopCalls.push(value); return { title: value.name }; } },
+  }));
+  const desktopResponse = await desktopHandle(request('session.rename', {
+    threadId: 'desktop-thread', name: 'Desktop task',
+  }));
+  assert.equal(desktopResponse.data.title, 'Desktop task');
+  assert.deepEqual(desktopCalls, [{
+    threadId: 'desktop-thread', name: 'Desktop task', callerThreadId: 'controller-thread',
+  }]);
+
+  const headlessCalls = [];
+  const headlessHandle = createRequestHandler(createDependencies({
+    mode: 'headless',
+    codex: {
+      renameSession: async (threadId, name) => {
+        headlessCalls.push([threadId, name]);
+        return { threadId, title: name };
+      },
+    },
+  }));
+  const headlessResponse = await headlessHandle(request('session.rename', {
+    threadId: 'ecs-thread', name: 'ECS task',
+  }));
+  assert.equal(headlessResponse.data.title, 'ECS task');
+  assert.deepEqual(headlessCalls, [['ecs-thread', 'ECS task']]);
 });
 
 test('headless connectors resume existing sessions through their own app-server', async () => {
