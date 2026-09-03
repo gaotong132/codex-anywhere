@@ -48,17 +48,17 @@ export function PresenceIndicator({
       title={label}
       data-context-percent={percent ?? undefined}
     >
-      <svg className="presence-context-ring" viewBox="0 0 40 40" aria-hidden="true">
-        <circle className="presence-context-track" cx="20" cy="20" r="18" pathLength="100" />
+      <svg className="presence-context-ring" viewBox="0 0 30 30" aria-hidden="true">
+        <circle className="presence-context-track" cx="15" cy="15" r="11.5" pathLength="100" />
         {percent !== null && (
           <circle
             className="presence-context-value"
-            cx="20"
-            cy="20"
-            r="18"
+            cx="15"
+            cy="15"
+            r="11.5"
             pathLength="100"
             strokeDasharray={`${percent} ${100 - percent}`}
-            transform="rotate(-90 20 20)"
+            transform="rotate(-90 15 15)"
           />
         )}
       </svg>

@@ -401,14 +401,14 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
     z-index: 2;
     top: 50%;
     left: 50%;
-    width: 40px;
-    height: 40px;
+    width: 30px;
+    height: 30px;
     overflow: visible;
     pointer-events: none;
     transform: translate(-50%, -50%);
   }
   .presence-context-track,
-  .presence-context-value { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .presence-context-value { fill: none; stroke-width: 1; vector-effect: non-scaling-stroke; }
   .presence-context-track { stroke: rgba(101, 118, 145, .22); }
   .presence-context-value {
     stroke: #63a0ff;
