@@ -101,6 +101,7 @@ import {
 import { CodePreview, parseUnifiedDiffLines } from '../web/src/code-preview.js';
 import { ConversationTimeline } from '../web/src/conversation-timeline.js';
 import {
+  contextRingTone,
   contextUsagePresentation,
   PresenceIndicator,
 } from '../web/src/presence-indicator.js';
@@ -141,14 +142,14 @@ test('presence indicator renders context usage as a compact outer ring', () => {
   assert.match(markup, /r="12.5"/);
   assert.match(markup, /transform="rotate\(-90 15 15\)"/);
   assert.match(markup, /stroke-dasharray="82 18"/);
-  assert.match(markup, /context-high/);
+  assert.match(markup, /--context-ring-color:#e39661/);
   assert.match(markup, /data-context-percent="82"/);
   assert.match(markup, /上下文 82%/);
   assert.match(markup, /presence-context-popover/);
   assert.match(markup, /^<button type="button"/);
 });
 
-test('presence indicator marks critical context usage and tolerates missing usage', () => {
+test('presence indicator blends context colors continuously and tolerates missing usage', () => {
   const critical = renderToStaticMarkup(createElement(PresenceIndicator, {
     online: true,
     executionState: 'idle',
@@ -162,7 +163,12 @@ test('presence indicator marks critical context usage and tolerates missing usag
     contextUsage: null,
   }));
 
-  assert.match(critical, /context-critical/);
+  assert.deepEqual(contextRingTone(65), { color: '#63a0ff', glow: 'rgba(99, 160, 255, .42)' });
+  assert.equal(contextRingTone(79).color, '#d8a069');
+  assert.equal(contextRingTone(80).color, '#e0a05e');
+  assert.equal(contextRingTone(81).color, '#e19b60');
+  assert.deepEqual(contextRingTone(100), { color: '#ef6672', glow: 'rgba(239, 102, 114, .42)' });
+  assert.match(critical, /--context-ring-color:#ef6672/);
   assert.match(critical, /stroke-dasharray="95 5"/);
   assert.doesNotMatch(unavailable, /presence-context-value/);
   assert.doesNotMatch(unavailable, /data-context-percent/);

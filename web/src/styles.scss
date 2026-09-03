@@ -533,13 +533,11 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   .presence-context-value { fill: none; stroke-width: 1; vector-effect: non-scaling-stroke; }
   .presence-context-track { stroke: rgba(101, 118, 145, .22); }
   .presence-context-value {
-    stroke: #63a0ff;
+    stroke: var(--context-ring-color, #63a0ff);
     stroke-linecap: round;
-    transition: stroke .2s ease, stroke-dasharray .28s ease;
-    filter: drop-shadow(0 0 2px rgba(89, 151, 255, .38));
+    transition: stroke .28s ease, stroke-dasharray .28s ease, filter .28s ease;
+    filter: drop-shadow(0 0 2px var(--context-ring-glow, rgba(89, 151, 255, .38)));
   }
-  &.context-high .presence-context-value { stroke: #e0a05e; filter: drop-shadow(0 0 2px rgba(224, 160, 94, .4)); }
-  &.context-critical .presence-context-value { stroke: #ef6672; filter: drop-shadow(0 0 3px rgba(239, 102, 114, .45)); }
   .presence-context-popover {
     position: absolute;
     z-index: 5;
