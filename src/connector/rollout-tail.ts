@@ -3,6 +3,7 @@ import type { FileHandle } from 'node:fs/promises';
 import { normalizeToolPurpose, parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
 import type { MessageContext } from '../shared/message-content.js';
 import { summarizeToolActivity } from '../shared/activity-detail.js';
+import type { ContextCompaction } from '../shared/context-compaction.js';
 import {
   extractPlanProgressFromToolInput,
   summarizePatchChanges,
@@ -52,6 +53,7 @@ type RolloutItem = {
   output?: string;
   attachment?: GeneratedImageAttachment;
   fileChanges?: TurnFileProgress;
+  compaction?: ContextCompaction;
   completedAt?: number | null;
 };
 type RolloutOptions = {
@@ -349,6 +351,7 @@ function isVisibleRolloutRow(row: RolloutRow) {
   const type = String(payload.type || '');
   return Boolean(
     delegatedUserMessage(row)
+    || row?.type === 'compacted'
     || (row?.type === 'event_msg' && /^(?:agent_message|user_message|image_generation_end)$/.test(type))
     || (row?.type === 'response_item' && type === 'message')
     || (type === 'task_complete' && fullText(payload.last_agent_message).trim()),
@@ -713,7 +716,7 @@ function mapRolloutRows(
     : { patchFiles: new Set() };
   let turnItemStart = 0;
   let currentTurnId = initialTurnId;
-  for (const row of Array.isArray(rows) ? rows : []) {
+  for (const [rowIndex, row] of (Array.isArray(rows) ? rows : []).entries()) {
     const payload = row?.payload || {};
     const payloadType = String(payload.type || '');
     currentTurnId = rolloutRowTurnId(row) || currentTurnId;
@@ -726,6 +729,11 @@ function mapRolloutRows(
     const delegatedMessage = delegatedUserMessage(row);
     if (delegatedMessage) {
       pushText(items, { type: 'userMessage', ...delegatedMessage, ...turn, ...timing });
+    } else if (row?.type === 'compacted') {
+      const compaction = contextCompactionFromRows(rows, rowIndex);
+      if (compaction) {
+        pushText(items, { type: 'contextCompaction', text: '', compaction, ...turn, ...timing });
+      }
     } else if (row?.type === 'event_msg' && payloadType === 'agent_message') {
       const content = parseAssistantMessage(payload.message);
       pushText(items, {
@@ -843,18 +851,59 @@ function finalFileChanges(phase: unknown, progress: RolloutProgress) {
 
 function pushText(items: RolloutItem[], item: RolloutItem) {
   const text = item.phase === 'final_answer' ? fullText(item.text) : capText(item.text);
-  if (!text && !item.attachment) return;
+  if (!text && !item.attachment && !item.compaction) return;
   const previous = items.at(-1);
   if (previous?.type === item.type
     && previous.turnId === item.turnId
     && previous.phase === item.phase
     && previous.text === text
     && previous.attachment?.path === item.attachment?.path
+    && JSON.stringify(previous.compaction) === JSON.stringify(item.compaction)
     && JSON.stringify(previous.contexts || []) === JSON.stringify(item.contexts || [])) {
     if (item.fileChanges) previous.fileChanges = item.fileChanges;
     return;
   }
   items.push({ ...item, text, status: '', name: '', input: '', output: '' });
+}
+
+function contextCompactionFromRows(rows: RolloutRow[], index: number): ContextCompaction | undefined {
+  const payload = rows[index]?.payload || {};
+  const sequence = positiveInteger(payload.window_number);
+  if (!sequence) return undefined;
+  const before = nearbyTokenCount(rows, index, -1);
+  const after = nearbyTokenCount(rows, index, 1);
+  const contextWindow = after?.contextWindow || before?.contextWindow;
+  return {
+    sequence,
+    ...(contextWindow ? { contextWindow } : {}),
+    ...(before?.tokens !== undefined ? { beforeTokens: before.tokens } : {}),
+    ...(after?.tokens !== undefined ? { afterTokens: after.tokens } : {}),
+  };
+}
+
+function nearbyTokenCount(rows: RolloutRow[], start: number, direction: -1 | 1) {
+  for (let distance = 1; distance <= 8; distance += 1) {
+    const row = rows[start + distance * direction];
+    if (!row) break;
+    const payload = row.payload || {};
+    if (row.type !== 'event_msg' || payload.type !== 'token_count') continue;
+    const info = payload.info || {};
+    const tokens = nonNegativeInteger(info.last_token_usage?.total_tokens);
+    const contextWindow = positiveInteger(info.model_context_window);
+    if (tokens === undefined && !contextWindow) return undefined;
+    return { tokens, contextWindow };
+  }
+  return undefined;
+}
+
+function positiveInteger(value: unknown) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : 0;
+}
+
+function nonNegativeInteger(value: unknown) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : undefined;
 }
 
 function fullText(value: unknown) {
@@ -884,6 +933,7 @@ export const internals = {
   findLatestPlanBefore, findLatestPurposeBefore,
   inferRolloutActivity,
   inferRolloutStatus, mapRolloutRows, recoverGeneratedImageRows, rolloutCache, rolloutRowTurnId,
+  contextCompactionFromRows,
   updateLiveActivity,
   reasoningSummary, updateActivityDetail, updateToolPurpose,
   updateTurnProgress,

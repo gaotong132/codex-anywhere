@@ -820,6 +820,20 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .progress-card pre { min-height: 1.55em; padding: 5px 11px 10px; font-size: 12px; line-height: 1.55; }
 .progress-card pre .progress-typewriter { color: #aab6c8; font-weight: 500; }
 .progress-card pre .progress-typewriter.typing { color: #aab6c8; }
+.context-compaction {
+  display: flex; width: min(100%, 860px); align-items: center; gap: 10px; margin: 3px 0 15px; color: #718096;
+  font-size: 10px; line-height: 1.2;
+}
+.context-compaction-rule { height: 1px; min-width: 18px; flex: 1 1 auto; background: linear-gradient(90deg, transparent, rgba(105, 128, 161, .28)); }
+.context-compaction-rule:last-child { background: linear-gradient(90deg, rgba(105, 128, 161, .28), transparent); }
+.context-compaction-content {
+  display: inline-flex; min-width: 0; flex: 0 1 auto; align-items: center; justify-content: center; gap: 6px; padding: 4px 8px;
+  border: 1px solid rgba(93, 123, 164, .2); border-radius: 999px; background: rgba(18, 27, 40, .58); white-space: nowrap;
+}
+.context-compaction-content svg { width: 13px; height: 13px; flex: 0 0 13px; fill: none; stroke: #7599ca; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.context-compaction-content strong { color: #9badc4; font-weight: 700; }
+.context-compaction-content b { padding: 2px 5px; border-radius: 999px; color: #7ec7a6; background: rgba(40, 126, 86, .14); font-variant-numeric: tabular-nums; font-weight: 700; }
+.context-compaction-content time { color: #617087; font-variant-numeric: tabular-nums; }
 .typewriter-text { min-width: 0; line-height: inherit; }
 .typewriter-copy { white-space: pre-wrap; }
 .typewriter-caret { position: relative; display: inline-block; width: 0; height: 0; margin: 0; vertical-align: baseline; }

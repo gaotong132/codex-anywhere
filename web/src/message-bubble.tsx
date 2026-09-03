@@ -250,6 +250,52 @@ const MessageMarkdown = memo(function MessageMarkdown({
   );
 });
 
+function contextUsagePercent(tokens: number | undefined, contextWindow: number | undefined) {
+  if (tokens === undefined || !contextWindow) return null;
+  return Math.min(100, Math.max(0, Math.round(tokens / contextWindow * 100)));
+}
+
+function ContextCompactionMarker({ item }: { item: TimelineItem }) {
+  const compaction = item.compaction!;
+  const beforePercent = contextUsagePercent(compaction.beforeTokens, compaction.contextWindow);
+  const afterPercent = contextUsagePercent(compaction.afterTokens, compaction.contextWindow);
+  const usage = beforePercent !== null && afterPercent !== null
+    ? `${beforePercent}% → ${afterPercent}%`
+    : beforePercent !== null
+      ? t(`压缩前 ${beforePercent}%`, `${beforePercent}% before`)
+      : afterPercent !== null
+        ? t(`压缩后 ${afterPercent}%`, `${afterPercent}% after`)
+        : '';
+  const tokenDetail = compaction.contextWindow && compaction.beforeTokens !== undefined
+    ? t(
+      `压缩前 ${compaction.beforeTokens.toLocaleString()} / ${compaction.contextWindow.toLocaleString()} Token${compaction.afterTokens !== undefined ? `，压缩后 ${compaction.afterTokens.toLocaleString()} Token` : ''}`,
+      `${compaction.beforeTokens.toLocaleString()} / ${compaction.contextWindow.toLocaleString()} tokens before${compaction.afterTokens !== undefined ? `, ${compaction.afterTokens.toLocaleString()} after` : ''}`,
+    )
+    : '';
+  const label = t(
+    `上下文已压缩，第 ${compaction.sequence} 次${usage ? `，${usage}` : ''}`,
+    `Context compacted, pass ${compaction.sequence}${usage ? `, ${usage}` : ''}`,
+  );
+  const completedDateTime = dateTimeValue(item.completedAt);
+  return (
+    <div className="context-compaction" role="note" aria-label={label} title={tokenDetail || label}>
+      <span className="context-compaction-rule" aria-hidden="true" />
+      <span className="context-compaction-content">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 8h6m4 0h6M8 5l3 3-3 3m8-6-3 3 3 3M7 16h10" />
+        </svg>
+        <strong>{t('上下文已压缩', 'Context compacted')}</strong>
+        <span>{t(`第 ${compaction.sequence} 次`, `Pass ${compaction.sequence}`)}</span>
+        {usage && <b>{usage}</b>}
+        {item.completedAt && completedDateTime && (
+          <time dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
+        )}
+      </span>
+      <span className="context-compaction-rule" aria-hidden="true" />
+    </div>
+  );
+}
+
 function MessageBubbleComponent({
   item,
   active = false,
@@ -425,6 +471,7 @@ function MessageBubbleComponent({
     setTurnDiffPreview(null);
   }
 
+  if (item.kind === 'system' && item.compaction) return <ContextCompactionMarker item={item} />;
   if (item.kind === 'progress') {
     return (
       <details className={`progress-card${active ? ' live' : ''}`} open>
@@ -654,6 +701,7 @@ export function messagePresentationEqual(left: TimelineItem, right: TimelineItem
     && equalOptionalRecord(left.attachment, right.attachment)
     && equalOptionalRecord(left.visualization, right.visualization)
     && equalOptionalRecord(left.fileChanges, right.fileChanges)
+    && equalOptionalRecord(left.compaction, right.compaction)
     && JSON.stringify(left.contexts || []) === JSON.stringify(right.contexts || []);
 }
 

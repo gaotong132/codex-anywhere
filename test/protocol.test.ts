@@ -684,6 +684,54 @@ test('rollout tail mapping keeps only user-visible conversation updates', () => 
   assert.equal(items[2].text, 'done');
 });
 
+test('rollout compaction events become safe timeline markers with context usage', () => {
+  const timestamp = '2026-09-03T03:19:01.798Z';
+  const rolloutItems = rolloutInternals.mapRolloutRows([
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-compact' } },
+    { type: 'event_msg', payload: { type: 'token_count', info: {
+      last_token_usage: { total_tokens: 215_525 }, model_context_window: 258_400,
+    } } },
+    { timestamp, type: 'compacted', payload: {
+      message: '', window_number: 3, encrypted_content: 'must-not-render',
+    } },
+    { type: 'world_state', payload: {} },
+    { type: 'turn_context', payload: {} },
+    { type: 'event_msg', payload: { type: 'thread_settings_applied' } },
+    { type: 'event_msg', payload: { type: 'token_count', info: {
+      last_token_usage: { total_tokens: 15_134 }, model_context_window: 258_400,
+    } } },
+    { type: 'event_msg', payload: { type: 'agent_message', phase: 'final_answer', message: 'done' } },
+  ]);
+
+  assert.deepEqual(rolloutItems[0], {
+    type: 'contextCompaction',
+    text: '',
+    compaction: {
+      sequence: 3, contextWindow: 258_400, beforeTokens: 215_525, afterTokens: 15_134,
+    },
+    turnId: 'turn-compact',
+    completedAt: Date.parse(timestamp),
+    status: '', name: '', input: '', output: '',
+  });
+  assert.equal(JSON.stringify(rolloutItems).includes('must-not-render'), false);
+
+  const timeline = historyItems([{ id: 'page', items: rolloutItems }]);
+  assert.equal(timeline[0].kind, 'system');
+  assert.deepEqual(timeline[0].compaction, {
+    sequence: 3, contextWindow: 258_400, beforeTokens: 215_525, afterTokens: 15_134,
+  });
+  const markup = renderToStaticMarkup(createElement(MessageBubble, {
+    item: timeline[0],
+    onDownloadFile: () => undefined,
+    onReadVisualization: async () => '',
+  }));
+  assert.match(markup, /class="context-compaction"/);
+  assert.match(markup, /上下文已压缩/);
+  assert.match(markup, /第 3 次/);
+  assert.match(markup, /83% → 6%/);
+  assert.doesNotMatch(markup, /must-not-render/);
+});
+
 test('rollout history keeps complete final replies while bounding progress updates', () => {
   const longText = '完整回复。'.repeat(1_000);
   const items = rolloutInternals.mapRolloutRows([

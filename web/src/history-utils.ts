@@ -5,6 +5,10 @@ import {
   stripImageAttachments,
 } from '../../src/shared/message-content';
 import type { MessageContext } from '../../src/shared/message-content';
+import {
+  normalizeContextCompaction,
+  type ContextCompaction,
+} from '../../src/shared/context-compaction';
 import { normalizeTurnProgress, type TurnFileProgress } from '../../src/shared/turn-progress';
 import { localFileName, localFilePathFromHref } from './file-utils';
 
@@ -26,6 +30,7 @@ type TurnItem = {
   contexts?: MessageContext[];
   attachment?: ImageAttachment;
   fileChanges?: TurnFileProgress;
+  compaction?: ContextCompaction;
   createdAt?: number | string | null;
   updatedAt?: number | string | null;
   completedAt?: number | string | null;
@@ -40,7 +45,7 @@ export type Turn = {
   items?: TurnItem[];
 };
 
-export type TimelineKind = 'user' | 'assistant' | 'progress' | 'error';
+export type TimelineKind = 'user' | 'assistant' | 'progress' | 'system' | 'error';
 export type ImageAttachment = { path: string; name: string; source?: 'generated' | 'local' };
 export type VisualizationArtifact = { path: string; name: string; source: 'visualize' };
 export type TimelineItem = {
@@ -51,6 +56,7 @@ export type TimelineItem = {
   transient?: boolean;
   attachment?: ImageAttachment;
   visualization?: VisualizationArtifact;
+  compaction?: ContextCompaction;
   contexts?: MessageContext[];
   completedAt?: number | string | null;
   fileChanges?: TurnFileProgress;
@@ -128,13 +134,17 @@ export function historyItems(turns: Turn[]) {
         : parseAssistantMessage(presentationText);
       const text = content.text;
       const historyTurnId = item.turnId?.trim() || turn.id;
+      const compaction = type === 'contextCompaction'
+        ? normalizeContextCompaction(item.compaction)
+        : undefined;
       let kind: TimelineKind | null = null;
       const displayText = text || '';
-      if (/user/i.test(type) && (text || attachment)) kind = 'user';
+      if (compaction) kind = 'system';
+      else if (/user/i.test(type) && (text || attachment)) kind = 'user';
       else if (/agent|assistant|message/i.test(type) && (text || attachment || visualization)) {
         kind = !item.phase || item.phase === 'final_answer' ? 'assistant' : 'progress';
       }
-      if (!kind || (!displayText && !attachment && !visualization)) continue;
+      if (!kind || (!displayText && !attachment && !visualization && !compaction)) continue;
       const previous = items.at(-1);
       if (kind === 'progress' && !visualization
         && previous?.kind === 'progress' && previous.historyTurnId === historyTurnId) {
@@ -153,6 +163,7 @@ export function historyItems(turns: Turn[]) {
         historyTurnId,
         attachment,
         ...(visualization ? { visualization } : {}),
+        ...(compaction ? { compaction } : {}),
         contexts: item.contexts?.length ? item.contexts : content.contexts,
         ...(completedAt ? { completedAt } : {}),
         ...(fileChanges ? { fileChanges } : {}),
@@ -233,6 +244,7 @@ export function historyFingerprint(turns: Turn[], progress?: unknown) {
         contexts: item.contexts,
         attachment: item.attachment,
         fileChanges: item.fileChanges,
+        compaction: item.compaction,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         completedAt: item.completedAt,
@@ -402,7 +414,7 @@ function persistedSnapshotIdentity(item: TimelineItem) {
 }
 
 function messageContentIdentity(item: TimelineItem) {
-  return `${item.kind}\0${canonicalMessageText(item.text)}`;
+  return `${item.kind}\0${canonicalMessageText(item.text)}\0${JSON.stringify(item.compaction || null)}`;
 }
 
 function canonicalMessageText(text: string) {
