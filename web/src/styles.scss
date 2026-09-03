@@ -927,7 +927,6 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   text-overflow: clip;
 }
 .timeline-notice.toolSummary .timeline-notice-content b::before { margin-right: 4px; color: #46546a; content: '·'; }
-.timeline-notice.toolSummary .timeline-notice-content time { margin-left: auto; padding-left: 4px; background: #0a0e16; }
 .timeline-notice.turnStatus .timeline-notice-content svg,
 .timeline-notice.approval.rejected .timeline-notice-content svg { stroke: #d7897f; }
 .timeline-notice.turnStatus .timeline-notice-content strong,

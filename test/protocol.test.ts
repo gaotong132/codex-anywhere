@@ -835,6 +835,15 @@ test('rollout lifecycle, settings, and tools become compact safe timeline notice
   assert.match(markup, /1 编辑/);
   assert.match(markup, /1 搜索/);
   assert.doesNotMatch(markup, /本轮调用了/);
+  const toolSummaryMarkup = renderToStaticMarkup(createElement(MessageBubble, {
+    item: {
+      id: 'tool-summary-with-time', kind: 'system', text: '', completedAt: '2026-09-03T13:35:00+08:00',
+      notice: { kind: 'toolSummary', total: 41, commands: 28, edits: 5, other: 8 },
+    },
+    onDownloadFile: () => undefined,
+    onReadVisualization: async () => '',
+  }));
+  assert.doesNotMatch(toolSummaryMarkup, /<time/);
   assert.match(markup, /任务已中止/);
   assert.match(markup, /已由用户停止/);
 });

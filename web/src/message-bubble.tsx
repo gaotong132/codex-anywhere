@@ -351,7 +351,7 @@ function TimelineNoticeMarker({ item }: { item: TimelineItem }) {
         <strong>{label}</strong>
         {badges.map((badge) => <b key={badge}>{badge}</b>)}
         {detail && <span className="timeline-notice-detail">{detail}</span>}
-        {item.completedAt && completedDateTime && (
+        {notice.kind !== 'toolSummary' && item.completedAt && completedDateTime && (
           <time dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
         )}
       </span>
