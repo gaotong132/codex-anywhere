@@ -133,6 +133,8 @@ test('presence indicator renders context usage as a compact outer ring', () => {
   }));
 
   assert.match(markup, /presence-context-ring/);
+  assert.match(markup, /viewBox="0 0 40 40"/);
+  assert.match(markup, /transform="rotate\(-90 20 20\)"/);
   assert.match(markup, /stroke-dasharray="82 18"/);
   assert.match(markup, /context-high/);
   assert.match(markup, /data-context-percent="82"/);
@@ -827,7 +829,12 @@ test('rollout lifecycle, settings, and tools become compact safe timeline notice
     })))
     .join('');
   assert.match(markup, /运行配置已变更/);
-  assert.match(markup, /本轮调用了 3 个工具/);
+  assert.match(markup, /class="timeline-notice toolSummary"/);
+  assert.match(markup, /3 个工具/);
+  assert.match(markup, /1 命令/);
+  assert.match(markup, /1 编辑/);
+  assert.match(markup, /1 搜索/);
+  assert.doesNotMatch(markup, /本轮调用了/);
   assert.match(markup, /任务已中止/);
   assert.match(markup, /已由用户停止/);
 });

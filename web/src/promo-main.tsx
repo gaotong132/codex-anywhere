@@ -66,6 +66,13 @@ const conversationItems: TimelineItem[] = [
     completedAt: '2026-08-30T10:02:00+08:00',
   },
   {
+    id: 'promo-tools',
+    kind: 'system',
+    text: '',
+    completedAt: '2026-08-30T10:03:00+08:00',
+    notice: { kind: 'toolSummary', total: 41, commands: 28, edits: 5, other: 8 },
+  },
+  {
     id: 'promo-assistant',
     kind: 'assistant',
     text: 'The mobile release is ready.\n\n- Image delivery passed\n- Progress tracking verified\n\n[Download the build](C:/Mock/atlas-mobile.zip)',

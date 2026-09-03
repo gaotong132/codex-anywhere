@@ -326,13 +326,13 @@ function TimelineNoticeMarker({ item }: { item: TimelineItem }) {
     if (notice.approvalKind) badges.push(notice.approvalKind);
     detail = notice.summary || '';
   } else {
-    label = t(`本轮调用了 ${notice.total} 个工具`, `${notice.total} tools used in this turn`);
-    if (notice.commands) badges.push(t(`${notice.commands} 个命令`, `${notice.commands} commands`));
-    if (notice.edits) badges.push(t(`${notice.edits} 次编辑`, `${notice.edits} edits`));
-    if (notice.searches) badges.push(t(`${notice.searches} 次搜索`, `${notice.searches} searches`));
-    if (notice.connectedTools) badges.push(t(`${notice.connectedTools} 个连接工具`, `${notice.connectedTools} connected tools`));
-    if (notice.generations) badges.push(t(`${notice.generations} 次生成`, `${notice.generations} generations`));
-    if (notice.other) badges.push(t(`${notice.other} 个其他工具`, `${notice.other} other tools`));
+    label = t(`${notice.total} 个工具`, `${notice.total} tools`);
+    if (notice.commands) badges.push(t(`${notice.commands} 命令`, `${notice.commands} cmd`));
+    if (notice.edits) badges.push(t(`${notice.edits} 编辑`, `${notice.edits} edits`));
+    if (notice.searches) badges.push(t(`${notice.searches} 搜索`, `${notice.searches} searches`));
+    if (notice.connectedTools) badges.push(t(`${notice.connectedTools} 连接`, `${notice.connectedTools} connected`));
+    if (notice.generations) badges.push(t(`${notice.generations} 生成`, `${notice.generations} generated`));
+    if (notice.other) badges.push(t(`${notice.other} 其他`, `${notice.other} other`));
   }
   const accessibleLabel = [label, detail, ...badges].filter(Boolean).join(' · ');
   return (

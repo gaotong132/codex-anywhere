@@ -399,12 +399,13 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   .presence-context-ring {
     position: absolute;
     z-index: 2;
-    inset: -3px;
-    width: 36px;
-    height: 36px;
+    top: 50%;
+    left: 50%;
+    width: 40px;
+    height: 40px;
     overflow: visible;
     pointer-events: none;
-    transform: rotate(-90deg);
+    transform: translate(-50%, -50%);
   }
   .presence-context-track,
   .presence-context-value { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
@@ -894,6 +895,39 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .timeline-notice-content b { padding: 2px 5px; border-radius: 999px; color: #91a9c8; background: rgba(75, 104, 145, .14); font-variant-numeric: tabular-nums; font-weight: 650; }
 .timeline-notice-detail { min-width: 0; max-width: 340px; overflow: hidden; color: #8795a9; text-overflow: ellipsis; }
 .timeline-notice-content time { flex: 0 0 auto; color: #617087; font-variant-numeric: tabular-nums; }
+.timeline-notice.toolSummary {
+  width: min(96%, 920px);
+  justify-content: flex-start;
+  gap: 0;
+  padding: 2px 9px 7px;
+}
+.timeline-notice.toolSummary .timeline-notice-rule { display: none; }
+.timeline-notice.toolSummary .timeline-notice-content {
+  width: 100%;
+  max-width: 100%;
+  justify-content: flex-start;
+  gap: 4px;
+  overflow: hidden;
+  color: #687589;
+  font-size: 9px;
+  line-height: 1;
+}
+.timeline-notice.toolSummary .timeline-notice-content svg { width: 11px; height: 11px; flex-basis: 11px; stroke: #687b98; }
+.timeline-notice.toolSummary .timeline-notice-content strong { color: #7f8da2; font-weight: 600; }
+.timeline-notice.toolSummary .timeline-notice-content b {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  padding: 0;
+  border-radius: 0;
+  color: #687589;
+  background: transparent;
+  font-size: inherit;
+  font-weight: 500;
+  text-overflow: clip;
+}
+.timeline-notice.toolSummary .timeline-notice-content b::before { margin-right: 4px; color: #46546a; content: '·'; }
+.timeline-notice.toolSummary .timeline-notice-content time { margin-left: auto; padding-left: 4px; background: #0a0e16; }
 .timeline-notice.turnStatus .timeline-notice-content svg,
 .timeline-notice.approval.rejected .timeline-notice-content svg { stroke: #d7897f; }
 .timeline-notice.turnStatus .timeline-notice-content strong,
