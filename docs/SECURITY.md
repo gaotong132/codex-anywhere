@@ -90,14 +90,18 @@ inherits trust from the first one.
   the full approval request.
 - The Web UI can act only on approvals owned by connector-started turns. An approval already owned by
   Codex Desktop stays on the computer and is shown as non-actionable in the Web UI.
+- Headless tasks expose user approval and Codex auto-review modes. Full access is available only when the
+  connector operator explicitly enables it; selecting it requires a second browser confirmation and sends
+  `never` plus `dangerFullAccess` to Codex. This removes the Codex sandbox rather than expanding preview roots.
 - The selected connector route is part of the authenticated secure-channel transcript. Switching routes
   destroys the browser's old channel, rejects its pending requests, and keeps session selection, unread
   state, workspace memory, and attachment lookup scoped to the new environment. A task already accepted by
   the old node continues there and is resynchronized when the user switches back.
 
-Broad `-AllowedRoots`, `-AllowAnyFileDownload`, and `-EnableNetworkAccess` options increase connector
+Broad `-AllowedRoots`, `-AllowAnyFileDownload`, `-EnableNetworkAccess`, and `-AllowFullAccess` options increase connector
 authority and are disabled or narrow by default. `-AllowAnyFileDownload` expands only confirmed downloads;
-it does not expand the roots accepted by image or text previews.
+it does not expand the roots accepted by image or text previews. Full access is substantially broader: Codex
+can access anything available to the connector service account, regardless of preview roots.
 
 ## Trust boundary and honest limits
 

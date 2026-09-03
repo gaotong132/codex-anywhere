@@ -20,6 +20,7 @@ test('Windows login startup uses a GUI host without opening a console', async ()
   assert.match(installer, /\$PSBoundParameters\.ContainsKey\('BridgeUrl'\)/);
   assert.match(installer, /Get-ExistingSetting -Name 'allowedRoots'/);
   assert.match(installer, /Get-ExistingSetting -Name 'allowAnyFileDownload'/);
+  assert.match(installer, /Get-ExistingSetting -Name 'allowFullAccess'/);
 
   assert.match(launcher, /shell\.Run\(command,\s*0,\s*True\)/i);
   assert.match(launcher, /-WindowStyle Hidden/i);

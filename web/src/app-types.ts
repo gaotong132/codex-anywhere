@@ -2,6 +2,7 @@ import type { Turn } from './history-utils';
 import type { CurrentProtocol, ProtocolOffer } from '../../src/shared/protocol-contract';
 import type { TurnProgress } from '../../src/shared/turn-progress';
 import type { ContextUsage } from '../../src/shared/context-compaction';
+import type { PermissionMode } from '../../src/shared/permission-mode';
 
 export type Session = {
   id: string;
@@ -30,6 +31,21 @@ export type SessionModelConfig = {
   models: ModelOption[];
 };
 export type ModelConfigDraft = Pick<SessionModelConfig, 'model' | 'reasoningEffort' | 'fastMode'>;
+export type ConnectorStatus = {
+  deviceId: string;
+  deviceLabel: string;
+  mode: 'desktop' | 'headless';
+  platform: string;
+  codexOnline: boolean;
+  activeTurn: boolean;
+  capabilities: { networkAccess: boolean; fullAccess: boolean };
+};
+export type SessionPermissionConfig = {
+  mode: PermissionMode;
+  editable: boolean;
+  networkAccess: boolean;
+  allowFullAccess: boolean;
+};
 
 export type FollowState = 'idle' | 'checking' | 'following' | 'synced' | 'error';
 export type ExecutionState = 'idle' | 'waiting' | 'running' | 'completed' | 'failed';

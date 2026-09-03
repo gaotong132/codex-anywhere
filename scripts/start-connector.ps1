@@ -114,6 +114,13 @@ if (-not [string]::IsNullOrWhiteSpace($networkAccessFromEnvironment)) {
 else {
     $networkAccess = if ((Get-ConfigValue 'networkAccess') -eq $true) { '1' } else { '0' }
 }
+$allowFullAccessFromEnvironment = [Environment]::GetEnvironmentVariable('CODEX_ALLOW_FULL_ACCESS', 'Process')
+if (-not [string]::IsNullOrWhiteSpace($allowFullAccessFromEnvironment)) {
+    $allowFullAccess = if ($allowFullAccessFromEnvironment -eq '1') { '1' } else { '0' }
+}
+else {
+    $allowFullAccess = if ((Get-ConfigValue 'allowFullAccess') -eq $true) { '1' } else { '0' }
+}
 $allowAnyFileDownloadFromEnvironment = [Environment]::GetEnvironmentVariable('CODEX_ALLOW_ANY_FILE_DOWNLOAD', 'Process')
 if (-not [string]::IsNullOrWhiteSpace($allowAnyFileDownloadFromEnvironment)) {
     $allowAnyFileDownload = if ($allowAnyFileDownloadFromEnvironment -eq '1') { '1' } else { '0' }
@@ -235,6 +242,7 @@ if (-not $desktopCodex -and -not (Get-Command codex.exe -ErrorAction SilentlyCon
     $env:CODEX_ALLOWED_ROOTS = $allowedRoots
     $env:CODEX_ALLOW_ANY_FILE_DOWNLOAD = $allowAnyFileDownload
     $env:CODEX_NETWORK_ACCESS = $networkAccess
+    $env:CODEX_ALLOW_FULL_ACCESS = $allowFullAccess
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $nodePath
     $startInfo.Arguments = "`"$compiledConnectorPath`""
@@ -270,5 +278,6 @@ finally {
     Remove-Item Env:CODEX_ALLOWED_ROOTS -ErrorAction SilentlyContinue
     Remove-Item Env:CODEX_ALLOW_ANY_FILE_DOWNLOAD -ErrorAction SilentlyContinue
     Remove-Item Env:CODEX_NETWORK_ACCESS -ErrorAction SilentlyContinue
+    Remove-Item Env:CODEX_ALLOW_FULL_ACCESS -ErrorAction SilentlyContinue
     Remove-Item Env:CODEX_BIN -ErrorAction SilentlyContinue
 }

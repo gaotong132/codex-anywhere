@@ -48,6 +48,7 @@ import {
 import {
   internals as rolloutInternals,
   readRolloutModelSettings,
+  readRolloutPermissionMode,
   readRolloutTail,
 } from '../src/connector/rollout-tail.js';
 import {
@@ -55,6 +56,7 @@ import {
   readRolloutTurnDiff,
 } from '../src/connector/turn-diffs.js';
 import { needsDesktopPermissionRecovery } from '../src/connector/session-permissions.js';
+import { PermissionModeControl } from '../web/src/permission-mode-control.js';
 import {
   isMarkdownFilePath,
   isTextPreviewFilePath,
@@ -2554,7 +2556,7 @@ test('legacy bridge restrictions are detected only after a prior full-access con
   }
 });
 
-test('new Web sessions retain the restricted approval and sandbox defaults', async () => {
+test('new Web sessions default to user-reviewed workspace access', async () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
   const calls = [];
@@ -2565,11 +2567,113 @@ test('new Web sessions retain the restricted approval and sandbox defaults', asy
   };
   await codex.startTurn({ text: 'hello', cwd: process.cwd() });
   assert.equal(calls[0].method, 'thread/start');
-  assert.equal(calls[0].params.approvalPolicy, 'untrusted');
+  assert.equal(calls[0].params.approvalPolicy, 'on-request');
   assert.equal(calls[0].params.sandbox, 'workspace-write');
   assert.equal(calls[0].params.config.sandbox_mode, 'workspace-write');
   assert.equal(calls[1].method, 'turn/start');
-  assert.equal(calls[1].params.approvalPolicy, 'untrusted');
+  assert.equal(calls[1].params.approvalPolicy, 'on-request');
+  assert.deepEqual(calls[1].params.sandboxPolicy, {
+    type: 'workspaceWrite', writableRoots: [process.cwd()], networkAccess: false,
+    excludeTmpdirEnvVar: false, excludeSlashTmp: false,
+  });
+});
+
+test('Web permission modes map to Codex auto-review and guarded full access', async () => {
+  const auto = new CodexAppServer({ runtimeCwd: process.cwd() });
+  auto.ensureStarted = async () => {};
+  const autoCalls = [];
+  auto.rpcRaw = async (method, params) => {
+    autoCalls.push({ method, params });
+    return method === 'turn/start' ? { turn: { id: 'turn-auto' } } : { thread: { id: 'auto-thread' } };
+  };
+  await auto.startTurn({ text: 'hello', cwd: process.cwd(), permissionMode: 'auto' });
+  assert.equal(autoCalls[0].params.approvalsReviewer, 'auto_review');
+  assert.equal(autoCalls[1].params.approvalPolicy, 'on-request');
+  assert.equal(autoCalls[1].params.approvalsReviewer, 'auto_review');
+
+  const guarded = new CodexAppServer({ runtimeCwd: process.cwd() });
+  guarded.ensureStarted = async () => {};
+  await assert.rejects(
+    () => guarded.startTurn({ text: 'hello', cwd: process.cwd(), permissionMode: 'full' }),
+    /full_access_not_allowed/,
+  );
+
+  const full = new CodexAppServer({ runtimeCwd: process.cwd(), allowFullAccess: true });
+  full.ensureStarted = async () => {};
+  const fullCalls = [];
+  full.rpcRaw = async (method, params) => {
+    fullCalls.push({ method, params });
+    return method === 'turn/start' ? { turn: { id: 'turn-full' } } : { thread: { id: 'full-thread' } };
+  };
+  await full.startTurn({ text: 'hello', cwd: process.cwd(), permissionMode: 'full' });
+  assert.equal(fullCalls[0].params.approvalPolicy, 'never');
+  assert.equal(fullCalls[0].params.sandbox, 'danger-full-access');
+  assert.deepEqual(fullCalls[1].params.sandboxPolicy, { type: 'dangerFullAccess' });
+});
+
+test('permission updates resume stored headless tasks and persist subsequent-turn settings', async () => {
+  const codex = new CodexAppServer({
+    runtimeCwd: process.cwd(), allowedRoots: [process.cwd()], allowFullAccess: true,
+  });
+  codex.ensureStarted = async () => {};
+  codex.sessionMetadata.set('thread-1', {
+    cwd: process.cwd(), path: '', canAcceptDirectInput: true,
+  });
+  const calls = [];
+  let settingsAttempts = 0;
+  codex.rpcRaw = async (method, params) => {
+    calls.push({ method, params });
+    if (method === 'thread/settings/update' && settingsAttempts++ === 0) {
+      throw new Error('thread not found: thread-1');
+    }
+    if (method === 'thread/resume') return { thread: { id: 'thread-1' } };
+    return {};
+  };
+  assert.deepEqual(await codex.updatePermissionMode('thread-1', 'auto'), { mode: 'auto' });
+  assert.deepEqual(calls.map((call) => call.method), [
+    'thread/settings/update', 'thread/resume', 'thread/settings/update', 'thread/unsubscribe',
+  ]);
+  assert.equal(calls[2].params.approvalPolicy, 'on-request');
+  assert.equal(calls[2].params.approvalsReviewer, 'auto_review');
+  assert.deepEqual(calls[2].params.sandboxPolicy, {
+    type: 'workspaceWrite', writableRoots: [process.cwd()], networkAccess: false,
+    excludeTmpdirEnvVar: false, excludeSlashTmp: false,
+  });
+});
+
+test('Web permission control exposes all modes and marks connector-gated full access', () => {
+  const html = renderToStaticMarkup(createElement(PermissionModeControl, {
+    config: {
+      mode: 'ask', editable: true, networkAccess: true, allowFullAccess: false,
+    },
+    loading: false,
+    disabled: false,
+    onChange: async () => {},
+  }));
+  assert.match(html, /请求批准/);
+  // The popover stays closed until clicked; source-level labels still need all three explicit modes.
+  assert.match(PermissionModeControl.toString(), /auto|full/);
+});
+
+test('rollout permission mode follows the latest persisted thread settings', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'permission-mode-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  try {
+    await writeFile(filePath, [
+      { type: 'turn_context', payload: { approval_policy: 'on-request', approvals_reviewer: 'user', sandbox_policy: { type: 'workspace-write' } } },
+      { type: 'event_msg', payload: { type: 'thread_settings_applied', thread_settings: { approval_policy: 'on-request', approvals_reviewer: 'auto_review', permission_profile: { type: 'managed' } } } },
+    ].map((row) => JSON.stringify(row)).join('\n') + '\n');
+    assert.equal(await readRolloutPermissionMode(filePath), 'auto');
+    await appendFile(filePath, `${JSON.stringify({
+      type: 'turn_context', payload: {
+        approval_policy: 'never', approvals_reviewer: 'user',
+        sandbox_policy: { type: 'danger-full-access' }, permission_profile: { type: 'disabled' },
+      },
+    })}\n`);
+    assert.equal(await readRolloutPermissionMode(filePath), 'full');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test('active app-server turns accept steering only for the matching turn', async () => {

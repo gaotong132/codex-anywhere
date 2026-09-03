@@ -5,6 +5,7 @@ import type { MessageContext } from '../shared/message-content.js';
 import { summarizeToolActivity } from '../shared/activity-detail.js';
 import type { ContextCompaction, ContextUsage } from '../shared/context-compaction.js';
 import type { TimelineNotice, ToolSummaryNotice } from '../shared/timeline-notice.js';
+import type { PermissionMode } from '../shared/permission-mode.js';
 import { publicError } from '../shared/protocol.js';
 import {
   extractPlanProgressFromToolInput,
@@ -73,6 +74,15 @@ export type RolloutModelSettings = {
   reasoningEffort?: string;
   serviceTier?: string;
 };
+
+export async function readRolloutPermissionMode(filePath: string): Promise<PermissionMode | undefined> {
+  const handle = await open(filePath, 'r');
+  try {
+    return await findLatestPermissionModeBefore(handle, (await handle.stat()).size);
+  } finally {
+    await handle.close();
+  }
+}
 type ToolSummaryState = Omit<ToolSummaryNotice, 'kind' | 'total'> & {
   callIds: Set<string>;
   total: number;
@@ -530,6 +540,40 @@ async function findLatestModelSettingsBefore(
     cursor = start;
   }
   return settings;
+}
+
+async function findLatestPermissionModeBefore(
+  handle: FileHandle, endOffset: number,
+): Promise<PermissionMode | undefined> {
+  let cursor = endOffset;
+  while (cursor > 0) {
+    const start = Math.max(0, cursor - ACTIVITY_SCAN_CHUNK_BYTES);
+    const readEnd = Math.min(endOffset, cursor + PLAN_SCAN_OVERLAP_BYTES);
+    const window = await readCompleteRows(handle, start, readEnd, start > 0);
+    for (let index = window.rows.length - 1; index >= 0; index -= 1) {
+      const mode = permissionModeFromRow(window.rows[index]);
+      if (mode) return mode;
+    }
+    cursor = start;
+  }
+  return undefined;
+}
+
+function permissionModeFromRow(row: RolloutRow): PermissionMode | undefined {
+  const payload = row?.payload || {};
+  const source = row?.type === 'turn_context'
+    ? payload
+    : payload.type === 'thread_settings_applied' ? payload.thread_settings || {} : null;
+  if (!source) return undefined;
+  const approvalPolicy = String(source.approval_policy || source.approvalPolicy || '').trim();
+  const reviewer = String(source.approvals_reviewer || source.approvalsReviewer || '').trim();
+  const sandbox = String(
+    source.sandbox_policy?.type || source.sandboxPolicy?.type || source.permission_profile?.type || '',
+  ).replace(/[A-Z]/g, (match: string) => `-${match.toLowerCase()}`);
+  if (approvalPolicy === 'never' && /danger-full-access|disabled/.test(sandbox)) return 'full';
+  if (approvalPolicy === 'on-request' && reviewer === 'auto_review') return 'auto';
+  if (approvalPolicy || reviewer || sandbox) return 'ask';
+  return undefined;
 }
 
 function modelSettingsFromRow(row: RolloutRow): RolloutModelSettings | undefined {

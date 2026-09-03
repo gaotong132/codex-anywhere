@@ -35,6 +35,10 @@ export function friendlyError(error: unknown) {
   if (message === 'model_not_available') return t('所选模型当前不可用，请重新选择。', 'The selected model is unavailable. Choose another model.');
   if (message === 'reasoning_effort_not_available') return t('当前模型不支持所选思考强度。', 'This model does not support the selected reasoning effort.');
   if (message === 'fast_mode_not_available') return t('当前模型不支持快速模式。', 'Fast mode is not available for this model.');
+  if (message === 'permission_mode_turn_active') return t('当前任务仍在执行，完成后再修改权限。', 'Wait for the current run to finish before changing permissions.');
+  if (message === 'permission_mode_invalid') return t('权限模式无效，请刷新页面后重试。', 'The permission mode is invalid. Refresh and try again.');
+  if (message === 'full_access_not_allowed') return t('此执行节点未开放完全访问，请先由节点管理员显式启用。', 'Full access is not enabled on this connector. The connector operator must enable it first.');
+  if (message === 'permission_mode_managed_on_computer' || message === 'desktop_permission_mode_managed_on_computer') return t('该会话的权限由 Codex 电脑端管理，请在电脑上修改。', 'This task’s permissions are managed by Codex Desktop. Change them on the computer.');
   if (message === 'desktop_required_for_large_session') return t('这是一个超大会话，需要桌面 Codex 打开后才能安全发送到原会话。', 'This large session requires Codex Desktop to be open before a message can be delivered safely.');
   if (message === 'attachment_type_not_allowed') return t('只支持 JPG、PNG 和 WebP 图片。', 'Only JPG, PNG, and WebP images are supported.');
   if (message === 'attachment_too_large') return t('图片处理后仍超过 4 MB，请换一张更小的图片。', 'The processed image is still larger than 4 MB. Choose a smaller image.');

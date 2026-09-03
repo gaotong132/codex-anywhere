@@ -33,8 +33,9 @@ the selected connector node; a small relay you control provides the remote meeti
   completed turn's totals to inspect its bounded unified diff. Long histories load incrementally.
 - **Guide an active task** — append text to a connector-owned run, or use Desktop delivery when the
   existing session supports it. Messages are sent directly; Codex Anywhere does not maintain a Web queue.
-- **Choose how Codex works** — view or change the model, reasoning effort, and fast mode when the selected
-  Codex model exposes those options.
+- **Choose how Codex works** — view or change the model, reasoning effort, fast mode, and approval mode.
+  Headless connectors support user approval, Codex auto-review, or an explicitly enabled full-access mode;
+  the selection and new-task default stay scoped to the current execution environment.
 - **Use the results on mobile** — preview sent or generated images; open linked Markdown, source, config,
   and plain-text files; view syntax-highlighted code and Mermaid diagrams; open isolated Codex
   visualizations; copy messages; and download local files after confirmation. Downloads try to keep the
@@ -104,7 +105,8 @@ conversation database.
 Each connector starts its own Codex app-server. A Windows connector uses `desktop` mode: existing Desktop
 sessions keep Desktop delivery and bounded adaptive history polling. A Linux/ECS connector uses `headless`
 mode and owns new and resumed sessions through its app-server, so work can continue without a desktop
-login. Connector-owned runs support native events, steering, stopping, and Web approvals. Codex Anywhere
+login. Connector-owned runs support native events, steering, stopping, Web approvals, and per-task
+permission modes. Codex Anywhere
 does not implement ACP.
 
 ## Security at a glance

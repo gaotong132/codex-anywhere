@@ -18,6 +18,8 @@ type CodexGateway = {
   readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
   updateModelConfig(threadId: string, value: Payload): Promise<any>;
+  readPermissionMode(threadId: string): Promise<any>;
+  updatePermissionMode(threadId: string, mode: unknown): Promise<any>;
   startTurn(options: Payload): Promise<Record<string, any>>;
   steerTurn(options: Payload): Promise<Record<string, any>>;
   stopTurn(): Promise<any>;
@@ -49,6 +51,8 @@ type Dependencies = {
   deviceId: string;
   deviceLabel?: string;
   mode?: 'desktop' | 'headless';
+  networkAccess?: boolean;
+  allowFullAccess?: boolean;
 };
 type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & {
   payload: Payload;
@@ -60,6 +64,7 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
 export function createRequestHandler({
   codex, desktop, attachments, visualizations, downloads, deviceId,
   deviceLabel = deviceId, mode = desktop ? 'desktop' : 'headless',
+  networkAccess = false, allowFullAccess = false,
 }: Dependencies) {
   return async function handleRequest(message: BridgeRequest) {
     const {
@@ -69,6 +74,7 @@ export function createRequestHandler({
       const data = await dispatchAction({
         action, payload, requestId, clientId, clientDeviceId,
         codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode,
+        networkAccess, allowFullAccess,
       });
       return { type: 'response', clientId, requestId, ok: true, data };
     } catch (error) {
@@ -80,6 +86,7 @@ export function createRequestHandler({
 async function dispatchAction({
   action, payload, requestId, clientId, clientDeviceId,
   codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode,
+  networkAccess, allowFullAccess,
 }: DispatchContext) {
   if (action === 'connector.status') {
     return {
@@ -89,6 +96,7 @@ async function dispatchAction({
       platform: process.platform,
       codexOnline: Boolean(codex.child),
       activeTurn: Boolean(codex.activeTurn),
+      capabilities: { networkAccess, fullAccess: allowFullAccess },
     };
   }
   if (action === 'sessions.list') {
@@ -123,6 +131,23 @@ async function dispatchAction({
   }
   if (action === 'session.model-config.update') {
     return codex.updateModelConfig(String(payload.threadId || ''), payload);
+  }
+  if (action === 'session.permissions.read') {
+    return {
+      ...await codex.readPermissionMode(String(payload.threadId || '')),
+      editable: mode === 'headless',
+      networkAccess,
+      allowFullAccess,
+    };
+  }
+  if (action === 'session.permissions.update') {
+    if (mode !== 'headless') throw new Error('desktop_permission_mode_managed_on_computer');
+    return {
+      ...await codex.updatePermissionMode(String(payload.threadId || ''), payload.mode),
+      editable: true,
+      networkAccess,
+      allowFullAccess,
+    };
   }
   if (action === 'attachment.upload') return attachments.save(payload);
   if (action === 'attachment.read') return attachments.read(payload);

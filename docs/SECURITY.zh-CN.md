@@ -75,13 +75,16 @@ sequenceDiagram
   与输出、加密的上下文压缩内容或限流载荷。审批完成标记使用精简的操作摘要，不回放完整审批请求。
 - Web 端只能处理连接器发起轮次所持有的审批。Codex Desktop 已持有的审批继续留在电脑上，Web 只会
   显示不可操作状态。
+- 无头会话支持用户审批和 Codex 自动审查。只有连接器管理员显式开启后才能选择“完全访问权限”；浏览器
+  还会二次确认，并向 Codex 设置 `never` 与 `dangerFullAccess`。这会移除 Codex 沙箱，而不是扩大预览根目录。
 - 当前连接器路由是安全通道认证记录的一部分。切换路由时，浏览器会销毁旧通道、拒绝旧环境的待处理
   请求，并按新环境隔离会话选择、未读状态、最近工作目录和附件查找。旧节点已经接受的任务会继续执行，
   切换回来后再同步状态。
 
-扩大 `-AllowedRoots`，或者启用 `-AllowAnyFileDownload`、`-EnableNetworkAccess`，都会增加连接器权限；
+扩大 `-AllowedRoots`，或者启用 `-AllowAnyFileDownload`、`-EnableNetworkAccess`、`-AllowFullAccess`，都会增加连接器权限；
 这些选项默认关闭或保持最小范围。`-AllowAnyFileDownload` 只扩大确认下载范围，不会扩大图片或文本
-预览可访问的根目录。
+预览可访问的根目录。“完全访问权限”的范围大得多：Codex 可以访问连接器服务账号可访问的任何文件，
+不受预览根目录限制。
 
 ## 信任边界与实际限制
 

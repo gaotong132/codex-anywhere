@@ -19,6 +19,7 @@ test('connector configuration applies safe defaults and normalizes an empty devi
   assert.equal(config.codexBin, 'codex');
   assert.deepEqual(config.allowedRoots, ['C:\\work']);
   assert.equal(config.networkAccess, false);
+  assert.equal(config.allowFullAccess, false);
   assert.equal(config.allowAnyFileDownload, false);
 });
 
@@ -32,6 +33,7 @@ test('connector configuration parses explicit roots and opt-in capabilities', ()
     CODEX_BIN: ' codex-custom ',
     CODEX_ALLOWED_ROOTS: ['/workspace/project-a', '/workspace/project-b'].join(delimiter),
     CODEX_NETWORK_ACCESS: '1',
+    CODEX_ALLOW_FULL_ACCESS: '1',
     CODEX_ALLOW_ANY_FILE_DOWNLOAD: '1',
   });
 
@@ -42,6 +44,7 @@ test('connector configuration parses explicit roots and opt-in capabilities', ()
   assert.equal(config.codexBin, 'codex-custom');
   assert.deepEqual(config.allowedRoots, ['/workspace/project-a', '/workspace/project-b']);
   assert.equal(config.networkAccess, true);
+  assert.equal(config.allowFullAccess, true);
   assert.equal(config.allowAnyFileDownload, true);
 });
 

@@ -11,6 +11,7 @@ import { parseAssistantMessage, parseUserMessage } from '../shared/message-conte
 import {
   readRolloutContextUsage,
   readRolloutModelSettings,
+  readRolloutPermissionMode,
   readRolloutTail,
   type RolloutModelSettings,
 } from './rollout-tail.js';
@@ -20,6 +21,11 @@ import { resolveCodexExecutable } from './codex-executable.js';
 import { summarizePlanSteps, summarizeUnifiedDiff } from '../shared/turn-progress.js';
 import { summarizeToolActivity } from '../shared/activity-detail.js';
 import { publicError } from '../shared/protocol.js';
+import {
+  normalizePermissionMode,
+  PERMISSION_MODES,
+  type PermissionMode,
+} from '../shared/permission-mode.js';
 import {
   createTurnDiffDocument,
   readRolloutTurnDiff,
@@ -43,6 +49,7 @@ type CodexAppServerOptions = {
   runtimeCwd?: string;
   allowedRoots?: string[];
   networkAccess?: boolean;
+  allowFullAccess?: boolean;
 };
 type PendingRpc = {
   method: string;
@@ -84,6 +91,7 @@ type StartTurnOptions = {
   cwd?: unknown;
   clientId?: string;
   requestId?: string;
+  permissionMode?: unknown;
 };
 
 const APPROVAL_METHODS = new Set([
@@ -99,6 +107,7 @@ export class CodexAppServer extends EventEmitter {
   runtimeCwd: string;
   allowedRoots: string[];
   networkAccess: boolean;
+  allowFullAccess: boolean;
   child: ChildProcessWithoutNullStreams | null;
   readyPromise: Promise<void> | null;
   nextId: number;
@@ -108,6 +117,7 @@ export class CodexAppServer extends EventEmitter {
   private threadRelease: Promise<void>;
   sessionMetadata: Map<string, SessionMetadata>;
   sessionModelSettings: Map<string, RolloutModelSettings>;
+  sessionPermissionModes: Map<string, PermissionMode>;
   modelCatalogCache: { expiresAt: number; models: ModelOption[] } | null;
   turnDiffs: Map<string, TurnDiffDocument>;
 
@@ -120,6 +130,7 @@ export class CodexAppServer extends EventEmitter {
       : [];
     this.allowedRoots = configuredRoots.length ? configuredRoots : [this.runtimeCwd];
     this.networkAccess = options.networkAccess === true;
+    this.allowFullAccess = options.allowFullAccess === true;
     this.child = null;
     this.readyPromise = null;
     this.nextId = 0;
@@ -129,6 +140,7 @@ export class CodexAppServer extends EventEmitter {
     this.threadRelease = Promise.resolve();
     this.sessionMetadata = new Map();
     this.sessionModelSettings = new Map();
+    this.sessionPermissionModes = new Map();
     this.modelCatalogCache = null;
     this.turnDiffs = new Map();
   }
@@ -462,6 +474,65 @@ export class CodexAppServer extends EventEmitter {
     return { ...settings, fastMode, models };
   }
 
+  async readPermissionMode(threadId: unknown) {
+    await this.ensureStarted();
+    const resolvedThreadId = String(threadId || '').trim();
+    if (!resolvedThreadId) throw new Error('thread_id_required');
+    const remembered = this.sessionPermissionModes.get(resolvedThreadId);
+    if (remembered) return { mode: remembered };
+    let metadata = this.sessionMetadata.get(resolvedThreadId);
+    if (!metadata?.path) {
+      await this.listSessions();
+      metadata = this.sessionMetadata.get(resolvedThreadId);
+    }
+    if (!metadata) throw new Error('session_not_found');
+    const mode = metadata.path
+      ? await readRolloutPermissionMode(metadata.path).catch(() => undefined)
+      : undefined;
+    return { mode: mode || 'ask' };
+  }
+
+  async updatePermissionMode(threadId: unknown, value: unknown) {
+    await this.ensureStarted();
+    const resolvedThreadId = String(threadId || '').trim();
+    if (!resolvedThreadId) throw new Error('thread_id_required');
+    if (!PERMISSION_MODES.includes(value as PermissionMode)) throw new Error('permission_mode_invalid');
+    const mode = normalizePermissionMode(value);
+    if (mode === 'full' && !this.allowFullAccess) throw new Error('full_access_not_allowed');
+    if (this.activeTurn) throw new Error('permission_mode_turn_active');
+    let metadata = this.sessionMetadata.get(resolvedThreadId);
+    if (!metadata?.cwd) {
+      await this.listSessions();
+      metadata = this.sessionMetadata.get(resolvedThreadId);
+    }
+    if (!metadata?.cwd) throw new Error('session_not_found');
+    const cwd = resolveAllowedWorkspace(this.allowedRoots, metadata.cwd);
+    const params = {
+      threadId: resolvedThreadId,
+      ...permissionSettings(mode, cwd, this.networkAccess).turn,
+    };
+    try {
+      await this.rpcRaw('thread/settings/update', params);
+    } catch (error) {
+      const message = String(error instanceof Error ? error.message : error);
+      if (isActiveWriterError(error)) throw new Error('permission_mode_managed_on_computer');
+      if (!/thread not found/i.test(message)) throw error;
+      try {
+        await this.rpcRaw('thread/resume', {
+          threadId: resolvedThreadId, cwd, excludeTurns: true,
+        });
+        await this.rpcRaw('thread/settings/update', params);
+      } catch (resumeError) {
+        if (isActiveWriterError(resumeError)) throw new Error('permission_mode_managed_on_computer');
+        throw resumeError;
+      } finally {
+        await this.rpcRaw('thread/unsubscribe', { threadId: resolvedThreadId }).catch(() => undefined);
+      }
+    }
+    this.sessionPermissionModes.set(resolvedThreadId, mode);
+    return { mode };
+  }
+
   getDesktopTurnOverrides(threadId: unknown) {
     const settings = this.sessionModelSettings.get(String(threadId || '').trim());
     if (!settings) return {};
@@ -496,13 +567,21 @@ export class CodexAppServer extends EventEmitter {
     return models;
   }
 
-  async startTurn({ text, threadId, cwd, clientId, requestId }: StartTurnOptions) {
+  async startTurn({ text, threadId, cwd, clientId, requestId, permissionMode }: StartTurnOptions) {
     if (this.activeTurn) throw new Error('another_turn_is_active');
     await this.threadRelease;
     if (this.activeTurn) throw new Error('another_turn_is_active');
     let resolvedThreadId = String(threadId || '').trim();
     let subscribedThreadId = '';
     const isNewThread = !resolvedThreadId;
+    const requestedPermissionMode = permissionMode === undefined
+      ? null : normalizePermissionMode(permissionMode);
+    if (permissionMode !== undefined && !PERMISSION_MODES.includes(permissionMode as PermissionMode)) {
+      throw new Error('permission_mode_invalid');
+    }
+    if (requestedPermissionMode === 'full' && !this.allowFullAccess) {
+      throw new Error('full_access_not_allowed');
+    }
     if (!resolvedThreadId && !String(cwd || '').trim()) throw new Error('project_directory_required');
     let turnCwd = '';
     const turnContext = {
@@ -524,21 +603,11 @@ export class CodexAppServer extends EventEmitter {
         turnCwd = resolveAllowedWorkspace(this.allowedRoots, cwd);
       }
       turnContext.cwd = turnCwd;
-      const secureDefaults = {
-        approvalPolicy: 'untrusted',
-        approvalsReviewer: 'user',
-        sandbox: 'workspace-write',
-        config: {
-          sandbox_mode: 'workspace-write',
-          sandbox_workspace_write: {
-            writable_roots: [turnCwd],
-            network_access: this.networkAccess,
-            exclude_tmpdir_env_var: false,
-            exclude_slash_tmp: false,
-          },
-        },
-      };
-      const threadParams = isNewThread ? { cwd: turnCwd, ...secureDefaults } : { cwd: turnCwd };
+      const appliedPermissionMode = requestedPermissionMode || (isNewThread ? 'ask' : null);
+      const permissions = appliedPermissionMode
+        ? permissionSettings(appliedPermissionMode, turnCwd, this.networkAccess) : null;
+      const threadParams = isNewThread && permissions
+        ? { cwd: turnCwd, ...permissions.thread } : { cwd: turnCwd };
       if (resolvedThreadId) {
         const result = await this.resumeThread(resolvedThreadId, threadParams, turnContext);
         resolvedThreadId = result?.thread?.id || result?.id || resolvedThreadId;
@@ -553,10 +622,7 @@ export class CodexAppServer extends EventEmitter {
         threadId: resolvedThreadId,
         input: [{ type: 'text', text: String(text || '') }],
         cwd: turnCwd,
-        ...(isNewThread ? {
-          approvalPolicy: secureDefaults.approvalPolicy,
-          approvalsReviewer: secureDefaults.approvalsReviewer,
-        } : {}),
+        ...(permissions ? permissions.turn : {}),
       });
       if (this.activeTurn !== turnContext) throw new Error('turn_cancelled');
       const turnId = String(startResult?.turn?.id || startResult?.turnId || '').trim();
@@ -564,6 +630,9 @@ export class CodexAppServer extends EventEmitter {
       turnContext.threadId = resolvedThreadId;
       turnContext.turnId = turnId;
       turnContext.state = 'running';
+      if (appliedPermissionMode) {
+        this.sessionPermissionModes.set(resolvedThreadId, appliedPermissionMode);
+      }
       this.emitTurn('turn.started', { threadId: resolvedThreadId, turnId });
       return { threadId: resolvedThreadId };
     } catch (error) {
@@ -972,6 +1041,45 @@ function approvedPermissions(requested: JsonObject = {}, allowedRoots: string[],
   return permissions;
 }
 
+function permissionSettings(mode: PermissionMode, cwd: string, networkAccess: boolean) {
+  if (mode === 'full') {
+    return {
+      thread: {
+        approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'danger-full-access',
+        config: { sandbox_mode: 'danger-full-access' },
+      },
+      turn: {
+        approvalPolicy: 'never', approvalsReviewer: 'user',
+        sandboxPolicy: { type: 'dangerFullAccess' },
+      },
+    };
+  }
+  return {
+    thread: {
+      approvalPolicy: 'on-request',
+      approvalsReviewer: mode === 'auto' ? 'auto_review' : 'user',
+      sandbox: 'workspace-write',
+      config: {
+        sandbox_mode: 'workspace-write',
+        sandbox_workspace_write: {
+          writable_roots: [cwd],
+          network_access: networkAccess,
+          exclude_tmpdir_env_var: false,
+          exclude_slash_tmp: false,
+        },
+      },
+    },
+    turn: {
+      approvalPolicy: 'on-request',
+      approvalsReviewer: mode === 'auto' ? 'auto_review' : 'user',
+      sandboxPolicy: {
+        type: 'workspaceWrite', writableRoots: [cwd], networkAccess,
+        excludeTmpdirEnvVar: false, excludeSlashTmp: false,
+      },
+    },
+  };
+}
+
 function filterAllowedPaths(values: unknown, allowedRoots: string[]) {
   return (Array.isArray(values) ? values : [])
     .map((value) => String(value || '').trim())
@@ -1150,5 +1258,5 @@ function isAllowedWorkspace(roots: string[] | string, candidate: unknown) {
 
 export const internals = {
   approvedPermissions, approvalKind, approvalResult, extractText, mapTurns,
-  isAllowedWorkspace, resolveAllowedWorkspace, summarizeItem,
+  isAllowedWorkspace, permissionSettings, resolveAllowedWorkspace, summarizeItem,
 };

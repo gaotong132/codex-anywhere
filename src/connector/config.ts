@@ -11,6 +11,7 @@ export type ConnectorConfig = {
   codexBin: string;
   allowedRoots: string[];
   networkAccess: boolean;
+  allowFullAccess: boolean;
   allowAnyFileDownload: boolean;
 };
 
@@ -49,6 +50,7 @@ export function loadConnectorConfig(
     codexBin: String(environment.CODEX_BIN || 'codex').trim() || 'codex',
     allowedRoots: configuredAllowedRoots.length ? configuredAllowedRoots : [workingDirectory],
     networkAccess: environment.CODEX_NETWORK_ACCESS === '1',
+    allowFullAccess: environment.CODEX_ALLOW_FULL_ACCESS === '1',
     allowAnyFileDownload: environment.CODEX_ALLOW_ANY_FILE_DOWNLOAD === '1',
   };
 }

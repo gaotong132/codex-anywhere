@@ -67,8 +67,8 @@ $connectorToken = Read-Host 'Connector token' -AsSecureString
 程序不可用时会回退到登录快捷方式。
 
 新会话没有默认工作目录，需要在 Web 界面选择项目。`-AllowedRoots` 可选，默认只允许连接器仓库；
-只有希望选择或预览其他目录时才增加根目录。`-AllowAnyFileDownload` 和 `-EnableNetworkAccess` 都是
-显式开关。
+只有希望选择或预览其他目录时才增加根目录。`-AllowAnyFileDownload`、`-EnableNetworkAccess` 和
+`-AllowFullAccess` 都是显式开关。
 
 图片、Markdown、源代码、配置和文本的内联预览始终受根目录限制。启用 `-AllowAnyFileDownload` 只会
 允许用户确认后下载根目录外的文件，不会静默扩大预览权限。需要在 Web 界面使用其他项目树时，请用
@@ -103,7 +103,8 @@ sudo ./scripts/install-linux-connector.sh \
   --enable-network
 ```
 
-`--enable-network` 是可选项；只有该节点上的 Codex 确实需要申请网络访问时才启用。安装器会在
+`--enable-network` 是可选项；只有该节点上的 Codex 确实需要申请网络访问时才启用。若还需要在 Web
+端选择“完全访问权限”，必须另外传入 `--allow-full-access`。安装器会在
 `/etc/codex-anywhere` 写入权限为 0600 的环境文件，在服务账号的 `~/.codex-anywhere` 保存连接器设备
 身份，安装经过约束的 systemd 服务并启动。连接到其他转发主机时，请在安装进程环境中私密提供
 `BRIDGE_CONNECTOR_TOKEN`，并设置 `--bridge-url wss://codex.example.com/ws`。
@@ -203,6 +204,7 @@ journalctl -u codex-anywhere-connector -n 50 --no-pager
 | `-AllowedRoots` | 连接器仓库 | 新会话、预览和普通下载可使用的本机项目根目录 |
 | `-AllowAnyFileDownload` | 关闭 | 确认后允许下载配置根目录外的文件；不会扩大预览根目录 |
 | `-EnableNetworkAccess` | 关闭 | 允许连接器持有的 Codex 轮次申请网络访问 |
+| `-AllowFullAccess` / `--allow-full-access` | 关闭 | 允许已批准的 Web 端取消该节点上 Codex 的审批和沙箱限制 |
 
 连接器运行时环境变量：
 
@@ -210,6 +212,10 @@ journalctl -u codex-anywhere-connector -n 50 --no-pager
 | --- | --- | --- |
 | `BRIDGE_DEVICE_LABEL` | 设备 ID | 诊断信息使用的连接器名称 |
 | `CODEX_CONNECTOR_MODE` | Windows 为 `desktop`，其他平台为 `headless` | 保留 Desktop 会话所有权，或让无头 app-server 管理恢复的会话 |
+| `CODEX_ALLOW_FULL_ACCESS` | `0` | Web“完全访问权限”的服务端总开关 |
 | `BRIDGE_DEVICE_IDENTITY_FILE` | 安装器管理 | Linux 上权限为 0600 的 Ed25519 连接器身份文件 |
 
-调整文件根目录、下载范围、入口或连接器网络访问前，请阅读[安全策略](SECURITY.zh-CN.md)。
+“完全访问权限”和 `-AllowedRoots` 是两条不同边界：后者仍限制预览和普通下载，但 Codex 本身将退出
+沙箱，并可读写连接器服务账号能访问的任何文件。只应在专用节点上、且所有已批准浏览器都可信时开启。
+
+调整文件根目录、下载范围、入口或连接器网络、完全访问权限前，请阅读[安全策略](SECURITY.zh-CN.md)。

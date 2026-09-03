@@ -100,6 +100,11 @@ import {
 } from '../../src/shared/context-compaction';
 import type { TimelineNotice } from '../../src/shared/timeline-notice';
 import { PresenceIndicator } from './presence-indicator';
+import { PermissionModeControl } from './permission-mode-control';
+import {
+  normalizePermissionMode,
+  type PermissionMode,
+} from '../../src/shared/permission-mode';
 import {
   normalizeTurnProgress,
   type TurnFileProgress,
@@ -125,6 +130,7 @@ import type {
   Approval,
   AwaitingDesktopTurn,
   BridgeMessage,
+  ConnectorStatus,
   DownloadedImage,
   DownloadFileChunk,
   FileDownloadState,
@@ -139,6 +145,7 @@ import type {
   PendingRequest,
   Session,
   SessionModelConfig,
+  SessionPermissionConfig,
   TurnStartResult,
   TextPreviewDocument,
   TurnDiffDocument,
@@ -156,6 +163,7 @@ const INITIAL_BOOTSTRAP_TIMEOUT_MS = 10_000;
 const SESSION_ATTENTION_KEY = 'bridge.sessionAttention.v1';
 const LAST_THREAD_KEY = 'bridge.lastThreadId';
 const NEW_SESSION_CWD_KEY = 'bridge.newSessionCwd';
+const PERMISSION_MODE_KEY = 'bridge.permissionMode';
 const PENDING_PAIRING_KEY = 'bridge.pendingPairing.v1';
 const NEW_TURN_KEY = '__new_turn__';
 type RequestOptions = { timeoutMs?: number | null; signal?: AbortSignal };
@@ -567,6 +575,9 @@ export default function App() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [modelConfig, setModelConfig] = useState<SessionModelConfig | null>(null);
   const [modelConfigLoading, setModelConfigLoading] = useState(false);
+  const [connectorStatus, setConnectorStatus] = useState<ConnectorStatus | null>(null);
+  const [permissionConfig, setPermissionConfig] = useState<SessionPermissionConfig | null>(null);
+  const [permissionConfigLoading, setPermissionConfigLoading] = useState(false);
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -922,6 +933,73 @@ export default function App() {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (!online) {
+      setConnectorStatus(null);
+      return undefined;
+    }
+    let disposed = false;
+    void request<ConnectorStatus>('connector.status', {})
+      .then((status) => { if (!disposed) setConnectorStatus(status); })
+      .catch(() => { if (!disposed) setConnectorStatus(null); });
+    return () => { disposed = true; };
+  }, [environmentId, online, request]);
+
+  useEffect(() => {
+    if (!online || !connectorStatus) {
+      setPermissionConfig(null);
+      setPermissionConfigLoading(online);
+      return undefined;
+    }
+    if (!threadId) {
+      setPermissionConfig({
+        mode: normalizePermissionMode(loadEnvironmentValue(PERMISSION_MODE_KEY, environmentId)),
+        editable: true,
+        networkAccess: connectorStatus.capabilities.networkAccess,
+        allowFullAccess: connectorStatus.capabilities.fullAccess,
+      });
+      setPermissionConfigLoading(false);
+      return undefined;
+    }
+    let disposed = false;
+    setPermissionConfig(null);
+    setPermissionConfigLoading(true);
+    void request<SessionPermissionConfig>('session.permissions.read', { threadId })
+      .then((config) => {
+        if (!disposed && threadIdRef.current === threadId) setPermissionConfig(config);
+      })
+      .catch(() => {
+        if (!disposed && threadIdRef.current === threadId) setPermissionConfig(null);
+      })
+      .finally(() => {
+        if (!disposed && threadIdRef.current === threadId) setPermissionConfigLoading(false);
+      });
+    return () => { disposed = true; };
+  }, [connectorStatus, environmentId, online, request, threadId]);
+
+  const savePermissionMode = useCallback(async (mode: PermissionMode) => {
+    const targetThreadId = threadIdRef.current;
+    let nextConfig: SessionPermissionConfig;
+    if (targetThreadId) {
+      nextConfig = await request<SessionPermissionConfig>('session.permissions.update', {
+        threadId: targetThreadId, mode,
+      });
+    } else {
+      if (!connectorStatus) throw new Error(t('执行环境尚未就绪', 'Execution environment is not ready'));
+      if (mode === 'full' && !connectorStatus.capabilities.fullAccess) {
+        throw new Error(t('此执行节点未开放完全访问', 'Full access is not enabled on this connector'));
+      }
+      nextConfig = {
+        mode,
+        editable: true,
+        networkAccess: connectorStatus.capabilities.networkAccess,
+        allowFullAccess: connectorStatus.capabilities.fullAccess,
+      };
+    }
+    storeEnvironmentValue(PERMISSION_MODE_KEY, environmentIdRef.current, mode);
+    if (threadIdRef.current === targetThreadId) setPermissionConfig(nextConfig);
+  }, [connectorStatus, request]);
 
   useEffect(() => {
     if (!threadId || !online) {
@@ -2071,11 +2149,15 @@ export default function App() {
         });
       }
       const action = steering ? 'turn.steer' : 'turn.start';
+      const selectedPermissionMode = isExistingSession
+        ? permissionConfig?.mode
+        : normalizePermissionMode(loadEnvironmentValue(PERMISSION_MODE_KEY, environmentIdRef.current));
       const data = await request<TurnStartResult>(action, {
         text: turnText,
         threadId: targetThreadId,
         ...(steering ? {} : {
           cwd: isExistingSession ? '' : projectCwd,
+          ...(selectedPermissionMode ? { permissionMode: selectedPermissionMode } : {}),
           ...(directDesktopDelivery ? { preferDesktop: true } : {}),
         }),
       });
@@ -2178,7 +2260,8 @@ export default function App() {
       sendingRef.current = false;
     }
   }, [
-    addTimeline, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingImage, prompt,
+    addTimeline, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingImage,
+    permissionConfig, prompt,
     refreshSessions, rememberAttachment, reportTimelineError, request, resetExecution, running,
     updateExecution, updateSessionAttention, uploading,
   ]);
@@ -2720,12 +2803,20 @@ export default function App() {
               <strong>{activeSession?.title || (threadId ? t('Codex 会话', 'Codex session') : creatingNewSession ? t('新会话', 'New session') : t('最近会话', 'Recent session'))}</strong>
               <span>{environmentDisplayName(environmentId)}</span>
             </div>
-            <ModelConfigControl
-              config={modelConfig}
-              loading={modelConfigLoading}
-              disabled={!online || executionActive}
-              onSave={saveModelConfig}
-            />
+            <div className="conversation-controls">
+              <ModelConfigControl
+                config={modelConfig}
+                loading={modelConfigLoading}
+                disabled={!online || executionActive}
+                onSave={saveModelConfig}
+              />
+              <PermissionModeControl
+                config={permissionConfig}
+                loading={permissionConfigLoading}
+                disabled={!online || executionActive}
+                onChange={savePermissionMode}
+              />
+            </div>
           </div>
           <PresenceIndicator
             online={online}

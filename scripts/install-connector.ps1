@@ -6,6 +6,7 @@ param(
     [string[]] $AllowedRoots,
     [switch] $AllowAnyFileDownload,
     [switch] $EnableNetworkAccess,
+    [switch] $AllowFullAccess,
     [switch] $NoStart
 )
 
@@ -142,12 +143,19 @@ $effectiveNetworkAccess = if ($PSBoundParameters.ContainsKey('EnableNetworkAcces
 else {
     [bool] (Get-ExistingSetting -Name 'networkAccess' -DefaultValue $false)
 }
+$effectiveAllowFullAccess = if ($PSBoundParameters.ContainsKey('AllowFullAccess')) {
+    [bool] $AllowFullAccess
+}
+else {
+    [bool] (Get-ExistingSetting -Name 'allowFullAccess' -DefaultValue $false)
+}
 $connectorConfig = [ordered]@{
     bridgeUrl = $bridgeUri.AbsoluteUri
     deviceId = $effectiveDeviceId
     allowedRoots = $resolvedAllowedRoots
     allowAnyFileDownload = $effectiveAllowAnyFileDownload
     networkAccess = $effectiveNetworkAccess
+    allowFullAccess = $effectiveAllowFullAccess
 }
 [IO.File]::WriteAllText(
     $configPath,

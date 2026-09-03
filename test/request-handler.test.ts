@@ -13,6 +13,8 @@ function createDependencies(overrides = {}) {
       readTurnDiff: async (threadId, turnId) => ({ threadId, turnId, content: 'diff' }),
       readModelConfig: async () => ({ model: 'gpt-default' }),
       updateModelConfig: async (_threadId, value) => value,
+      readPermissionMode: async () => ({ mode: 'ask' }),
+      updatePermissionMode: async (_threadId, mode) => ({ mode }),
       startTurn: async () => ({ threadId: 'started-thread' }),
       steerTurn: async ({ threadId }) => ({ threadId, turnId: 'turn-1', steered: true }),
       stopTurn: async () => ({ stopped: true }),
@@ -51,6 +53,8 @@ function createDependencies(overrides = {}) {
     deviceId: 'personal-pc',
     deviceLabel: overrides.deviceLabel || 'My computer',
     mode: overrides.mode || 'desktop',
+    networkAccess: overrides.networkAccess || false,
+    allowFullAccess: overrides.allowFullAccess || false,
   };
 }
 
@@ -88,8 +92,46 @@ test('request handler keeps connector routing independent from process startup',
     data: {
       deviceId: 'personal-pc', deviceLabel: 'My computer', mode: 'desktop',
       platform: process.platform, codexOnline: true, activeTurn: false,
+      capabilities: { networkAccess: false, fullAccess: false },
     },
   });
+});
+
+test('headless permission modes stay behind connector capabilities', async () => {
+  const calls = [];
+  const handle = createRequestHandler(createDependencies({
+    mode: 'headless',
+    networkAccess: true,
+    allowFullAccess: true,
+    codex: {
+      readPermissionMode: async (threadId) => { calls.push(['read', threadId]); return { mode: 'ask' }; },
+      updatePermissionMode: async (threadId, mode) => {
+        calls.push(['update', threadId, mode]); return { mode };
+      },
+    },
+  }));
+  const read = await handle(request('session.permissions.read', { threadId: 'thread-1' }));
+  assert.deepEqual(read.data, {
+    mode: 'ask', editable: true, networkAccess: true, allowFullAccess: true,
+  });
+  const updated = await handle(request('session.permissions.update', {
+    threadId: 'thread-1', mode: 'auto',
+  }));
+  assert.equal(updated.data.mode, 'auto');
+  assert.deepEqual(calls, [['read', 'thread-1'], ['update', 'thread-1', 'auto']]);
+});
+
+test('Desktop permission modes remain owned by the computer', async () => {
+  let updates = 0;
+  const handle = createRequestHandler(createDependencies({
+    codex: { updatePermissionMode: async () => { updates += 1; return { mode: 'full' }; } },
+  }));
+  const response = await handle(request('session.permissions.update', {
+    threadId: 'thread-1', mode: 'full',
+  }));
+  assert.equal(response.ok, false);
+  assert.match(response.error, /desktop_permission_mode_managed_on_computer/);
+  assert.equal(updates, 0);
 });
 
 test('headless connectors resume existing sessions through their own app-server', async () => {

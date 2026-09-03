@@ -9,6 +9,7 @@ DEVICE_LABEL='ECS · 24x7'
 BRIDGE_URL=ws://127.0.0.1:3300/ws
 SERVICE_USER=${SUDO_USER:-$(id -un)}
 NETWORK_ACCESS=0
+ALLOW_FULL_ACCESS=0
 ALLOWED_ROOTS=
 NO_START=0
 
@@ -27,6 +28,7 @@ Usage: sudo ./scripts/install-linux-connector.sh [options]
   --user <name>          Linux account that owns Codex login and workspaces
   --allowed-root <path>  Allowed workspace root; repeat for multiple roots
   --enable-network       Allow connector-owned Codex turns to request network access
+  --allow-full-access    Let approved Web clients select unrestricted Codex execution
   --no-start             Install without enabling or starting the service
   -h, --help             Show this help
 
@@ -75,6 +77,7 @@ while [ "$#" -gt 0 ]; do
     --user) [ "$#" -ge 2 ] || die '--user requires a value.'; SERVICE_USER=$2; shift 2 ;;
     --allowed-root) [ "$#" -ge 2 ] || die '--allowed-root requires a value.'; append_root "$2"; shift 2 ;;
     --enable-network) NETWORK_ACCESS=1; shift ;;
+    --allow-full-access) ALLOW_FULL_ACCESS=1; shift ;;
     --no-start) NO_START=1; shift ;;
     -h|--help) show_help; exit 0 ;;
     *) show_help >&2; die "Unknown option: $1" ;;
@@ -162,6 +165,7 @@ escape_environment_value() {
   printf 'CODEX_ALLOWED_ROOTS="%s"\n' "$(escape_environment_value "$ALLOWED_ROOTS")"
   printf 'CODEX_CONNECTOR_MODE="headless"\n'
   printf 'CODEX_NETWORK_ACCESS="%s"\n' "$NETWORK_ACCESS"
+  printf 'CODEX_ALLOW_FULL_ACCESS="%s"\n' "$ALLOW_FULL_ACCESS"
   printf 'CODEX_ALLOW_ANY_FILE_DOWNLOAD="0"\n'
 } > "$ENV_FILE"
 chmod 600 "$ENV_FILE"

@@ -71,7 +71,8 @@ to a login shortcut.
 
 New sessions have no default workspace: choose a project in the Web UI. `-AllowedRoots` is optional and
 defaults to the connector checkout; specify additional roots only when those directories should be
-selectable or previewable. `-AllowAnyFileDownload` and `-EnableNetworkAccess` are explicit opt-ins.
+selectable or previewable. `-AllowAnyFileDownload`, `-EnableNetworkAccess`, and `-AllowFullAccess` are
+explicit opt-ins.
 
 Inline image, Markdown, source-code, config, and text previews always remain root-bound. Enabling
 `-AllowAnyFileDownload` permits a confirmed download outside those roots; it does not silently expand
@@ -215,6 +216,7 @@ Connector installer options:
 | `-AllowedRoots` | connector checkout | Local roots available to new sessions, previews, and normal downloads |
 | `-AllowAnyFileDownload` | off | Allow confirmed downloads outside configured roots; never expands preview roots |
 | `-EnableNetworkAccess` | off | Allow connector-owned Codex turns to request network access |
+| `-AllowFullAccess` / `--allow-full-access` | off | Let approved Web clients remove Codex approval and sandbox restrictions on this node |
 
 Connector runtime environment:
 
@@ -222,7 +224,12 @@ Connector runtime environment:
 | --- | --- | --- |
 | `BRIDGE_DEVICE_LABEL` | device id | Human-readable connector label used in diagnostics |
 | `CODEX_CONNECTOR_MODE` | `desktop` on Windows, `headless` elsewhere | Preserve Desktop ownership or let a headless app-server own resumed sessions |
+| `CODEX_ALLOW_FULL_ACCESS` | `0` | Server-side gate for the Web full-access permission mode |
 | `BRIDGE_DEVICE_IDENTITY_FILE` | installer-managed | Mode-0600 Ed25519 connector identity file on Linux |
 
+Full access is intentionally separate from `-AllowedRoots`: those roots still bound previews and ordinary
+downloads, but Codex itself is unsandboxed and can read or modify any file available to the connector
+service account. Enable it only on a dedicated node and only when every approved browser is trusted.
+
 See the [security policy](SECURITY.md) before changing file roots, download scope, ingress, or connector
-network access.
+network or full access.

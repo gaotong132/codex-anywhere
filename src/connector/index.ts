@@ -29,6 +29,7 @@ const {
   codexBin,
   allowedRoots,
   networkAccess,
+  allowFullAccess,
   allowAnyFileDownload,
 } = loadConnectorConfig();
 const deviceIdentity = loadOrCreateConnectorDeviceIdentity();
@@ -39,7 +40,7 @@ if (!instanceLock) {
 }
 const connectorLock = instanceLock;
 const codex = new CodexAppServer({
-  bin: codexBin, allowedRoots, networkAccess,
+  bin: codexBin, allowedRoots, networkAccess, allowFullAccess,
 });
 const desktop = mode === 'desktop' ? new CodexDesktopClient() : null;
 const downloads = new DownloadManager({
@@ -58,6 +59,8 @@ const handleRequest = createRequestHandler({
   deviceId,
   deviceLabel,
   mode,
+  networkAccess,
+  allowFullAccess,
 });
 const secureChannels = new ConnectorSecureChannels({
   identity: deviceIdentity,
