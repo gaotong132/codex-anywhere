@@ -3,7 +3,6 @@ import {
 } from 'react';
 import { friendlyError } from './app-utils';
 import { t } from './i18n';
-import { CustomSelect } from './ui-components';
 import type { ModelConfigDraft, ModelOption, SessionModelConfig } from './app-types';
 
 function reasoningEffortLabel(value: string) {
@@ -131,32 +130,14 @@ export function ModelConfigControl({
             >
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13.3 2.5-8 10h5.9l-1 9 8.5-12h-6.1l.7-7Z" /></svg>
             </button>
-            <CustomSelect
-              className="model-config-model-select"
-              value={draft.model}
-              disabled={saving}
-              ariaLabel={t('选择模型', 'Select model')}
-              triggerContent={(
-                <>
-                  <strong>{draftModel?.displayName || draft.model}</strong>
-                  <em>{reasoningEffortLabel(draft.reasoningEffort)}</em>
-                </>
-              )}
-              options={config.models.map((model) => ({
-                value: model.model,
-                label: model.displayName,
-                description: model.description,
-              }))}
-              onChange={(value) => {
-                const nextModel = config.models.find((model) => model.model === value);
-                if (!nextModel) return;
-                setDraft({
-                  model: nextModel.model,
-                  reasoningEffort: reasoningSliderValue(nextModel, draft.reasoningEffort),
-                  fastMode: draft.fastMode && fastTierAvailable(nextModel),
-                });
-              }}
-            />
+            <div
+              className="model-config-model-fixed"
+              aria-label={t('固定模型', 'Fixed model')}
+              title={t('模型固定为 GPT-5.6 Sol', 'Model locked to GPT-5.6 Sol')}
+            >
+              <strong>{draftModel?.displayName || draft.model}</strong>
+              <em>{reasoningEffortLabel(draft.reasoningEffort)}</em>
+            </div>
           </div>
           <label className="model-reasoning-slider">
             <span className="visually-hidden">{t('思考强度', 'Reasoning effort')}</span>

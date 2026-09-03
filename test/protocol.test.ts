@@ -2454,6 +2454,10 @@ test('session model settings are catalog-backed and update subsequent turns', as
     codex.rpcRaw = async (method, params) => {
       calls.push({ method, params });
       if (method === 'model/list') return { data: [{
+        id: 'gpt-5.5', model: 'gpt-5.5', displayName: 'GPT-5.5', description: 'Previous',
+        supportedReasoningEfforts: [{ reasoningEffort: 'high', description: 'High' }],
+        defaultReasoningEffort: 'high', serviceTiers: [], defaultServiceTier: null, isDefault: false,
+      }, {
         id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: 'GPT-5.6 Sol', description: 'Frontier',
         supportedReasoningEfforts: [
           { reasoningEffort: 'high', description: 'High' },
@@ -2481,6 +2485,7 @@ test('session model settings are catalog-backed and update subsequent turns', as
     assert.equal(current.model, 'gpt-5.6-sol');
     assert.equal(current.reasoningEffort, 'high');
     assert.equal(current.fastMode, false);
+    assert.deepEqual(current.models.map((model) => model.model), ['gpt-5.6-sol']);
     const updated = await codex.updateModelConfig('thread-1', {
       model: 'gpt-5.6-sol', reasoningEffort: 'xhigh', fastMode: true,
     });
@@ -2497,6 +2502,9 @@ test('session model settings are catalog-backed and update subsequent turns', as
     await assert.rejects(() => codex.updateModelConfig('thread-1', {
       model: 'gpt-5.6-sol', reasoningEffort: 'ultra', fastMode: false,
     }), /reasoning_effort_not_available/);
+    await assert.rejects(() => codex.updateModelConfig('thread-1', {
+      model: 'gpt-5.5', reasoningEffort: 'high', fastMode: false,
+    }), /model_not_available/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -2554,6 +2562,8 @@ test('model configuration uses a discrete reasoning slider and a compact speed b
   assert.match(source, /low: \['轻度', 'Light'\]/);
   assert.match(source, /xhigh: \['极高', 'X-high'\]/);
   assert.match(source, /new Set\(\['low', 'medium', 'high', 'xhigh'\]\)/);
+  assert.match(source, /className="model-config-model-fixed"/);
+  assert.doesNotMatch(source, /CustomSelect/);
   assert.doesNotMatch(source, /type="checkbox"/);
 });
 
@@ -2642,6 +2652,7 @@ test('new Web sessions default to user-reviewed workspace access', async () => {
   };
   await codex.startTurn({ text: 'hello', cwd: process.cwd() });
   assert.equal(calls[0].method, 'thread/start');
+  assert.equal(calls[0].params.model, 'gpt-5.6-sol');
   assert.equal(calls[0].params.approvalPolicy, 'on-request');
   assert.equal(calls[0].params.sandbox, 'workspace-write');
   assert.equal(calls[0].params.config.sandbox_mode, 'workspace-write');

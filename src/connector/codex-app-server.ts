@@ -52,6 +52,7 @@ const MAX_HISTORY_PAGE_SIZE = 10;
 const MAX_LIVE_PAGE_SIZE = 2;
 const LARGE_ROLLOUT_BYTES = 64 * 1024 * 1024;
 const MAX_CACHED_TURN_DIFFS = 12;
+const LOCKED_MODEL = 'gpt-5.6-sol';
 const PACKAGE_VERSION = String((JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 ) as { version?: unknown }).version || '0.0.0');
@@ -410,13 +411,19 @@ export class CodexAppServer extends EventEmitter {
     ]);
     const remembered = this.sessionModelSettings.get(resolvedThreadId) || {};
     const defaults = configResult?.config || {};
-    const fallbackModel = models.find((model) => model.isDefault) || models[0];
+    const fixedModel = models[0];
+    if (!fixedModel) throw new Error('model_not_available');
+    const requestedEffort = remembered.reasoningEffort || rolloutSettings.reasoningEffort
+      || String(defaults.model_reasoning_effort || fixedModel.defaultReasoningEffort || '');
+    const reasoningEffort = normalizeLockedReasoningEffort(fixedModel, requestedEffort);
+    const requestedServiceTier = remembered.serviceTier || rolloutSettings.serviceTier
+      || String(defaults.service_tier || fixedModel.defaultServiceTier || 'default');
+    const serviceTier = fixedModel.serviceTiers.some((tier) => tier.id === requestedServiceTier)
+      ? requestedServiceTier : fixedModel.defaultServiceTier || 'default';
     const settings = {
-      model: remembered.model || rolloutSettings.model || String(defaults.model || fallbackModel?.model || ''),
-      reasoningEffort: remembered.reasoningEffort || rolloutSettings.reasoningEffort
-        || String(defaults.model_reasoning_effort || fallbackModel?.defaultReasoningEffort || ''),
-      serviceTier: remembered.serviceTier || rolloutSettings.serviceTier
-        || String(defaults.service_tier || fallbackModel?.defaultServiceTier || 'default'),
+      model: LOCKED_MODEL,
+      reasoningEffort,
+      serviceTier,
     };
     return { ...settings, fastMode: isFastServiceTier(settings.serviceTier, models, settings.model), models };
   }
@@ -565,7 +572,7 @@ export class CodexAppServer extends EventEmitter {
       }
     }
     return {
-      ...(settings.model ? { model: settings.model } : {}),
+      model: LOCKED_MODEL,
       ...(settings.reasoningEffort ? { thinking: settings.reasoningEffort } : {}),
     };
   }
@@ -596,7 +603,9 @@ export class CodexAppServer extends EventEmitter {
       })).filter((tier: { id: string }) => tier.id),
       defaultServiceTier: model.defaultServiceTier == null ? null : String(model.defaultServiceTier),
       isDefault: model.isDefault === true,
-    })).filter((model: ModelOption) => model.model && model.supportedReasoningEfforts.length);
+    })).filter((model: ModelOption) => (
+      model.model === LOCKED_MODEL && model.supportedReasoningEfforts.length
+    ));
     this.modelCatalogCache = { expiresAt: Date.now() + 5 * 60_000, models };
     return models;
   }
@@ -641,7 +650,8 @@ export class CodexAppServer extends EventEmitter {
       const permissions = appliedPermissionMode
         ? permissionSettings(appliedPermissionMode, turnCwd, this.networkAccess) : null;
       const threadParams = isNewThread && permissions
-        ? { cwd: turnCwd, ...permissions.thread } : { cwd: turnCwd };
+        ? { cwd: turnCwd, model: LOCKED_MODEL, ...permissions.thread }
+        : { cwd: turnCwd, model: LOCKED_MODEL };
       if (resolvedThreadId) {
         const result = await this.resumeThread(resolvedThreadId, threadParams, turnContext);
         resolvedThreadId = result?.thread?.id || result?.id || resolvedThreadId;
@@ -989,6 +999,16 @@ function isFastServiceTier(serviceTier: unknown, models: ModelOption[], selected
   const model = models.find((candidate) => candidate.model === String(selectedModel || ''));
   const tier = model?.serviceTiers.find((candidate) => candidate.id === tierId);
   return /(?:fast|priority)/i.test(`${tierId} ${tier?.name || ''}`);
+}
+
+function normalizeLockedReasoningEffort(model: ModelOption, value: unknown) {
+  const requested = String(value || '').trim();
+  const supported = model.supportedReasoningEfforts.map((option) => option.reasoningEffort);
+  if (supported.includes(requested)) return requested;
+  if (['none', 'minimal'].includes(requested) && supported.includes('low')) return 'low';
+  if (['max', 'ultra'].includes(requested) && supported.includes('xhigh')) return 'xhigh';
+  if (supported.includes(model.defaultReasoningEffort)) return model.defaultReasoningEffort;
+  return supported[0] || '';
 }
 
 function turnDiffKey(threadId: string, turnId: string) {
