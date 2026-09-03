@@ -27,7 +27,7 @@ type CodexGateway = {
   listApprovals(threadId: unknown, clientId?: string): any;
   respondApproval(approvalId: unknown, approved: boolean, threadId?: unknown): Promise<any>;
   getControllerThreadId(threadId: string): string;
-  getDesktopTurnOverrides(threadId: string): Payload;
+  getDesktopTurnOverrides(threadId: string): Promise<Payload> | Payload;
   isLargeSession(threadId: string): Promise<boolean>;
   canOwnSession(threadId: string): boolean;
   needsDesktopPermissionRecovery(threadId: string): Promise<boolean>;
@@ -225,11 +225,12 @@ async function startTurn({
   // resuming them through the bridge's app-server creates a second writer and
   // makes later Desktop delivery fail with "already has an active writer".
   if (!desktop) throw new Error('desktop_app_unavailable');
+  const modelOverrides = await codex.getDesktopTurnOverrides(threadId);
   return desktop.sendMessage({
     threadId,
     text: payload.text,
     requestId,
     callerThreadId: codex.getControllerThreadId(threadId),
-    ...codex.getDesktopTurnOverrides(threadId),
+    ...modelOverrides,
   });
 }

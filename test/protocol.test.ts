@@ -2536,12 +2536,22 @@ test('Desktop-owned sessions remember an explicit model choice without taking th
       model: 'gpt-5.6-sol', reasoningEffort: 'xhigh', fastMode: false,
     });
     assert.equal(updated.reasoningEffort, 'xhigh');
-    assert.deepEqual(codex.getDesktopTurnOverrides('thread-1'), {
+    assert.deepEqual(await codex.getDesktopTurnOverrides('thread-1'), {
       model: 'gpt-5.6-sol', thinking: 'xhigh',
     });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('model configuration uses a discrete reasoning slider and a compact speed button', async () => {
+  const source = await readFile(resolve('web/src/model-config-control.tsx'), 'utf8');
+  assert.match(source, /className="model-reasoning-slider"/);
+  assert.match(source, /type="range"/);
+  assert.match(source, /aria-valuetext=\{reasoningEffortLabel\(draft\.reasoningEffort\)\}/);
+  assert.match(source, /className=\{`model-fast-button\$\{draft\.fastMode \? ' active' : ''\}`\}/);
+  assert.match(source, /aria-pressed=\{draft\.fastMode\}/);
+  assert.doesNotMatch(source, /type="checkbox"/);
 });
 
 test('headless session rename uses the native app-server name method', async () => {

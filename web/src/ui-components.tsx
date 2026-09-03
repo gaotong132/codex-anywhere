@@ -17,6 +17,7 @@ export function CustomSelect({
   ariaLabel,
   disabled = false,
   className = '',
+  triggerContent,
 }: {
   value: string;
   options: CustomSelectOption[];
@@ -24,6 +25,7 @@ export function CustomSelect({
   ariaLabel: string;
   disabled?: boolean;
   className?: string;
+  triggerContent?: ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -112,7 +114,7 @@ export function CustomSelect({
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onKeyDown}
       >
-        <span>{selected?.label || ''}</span>
+        <span>{triggerContent ?? selected?.label ?? ''}</span>
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
       </button>
       {open && (

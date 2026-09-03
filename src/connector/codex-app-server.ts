@@ -43,6 +43,7 @@ import {
   readRolloutTurnDiff,
   type TurnDiffDocument,
 } from './turn-diffs.js';
+import { loadSessionModelSettings, saveSessionModelSettings } from './session-model-settings.js';
 
 const RPC_TIMEOUT_MS = 20_000;
 const SUMMARY_LIMIT = 4_000;
@@ -62,6 +63,7 @@ type CodexAppServerOptions = {
   allowedRoots?: string[];
   networkAccess?: boolean;
   allowFullAccess?: boolean;
+  modelSettingsPath?: string;
 };
 type PendingRpc = {
   method: string;
@@ -121,6 +123,7 @@ export class CodexAppServer extends EventEmitter {
   private threadRelease: Promise<void>;
   sessionMetadata: Map<string, SessionMetadata>;
   sessionModelSettings: Map<string, RolloutModelSettings>;
+  private modelSettingsPath: string | null;
   sessionPermissionModes: Map<string, PermissionMode>;
   modelCatalogCache: { expiresAt: number; models: ModelOption[] } | null;
   turnDiffs: Map<string, TurnDiffDocument>;
@@ -143,7 +146,8 @@ export class CodexAppServer extends EventEmitter {
     this.activeTurn = null;
     this.threadRelease = Promise.resolve();
     this.sessionMetadata = new Map();
-    this.sessionModelSettings = new Map();
+    this.modelSettingsPath = options.modelSettingsPath ? resolve(options.modelSettingsPath) : null;
+    this.sessionModelSettings = loadSessionModelSettings(this.modelSettingsPath);
     this.sessionPermissionModes = new Map();
     this.modelCatalogCache = null;
     this.turnDiffs = new Map();
@@ -485,7 +489,7 @@ export class CodexAppServer extends EventEmitter {
       reasoningEffort: effort,
       serviceTier: serviceTier || 'default',
     };
-    this.sessionModelSettings.set(resolvedThreadId, settings);
+    this.rememberSessionModelSettings(resolvedThreadId, settings);
     return { ...settings, fastMode, models };
   }
 
@@ -548,13 +552,28 @@ export class CodexAppServer extends EventEmitter {
     return { mode };
   }
 
-  getDesktopTurnOverrides(threadId: unknown) {
-    const settings = this.sessionModelSettings.get(String(threadId || '').trim());
-    if (!settings) return {};
+  async getDesktopTurnOverrides(threadId: unknown) {
+    const resolvedThreadId = String(threadId || '').trim();
+    if (!resolvedThreadId) return {};
+    let settings = this.sessionModelSettings.get(resolvedThreadId);
+    if (!settings) {
+      try {
+        settings = await this.readModelConfig(resolvedThreadId);
+      } catch {
+        // A temporary app-server/catalog failure must not block Desktop delivery.
+        return {};
+      }
+    }
     return {
       ...(settings.model ? { model: settings.model } : {}),
       ...(settings.reasoningEffort ? { thinking: settings.reasoningEffort } : {}),
     };
+  }
+
+  private rememberSessionModelSettings(threadId: string, settings: RolloutModelSettings) {
+    this.sessionModelSettings.delete(threadId);
+    this.sessionModelSettings.set(threadId, settings);
+    saveSessionModelSettings(this.modelSettingsPath, this.sessionModelSettings);
   }
 
   async listModels(): Promise<ModelOption[]> {

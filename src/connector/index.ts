@@ -11,6 +11,7 @@ import { loadOrCreateConnectorDeviceIdentity } from './device-identity.js';
 import { createRequestHandler } from './request-handler.js';
 import { scheduleReferencedRetry } from './reconnect.js';
 import { ConnectorSecureChannels } from './secure-channels.js';
+import { connectorSessionModelSettingsPath } from './session-model-settings.js';
 import { createConnectorAuthProof } from '../shared/auth.js';
 import { createDeviceAuthProof } from '../shared/device-auth.js';
 import {
@@ -40,7 +41,11 @@ if (!instanceLock) {
 }
 const connectorLock = instanceLock;
 const codex = new CodexAppServer({
-  bin: codexBin, allowedRoots, networkAccess, allowFullAccess,
+  bin: codexBin,
+  allowedRoots,
+  networkAccess,
+  allowFullAccess,
+  modelSettingsPath: connectorSessionModelSettingsPath(deviceId),
 });
 const desktop = mode === 'desktop' ? new CodexDesktopClient() : null;
 const downloads = new DownloadManager({

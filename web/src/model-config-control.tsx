@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import {
+  useEffect, useRef, useState, type CSSProperties,
+} from 'react';
 import { friendlyError } from './app-utils';
 import { t } from './i18n';
 import { CustomSelect } from './ui-components';
@@ -31,6 +33,10 @@ export function ModelConfigControl({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const selectedModel = config?.models.find((model) => model.model === config.model);
   const draftModel = config?.models.find((model) => model.model === draft?.model);
+  const effortOptions = draftModel?.supportedReasoningEfforts || [];
+  const effortIndex = Math.max(0, effortOptions
+    .findIndex((option) => option.reasoningEffort === draft?.reasoningEffort));
+  const effortProgress = effortOptions.length > 1 ? (effortIndex / (effortOptions.length - 1)) * 100 : 100;
 
   useEffect(() => {
     setOpen(false);
@@ -78,21 +84,40 @@ export function ModelConfigControl({
       >
         <span className="model-config-model">{loading ? t('读取模型…', 'Loading model…') : displayModel}</span>
         <span>{config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort) : t('默认思考', 'Default reasoning')}</span>
-        <span className={config?.fastMode ? 'fast active' : 'fast'}>{config?.fastMode ? t('快速', 'Fast') : t('标准', 'Standard')}</span>
+        {config?.fastMode && (
+          <span className="fast active" title={t('快速模式', 'Fast mode')}>
+            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.2 1.8 4.7 10h4.8l-.8 8.2 6.6-9.6h-4.8l.7-6.8Z" /></svg>
+          </span>
+        )}
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
       </button>
       {open && draft && config && (
         <div className="model-config-popover">
-          <header>
-            <strong>{t('后续轮次配置', 'Next-turn settings')}</strong>
-            <span>{disabled ? t('当前正在执行，可预选并在结束后保存', 'Preselect now and save after the task finishes') : t('保存后用于该会话的后续消息', 'Applies to subsequent messages in this task')}</span>
-          </header>
-          <div className="model-config-field">
-            <span>{t('模型', 'Model')}</span>
+          <div className="model-config-toolbar">
+            <button
+              className={`model-fast-button${draft.fastMode ? ' active' : ''}`}
+              type="button"
+              aria-pressed={draft.fastMode}
+              aria-label={draft.fastMode ? t('关闭快速模式', 'Turn off fast mode') : t('开启快速模式', 'Turn on fast mode')}
+              title={fastTierAvailable(draftModel)
+                ? draft.fastMode ? t('关闭快速模式', 'Turn off fast mode') : t('开启快速模式', 'Turn on fast mode')
+                : t('当前模型不支持快速模式', 'Fast mode is not available for this model')}
+              disabled={saving || !fastTierAvailable(draftModel)}
+              onClick={() => setDraft({ ...draft, fastMode: !draft.fastMode })}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13.3 2.5-8 10h5.9l-1 9 8.5-12h-6.1l.7-7Z" /></svg>
+            </button>
             <CustomSelect
+              className="model-config-model-select"
               value={draft.model}
               disabled={saving}
               ariaLabel={t('选择模型', 'Select model')}
+              triggerContent={(
+                <>
+                  <strong>{draftModel?.displayName || draft.model}</strong>
+                  <em>{reasoningEffortLabel(draft.reasoningEffort)}</em>
+                </>
+              )}
               options={config.models.map((model) => ({
                 value: model.model,
                 label: model.displayName,
@@ -111,32 +136,35 @@ export function ModelConfigControl({
               }}
             />
           </div>
-          <div className="model-config-field">
-            <span>{t('思考强度', 'Reasoning')}</span>
-            <CustomSelect
-              value={draft.reasoningEffort}
-              disabled={saving}
-              ariaLabel={t('选择思考强度', 'Select reasoning effort')}
-              options={(draftModel?.supportedReasoningEfforts || []).map((option) => ({
-                value: option.reasoningEffort,
-                label: reasoningEffortLabel(option.reasoningEffort),
-                description: option.description,
-              }))}
-              onChange={(value) => setDraft({ ...draft, reasoningEffort: value })}
-            />
-          </div>
-          <label className={`model-fast-toggle${fastTierAvailable(draftModel) ? '' : ' unavailable'}`}>
-            <span><strong>{t('快速模式', 'Fast mode')}</strong><small>{fastTierAvailable(draftModel)
-              ? t('使用模型支持的低延迟服务层', 'Use the model’s low-latency service tier')
-              : t('当前模型不支持', 'Not available for this model')}</small></span>
+          <label className="model-reasoning-slider">
+            <span className="visually-hidden">{t('思考强度', 'Reasoning effort')}</span>
             <input
-              type="checkbox"
-              checked={draft.fastMode}
-              disabled={saving || !fastTierAvailable(draftModel)}
-              onChange={(event) => setDraft({ ...draft, fastMode: event.target.checked })}
+              type="range"
+              min="0"
+              max={Math.max(0, effortOptions.length - 1)}
+              step="1"
+              value={effortIndex}
+              disabled={saving || effortOptions.length < 2}
+              aria-label={t('思考强度', 'Reasoning effort')}
+              aria-valuetext={reasoningEffortLabel(draft.reasoningEffort)}
+              style={{ '--reasoning-progress': `${effortProgress}%` } as CSSProperties}
+              onChange={(event) => {
+                const nextEffort = effortOptions[Number(event.target.value)];
+                if (nextEffort) setDraft({ ...draft, reasoningEffort: nextEffort.reasoningEffort });
+              }}
             />
-            <i aria-hidden="true" />
+            <span className="model-reasoning-dots" aria-hidden="true">
+              {effortOptions.map((option, index) => (
+                <i
+                  className={`${index <= effortIndex ? 'active' : ''}${index === effortIndex ? ' current' : ''}`}
+                  key={option.reasoningEffort}
+                />
+              ))}
+            </span>
           </label>
+          <p className="model-config-hint">{disabled
+            ? t('当前正在执行，可预选并在结束后保存', 'Preselect now and save after the task finishes')
+            : t('保存后用于该会话的后续消息', 'Applies to subsequent messages in this task')}</p>
           {error && <p role="alert">{error}</p>}
           <footer>
             <button type="button" onClick={() => setOpen(false)}>{t('取消', 'Cancel')}</button>
