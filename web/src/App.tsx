@@ -53,7 +53,6 @@ import {
   canSendToActiveDesktopTurn,
   canSteerOwnedTurn,
   canStopOwnedTurn,
-  composerPrimaryAction,
   initialBootstrapReady,
   isConnectionInterruption,
   isCurrentSessionRequest,
@@ -84,6 +83,7 @@ import {
   epochMillis,
   liveEventActivity,
   LiveActivityStatus,
+  RunDetailsSheet,
   safeActivityKind,
 } from './live-activity';
 import { ModelConfigControl } from './model-config-control';
@@ -100,6 +100,7 @@ import {
 import { BrowserSecureChannel } from './secure-channel-client';
 import {
   DEFAULT_ENVIRONMENT_ID,
+  environmentDisplayName,
   environmentOfflineLabel,
   environmentOnlineLabel,
   environmentShortName,
@@ -289,7 +290,8 @@ export default function App() {
   const [newSessionImage, setNewSessionImage] = useState<PendingImage | null>(null);
   const [newSessionError, setNewSessionError] = useState('');
   const [connectionEpoch, setConnectionEpoch] = useState(0);
-  const [stopConfirmationArmed, setStopConfirmationArmed] = useState(false);
+  const [runDetailsOpen, setRunDetailsOpen] = useState(false);
+  const [stopping, setStopping] = useState(false);
 
   const socketRef = useRef<WebSocket | null>(null);
   const pairingCredentialRef = useRef(pairingCredential);
@@ -350,13 +352,12 @@ export default function App() {
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { ownedTurnThreadIdRef.current = ownedTurnThreadId; }, [ownedTurnThreadId]);
   useEffect(() => {
-    if (!stopConfirmationArmed) return;
-    const timer = setTimeout(() => setStopConfirmationArmed(false), 4_000);
-    return () => clearTimeout(timer);
-  }, [stopConfirmationArmed]);
-  useEffect(() => {
-    setStopConfirmationArmed(false);
-  }, [executionState, online, pendingImage, prompt, threadId]);
+    if (executionState !== 'running' && executionState !== 'waiting') {
+      setRunDetailsOpen(false);
+      setStopping(false);
+    }
+  }, [executionState]);
+  useEffect(() => { setRunDetailsOpen(false); }, [environmentId, threadId]);
 
   const finishInitialBootstrap = useCallback(() => {
     setInitialBootstrapPending(false);
@@ -1829,15 +1830,22 @@ export default function App() {
 
   const stopTurn = useCallback(async () => {
     const selectionVersion = selectedRequestRef.current;
+    const targetThreadId = ownedTurnThreadIdRef.current || threadIdRef.current;
+    setStopping(true);
     try {
-      await request('turn.stop', {});
+      await request('turn.stop', targetThreadId ? { threadId: targetThreadId } : {});
     } catch (error) {
       if (selectionVersion === selectedRequestRef.current) reportTimelineError(error);
+      setStopping(false);
+      return;
     }
+    setStopping(false);
     if (selectionVersion !== selectedRequestRef.current) return;
     runningRef.current = false;
     ownedTurnThreadIdRef.current = null;
     awaitingDesktopTurnRef.current = null;
+    setApproval(null);
+    setRunDetailsOpen(false);
     resetExecution();
   }, [reportTimelineError, request, resetExecution]);
 
@@ -2190,8 +2198,6 @@ export default function App() {
   const stopAvailable = canStopOwnedTurn(
     running, ownedTurnThreadId, threadId || (creatingNewSession ? NEW_TURN_KEY : null),
   );
-  const primaryAction = composerPrimaryAction(stopAvailable, prompt, Boolean(pendingImage));
-  const primaryStopsRun = primaryAction === 'stop';
   const executionActive = executionState === 'running' || executionState === 'waiting';
   const liveProgressItemId = useMemo(
     () => executionActive ? latestTurnProgressItemId(timeline) : null,
@@ -2355,6 +2361,21 @@ export default function App() {
         onRename={renameSession}
       />
 
+      <RunDetailsSheet
+        open={runDetailsOpen && executionActive}
+        state={executionState}
+        kind={liveActivity}
+        purpose={toolPurpose}
+        detail={activityDetail}
+        progress={turnProgress}
+        startedAt={activityStartedAt}
+        environment={environmentDisplayName(environmentId)}
+        canStop={stopAvailable}
+        stopping={stopping}
+        onClose={() => setRunDetailsOpen(false)}
+        onStop={() => void stopTurn()}
+      />
+
       <section className="conversation">
         <header className="topbar">
           <button className="icon-button mobile-only" onClick={() => setDrawerOpen(true)} aria-label={t('展开会话列表', 'Expand session list')} title={t('展开会话列表', 'Expand session list')}>
@@ -2430,6 +2451,7 @@ export default function App() {
               detail={activityDetail}
               progress={turnProgress}
               startedAt={activityStartedAt}
+              onOpenDetails={() => setRunDetailsOpen(true)}
             />
           )}
           <DownloadIndicator download={fileDownload} onCancel={cancelFileDownload} />
@@ -2509,48 +2531,23 @@ export default function App() {
               disabled={!online || uploading}
             />
             <div className="composer-actions">
-              {primaryStopsRun && stopConfirmationArmed && (
-                <span className="stop-confirmation" role="status">
-                  {t('再次点击确认停止', 'Tap again to stop')}
-                </span>
-              )}
               <button
-                  className={`send-button${uploading ? ' uploading' : ''}${primaryStopsRun ? ' stop-mode' : ''}${stopConfirmationArmed ? ' confirm-stop' : ''}`}
+                  className={`send-button${uploading ? ' uploading' : ''}`}
                   disabled={
                     !online
                     || uploading
-                    || (!primaryStopsRun && (
-                      (running && !steeringAvailable)
-                      || (!prompt.trim() && !pendingImage)
-                      || (!threadId && !newSessionCwd.trim())
-                    ))
+                    || (running && !steeringAvailable)
+                    || (!prompt.trim() && !pendingImage)
+                    || (!threadId && !newSessionCwd.trim())
                   }
-                  onClick={() => {
-                    if (!primaryStopsRun) {
-                      setStopConfirmationArmed(false);
-                      void sendTurn();
-                      return;
-                    }
-                    if (!stopConfirmationArmed) {
-                      setStopConfirmationArmed(true);
-                      return;
-                    }
-                    setStopConfirmationArmed(false);
-                    void stopTurn();
-                  }}
-                  aria-label={primaryStopsRun
-                    ? stopConfirmationArmed
-                      ? t('再次点击确认停止', 'Tap again to stop')
-                      : t('停止当前任务', 'Stop current run')
-                    : uploading
-                      ? t('正在发送图片', 'Sending image')
-                      : steeringAvailable
-                        ? t('追加指令', 'Steer')
-                        : t('发送', 'Send')}
+                  onClick={() => void sendTurn()}
+                  aria-label={uploading
+                    ? t('正在发送图片', 'Sending image')
+                    : steeringAvailable
+                      ? t('追加指令', 'Steer')
+                      : t('发送', 'Send')}
                 >
-                  {primaryStopsRun
-                    ? <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5" /></svg>
-                    : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Zm3 7h13" /></svg>}
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Zm3 7h13" /></svg>
               </button>
             </div>
           </div>

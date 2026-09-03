@@ -23,6 +23,7 @@ export function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || t('请求失败', 'Request failed'));
   if (message === 'connector_offline') return t('当前执行环境离线，请确认对应连接器正在运行。', 'The current environment is offline. Make sure its connector is running.');
   if (message === 'another_turn_is_active') return t('当前已有一个任务在运行，请等待完成或先停止。', 'Another task is running. Wait for it to finish or stop it first.');
+  if (message === 'turn_stop_mismatch') return t('运行状态已经变化，请刷新后重试。', 'The run state changed. Refresh and try again.');
   if (message === 'project_directory_required') return t('新会话必须选择或填写项目目录。', 'Choose or enter a project directory for the new session.');
   if (message === 'session_project_directory_unavailable') return t('该会话没有可用的项目目录，无法通过连接器继续。', 'This session has no project directory available to the connector.');
   if (message === 'workspace_outside_allowed_root') return t('该目录不在连接器允许访问的范围内。', 'This directory is outside the connector allowed roots.');
@@ -139,10 +140,6 @@ export function isEventForSelectedThread(
 
 export function canStopOwnedTurn(running: boolean, ownedThreadId: string | null, selectedThreadId: string | null) {
   return running && Boolean(ownedThreadId) && ownedThreadId === selectedThreadId;
-}
-
-export function composerPrimaryAction(canStop: boolean, prompt: string, hasAttachment: boolean) {
-  return canStop && !prompt.trim() && !hasAttachment ? 'stop' : 'send';
 }
 
 export function canSteerOwnedTurn(

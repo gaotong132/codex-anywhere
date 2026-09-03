@@ -331,6 +331,21 @@ test('active Desktop sessions receive follow-up messages immediately through Des
   assert.deepEqual(response.data, { threadId: 'target-thread', delivery: 'desktop' });
 });
 
+test('turn stop stays bound to the selected connector-owned thread', async () => {
+  let stoppedThreadId;
+  const handle = createRequestHandler(createDependencies({
+    codex: {
+      stopTurn: async (threadId) => {
+        stoppedThreadId = threadId;
+        return { stopped: true };
+      },
+    },
+  }));
+  const response = await handle(request('turn.stop', { threadId: 'thread-1' }));
+  assert.equal(stoppedThreadId, 'thread-1');
+  assert.deepEqual(response.data, { stopped: true });
+});
+
 test('an explicit model choice is applied to the next Desktop-owned turn', async () => {
   let delivered;
   const handle = createRequestHandler(createDependencies({

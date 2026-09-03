@@ -810,9 +810,13 @@ export class CodexAppServer extends EventEmitter {
     return { approvalId: String(approvalId), approved: approved === true };
   }
 
-  async stopTurn() {
+  async stopTurn(expectedThreadId?: unknown) {
     const turn = this.activeTurn;
     if (!turn) return { stopped: false };
+    const expected = String(expectedThreadId || '').trim();
+    if (expected && turn.threadId && expected !== turn.threadId) {
+      throw new Error('turn_stop_mismatch');
+    }
     turn.cancelRequested = true;
     if (!turn.threadId || !turn.turnId || turn.state !== 'running') {
       return { stopped: true, pending: true };

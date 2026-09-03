@@ -68,7 +68,6 @@ import {
   canSendToActiveDesktopTurn,
   canStopOwnedTurn,
   canSteerOwnedTurn,
-  composerPrimaryAction,
   friendlyError,
   initialBootstrapReady,
   isCurrentSessionRequest,
@@ -83,6 +82,7 @@ import {
   shouldLoadOlderHistory,
   shouldPrefillOlderHistory,
 } from '../web/src/app-utils.js';
+import { RunDetailsSheet } from '../web/src/live-activity.js';
 import {
   appendUniqueTimelineError,
   appendStreamedMessageText,
@@ -540,11 +540,40 @@ test('stop control is shown only for the selected Web-owned turn', () => {
   assert.equal(canStopOwnedTurn(true, 'thread-1', 'thread-1'), true);
 });
 
-test('the primary composer action stops only when an owned run has no pending input', () => {
-  assert.equal(composerPrimaryAction(true, '', false), 'stop');
-  assert.equal(composerPrimaryAction(true, '追加指令', false), 'send');
-  assert.equal(composerPrimaryAction(true, '', true), 'send');
-  assert.equal(composerPrimaryAction(false, '', false), 'send');
+test('run details expose a confirmed stop only for a connector-owned turn', () => {
+  const owned = renderToStaticMarkup(createElement(RunDetailsSheet, {
+    open: true,
+    state: 'running',
+    kind: 'command',
+    purpose: 'npm test',
+    detail: '正在执行测试',
+    progress: {},
+    startedAt: null,
+    environment: 'ECS · 24×7',
+    canStop: true,
+    stopping: false,
+    onClose: () => {},
+    onStop: () => {},
+  }));
+  assert.match(owned, /停止本次执行/);
+  assert.match(owned, /ECS · 24×7/);
+
+  const desktopOwned = renderToStaticMarkup(createElement(RunDetailsSheet, {
+    open: true,
+    state: 'running',
+    kind: 'working',
+    purpose: '',
+    detail: '',
+    progress: {},
+    startedAt: null,
+    environment: '我的电脑',
+    canStop: false,
+    stopping: false,
+    onClose: () => {},
+    onStop: () => {},
+  }));
+  assert.doesNotMatch(desktopOwned, />停止本次执行</);
+  assert.match(desktopOwned, /请在电脑端停止/);
 });
 
 test('steering is available only while the selected Web-owned turn is actively running', () => {
@@ -2383,6 +2412,19 @@ test('app-server stops a running turn through the interrupt protocol', async () 
   assert.equal(ended.event, 'turn.ended');
   assert.equal(ended.payload.reason, 'cancelled');
   assert.equal(codex.activeTurn, null);
+});
+
+test('app-server refuses to stop a different selected thread', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  const calls = [];
+  codex.activeTurn = {
+    clientId: 'client', requestId: 'request', threadId: 'thread-1',
+    turnId: 'turn-1', cwd: process.cwd(), state: 'running',
+  };
+  codex.rpcRaw = async (method, params) => { calls.push([method, params]); return {}; };
+  await assert.rejects(codex.stopTurn('thread-2'), /turn_stop_mismatch/);
+  assert.deepEqual(calls, []);
+  assert.equal(codex.activeTurn.state, 'running');
 });
 
 test('a stop requested while a turn is starting interrupts it once its id arrives', async () => {

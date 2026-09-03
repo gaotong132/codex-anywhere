@@ -23,7 +23,7 @@ type CodexGateway = {
   updatePermissionMode(threadId: string, mode: unknown): Promise<any>;
   startTurn(options: Payload): Promise<Record<string, any>>;
   steerTurn(options: Payload): Promise<Record<string, any>>;
-  stopTurn(): Promise<any>;
+  stopTurn(threadId?: unknown): Promise<any>;
   listApprovals(threadId: unknown, clientId?: string): any;
   respondApproval(approvalId: unknown, approved: boolean, threadId?: unknown): Promise<any>;
   getControllerThreadId(threadId: string): string;
@@ -181,7 +181,7 @@ async function dispatchAction({
       delivery: 'appServer',
     };
   }
-  if (action === 'turn.stop') return codex.stopTurn();
+  if (action === 'turn.stop') return codex.stopTurn(payload.threadId);
   if (action === 'approval.pending') {
     const pending = await codex.listApprovals(payload.threadId, clientId);
     if (pending.approvals?.length) return pending;

@@ -39,6 +39,11 @@
     .message-list { padding: 18px 12px 4px; }
     .execution-strip { padding: 6px max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left)); }
     .tool-purpose { gap: 5px; padding: 6px 8px; border-radius: 11px; font-size: 10px; }
+    .run-details-backdrop { padding: 0; }
+    .run-details-sheet { width: 100%; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 20px 20px 0 0; }
+    .run-details-sheet > header { padding: 17px 16px 13px; }
+    .run-details-body { padding: 15px 16px; }
+    .run-details-sheet > footer { padding-inline: 16px; }
     .activity-primary time { max-width: 50px; }
     .new-session-overlay { align-items: end; padding: 0; }
     .new-session-dialog { width: 100%; max-height: calc(100dvh - env(safe-area-inset-top) - 12px); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 20px 20px 0 0; }
