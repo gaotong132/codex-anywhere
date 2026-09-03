@@ -296,6 +296,70 @@ function ContextCompactionMarker({ item }: { item: TimelineItem }) {
   );
 }
 
+function TimelineNoticeMarker({ item }: { item: TimelineItem }) {
+  const notice = item.notice!;
+  const completedDateTime = dateTimeValue(item.completedAt);
+  let variant: string = notice.kind;
+  let label = '';
+  let detail = '';
+  const badges: string[] = [];
+  if (notice.kind === 'turnStatus') {
+    variant = `turnStatus ${notice.status}`;
+    label = notice.status === 'aborted'
+      ? t('任务已中止', 'Task aborted')
+      : notice.status === 'error'
+        ? t('任务发生错误', 'Task error')
+        : t('任务执行失败', 'Task failed');
+    detail = /^(?:interrupted|cancelled)$/i.test(notice.detail || '')
+      ? t('已由用户停止', 'Stopped by user')
+      : notice.detail || '';
+  } else if (notice.kind === 'modelSettings') {
+    label = t('运行配置已变更', 'Run configuration changed');
+    if (notice.model) badges.push(notice.model);
+    if (notice.reasoningEffort) badges.push(t(`推理 ${notice.reasoningEffort}`, `Reasoning ${notice.reasoningEffort}`));
+    if (notice.serviceTier) badges.push(t(`服务 ${notice.serviceTier}`, `Service ${notice.serviceTier}`));
+  } else if (notice.kind === 'approval') {
+    variant = `approval ${notice.decision}`;
+    label = notice.decision === 'approved'
+      ? t('已批准操作', 'Action approved')
+      : t('已拒绝操作', 'Action rejected');
+    if (notice.approvalKind) badges.push(notice.approvalKind);
+    detail = notice.summary || '';
+  } else {
+    label = t(`本轮调用了 ${notice.total} 个工具`, `${notice.total} tools used in this turn`);
+    if (notice.commands) badges.push(t(`${notice.commands} 个命令`, `${notice.commands} commands`));
+    if (notice.edits) badges.push(t(`${notice.edits} 次编辑`, `${notice.edits} edits`));
+    if (notice.searches) badges.push(t(`${notice.searches} 次搜索`, `${notice.searches} searches`));
+    if (notice.connectedTools) badges.push(t(`${notice.connectedTools} 个连接工具`, `${notice.connectedTools} connected tools`));
+    if (notice.generations) badges.push(t(`${notice.generations} 次生成`, `${notice.generations} generations`));
+    if (notice.other) badges.push(t(`${notice.other} 个其他工具`, `${notice.other} other tools`));
+  }
+  const accessibleLabel = [label, detail, ...badges].filter(Boolean).join(' · ');
+  return (
+    <div className={`timeline-notice ${variant}`} role="note" aria-label={accessibleLabel} title={detail || accessibleLabel}>
+      <span className="timeline-notice-rule" aria-hidden="true" />
+      <span className="timeline-notice-content">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          {notice.kind === 'toolSummary'
+            ? <path d="M8 7h8M6 11h12M9 15h6M5 4h14v14H5z" />
+            : notice.kind === 'modelSettings'
+              ? <path d="M5 7h14M8 7v4M5 13h14M16 13v4" />
+              : notice.kind === 'approval'
+                ? <path d="M5 12l4 4L19 6" />
+                : <path d="M12 7v6m0 4h.01M4 20h16L12 4z" />}
+        </svg>
+        <strong>{label}</strong>
+        {badges.map((badge) => <b key={badge}>{badge}</b>)}
+        {detail && <span className="timeline-notice-detail">{detail}</span>}
+        {item.completedAt && completedDateTime && (
+          <time dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
+        )}
+      </span>
+      <span className="timeline-notice-rule" aria-hidden="true" />
+    </div>
+  );
+}
+
 function MessageBubbleComponent({
   item,
   active = false,
@@ -472,6 +536,7 @@ function MessageBubbleComponent({
   }
 
   if (item.kind === 'system' && item.compaction) return <ContextCompactionMarker item={item} />;
+  if (item.kind === 'system' && item.notice) return <TimelineNoticeMarker item={item} />;
   if (item.kind === 'progress') {
     return (
       <details className={`progress-card${active ? ' live' : ''}`} open>
@@ -702,6 +767,7 @@ export function messagePresentationEqual(left: TimelineItem, right: TimelineItem
     && equalOptionalRecord(left.visualization, right.visualization)
     && equalOptionalRecord(left.fileChanges, right.fileChanges)
     && equalOptionalRecord(left.compaction, right.compaction)
+    && equalOptionalRecord(left.notice, right.notice)
     && JSON.stringify(left.contexts || []) === JSON.stringify(right.contexts || []);
 }
 

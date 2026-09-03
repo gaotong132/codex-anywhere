@@ -24,8 +24,10 @@ connector computer; a small relay you control provides the remote meeting point.
 - **Continue real Codex sessions** — browse recent sessions, read Markdown history, send text or images,
   and start a task in an existing local project.
 - **Follow work as it happens** — see running and unread-complete sessions, progress updates, plan steps,
-  tool purpose, elapsed time, and file-change totals. Tap a completed turn's totals to inspect its bounded
-  unified diff. Long histories load incrementally.
+  tool purpose, elapsed time, current context usage, compaction points, and file-change totals. Completed
+  turns keep compact tool summaries, configuration changes, and failure or cancellation reasons in the
+  timeline. Tap a completed turn's totals to inspect its bounded unified diff. Long histories load
+  incrementally.
 - **Guide an active task** — append text to a connector-owned run, or use Desktop delivery when the
   existing session supports it. Messages are sent directly; Codex Anywhere does not maintain a Web queue.
 - **Choose how Codex works** — view or change the model, reasoning effort, and fast mode when the selected

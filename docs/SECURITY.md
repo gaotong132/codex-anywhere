@@ -82,6 +82,10 @@ reviewed from the relay host with `./scripts/relay.sh approve`.
   invalid diagrams fall back to their source code.
 - Interactive HTML is limited to Codex visualization roots and rendered in an opaque-origin,
   network-blocked sandbox.
+- Timeline diagnostics expose only aggregate tool counts, bounded public failure details, model settings,
+  and context totals. Raw reasoning, tool arguments and output, encrypted compaction content, and rate-limit
+  payloads are not rendered. Completed approval markers use a reduced action summary instead of replaying
+  the full approval request.
 - The Web UI can act only on approvals owned by connector-started turns. An approval already owned by
   Codex Desktop stays on the computer and is shown as non-actionable in the Web UI.
 

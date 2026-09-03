@@ -1,6 +1,7 @@
 import type { Turn } from './history-utils';
 import type { CurrentProtocol, ProtocolOffer } from '../../src/shared/protocol-contract';
 import type { TurnProgress } from '../../src/shared/turn-progress';
+import type { ContextUsage } from '../../src/shared/context-compaction';
 
 export type Session = {
   id: string;
@@ -80,6 +81,7 @@ export type HistoryPage = {
   toolPurpose?: string;
   activityDetail?: string;
   turnProgress?: TurnProgress;
+  contextUsage?: ContextUsage;
 };
 export type TurnStartResult = { threadId: string; delivery?: 'desktop' | 'appServer' };
 export type PendingImage = { file: File; transferPreview?: File; previewUrl: string };

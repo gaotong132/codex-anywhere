@@ -3,7 +3,9 @@ import type { FileHandle } from 'node:fs/promises';
 import { normalizeToolPurpose, parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
 import type { MessageContext } from '../shared/message-content.js';
 import { summarizeToolActivity } from '../shared/activity-detail.js';
-import type { ContextCompaction } from '../shared/context-compaction.js';
+import type { ContextCompaction, ContextUsage } from '../shared/context-compaction.js';
+import type { TimelineNotice, ToolSummaryNotice } from '../shared/timeline-notice.js';
+import { publicError } from '../shared/protocol.js';
 import {
   extractPlanProgressFromToolInput,
   summarizePatchChanges,
@@ -23,6 +25,7 @@ const HISTORY_PAGE_BYTES = 512 * 1024;
 const ROLLOUT_CURSOR_PREFIX = 'rollout:v1:';
 const MAX_TEXT_LENGTH = 4_000;
 const ACTIVITY_SCAN_CHUNK_BYTES = 4 * 1024 * 1024;
+const CONTEXT_USAGE_SCAN_CHUNK_BYTES = 256 * 1024;
 const ACTIVITY_SCAN_OVERLAP_BYTES = 1_024;
 const PLAN_SCAN_OVERLAP_BYTES = 64 * 1024;
 const MAX_CACHED_ROLLOUTS = 12;
@@ -54,6 +57,7 @@ type RolloutItem = {
   attachment?: GeneratedImageAttachment;
   fileChanges?: TurnFileProgress;
   compaction?: ContextCompaction;
+  notice?: TimelineNotice;
   completedAt?: number | null;
 };
 type RolloutOptions = {
@@ -69,6 +73,16 @@ export type RolloutModelSettings = {
   reasoningEffort?: string;
   serviceTier?: string;
 };
+type ToolSummaryState = Omit<ToolSummaryNotice, 'kind' | 'total'> & {
+  callIds: Set<string>;
+  total: number;
+  flushed: boolean;
+};
+type RolloutMappingState = {
+  currentTurnId: string;
+  settings: RolloutModelSettings;
+  tools: ToolSummaryState;
+};
 type SnapshotOptions = { threadId: string; maxBytes: number; maxItems: number };
 type RolloutSnapshot = SnapshotOptions & {
   fileSize: number;
@@ -79,6 +93,8 @@ type RolloutSnapshot = SnapshotOptions & {
   toolPurpose: string;
   activityDetail: string;
   progress: RolloutProgress;
+  mapping: RolloutMappingState;
+  contextUsage?: ContextUsage;
 };
 type CompleteRows = { rows: RolloutRow[]; parsedOffset: number; firstCompleteOffset: number };
 const activityMarkers = [
@@ -94,6 +110,15 @@ export async function readRolloutModelSettings(filePath: string): Promise<Rollou
   const handle = await open(filePath, 'r');
   try {
     return await findLatestModelSettingsBefore(handle, (await handle.stat()).size);
+  } finally {
+    await handle.close();
+  }
+}
+
+export async function readRolloutContextUsage(filePath: string): Promise<ContextUsage | undefined> {
+  const handle = await open(filePath, 'r');
+  try {
+    return await findLatestContextUsageBefore(handle, (await handle.stat()).size);
   } finally {
     await handle.close();
   }
@@ -142,6 +167,7 @@ export async function readRolloutTail(options: RolloutOptions) {
       toolPurpose: snapshot.activity.status === 'inProgress' ? snapshot.toolPurpose : '',
       activityDetail: snapshot.activity.status === 'inProgress' ? snapshot.activityDetail : '',
       turnProgress: { plan: snapshot.progress.plan, files: snapshot.progress.files },
+      contextUsage: snapshot.contextUsage,
     };
   } finally {
     await handle.close();
@@ -169,7 +195,9 @@ async function readHistoryPage(
     ? await findLatestFileProgressBefore(handle, window.firstCompleteOffset)
     : { patchFiles: new Set<string>() };
   const initialTurnId = await initialTurnIdForWindow(handle, window);
-  const items = mapRolloutRows(window.rows, priorProgress, initialTurnId);
+  const initialMapping = await mappingStateBefore(handle, window.firstCompleteOffset, initialTurnId);
+  const mapped = mapRolloutRowsWithState(window.rows, priorProgress, initialMapping);
+  const items = mapped.items;
   const progress = encodedCursor
     ? { patchFiles: new Set<string>() }
     : await progressForHistoryPage(
@@ -200,6 +228,9 @@ async function readHistoryPage(
       : '',
     activityDetail: activity.status === 'inProgress' ? updateActivityDetail('', window.rows, activity.status) : '',
     turnProgress: { plan: progress.plan, files: progress.files },
+    contextUsage: encodedCursor
+      ? undefined
+      : latestContextUsage(window.rows) || await findLatestContextUsageBefore(handle, window.firstCompleteOffset),
   };
 }
 
@@ -266,16 +297,21 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
     toolPurpose = await findLatestPurposeBefore(handle, window.firstCompleteOffset);
   }
   const initialTurnId = await initialTurnIdForWindow(handle, window);
+  const initialMapping = await mappingStateBefore(handle, window.firstCompleteOffset, initialTurnId);
+  const mapped = mapRolloutRowsWithState(window.rows, priorProgress, initialMapping);
   return {
     ...options,
     fileSize,
     parsedOffset: window.parsedOffset,
-    items: mapRolloutRows(window.rows, priorProgress, initialTurnId).slice(-options.maxItems),
+    items: mapped.items.slice(-options.maxItems),
     activity,
     liveActivity: updateLiveActivity({ kind: 'working', updatedAt: activity.startedAt }, window.rows, activity.status),
     toolPurpose,
     activityDetail: updateActivityDetail('', window.rows, activity.status),
     progress,
+    mapping: mapped.state,
+    contextUsage: latestContextUsage(window.rows)
+      || await findLatestContextUsageBefore(handle, window.firstCompleteOffset),
   };
 }
 
@@ -290,13 +326,14 @@ async function updateSnapshot(handle: FileHandle, fileSize: number, cached: Roll
     ...appendedActivity,
     startedAt: appendedActivity.startedAt || cached.activity.startedAt,
   };
+  const mapped = mapRolloutRowsWithState(appended.rows, cached.progress, cached.mapping);
   return {
     ...cached,
     fileSize,
     parsedOffset: appended.parsedOffset,
     items: appendItems(
       cached.items,
-      mapRolloutRows(appended.rows, cached.progress, cached.activity.id),
+      mapped.items,
       cached.maxItems,
     ),
     activity,
@@ -304,6 +341,8 @@ async function updateSnapshot(handle: FileHandle, fileSize: number, cached: Roll
     toolPurpose: updateToolPurpose(cached.toolPurpose, appended.rows, activity.status),
     activityDetail: updateActivityDetail(cached.activityDetail, appended.rows, activity.status),
     progress: updateTurnProgress(cached.progress, appended.rows, activity.status),
+    mapping: mapped.state,
+    contextUsage: latestContextUsage(appended.rows) || cached.contextUsage,
   };
 }
 
@@ -352,8 +391,11 @@ function isVisibleRolloutRow(row: RolloutRow) {
   return Boolean(
     delegatedUserMessage(row)
     || row?.type === 'compacted'
+    || row?.type === 'turn_context'
     || (row?.type === 'event_msg' && /^(?:agent_message|user_message|image_generation_end)$/.test(type))
+    || (row?.type === 'event_msg' && /^(?:thread_settings_applied|task_failed|turn_aborted|turn_error)$/.test(type))
     || (row?.type === 'response_item' && type === 'message')
+    || toolCallFromRow(row)
     || (type === 'task_complete' && fullText(payload.last_agent_message).trim()),
   );
 }
@@ -478,22 +520,35 @@ async function findLatestModelSettingsBefore(
     const readEnd = Math.min(endOffset, cursor + PLAN_SCAN_OVERLAP_BYTES);
     const window = await readCompleteRows(handle, start, readEnd, start > 0);
     for (let index = window.rows.length - 1; index >= 0; index -= 1) {
-      const row = window.rows[index];
-      const payload = row?.payload || {};
-      const source = row?.type === 'turn_context'
-        ? payload
-        : payload.type === 'thread_settings_applied' ? payload.thread_settings || {} : null;
-      if (!source) continue;
-      settings.model ||= String(source.model || '').trim() || undefined;
-      settings.reasoningEffort ||= String(
-        source.reasoning_effort || source.effort || source.collaboration_mode?.settings?.reasoning_effort || '',
-      ).trim() || undefined;
-      settings.serviceTier ||= String(source.service_tier || '').trim() || undefined;
+      const rowSettings = modelSettingsFromRow(window.rows[index]);
+      if (!rowSettings) continue;
+      settings.model ||= rowSettings.model;
+      settings.reasoningEffort ||= rowSettings.reasoningEffort;
+      settings.serviceTier ||= rowSettings.serviceTier;
       if (settings.model && settings.reasoningEffort && settings.serviceTier) return settings;
     }
     cursor = start;
   }
   return settings;
+}
+
+function modelSettingsFromRow(row: RolloutRow): RolloutModelSettings | undefined {
+  const payload = row?.payload || {};
+  const source = row?.type === 'turn_context'
+    ? payload
+    : payload.type === 'thread_settings_applied' ? payload.thread_settings || {} : null;
+  if (!source) return undefined;
+  const model = String(source.model || '').trim();
+  const reasoningEffort = String(
+    source.reasoning_effort || source.effort || source.collaboration_mode?.settings?.reasoning_effort || '',
+  ).trim();
+  const serviceTier = String(source.service_tier || '').trim();
+  if (!model && !reasoningEffort && !serviceTier) return undefined;
+  return {
+    ...(model ? { model } : {}),
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+    ...(serviceTier ? { serviceTier } : {}),
+  };
 }
 
 function appendItems(current: RolloutItem[], appended: RolloutItem[], maxItems: number) {
@@ -707,25 +762,168 @@ function recoverGeneratedImageRows(partialRow: string): RolloutRow[] {
   return rows;
 }
 
+async function mappingStateBefore(
+  handle: FileHandle, endOffset: number, currentTurnId = '',
+): Promise<RolloutMappingState> {
+  if (endOffset <= 0) return {
+    currentTurnId,
+    settings: {},
+    tools: emptyToolSummary(),
+  };
+  const [settings, tools] = await Promise.all([
+    findLatestModelSettingsBefore(handle, endOffset),
+    findCurrentToolSummaryBefore(handle, endOffset),
+  ]);
+  return { currentTurnId, settings, tools };
+}
+
+async function findCurrentToolSummaryBefore(handle: FileHandle, endOffset: number) {
+  let cursor = endOffset;
+  const summary = emptyToolSummary();
+  while (cursor > 0) {
+    const start = Math.max(0, cursor - ACTIVITY_SCAN_CHUNK_BYTES);
+    const window = await readCompleteRows(handle, start, cursor, start > 0);
+    for (let index = window.rows.length - 1; index >= 0; index -= 1) {
+      const row = window.rows[index];
+      const type = String(row?.payload?.type || '');
+      if (/task_complete|task_failed|turn_aborted|turn_error/.test(type)) return emptyToolSummary();
+      if (type === 'task_started') return summary;
+      if (isFinalAssistantRow(row)) summary.flushed = true;
+      addToolCall(summary, row);
+    }
+    if (start === 0) break;
+    cursor = window.firstCompleteOffset < cursor ? window.firstCompleteOffset : start;
+  }
+  return summary;
+}
+
+function emptyToolSummary(): ToolSummaryState {
+  return { total: 0, callIds: new Set(), flushed: false };
+}
+
+function cloneToolSummary(summary?: ToolSummaryState): ToolSummaryState {
+  return summary ? { ...summary, callIds: new Set(summary.callIds) } : emptyToolSummary();
+}
+
+function addToolCall(summary: ToolSummaryState, row: RolloutRow) {
+  const payload = row?.payload || {};
+  const payloadType = String(payload.type || '');
+  const item = row?.type === 'response_item' && /^(?:custom_tool_call|function_call)$/i.test(payloadType)
+    ? payload
+    : row?.type === 'event_msg' && payloadType === 'item_started'
+      ? payload.item || {}
+      : null;
+  const itemType = String(item?.type || '');
+  if (!item || (row?.type === 'event_msg'
+    && !/commandExecution|toolCall|webSearch|fileChange|mcpTool/i.test(itemType))) return;
+  const detail = summarizeToolActivity(item);
+  const label = detail.split(' · ')[0]?.trim().toLowerCase() || '';
+  if (!label || /^(?:update_plan|wait|request_user_input)$/.test(label)) return;
+  const fallbackId = `${row?.timestamp || ''}:${itemType}:${item?.name || ''}:${summary.total}`;
+  const callId = String(item.call_id || item.callId || item.id || fallbackId);
+  if (summary.callIds.has(callId)) return;
+  summary.callIds.add(callId);
+  summary.total += 1;
+  const field = /exec_command|command/.test(label) ? 'commands'
+    : /apply_patch|file.?change|patch/.test(label) ? 'edits'
+      : /web|search/.test(label) ? 'searches'
+        : /image.?gen/.test(label) ? 'generations'
+          : /mcp/.test(label) ? 'connectedTools'
+            : 'other';
+  summary[field] = (summary[field] || 0) + 1;
+}
+
+function toolSummaryNotice(summary: ToolSummaryState): ToolSummaryNotice | undefined {
+  if (!summary.total || summary.flushed) return undefined;
+  return {
+    kind: 'toolSummary',
+    total: summary.total,
+    ...(summary.commands ? { commands: summary.commands } : {}),
+    ...(summary.edits ? { edits: summary.edits } : {}),
+    ...(summary.searches ? { searches: summary.searches } : {}),
+    ...(summary.connectedTools ? { connectedTools: summary.connectedTools } : {}),
+    ...(summary.generations ? { generations: summary.generations } : {}),
+    ...(summary.other ? { other: summary.other } : {}),
+  };
+}
+
+function changedModelSettings(
+  previous: RolloutModelSettings, next: RolloutModelSettings,
+): RolloutModelSettings | undefined {
+  const changed: RolloutModelSettings = {};
+  if (next.model && previous.model && next.model !== previous.model) changed.model = next.model;
+  if (next.reasoningEffort && previous.reasoningEffort
+    && next.reasoningEffort !== previous.reasoningEffort) changed.reasoningEffort = next.reasoningEffort;
+  if (next.serviceTier && previous.serviceTier && next.serviceTier !== previous.serviceTier) {
+    changed.serviceTier = next.serviceTier;
+  }
+  return Object.keys(changed).length ? changed : undefined;
+}
+
+function turnStatusNotice(payload: RolloutRow): TimelineNotice | undefined {
+  const type = String(payload.type || '');
+  if (!/task_failed|turn_aborted|turn_error/.test(type)) return undefined;
+  const status = type === 'turn_aborted' ? 'aborted' : type === 'turn_error' ? 'error' : 'failed';
+  const detailValue = payload.error?.message || payload.error || payload.message || payload.reason;
+  const rawDetail = typeof detailValue === 'string'
+    ? detailValue.replace(/[\0\r]+/g, ' ').trim()
+    : '';
+  const detail = rawDetail ? capText(publicError(rawDetail), 500) : '';
+  return { kind: 'turnStatus', status, ...(detail ? { detail } : {}) };
+}
+
 function mapRolloutRows(
   rows: RolloutRow[], initialProgress?: RolloutProgress, initialTurnId = '',
 ): RolloutItem[] {
+  return mapRolloutRowsWithState(rows, initialProgress, {
+    currentTurnId: initialTurnId,
+    settings: {},
+    tools: emptyToolSummary(),
+  }).items;
+}
+
+function mapRolloutRowsWithState(
+  rows: RolloutRow[], initialProgress?: RolloutProgress, initialState?: RolloutMappingState,
+) {
   const items: RolloutItem[] = [];
   let progress: RolloutProgress = initialProgress
     ? { ...initialProgress, patchFiles: new Set(initialProgress.patchFiles) }
     : { patchFiles: new Set() };
   let turnItemStart = 0;
-  let currentTurnId = initialTurnId;
+  let currentTurnId = initialState?.currentTurnId || '';
+  let settings = { ...(initialState?.settings || {}) };
+  let tools = cloneToolSummary(initialState?.tools);
+  const flushToolSummary = (turn: { turnId?: string }, timing: { completedAt?: number }) => {
+    const notice = toolSummaryNotice(tools);
+    if (!notice) return;
+    pushText(items, { type: 'timelineNotice', text: '', notice, ...turn, ...timing });
+    tools.flushed = true;
+  };
   for (const [rowIndex, row] of (Array.isArray(rows) ? rows : []).entries()) {
     const payload = row?.payload || {};
     const payloadType = String(payload.type || '');
     currentTurnId = rolloutRowTurnId(row) || currentTurnId;
     const turn = currentTurnId ? { turnId: currentTurnId } : {};
-    if (payloadType === 'task_started') turnItemStart = items.length;
+    if (payloadType === 'task_started') {
+      turnItemStart = items.length;
+      tools = emptyToolSummary();
+    }
+    addToolCall(tools, row);
     const progressEvent = fileProgressEvent(row);
     if (progressEvent) progress = applyFileProgressEvent(progress, progressEvent);
     const completedAt = epochMillis(row.timestamp);
     const timing = completedAt ? { completedAt } : {};
+    const nextSettings = modelSettingsFromRow(row);
+    if (nextSettings) {
+      const changed = changedModelSettings(settings, nextSettings);
+      settings = { ...settings, ...nextSettings };
+      if (changed) {
+        pushText(items, {
+          type: 'timelineNotice', text: '', notice: { kind: 'modelSettings', ...changed },
+          ...turn, ...timing,
+        });
+      }
+    }
     const delegatedMessage = delegatedUserMessage(row);
     if (delegatedMessage) {
       pushText(items, { type: 'userMessage', ...delegatedMessage, ...turn, ...timing });
@@ -736,6 +934,7 @@ function mapRolloutRows(
       }
     } else if (row?.type === 'event_msg' && payloadType === 'agent_message') {
       const content = parseAssistantMessage(payload.message);
+      if (payload.phase === 'final_answer') flushToolSummary(turn, timing);
       pushText(items, {
         type: 'agentMessage', phase: payload.phase || 'commentary', ...content,
         ...finalFileChanges(payload.phase, progress), ...turn, ...timing,
@@ -751,6 +950,7 @@ function mapRolloutRows(
         });
       } else if (payload.role === 'assistant') {
         const content = parseAssistantMessage(extractContent(payload.content));
+        if (payload.phase === 'final_answer') flushToolSummary(turn, timing);
         pushText(items, {
           type: 'agentMessage', phase: payload.phase || 'commentary',
           ...content, ...finalFileChanges(payload.phase, progress), ...turn, ...timing,
@@ -763,6 +963,11 @@ function mapRolloutRows(
           type: 'agentMessage', phase: 'final_answer', text: '', attachment, ...turn, ...timing,
         });
       }
+    }
+    if (/task_complete|task_failed|turn_aborted|turn_error/.test(payloadType)) {
+      flushToolSummary(turn, timing);
+      const notice = turnStatusNotice(payload);
+      if (notice) pushText(items, { type: 'timelineNotice', text: '', notice, ...turn, ...timing });
     }
     if (payloadType === 'task_complete') {
       const finalText = fullText(payload.last_agent_message).trim();
@@ -789,7 +994,10 @@ function mapRolloutRows(
       }
     }
   }
-  return items;
+  return {
+    items,
+    state: { currentTurnId, settings, tools },
+  };
 }
 
 function rolloutRowTurnId(row: RolloutRow) {
@@ -851,7 +1059,7 @@ function finalFileChanges(phase: unknown, progress: RolloutProgress) {
 
 function pushText(items: RolloutItem[], item: RolloutItem) {
   const text = item.phase === 'final_answer' ? fullText(item.text) : capText(item.text);
-  if (!text && !item.attachment && !item.compaction) return;
+  if (!text && !item.attachment && !item.compaction && !item.notice) return;
   const previous = items.at(-1);
   if (previous?.type === item.type
     && previous.turnId === item.turnId
@@ -859,11 +1067,20 @@ function pushText(items: RolloutItem[], item: RolloutItem) {
     && previous.text === text
     && previous.attachment?.path === item.attachment?.path
     && JSON.stringify(previous.compaction) === JSON.stringify(item.compaction)
+    && JSON.stringify(previous.notice) === JSON.stringify(item.notice)
     && JSON.stringify(previous.contexts || []) === JSON.stringify(item.contexts || [])) {
     if (item.fileChanges) previous.fileChanges = item.fileChanges;
     return;
   }
   items.push({ ...item, text, status: '', name: '', input: '', output: '' });
+}
+
+function toolCallFromRow(row: RolloutRow) {
+  const payload = row?.payload || {};
+  const type = String(payload.type || '');
+  return (row?.type === 'response_item' && /^(?:custom_tool_call|function_call)$/i.test(type))
+    || (row?.type === 'event_msg' && type === 'item_started'
+      && /commandExecution|toolCall|webSearch|fileChange|mcpTool/i.test(String(payload.item?.type || '')));
 }
 
 function contextCompactionFromRows(rows: RolloutRow[], index: number): ContextCompaction | undefined {
@@ -894,6 +1111,41 @@ function nearbyTokenCount(rows: RolloutRow[], start: number, direction: -1 | 1) 
     return { tokens, contextWindow };
   }
   return undefined;
+}
+
+function latestContextUsage(rows: RolloutRow[]): ContextUsage | undefined {
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const usage = contextUsageFromRow(rows[index]);
+    if (usage) return usage;
+  }
+  return undefined;
+}
+
+async function findLatestContextUsageBefore(handle: FileHandle, endOffset: number) {
+  let cursor = endOffset;
+  while (cursor > 0) {
+    const start = Math.max(0, cursor - CONTEXT_USAGE_SCAN_CHUNK_BYTES);
+    const window = await readCompleteRows(handle, start, cursor, start > 0);
+    const usage = latestContextUsage(window.rows);
+    if (usage) return usage;
+    if (start === 0) break;
+    cursor = window.firstCompleteOffset < cursor ? window.firstCompleteOffset : start;
+  }
+  return undefined;
+}
+
+function contextUsageFromRow(row: RolloutRow): ContextUsage | undefined {
+  const payload = row?.payload || {};
+  if (row?.type !== 'event_msg' || payload.type !== 'token_count') return undefined;
+  const info = payload.info || {};
+  const tokens = nonNegativeInteger(info.last_token_usage?.total_tokens);
+  const contextWindow = positiveInteger(info.model_context_window);
+  if (tokens === undefined && !contextWindow) return undefined;
+  return {
+    ...(tokens !== undefined ? { tokens } : {}),
+    ...(contextWindow ? { contextWindow } : {}),
+    updatedAt: epochMillis(row.timestamp),
+  };
 }
 
 function positiveInteger(value: unknown) {
@@ -932,8 +1184,10 @@ export const internals = {
   findLatestActivityBefore, findLatestFileProgressBefore, findLatestModelSettingsBefore,
   findLatestPlanBefore, findLatestPurposeBefore,
   inferRolloutActivity,
-  inferRolloutStatus, mapRolloutRows, recoverGeneratedImageRows, rolloutCache, rolloutRowTurnId,
+  inferRolloutStatus, mapRolloutRows, mapRolloutRowsWithState, recoverGeneratedImageRows,
+  rolloutCache, rolloutRowTurnId,
   contextCompactionFromRows,
+  contextUsageFromRow, latestContextUsage,
   updateLiveActivity,
   reasoningSummary, updateActivityDetail, updateToolPurpose,
   updateTurnProgress,

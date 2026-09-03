@@ -38,6 +38,8 @@
     .tool-purpose { gap: 5px; padding: 6px 8px; border-radius: 11px; font-size: 10px; }
     .activity-primary time { max-width: 50px; }
     .session-context { padding: 10px 12px; }
+    .context-usage { grid-template-columns: minmax(0, 1fr) 84px; gap: 9px; }
+    .context-usage-label small { display: none; }
     .new-session-overlay { align-items: end; padding: 0; }
     .new-session-dialog { width: 100%; max-height: calc(100dvh - env(safe-area-inset-top) - 12px); border-right: 0; border-bottom: 0; border-left: 0; border-radius: 20px 20px 0 0; }
     .new-session-dialog-head { padding: 17px 16px 13px; }

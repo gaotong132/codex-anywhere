@@ -84,6 +84,11 @@ import { SessionSidebar } from './session-sidebar';
 import { BrowserSecureChannel } from './secure-channel-client';
 import { normalizeToolPurpose } from '../../src/shared/message-content';
 import {
+  normalizeContextUsage,
+  type ContextUsage,
+} from '../../src/shared/context-compaction';
+import type { TimelineNotice } from '../../src/shared/timeline-notice';
+import {
   normalizeTurnProgress,
   type TurnFileProgress,
   type TurnProgress,
@@ -497,6 +502,36 @@ function StartupScreen({ status }: { status: string }) {
   );
 }
 
+function ContextUsageStatus({ usage }: { usage: ContextUsage }) {
+  const percent = usage.tokens !== undefined && usage.contextWindow
+    ? Math.min(100, Math.max(0, Math.round(usage.tokens / usage.contextWindow * 100)))
+    : null;
+  const detail = usage.tokens !== undefined && usage.contextWindow
+    ? `${usage.tokens.toLocaleString()} / ${usage.contextWindow.toLocaleString()} Token`
+    : usage.tokens !== undefined
+      ? `${usage.tokens.toLocaleString()} Token`
+      : t('上下文容量未知', 'Context capacity unknown');
+  return (
+    <div className={`context-usage${percent !== null && percent >= 80 ? ' high' : ''}`} title={detail}>
+      <span className="context-usage-label">
+        <strong>{t('上下文', 'Context')}</strong>
+        <b>{percent === null ? '—' : `${percent}%`}</b>
+        <small>{detail}</small>
+      </span>
+      <span
+        className="context-usage-meter"
+        role="progressbar"
+        aria-label={t('上下文用量', 'Context usage')}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={percent ?? undefined}
+      >
+        <i style={{ width: `${percent || 0}%` }} />
+      </span>
+    </div>
+  );
+}
+
 export default function App() {
   const [pairingCredential, setPairingCredential] = useState<BrowserPairingCredential | null>(loadInitialBrowserPairing);
   const [pairingDialogOpen, setPairingDialogOpen] = useState(false);
@@ -519,6 +554,7 @@ export default function App() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [modelConfig, setModelConfig] = useState<SessionModelConfig | null>(null);
   const [modelConfigLoading, setModelConfigLoading] = useState(false);
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -733,6 +769,22 @@ export default function App() {
     setTimeline((current) => kind === 'error'
       ? appendUniqueTimelineError(current, item)
       : [...current, item]);
+    return item.id;
+  }, []);
+
+  const addTimelineNotice = useCallback((notice: TimelineNotice) => {
+    const item: TimelineItem = {
+      id: makeId(),
+      kind: 'system',
+      text: '',
+      notice,
+      transient: true,
+      historyTurnId: activeTurnIdRef.current || undefined,
+      completedAt: Date.now(),
+    };
+    autoFollowLatestRef.current = true;
+    shouldScrollBottomRef.current = true;
+    setTimeline((current) => [...current, item]);
     return item.id;
   }, []);
 
@@ -1165,7 +1217,17 @@ export default function App() {
         autoFollowLatestRef.current = true;
         shouldScrollBottomRef.current = true;
       }
+    } else if (message.event === 'approval.resolved') {
+      setApproval(null);
+      addTimelineNotice({
+        kind: 'approval',
+        decision: payload.approved === true ? 'approved' : 'rejected',
+        approvalKind: String(payload.kind || 'action'),
+        summary: String(payload.summary || ''),
+      });
     } else if (message.event === 'turn.error') {
+      const error = String(payload.error || t('Codex 运行错误', 'Codex execution error'));
+      addTimelineNotice({ kind: 'turnStatus', status: 'error', detail: error });
       streamItemRef.current = null;
       activeTurnIdRef.current = '';
       setApproval(null);
@@ -1173,8 +1235,10 @@ export default function App() {
       runningRef.current = false;
       ownedTurnThreadIdRef.current = null;
       resetExecution('failed');
-      addTimeline('error', String(payload.error || t('Codex 运行错误', 'Codex execution error')));
     } else if (message.event === 'turn.ended') {
+      if (payload.reason === 'cancelled') {
+        addTimelineNotice({ kind: 'turnStatus', status: 'aborted', detail: 'cancelled' });
+      }
       streamItemRef.current = null;
       activeTurnIdRef.current = '';
       setApproval(null);
@@ -1194,7 +1258,7 @@ export default function App() {
       void refreshSessions();
     }
   }, [
-    addTimeline, appendStream, beginSecureChannel, finishAssistant, finishInitialBootstrap,
+    addTimelineNotice, appendStream, beginSecureChannel, finishAssistant, finishInitialBootstrap,
     refreshSessions, resetExecution, updateExecution, updateSessionAttention,
   ]);
 
@@ -1503,6 +1567,7 @@ export default function App() {
       const items = attachLatestAssistantFileChanges(historyItems(page.turns), page.turnProgress);
       if (cursor) setTimeline((current) => [...items, ...current]);
       else {
+        setContextUsage(normalizeContextUsage(page.contextUsage) || null);
         autoFollowLatestRef.current = true;
         shouldScrollBottomRef.current = true;
         for (const item of items) {
@@ -1563,6 +1628,8 @@ export default function App() {
           mode: 'live',
         });
         if (disposed || threadIdRef.current !== threadId) return;
+        const nextContextUsage = normalizeContextUsage(page.contextUsage);
+        if (nextContextUsage) setContextUsage(nextContextUsage);
         const fingerprint = historyFingerprint(page.turns, page.turnProgress);
         const previousFingerprint = followFingerprintRef.current;
         const changed = Boolean(previousFingerprint && previousFingerprint !== fingerprint);
@@ -1657,6 +1724,7 @@ export default function App() {
     setCreatingNewSession(false);
     if (nextThreadId) localStorage.setItem('bridge.lastThreadId', nextThreadId);
     setTimeline([]);
+    setContextUsage(null);
     preserveScrollHeightRef.current = null;
     previousMessageScrollTopRef.current = 0;
     olderHistoryLoadingRef.current = false;
@@ -2542,7 +2610,9 @@ export default function App() {
           </span>
         </header>
 
-        <div className="session-context" />
+        <div className="session-context">
+          {contextUsage && <ContextUsageStatus usage={contextUsage} />}
+        </div>
 
         <ConversationTimeline
           messageListRef={messageListRef}

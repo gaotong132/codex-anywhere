@@ -8,12 +8,18 @@ import {
 } from 'node:path';
 import { createInterface } from 'node:readline';
 import { parseAssistantMessage, parseUserMessage } from '../shared/message-content.js';
-import { readRolloutModelSettings, readRolloutTail, type RolloutModelSettings } from './rollout-tail.js';
+import {
+  readRolloutContextUsage,
+  readRolloutModelSettings,
+  readRolloutTail,
+  type RolloutModelSettings,
+} from './rollout-tail.js';
 import { extractGeneratedImageAttachment } from './generated-images.js';
 import { needsDesktopPermissionRecovery } from './session-permissions.js';
 import { resolveCodexExecutable } from './codex-executable.js';
 import { summarizePlanSteps, summarizeUnifiedDiff } from '../shared/turn-progress.js';
 import { summarizeToolActivity } from '../shared/activity-detail.js';
+import { publicError } from '../shared/protocol.js';
 import {
   createTurnDiffDocument,
   readRolloutTurnDiff,
@@ -267,12 +273,16 @@ export class CodexAppServer extends EventEmitter {
         itemsView: mode === 'live' ? 'full' : 'summary',
         ...(cursor ? { cursor } : {}),
       });
+      const contextUsage = !cursor && metadata?.path
+        ? await readRolloutContextUsage(metadata.path).catch(() => undefined)
+        : undefined;
       return {
         threadId: resolvedThreadId,
         turns: mapTurns(result?.data),
         nextCursor: result?.nextCursor || null,
         truncated: false,
         source: 'appServer',
+        contextUsage,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -646,6 +656,12 @@ export class CodexAppServer extends EventEmitter {
       ),
     });
     this.approvals.delete(String(approvalId));
+    this.emitTurn('approval.resolved', {
+      approvalId: String(approvalId),
+      kind: pending.kind,
+      summary: approvalDecisionSummary(pending),
+      approved: approved === true,
+    });
     return { approvalId: String(approvalId), approved: approved === true };
   }
 
@@ -810,7 +826,9 @@ export class CodexAppServer extends EventEmitter {
       return;
     }
     if (method === 'error' || method.includes('error')) {
-      this.emitTurn('turn.error', { error: String(params.message || params.error?.message || 'Codex error').slice(0, SUMMARY_LIMIT) });
+      this.emitTurn('turn.error', {
+        error: publicError(String(params.message || params.error?.message || 'Codex error')).slice(0, SUMMARY_LIMIT),
+      });
     }
   }
 
@@ -857,7 +875,7 @@ export class CodexAppServer extends EventEmitter {
     this.pending.clear();
     this.approvals.clear();
     if (this.activeTurn) {
-      this.emitTurn('turn.error', { error: error.message });
+      this.emitTurn('turn.error', { error: publicError(error) });
       this.activeTurn = null;
     }
   }
@@ -887,6 +905,21 @@ function approvalSummary(method: string, params: JsonObject) {
     || params.path || params.input || method;
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   return text.slice(0, SUMMARY_LIMIT);
+}
+
+function approvalDecisionSummary(pending: PendingApproval) {
+  if (pending.kind === 'command') {
+    return summarizeToolActivity({
+      type: 'commandExecution',
+      command: pending.params.command,
+      parsed_cmd: pending.params.parsedCommand || pending.params.parsed_cmd,
+    }) || 'command';
+  }
+  if (pending.kind === 'file-change') {
+    const path = String(pending.params.path || pending.params.filePath || '').trim();
+    return path ? `file-change · ${basename(path)}` : 'file-change';
+  }
+  return pending.kind;
 }
 
 function approvalResult(
@@ -976,12 +1009,9 @@ function extractText(value: any): string {
 }
 
 function mapTurns(turns: unknown) {
-  return (Array.isArray(turns) ? turns : []).map((turn: JsonObject) => ({
-    id: turn.id,
-    status: turn.status?.type || turn.status || '',
-    startedAt: turn.startedAt || null,
-    completedAt: turn.completedAt || null,
-    items: (Array.isArray(turn.items) ? turn.items : [])
+  return (Array.isArray(turns) ? turns : []).map((turn: JsonObject) => {
+    const rawItems = Array.isArray(turn.items) ? turn.items : [];
+    const items: JsonObject[] = rawItems
       .filter((item: JsonObject) => {
         const type = String(item.type || '');
         return Boolean(extractGeneratedImageAttachment(item))
@@ -1010,8 +1040,64 @@ function mapTurns(turns: unknown) {
           ...timing,
         };
       })
-      .filter((item: JsonObject) => item.text || item.attachment),
-  }));
+      .filter((item: JsonObject) => item.text || item.attachment);
+    const toolSummary = summarizeTurnTools(rawItems);
+    if (toolSummary) {
+      const finalIndex = items.findIndex((item: JsonObject) => item.phase === 'final_answer');
+      items.splice(finalIndex < 0 ? items.length : finalIndex, 0, {
+        type: 'timelineNotice', text: '', notice: toolSummary,
+        completedAt: turn.completedAt || null,
+      });
+    }
+    const status = String(turn.status?.type || turn.status || '');
+    if (/failed|aborted|error/i.test(status)) {
+      const detailValue = turn.error?.message || turn.error || turn.message || turn.reason;
+      const rawDetail = typeof detailValue === 'string' ? detailValue.trim() : '';
+      const detail = rawDetail ? publicError(rawDetail).slice(0, 500) : '';
+      items.push({
+        type: 'timelineNotice', text: '',
+        notice: {
+          kind: 'turnStatus',
+          status: /aborted/i.test(status) ? 'aborted' : /error/i.test(status) ? 'error' : 'failed',
+          ...(detail ? { detail } : {}),
+        },
+        completedAt: turn.completedAt || null,
+      });
+    }
+    return {
+      id: turn.id,
+      status,
+      startedAt: turn.startedAt || null,
+      completedAt: turn.completedAt || null,
+      items,
+    };
+  });
+}
+
+function summarizeTurnTools(items: JsonObject[]) {
+  const counts = {
+    commands: 0, edits: 0, searches: 0, connectedTools: 0, generations: 0, other: 0,
+  };
+  let total = 0;
+  for (const item of items) {
+    const type = String(item?.type || '');
+    if (!/command|tool|webSearch|fileChange|mcp/i.test(type)
+      || /output/i.test(type)) continue;
+    const label = summarizeToolActivity(item).split(' · ')[0]?.toLowerCase() || '';
+    if (!label) continue;
+    const field = /command|exec_command/.test(label) ? 'commands'
+      : /file.?change|apply_patch|patch/.test(label) ? 'edits'
+        : /web|search/.test(label) ? 'searches'
+          : /image.?gen/.test(label) ? 'generations'
+            : /mcp/.test(label) ? 'connectedTools'
+              : 'other';
+    counts[field] += 1;
+    total += 1;
+  }
+  return total ? {
+    kind: 'toolSummary', total,
+    ...Object.fromEntries(Object.entries(counts).filter(([, count]) => count > 0)),
+  } : undefined;
 }
 
 function isActiveWriterError(error: unknown) {

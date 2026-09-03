@@ -664,7 +664,7 @@ test('bare links stop before adjacent Chinese punctuation', () => {
   );
 });
 
-test('rollout tail mapping keeps only user-visible conversation updates', () => {
+test('rollout tail mapping hides raw internal work and summarizes tool activity', () => {
   const oversized = 'x'.repeat(5_000);
   const items = rolloutInternals.mapRolloutRows([
     { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hello' }] } },
@@ -675,13 +675,14 @@ test('rollout tail mapping keeps only user-visible conversation updates', () => 
       { type: 'output_text', text: 'done' },
     ] } },
   ]);
-  assert.equal(items.length, 3);
+  assert.equal(items.length, 4);
   assert.equal(items[0].type, 'userMessage');
   assert.equal(items[0].text, 'hello');
   assert.equal(items[1].phase, 'commentary');
   assert.equal(items[1].text, 'visible update');
-  assert.equal(items[2].phase, 'final_answer');
-  assert.equal(items[2].text, 'done');
+  assert.deepEqual(items[2].notice, { kind: 'toolSummary', total: 1, other: 1 });
+  assert.equal(items[3].phase, 'final_answer');
+  assert.equal(items[3].text, 'done');
 });
 
 test('rollout compaction events become safe timeline markers with context usage', () => {
@@ -730,6 +731,79 @@ test('rollout compaction events become safe timeline markers with context usage'
   assert.match(markup, /第 3 次/);
   assert.match(markup, /83% → 6%/);
   assert.doesNotMatch(markup, /must-not-render/);
+});
+
+test('rollout lifecycle, settings, and tools become compact safe timeline notices', () => {
+  const items = rolloutInternals.mapRolloutRows([
+    { type: 'turn_context', payload: {
+      model: 'gpt-old', reasoning_effort: 'medium', service_tier: 'default',
+    } },
+    { type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-notices' } },
+    { timestamp: '2026-09-03T04:00:00.000Z', type: 'event_msg', payload: {
+      type: 'thread_settings_applied',
+      thread_settings: { model: 'gpt-new', reasoning_effort: 'high', service_tier: 'priority' },
+    } },
+    { type: 'response_item', payload: {
+      type: 'custom_tool_call', call_id: 'command-1', name: 'exec',
+      input: 'const r = await tools.exec_command({cmd:"npm test; echo private-secret"}); text(r.output)',
+    } },
+    { type: 'response_item', payload: {
+      type: 'custom_tool_call', call_id: 'edit-1', name: 'exec',
+      input: 'const p = await tools.apply_patch("*** Begin Patch\\n*** Update File: src/app.ts\\n*** End Patch")',
+    } },
+    { type: 'response_item', payload: {
+      type: 'custom_tool_call', call_id: 'search-1', name: 'exec',
+      input: 'const r = await tools.web__run({search_query:[{q:"public query"}]}); text(r)',
+    } },
+    { type: 'event_msg', payload: {
+      type: 'agent_message', phase: 'final_answer', message: 'finished',
+    } },
+    { timestamp: '2026-09-03T04:01:00.000Z', type: 'event_msg', payload: {
+      type: 'turn_aborted', turn_id: 'turn-notices', reason: 'interrupted',
+    } },
+  ]);
+
+  assert.deepEqual(items.map((item) => item.notice || item.text), [
+    { kind: 'modelSettings', model: 'gpt-new', reasoningEffort: 'high', serviceTier: 'priority' },
+    { kind: 'toolSummary', total: 3, commands: 1, edits: 1, searches: 1 },
+    'finished',
+    { kind: 'turnStatus', status: 'aborted', detail: 'interrupted' },
+  ]);
+  assert.equal(JSON.stringify(items).includes('private-secret'), false);
+
+  const timeline = historyItems([{ id: 'turn-notices', items }]);
+  const markup = timeline
+    .filter((item) => item.notice)
+    .map((item) => renderToStaticMarkup(createElement(MessageBubble, {
+      item,
+      onDownloadFile: () => undefined,
+      onReadVisualization: async () => '',
+    })))
+    .join('');
+  assert.match(markup, /运行配置已变更/);
+  assert.match(markup, /本轮调用了 3 个工具/);
+  assert.match(markup, /任务已中止/);
+  assert.match(markup, /已由用户停止/);
+});
+
+test('latest token count exposes bounded current context usage', () => {
+  const usage = rolloutInternals.latestContextUsage([
+    { type: 'event_msg', payload: { type: 'token_count', info: {
+      last_token_usage: { total_tokens: 12_000 }, model_context_window: 100_000,
+    } } },
+    { timestamp: '2026-09-03T04:02:00.000Z', type: 'event_msg', payload: {
+      type: 'token_count', info: {
+        last_token_usage: { total_tokens: 81_500 }, model_context_window: 100_000,
+        rate_limits: { secret: 'must-not-leak' },
+      },
+    } },
+  ]);
+  assert.deepEqual(usage, {
+    tokens: 81_500,
+    contextWindow: 100_000,
+    updatedAt: Date.parse('2026-09-03T04:02:00.000Z'),
+  });
+  assert.equal(JSON.stringify(usage).includes('must-not-leak'), false);
 });
 
 test('rollout history keeps complete final replies while bounding progress updates', () => {
@@ -1503,6 +1577,10 @@ test('large rollout keeps activity across an incremental tail read', async () =>
           {step:"inspect",status:"completed"},{step:"verify",status:"in_progress"}
         ]});`,
       } }),
+      row({ type: 'response_item', payload: {
+        type: 'custom_tool_call', call_id: 'incremental-command', name: 'exec',
+        input: 'const result = await tools.exec_command({cmd:"npm test"}); text(result.output)',
+      } }),
       row({ type: 'response_item', payload: { type: 'custom_tool_call_output', output: 'x'.repeat(80 * 1024) } }),
       row({ type: 'event_msg', payload: { type: 'agent_reasoning', text: '**Checking persistent state**' } }),
       row({ type: 'response_item', payload: { type: 'message', role: 'assistant', phase: 'commentary', content: [
@@ -1533,6 +1611,9 @@ test('large rollout keeps activity across an incremental tail read', async () =>
     assert.equal(completed.toolPurpose, '');
     assert.equal(completed.activityKind, '');
     assert.deepEqual(completed.turnProgress.plan, { current: 2, total: 2 });
+    assert.deepEqual(completed.turns[0].items.at(-1).notice, {
+      kind: 'toolSummary', total: 1, commands: 1,
+    });
   } finally {
     rolloutInternals.rolloutCache.delete(filePath);
     await rm(directory, { recursive: true, force: true });
@@ -2058,7 +2139,14 @@ test('app-server approval requests survive reconnect and use protocol decisions'
   const pending = codex.listApprovals('thread-1', 'new-client');
   assert.equal(pending.approvals.length, 1);
   assert.equal(codex.activeTurn.clientId, 'new-client');
+  const resolvedPromise = once(codex, 'turn-event');
   await codex.respondApproval('41', true, 'thread-1');
+  const [resolved] = await resolvedPromise;
+  assert.equal(resolved.event, 'approval.resolved');
+  assert.deepEqual(resolved.payload, {
+    approvalId: '41', kind: 'command', summary: 'command · npm test', approved: true,
+    threadId: 'thread-1', turnId: undefined,
+  });
   assert.deepEqual(writes.at(-1).result, { decision: 'accept' });
   assert.equal(codex.listApprovals('thread-1').approvals.length, 0);
 
@@ -2070,7 +2158,7 @@ test('app-server approval requests survive reconnect and use protocol decisions'
   assert.equal(codex.listApprovals('thread-1').approvals.length, 0);
 });
 
-test('history mapping keeps user-visible messages and hides internal work', () => {
+test('history mapping keeps user-visible messages and summarizes internal tools', () => {
   const turns = internals.mapTurns([{ id: 't1', items: [
     { type: 'userMessage', content: [{ type: 'text', text: 'hello' }] },
     { type: 'agentMessage', phase: 'commentary', text: 'visible update' },
@@ -2078,10 +2166,11 @@ test('history mapping keeps user-visible messages and hides internal work', () =
     { type: 'commandExecution', command: 'npm test', aggregatedOutput: 'passed', status: 'completed' },
     { type: 'agentMessage', phase: 'final_answer', text: 'world' },
   ] }]);
-  assert.equal(turns[0].items.length, 3);
+  assert.equal(turns[0].items.length, 4);
   assert.equal(turns[0].items[0].text, 'hello');
   assert.equal(turns[0].items[1].text, 'visible update');
-  assert.equal(turns[0].items[2].text, 'world');
+  assert.deepEqual(turns[0].items[2].notice, { kind: 'toolSummary', total: 1, commands: 1 });
+  assert.equal(turns[0].items[3].text, 'world');
 });
 
 test('live tool activity forwards a bounded useful summary without raw arguments or output', () => {
