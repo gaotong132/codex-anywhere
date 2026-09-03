@@ -91,6 +91,7 @@ type TurnContext = {
   turnId: string;
   cwd: string;
   state: string;
+  cancelRequested?: boolean;
 };
 type StartTurnOptions = {
   text?: unknown;
@@ -656,7 +657,7 @@ export class CodexAppServer extends EventEmitter {
     }
     if (!resolvedThreadId && !String(cwd || '').trim()) throw new Error('project_directory_required');
     let turnCwd = '';
-    const turnContext = {
+    const turnContext: TurnContext = {
       clientId, requestId, threadId: resolvedThreadId, turnId: '', cwd: turnCwd, state: 'starting',
     };
     this.activeTurn = turnContext;
@@ -689,18 +690,21 @@ export class CodexAppServer extends EventEmitter {
         if (!resolvedThreadId) throw new Error('codex_did_not_return_thread_id');
       }
       subscribedThreadId = resolvedThreadId;
-      if (this.activeTurn !== turnContext) throw new Error('turn_cancelled');
+      if (this.activeTurn !== turnContext || turnContext.cancelRequested) throw new Error('turn_cancelled');
       const startResult = await this.rpcRaw('turn/start', {
         threadId: resolvedThreadId,
         input: [{ type: 'text', text: String(text || '') }],
         cwd: turnCwd,
         ...(permissions ? permissions.turn : {}),
       });
-      if (this.activeTurn !== turnContext) throw new Error('turn_cancelled');
       const turnId = String(startResult?.turn?.id || startResult?.turnId || '').trim();
       if (!turnId) throw new Error('codex_did_not_return_turn_id');
       turnContext.threadId = resolvedThreadId;
       turnContext.turnId = turnId;
+      if (this.activeTurn !== turnContext || turnContext.cancelRequested) {
+        await this.rpcRaw('turn/interrupt', { threadId: resolvedThreadId, turnId }).catch(() => undefined);
+        throw new Error('turn_cancelled');
+      }
       turnContext.state = 'running';
       if (appliedPermissionMode) {
         this.sessionPermissionModes.set(resolvedThreadId, appliedPermissionMode);
@@ -807,19 +811,21 @@ export class CodexAppServer extends EventEmitter {
   }
 
   async stopTurn() {
-    if (!this.child) return { stopped: false };
-    const previous = this.activeTurn;
-    const child = this.child;
-    this.activeTurn = null;
-    this.clearApprovalsForThread(previous?.threadId);
-    child.kill();
-    this.handleExit(new Error('Codex app-server stopped'), child);
-    this.emit('turn-event', {
-      clientId: previous?.clientId,
-      requestId: previous?.requestId,
-      event: 'turn.ended',
-      payload: { reason: 'cancelled', threadId: previous?.threadId },
-    });
+    const turn = this.activeTurn;
+    if (!turn) return { stopped: false };
+    turn.cancelRequested = true;
+    if (!turn.threadId || !turn.turnId || turn.state !== 'running') {
+      return { stopped: true, pending: true };
+    }
+    turn.state = 'cancelling';
+    try {
+      await this.rpcRaw('turn/interrupt', { threadId: turn.threadId, turnId: turn.turnId });
+    } catch (error) {
+      if (this.activeTurn !== turn) return { stopped: true };
+      turn.cancelRequested = false;
+      turn.state = 'running';
+      throw error;
+    }
     return { stopped: true };
   }
 
@@ -940,7 +946,10 @@ export class CodexAppServer extends EventEmitter {
       || (method.endsWith('/delta') && /agent.?message/i.test(itemType))
     ) {
       const delta = String(params.delta || '');
-      if (delta) this.emitTurn('turn.delta', { delta, phase: params.phase || params.item?.phase || '' });
+      const itemId = String(params.itemId || params.item_id || params.item?.id || '');
+      if (delta) this.emitTurn('turn.delta', {
+        delta, phase: params.phase || params.item?.phase || '', ...(itemId ? { itemId } : {}),
+      });
       return;
     }
     if (method === 'item/started') {
@@ -960,8 +969,13 @@ export class CodexAppServer extends EventEmitter {
     }
     if (method === 'turn/completed' || method === 'turn.completed') {
       const previous = this.activeTurn;
+      const status = String(params.turn?.status || params.status || 'completed');
+      const reason = /interrupted/i.test(status) ? 'cancelled'
+        : /failed/i.test(status) ? 'failed' : 'completed';
       this.clearApprovalsForThread(previous?.threadId);
-      this.emitTurn('turn.ended', { reason: 'completed', threadId: previous?.threadId, usage: params.usage || params.turn?.usage });
+      this.emitTurn('turn.ended', {
+        reason, status, threadId: previous?.threadId, usage: params.usage || params.turn?.usage,
+      });
       this.activeTurn = null;
       void this.releaseThread(previous?.threadId);
       return;

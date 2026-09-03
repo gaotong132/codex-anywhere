@@ -85,6 +85,7 @@ import {
 } from '../web/src/app-utils.js';
 import {
   appendUniqueTimelineError,
+  appendStreamedMessageText,
   attachLatestAssistantFileChanges,
   historyFingerprint,
   historyItems,
@@ -2335,6 +2336,85 @@ test('history mapping keeps user-visible messages and summarizes internal tools'
   assert.equal(turns[0].items[1].text, 'visible update');
   assert.deepEqual(turns[0].items[2].notice, { kind: 'toolSummary', total: 1, commands: 1 });
   assert.equal(turns[0].items[3].text, 'world');
+});
+
+test('live progress preserves app-server agent message boundaries', () => {
+  assert.equal(appendStreamedMessageText('第一段', '第二段', true), '第一段\n\n第二段');
+  assert.equal(appendStreamedMessageText('第一段\n', '\n第二段', true), '第一段\n\n第二段');
+  assert.equal(appendStreamedMessageText('同一', '条消息', false), '同一条消息');
+});
+
+test('app-server progress deltas expose their item identity', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  codex.activeTurn = {
+    clientId: 'client', requestId: 'request', threadId: 'thread-1',
+    turnId: 'turn-1', cwd: process.cwd(), state: 'running',
+  };
+  const eventPromise = once(codex, 'turn-event');
+  codex.handleNotification('item/agentMessage/delta', {
+    threadId: 'thread-1', turnId: 'turn-1', itemId: 'message-2',
+    phase: 'commentary', delta: '第二段',
+  });
+  const [event] = await eventPromise;
+  assert.equal(event.event, 'turn.delta');
+  assert.deepEqual(event.payload, {
+    threadId: 'thread-1', turnId: 'turn-1', itemId: 'message-2',
+    phase: 'commentary', delta: '第二段',
+  });
+});
+
+test('app-server stops a running turn through the interrupt protocol', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  const calls = [];
+  codex.activeTurn = {
+    clientId: 'client', requestId: 'request', threadId: 'thread-1',
+    turnId: 'turn-1', cwd: process.cwd(), state: 'running',
+  };
+  codex.rpcRaw = async (method, params) => { calls.push([method, params]); return {}; };
+  assert.deepEqual(await codex.stopTurn(), { stopped: true });
+  assert.deepEqual(calls, [['turn/interrupt', { threadId: 'thread-1', turnId: 'turn-1' }]]);
+  assert.equal(codex.activeTurn.state, 'cancelling');
+
+  const endedPromise = once(codex, 'turn-event');
+  codex.handleNotification('turn/completed', {
+    turn: { id: 'turn-1', status: 'interrupted' },
+  });
+  const [ended] = await endedPromise;
+  assert.equal(ended.event, 'turn.ended');
+  assert.equal(ended.payload.reason, 'cancelled');
+  assert.equal(codex.activeTurn, null);
+});
+
+test('a stop requested while a turn is starting interrupts it once its id arrives', async () => {
+  const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+  codex.ensureStarted = async () => {};
+  codex.sessionMetadata.set('thread-1', {
+    cwd: process.cwd(), path: '', canAcceptDirectInput: true,
+  });
+  let resolveTurnStart;
+  let markTurnStartRequested;
+  const turnStartRequested = new Promise((resolveRequested) => {
+    markTurnStartRequested = resolveRequested;
+  });
+  const turnStartResult = new Promise((resolveStarted) => { resolveTurnStart = resolveStarted; });
+  const calls = [];
+  codex.rpcRaw = async (method, params) => {
+    calls.push([method, params]);
+    if (method === 'thread/resume') return { thread: { id: 'thread-1' } };
+    if (method === 'turn/start') {
+      markTurnStartRequested();
+      return turnStartResult;
+    }
+    return {};
+  };
+
+  const starting = codex.startTurn({ threadId: 'thread-1', text: 'run' });
+  await turnStartRequested;
+  assert.deepEqual(await codex.stopTurn(), { stopped: true, pending: true });
+  resolveTurnStart({ turn: { id: 'turn-1' } });
+  await assert.rejects(starting, /turn_cancelled/);
+  assert.equal(calls.some(([method, params]) => method === 'turn/interrupt'
+    && params.threadId === 'thread-1' && params.turnId === 'turn-1'), true);
 });
 
 test('live tool activity forwards a bounded useful summary without raw arguments or output', () => {

@@ -11,6 +11,7 @@ import {
 } from 'react';
 import {
   attachLatestAssistantFileChanges,
+  appendStreamedMessageText,
   appendUniqueTimelineError,
   attachmentRegistryKey,
   parseAssistantMessage,
@@ -313,7 +314,7 @@ export default function App() {
   const previousMessageScrollTopRef = useRef(0);
   const shouldScrollBottomRef = useRef(false);
   const autoFollowLatestRef = useRef(true);
-  const streamItemRef = useRef<{ id: string; kind: TimelineKind } | null>(null);
+  const streamItemRef = useRef<{ id: string; kind: TimelineKind; sourceItemId: string } | null>(null);
   const activeTurnIdRef = useRef('');
   const turnProgressRef = useRef<TurnProgress>({});
   const followFingerprintRef = useRef('');
@@ -513,18 +514,23 @@ export default function App() {
     });
   }, []);
 
-  const appendStream = useCallback((kind: TimelineKind, text: string) => {
+  const appendStream = useCallback((kind: TimelineKind, text: string, sourceItemId = '') => {
     if (!text) return;
     if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
     const current = streamItemRef.current;
     if (current?.kind === kind) {
+      const normalizedSourceItemId = sourceItemId.trim();
+      const newProgressItem = kind === 'progress'
+        && Boolean(normalizedSourceItemId && current.sourceItemId
+          && normalizedSourceItemId !== current.sourceItemId);
+      if (normalizedSourceItemId) current.sourceItemId = normalizedSourceItemId;
       setTimeline((items) => items.map((item) => item.id === current.id
-        ? { ...item, text: `${item.text}${text}` }
+        ? { ...item, text: appendStreamedMessageText(item.text, text, newProgressItem) }
         : item));
       return;
     }
     const id = makeId();
-    streamItemRef.current = { id, kind };
+    streamItemRef.current = { id, kind, sourceItemId: sourceItemId.trim() };
     setTimeline((items) => [...items, {
       id, kind, text, transient: true,
       ...(activeTurnIdRef.current ? { historyTurnId: activeTurnIdRef.current } : {}),
@@ -818,7 +824,11 @@ export default function App() {
       }
     } else if (message.event === 'turn.delta') {
       setLiveActivity('responding');
-      appendStream(payload.phase === 'final_answer' ? 'assistant' : 'progress', String(payload.delta || ''));
+      appendStream(
+        payload.phase === 'final_answer' ? 'assistant' : 'progress',
+        String(payload.delta || ''),
+        String(payload.itemId || ''),
+      );
     } else if (message.event === 'turn.reasoning') {
       setLiveActivity('planning');
       const purpose = normalizeToolPurpose(payload.text);

@@ -84,6 +84,13 @@ export function appendUniqueTimelineError(items: TimelineItem[], item: TimelineI
   return [...items, item];
 }
 
+export function appendStreamedMessageText(current: string, delta: string, newItem: boolean) {
+  if (!newItem || !current || !delta) return `${current}${delta}`;
+  const trailingNewlines = current.match(/\n*$/)?.[0].length || 0;
+  const leadingNewlines = delta.match(/^\n*/)?.[0].length || 0;
+  return `${current}${'\n'.repeat(Math.max(0, 2 - trailingNewlines - leadingNewlines))}${delta}`;
+}
+
 export function latestTurnProgressItemId(items: TimelineItem[]) {
   let latestUserIndex = -1;
   for (let index = items.length - 1; index >= 0; index -= 1) {
