@@ -638,13 +638,16 @@ test('older history prefill runs only when the list cannot leave the top trigger
   ), false);
 });
 
-test('older history keeps a stable label while a page is loading', async () => {
+test('older history shows a spinner and explicit state while a page is loading', async () => {
   const timelineSource = await readFile(resolve('web/src/conversation-timeline.tsx'), 'utf8');
   assert.match(timelineSource, /aria-busy=\{historyLoading\}/);
-  assert.doesNotMatch(timelineSource, /historyLoading \? t\('正在加载…'/);
+  assert.match(timelineSource, /className="load-older-spinner"/);
+  assert.match(timelineSource, /正在加载更早记录…/);
+  assert.match(timelineSource, /加载失败，点击重试/);
+  assert.match(timelineSource, /new IntersectionObserver/);
 });
 
-test('empty intermediate history pages keep one stable loading surface', () => {
+test('empty intermediate history pages keep a visible pagination control', () => {
   const markup = renderToStaticMarkup(createElement(ConversationTimeline, {
     messageListRef: { current: null },
     messageContentRef: { current: null },
@@ -653,6 +656,7 @@ test('empty intermediate history pages keep one stable loading surface', () => {
     initialHistoryLoaded: true,
     nextCursor: 'rollout:v1:1048576',
     historyLoading: false,
+    olderHistoryError: false,
     timeline: [],
     knownAttachments: {},
     attachmentUrls: {},
@@ -670,7 +674,7 @@ test('empty intermediate history pages keep one stable loading surface', () => {
 
   assert.match(markup, /class="history-skeleton"/);
   assert.doesNotMatch(markup, /class="empty-conversation"/);
-  assert.doesNotMatch(markup, /class="load-older"/);
+  assert.match(markup, /class="load-older"/);
 });
 
 test('initial bootstrap waits for both sessions and the restored conversation', () => {

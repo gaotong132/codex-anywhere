@@ -253,6 +253,7 @@ export default function App() {
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [olderHistoryError, setOlderHistoryError] = useState(false);
   const [initialHistoryLoaded, setInitialHistoryLoaded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
@@ -1197,6 +1198,7 @@ export default function App() {
 
   const loadHistory = useCallback(async (targetThreadId: string, cursor: string | null, requestVersion: number) => {
     setHistoryLoading(true);
+    if (cursor) setOlderHistoryError(false);
     const preservedScrollHeight = cursor && messageListRef.current
       ? messageListRef.current.scrollHeight : null;
     if (preservedScrollHeight != null) preserveScrollHeightRef.current = preservedScrollHeight;
@@ -1245,10 +1247,14 @@ export default function App() {
         });
       }
       setNextCursor(page.nextCursor || null);
+      if (cursor) setOlderHistoryError(false);
       setInitialHistoryLoaded(true);
     } catch (error) {
       discardUnusedScrollAnchor();
-      if (selectedRequestRef.current === requestVersion) reportTimelineError(error);
+      if (selectedRequestRef.current === requestVersion) {
+        if (cursor) setOlderHistoryError(true);
+        else reportTimelineError(error);
+      }
     } finally {
       if (selectedRequestRef.current === requestVersion) setHistoryLoading(false);
     }
@@ -1382,6 +1388,7 @@ export default function App() {
     setAttachmentUrls({});
     attachmentLoadsRef.current.clear();
     setNextCursor(null);
+    setOlderHistoryError(false);
     setInitialHistoryLoaded(!nextThreadId);
     setHistoryLoading(false);
     liveHistoryHydratedThreadRef.current = null;
@@ -1536,11 +1543,12 @@ export default function App() {
 
   useEffect(() => {
     const element = messageListRef.current;
-    if (element && shouldPrefillOlderHistory(
+    if (!olderHistoryError && element && shouldPrefillOlderHistory(
       element, nextCursor, initialHistoryLoaded, historyLoading,
     )) loadOlder();
   }, [
-    historyLoading, initialBootstrapPending, initialHistoryLoaded, loadOlder, nextCursor, timeline,
+    historyLoading, initialBootstrapPending, initialHistoryLoaded, loadOlder, nextCursor,
+    olderHistoryError, timeline,
   ]);
 
   const chooseImage = useCallback(async (file?: File) => {
@@ -2423,6 +2431,7 @@ export default function App() {
           initialHistoryLoaded={initialHistoryLoaded}
           nextCursor={nextCursor}
           historyLoading={historyLoading}
+          olderHistoryError={olderHistoryError}
           timeline={timeline}
           knownAttachments={knownAttachments}
           attachmentUrls={attachmentUrls}

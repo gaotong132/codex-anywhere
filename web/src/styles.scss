@@ -635,7 +635,11 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 }
 .message-list::-webkit-scrollbar { width: 0; height: 0; }
 .load-older {
-  display: block;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   margin: 0 auto 20px;
   padding: 8px 14px;
   border: 1px solid #2b3547;
@@ -645,6 +649,9 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   font-size: 12px;
 }
 .load-older:disabled { opacity: 1; color: #97a6ba; background: #111722; }
+.load-older.failed { border-color: rgba(190, 84, 94, .5); color: #d9a0a7; background: rgba(76, 27, 35, .38); }
+.load-older-spinner { width: 14px; height: 14px; flex: 0 0 auto; border: 2px solid rgba(151, 166, 186, .28); border-top-color: #9eb7df; border-radius: 50%; animation: load-older-spin .7s linear infinite; }
+@keyframes load-older-spin { to { transform: rotate(360deg); } }
 .history-skeleton { padding: 20px; color: #8491a5; text-align: center; }
 .empty-conversation { min-height: 100%; display: grid; align-content: center; justify-items: center; padding: 30px; color: #758196; text-align: center; }
 .empty-conversation h2 { margin: 16px 0 5px; color: #dfe6f1; font-size: 19px; }
@@ -1186,7 +1193,8 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   .presence.running::before, .presence.running::after, .presence.waiting::before, .session-running-dot,
   .message.live, .message.assistant.final-arriving, .message.assistant.live::after, .progress-card.live, .progress-card.live::after,
   .tool-purpose, .tool-purpose::before,
-  .tool-purpose .status-change, .activity-complete-check, .typewriter-caret::after, .run-details-sheet { animation: none; }
+  .tool-purpose .status-change, .activity-complete-check, .typewriter-caret::after, .run-details-sheet,
+  .load-older-spinner { animation: none; }
 }
 .approval-card { margin: 0 max(18px, calc((100% - 860px) / 2)) 10px; padding: 14px; border: 1px solid #79511e; border-radius: 14px; background: #2a1d0c; }
 .approval-card > div:first-child { display: flex; justify-content: space-between; gap: 10px; }

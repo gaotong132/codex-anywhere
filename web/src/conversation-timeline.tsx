@@ -1,4 +1,6 @@
-import { lazy, memo, Suspense, useMemo, type RefObject, type UIEventHandler } from 'react';
+import {
+  lazy, memo, Suspense, useEffect, useMemo, useRef, type RefObject, type UIEventHandler,
+} from 'react';
 import {
   resolveTimelineAttachment,
   type KnownAttachment,
@@ -20,6 +22,7 @@ type ConversationTimelineProps = {
   initialHistoryLoaded: boolean;
   nextCursor: string | null;
   historyLoading: boolean;
+  olderHistoryError: boolean;
   timeline: TimelineItem[];
   knownAttachments: Record<string, KnownAttachment>;
   attachmentUrls: Record<string, string>;
@@ -49,6 +52,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   initialHistoryLoaded,
   nextCursor,
   historyLoading,
+  olderHistoryError,
   timeline,
   knownAttachments,
   attachmentUrls,
@@ -62,6 +66,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   onReadTurnDiff,
   onReadVisualization,
 }: ConversationTimelineProps) {
+  const olderHistorySentinelRef = useRef<HTMLButtonElement | null>(null);
   const resolvedItems = useMemo(() => timeline.map((item) => {
     const attachment = resolveTimelineAttachment(item, threadId, knownAttachments, environmentId);
     return {
@@ -72,18 +77,40 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   const awaitingVisibleHistory = Boolean(
     threadId && !timeline.length && (historyLoading || nextCursor),
   );
+  useEffect(() => {
+    const root = messageListRef.current;
+    const sentinel = olderHistorySentinelRef.current;
+    if (!root || !sentinel || !threadId || !initialHistoryLoaded || !nextCursor
+      || historyLoading || olderHistoryError || typeof IntersectionObserver === 'undefined') return undefined;
+    let requested = false;
+    const observer = new IntersectionObserver((entries) => {
+      if (!requested && entries.some((entry) => entry.isIntersecting)) {
+        requested = true;
+        onLoadOlder();
+      }
+    }, { root, rootMargin: '160px 0px 0px', threshold: 0 });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [historyLoading, initialHistoryLoaded, messageListRef, nextCursor, olderHistoryError, onLoadOlder, threadId]);
 
   return (
     <div className="message-list" ref={messageListRef} onScroll={onScroll}>
       <div className="message-list-content" ref={messageContentRef}>
-        {threadId && initialHistoryLoaded && nextCursor && Boolean(timeline.length) && (
+        {threadId && initialHistoryLoaded && nextCursor && (
           <button
-            className="load-older"
+            ref={olderHistorySentinelRef}
+            className={`load-older${historyLoading ? ' loading' : ''}${olderHistoryError ? ' failed' : ''}`}
             disabled={historyLoading}
             aria-busy={historyLoading}
+            aria-live="polite"
             onClick={onLoadOlder}
           >
-            {t('加载更早记录', 'Load older messages')}
+            {historyLoading && <span className="load-older-spinner" aria-hidden="true" />}
+            <span>{historyLoading
+              ? t('正在加载更早记录…', 'Loading older messages…')
+              : olderHistoryError
+                ? t('加载失败，点击重试', 'Loading failed. Tap to retry')
+                : t('加载更早记录', 'Load older messages')}</span>
           </button>
         )}
         {awaitingVisibleHistory && (
