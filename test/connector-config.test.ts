@@ -6,7 +6,11 @@ import { loadConnectorConfig } from '../src/connector/config.js';
 const token = 'c'.repeat(32);
 
 test('connector configuration applies safe defaults and normalizes an empty device route', () => {
-  const config = loadConnectorConfig({ BRIDGE_CONNECTOR_TOKEN: token, BRIDGE_DEVICE_ID: '   ' }, 'C:\\work');
+  const config = loadConnectorConfig(
+    { BRIDGE_CONNECTOR_TOKEN: token, BRIDGE_DEVICE_ID: '   ' },
+    'C:\\work',
+    'win32',
+  );
 
   assert.equal(config.url, 'ws://127.0.0.1:3300/ws');
   assert.equal(config.deviceId, 'personal-pc');
