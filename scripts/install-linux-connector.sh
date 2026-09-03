@@ -83,6 +83,7 @@ done
 
 [ "$(id -u)" -eq 0 ] || die 'Run this installer with sudo or as root.'
 command -v systemctl >/dev/null 2>&1 || die 'systemd is required.'
+command -v systemd-analyze >/dev/null 2>&1 || die 'systemd-analyze is required.'
 command -v getent >/dev/null 2>&1 || die 'getent is required.'
 command -v node >/dev/null 2>&1 || die 'Node.js 22 or newer is required.'
 command -v npm >/dev/null 2>&1 || die 'npm is required.'
@@ -174,11 +175,11 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=$SERVICE_USER
-WorkingDirectory="$ROOT_DIR"
+WorkingDirectory=$ROOT_DIR
 Environment="HOME=$USER_HOME"
 Environment="PATH=$(dirname "$NODE_BIN"):$(dirname "$NPM_BIN"):$(dirname "$CODEX_BIN"):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 EnvironmentFile=$ENV_FILE
-ExecStart="$ROOT_DIR/scripts/start-connector.sh"
+ExecStart=$ROOT_DIR/scripts/start-connector.sh
 Restart=always
 RestartSec=3
 TimeoutStopSec=20
@@ -193,6 +194,8 @@ ProtectControlGroups=true
 WantedBy=multi-user.target
 EOF
 chmod 644 "$SERVICE_FILE"
+systemd-analyze verify "$SERVICE_FILE" >/dev/null \
+  || die 'The generated systemd service did not pass validation.'
 
 cd "$ROOT_DIR"
 run_as_service_user env HOME="$USER_HOME" "$NPM_BIN" ci
