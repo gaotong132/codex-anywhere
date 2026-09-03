@@ -52,7 +52,6 @@ const MAX_HISTORY_PAGE_SIZE = 10;
 const MAX_LIVE_PAGE_SIZE = 2;
 const LARGE_ROLLOUT_BYTES = 64 * 1024 * 1024;
 const MAX_CACHED_TURN_DIFFS = 12;
-const LOCKED_MODEL = 'gpt-5.6-sol';
 const PACKAGE_VERSION = String((JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 ) as { version?: unknown }).version || '0.0.0');
@@ -411,17 +410,20 @@ export class CodexAppServer extends EventEmitter {
     ]);
     const remembered = this.sessionModelSettings.get(resolvedThreadId) || {};
     const defaults = configResult?.config || {};
-    const fixedModel = models[0];
-    if (!fixedModel) throw new Error('model_not_available');
+    const fallbackModel = models.find((model) => model.isDefault) || models[0];
+    const requestedModel = remembered.model || rolloutSettings.model
+      || String(defaults.model || fallbackModel?.model || '');
+    const selectedModel = models.find((model) => model.model === requestedModel) || fallbackModel;
+    if (!selectedModel) throw new Error('model_not_available');
     const requestedEffort = remembered.reasoningEffort || rolloutSettings.reasoningEffort
-      || String(defaults.model_reasoning_effort || fixedModel.defaultReasoningEffort || '');
-    const reasoningEffort = normalizeLockedReasoningEffort(fixedModel, requestedEffort);
+      || String(defaults.model_reasoning_effort || selectedModel.defaultReasoningEffort || '');
+    const reasoningEffort = normalizeModelReasoningEffort(selectedModel, requestedEffort);
     const requestedServiceTier = remembered.serviceTier || rolloutSettings.serviceTier
-      || String(defaults.service_tier || fixedModel.defaultServiceTier || 'default');
-    const serviceTier = fixedModel.serviceTiers.some((tier) => tier.id === requestedServiceTier)
-      ? requestedServiceTier : fixedModel.defaultServiceTier || 'default';
+      || String(defaults.service_tier || selectedModel.defaultServiceTier || 'default');
+    const serviceTier = selectedModel.serviceTiers.some((tier) => tier.id === requestedServiceTier)
+      ? requestedServiceTier : selectedModel.defaultServiceTier || 'default';
     const settings = {
-      model: LOCKED_MODEL,
+      model: selectedModel.model,
       reasoningEffort,
       serviceTier,
     };
@@ -572,7 +574,7 @@ export class CodexAppServer extends EventEmitter {
       }
     }
     return {
-      model: LOCKED_MODEL,
+      ...(settings.model ? { model: settings.model } : {}),
       ...(settings.reasoningEffort ? { thinking: settings.reasoningEffort } : {}),
     };
   }
@@ -603,9 +605,7 @@ export class CodexAppServer extends EventEmitter {
       })).filter((tier: { id: string }) => tier.id),
       defaultServiceTier: model.defaultServiceTier == null ? null : String(model.defaultServiceTier),
       isDefault: model.isDefault === true,
-    })).filter((model: ModelOption) => (
-      model.model === LOCKED_MODEL && model.supportedReasoningEfforts.length
-    ));
+    })).filter((model: ModelOption) => model.model && model.supportedReasoningEfforts.length);
     this.modelCatalogCache = { expiresAt: Date.now() + 5 * 60_000, models };
     return models;
   }
@@ -650,8 +650,7 @@ export class CodexAppServer extends EventEmitter {
       const permissions = appliedPermissionMode
         ? permissionSettings(appliedPermissionMode, turnCwd, this.networkAccess) : null;
       const threadParams = isNewThread && permissions
-        ? { cwd: turnCwd, model: LOCKED_MODEL, ...permissions.thread }
-        : { cwd: turnCwd, model: LOCKED_MODEL };
+        ? { cwd: turnCwd, ...permissions.thread } : { cwd: turnCwd };
       if (resolvedThreadId) {
         const result = await this.resumeThread(resolvedThreadId, threadParams, turnContext);
         resolvedThreadId = result?.thread?.id || result?.id || resolvedThreadId;
@@ -1001,7 +1000,7 @@ function isFastServiceTier(serviceTier: unknown, models: ModelOption[], selected
   return /(?:fast|priority)/i.test(`${tierId} ${tier?.name || ''}`);
 }
 
-function normalizeLockedReasoningEffort(model: ModelOption, value: unknown) {
+function normalizeModelReasoningEffort(model: ModelOption, value: unknown) {
   const requested = String(value || '').trim();
   const supported = model.supportedReasoningEfforts.map((option) => option.reasoningEffort);
   if (supported.includes(requested)) return requested;

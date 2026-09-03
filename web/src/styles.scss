@@ -431,11 +431,14 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   &.active { border-color: rgba(75, 132, 236, .36); color: #75a5ff; background: rgba(58, 116, 222, .14); }
   &:disabled { cursor: default; opacity: .32; }
 }
-.model-config-model-fixed {
-  min-width: 0; height: 32px; display: flex; align-items: center; gap: 5px; padding: 0 10px; border-radius: 9px; color: #f1f2f4; font-size: 12px;
+.model-config-model-select .custom-select-trigger {
+  height: 32px; grid-template-columns: minmax(0, 1fr) 16px; padding: 0 7px 0 10px; border-color: transparent; border-radius: 9px; background: transparent;
+  > span { display: flex; align-items: baseline; gap: 5px; color: #f1f2f4; font-size: 12px; }
   strong { min-width: 0; @include truncate; font-weight: 700; }
   em { flex: 0 0 auto; color: #9699a0; font-style: normal; font-weight: 650; }
+  &:hover { border-color: #353b45; background: #202329; }
 }
+.model-config-model-select .custom-select-menu { min-width: 240px; }
 .model-reasoning-slider {
   position: relative; height: 34px; display: flex; align-items: center; padding: 0 10px; border-radius: 999px; background: #24272c;
   input {
