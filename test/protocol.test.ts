@@ -1530,7 +1530,7 @@ test('message metadata stays in a fixed sibling row outside the bubble', async (
   assert.match(responsiveSource, /\.message-block\s*\{\s*width:\s*96%;\s*max-width:\s*96%;\s*\}/);
 });
 
-test('mobile header controls suppress transient tap rectangles without hiding keyboard focus', async () => {
+test('mobile controls suppress transient tap rectangles without hiding keyboard focus', async () => {
   const stylesSource = await readFile(resolve('web/src/styles.scss'), 'utf8');
   assert.match(
     stylesSource,
@@ -1538,6 +1538,9 @@ test('mobile header controls suppress transient tap rectangles without hiding ke
   );
   assert.match(stylesSource, /&:focus:not\(:focus-visible\)\s*\{\s*outline:\s*none;\s*\}/);
   assert.match(stylesSource, /\.icon-button\s*\{[\s\S]*?&:focus-visible\s*\{\s*outline:\s*2px solid #6798ff;/);
+  assert.match(stylesSource, /\.custom-select-trigger\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/);
+  assert.match(stylesSource, /\.custom-select-option\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/);
+  assert.match(stylesSource, /\.environment-picker-select\.custom-select\.open \.custom-select-trigger svg\s*\{\s*stroke:\s*#77869d;/);
 });
 
 test('file-change action suppresses touch flash while retaining keyboard focus', async () => {

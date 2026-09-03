@@ -232,6 +232,7 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   background: transparent;
   box-shadow: none;
 }
+.environment-picker-select.custom-select.open .custom-select-trigger svg { stroke: #77869d; }
 .environment-picker-select .custom-select-menu {
   right: -7px;
   left: -7px;
@@ -451,7 +452,7 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 }
 .custom-select { position: relative; width: 100%; min-width: 0; }
 .custom-select-trigger {
-  width: 100%; min-width: 0; height: 43px; display: grid; grid-template-columns: minmax(0, 1fr) 16px; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid #2b3547; border-radius: 11px; color: #dce5f2; background: #090e17; text-align: left; cursor: pointer;
+  width: 100%; min-width: 0; height: 43px; display: grid; grid-template-columns: minmax(0, 1fr) 16px; align-items: center; gap: 8px; padding: 0 11px; border: 1px solid #2b3547; border-radius: 11px; color: #dce5f2; background: #090e17; appearance: none; -webkit-appearance: none; text-align: left; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-tap-highlight-color: transparent;
   > span { min-width: 0; @include truncate; }
   svg { width: 16px; height: 16px; fill: none; stroke: #77869d; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; transition: transform .16s ease, stroke .16s ease; }
   &:hover { border-color: #3b4a62; background: #0c121d; }
@@ -466,7 +467,7 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
   &::-webkit-scrollbar { display: none; }
 }
 .custom-select-option {
-  width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 15px; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-radius: 8px; color: #aab6c8; background: transparent; text-align: left; cursor: pointer;
+  width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 15px; align-items: center; gap: 8px; padding: 8px 9px; border: 0; border-radius: 8px; color: #aab6c8; background: transparent; appearance: none; -webkit-appearance: none; text-align: left; cursor: pointer; touch-action: manipulation; user-select: none; -webkit-tap-highlight-color: transparent;
   > span { min-width: 0; display: grid; gap: 2px; }
   strong { @include truncate; }
   strong { color: inherit; font-size: 10px; font-weight: 650; }
