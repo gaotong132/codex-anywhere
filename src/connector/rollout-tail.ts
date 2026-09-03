@@ -399,7 +399,7 @@ function isVisibleRolloutRow(row: RolloutRow) {
   const payload = row?.payload || {};
   const type = String(payload.type || '');
   return Boolean(
-    delegatedUserMessage(row)
+    toolOutputUserMessage(row)
     || row?.type === 'compacted'
     || row?.type === 'turn_context'
     || (row?.type === 'event_msg' && /^(?:agent_message|user_message|image_generation_end)$/.test(type))
@@ -968,9 +968,9 @@ function mapRolloutRowsWithState(
         });
       }
     }
-    const delegatedMessage = delegatedUserMessage(row);
-    if (delegatedMessage) {
-      pushText(items, { type: 'userMessage', ...delegatedMessage, ...turn, ...timing });
+    const toolOutputMessage = toolOutputUserMessage(row);
+    if (toolOutputMessage) {
+      pushText(items, { type: 'userMessage', ...toolOutputMessage, ...turn, ...timing });
     } else if (row?.type === 'compacted') {
       const compaction = contextCompactionFromRows(rows, rowIndex);
       if (compaction) {
@@ -1060,7 +1060,7 @@ function rolloutRowTurnId(row: RolloutRow) {
   ).trim();
 }
 
-function delegatedUserMessage(row: RolloutRow) {
+function toolOutputUserMessage(row: RolloutRow) {
   const payload = row?.payload || {};
   const item = row?.type === 'response_item'
     && /^(?:function_call_output|custom_tool_call_output)$/i.test(String(payload.type || ''))
@@ -1070,11 +1070,13 @@ function delegatedUserMessage(row: RolloutRow) {
       && /^(?:FunctionCallOutput|CustomToolCallOutput)$/i.test(String(payload.item?.type || ''))
       ? payload.item
       : null;
-  if (!item || String(item.name || '') !== 'send_message_to_thread' || typeof item.output !== 'string') {
-    return null;
-  }
+  if (!item || typeof item.output !== 'string') return null;
+  const expectedContext = String(item.name || '') === 'send_message_to_thread'
+    ? 'delegation' : String(item.name || '') === 'automation_update' ? 'automation' : '';
+  if (!expectedContext) return null;
   const content = parseUserMessage(item.output);
-  return content.text && content.contexts.some((context) => context.kind === 'delegation') ? content : null;
+  return content.text && content.contexts.some((context) => context.kind === expectedContext)
+    ? content : null;
 }
 
 function isFinalAssistantRow(row: RolloutRow) {
@@ -1223,7 +1225,7 @@ function capText(value: unknown, limit = MAX_TEXT_LENGTH) {
 }
 
 export const internals = {
-  activityKind, capText, decodeRolloutCursor, delegatedUserMessage, encodeRolloutCursor,
+  activityKind, capText, decodeRolloutCursor, toolOutputUserMessage, encodeRolloutCursor,
   epochMillis, extractContent, fullText,
   findLatestActivityBefore, findLatestFileProgressBefore, findLatestModelSettingsBefore,
   findLatestPlanBefore, findLatestPurposeBefore,

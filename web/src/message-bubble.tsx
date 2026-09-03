@@ -172,7 +172,7 @@ function MessageContexts({ item }: { item: TimelineItem }) {
       {contexts.map((context, index) => {
         const isAutomation = context.kind === 'automation';
         const label = isAutomation
-          ? item.kind === 'user' ? t('定时任务', 'Scheduled task') : t('自动任务通知', 'Automation update')
+          ? item.kind === 'user' ? t('由已安排任务发送', 'Sent by scheduled task') : t('自动任务通知', 'Automation update')
           : t('来自另一个 Codex 会话', 'From another Codex task');
         const parsedTime = context.currentTimeIso ? new Date(context.currentTimeIso) : null;
         const time = parsedTime && Number.isFinite(parsedTime.getTime())

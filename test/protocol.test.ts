@@ -2197,6 +2197,43 @@ test('delegated mobile messages survive rollout refresh without duplicates', () 
   assert.equal(items[0].completedAt, Date.parse('2026-08-30T10:01:12.726Z'));
 });
 
+test('scheduled task prompts survive modern automation tool outputs without duplicates', () => {
+  const heartbeat = `<heartbeat>
+  <automation_id>daily-release</automation_id>
+  <current_time_iso>2026-09-03T13:15:49.870Z</current_time_iso>
+  <instructions>执行现网升级</instructions>
+</heartbeat>`;
+  const items = rolloutInternals.mapRolloutRows([
+    {
+      timestamp: '2026-09-03T13:15:50.910Z', type: 'response_item',
+      payload: {
+        type: 'function_call_output', name: 'automation_update', output: heartbeat,
+        internal_chat_message_metadata_passthrough: { turn_id: 'scheduled-turn' },
+      },
+    },
+    {
+      timestamp: '2026-09-03T13:15:50.923Z', type: 'event_msg',
+      payload: {
+        type: 'item_completed', turn_id: 'scheduled-turn',
+        item: { type: 'FunctionCallOutput', name: 'automation_update', output: heartbeat },
+      },
+    },
+    {
+      type: 'response_item',
+      payload: { type: 'function_call_output', name: 'exec_command', output: heartbeat },
+    },
+  ]);
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0].type, 'userMessage');
+  assert.equal(items[0].text, '执行现网升级');
+  assert.equal(items[0].turnId, 'scheduled-turn');
+  assert.deepEqual(items[0].contexts, [{
+    kind: 'automation', automationId: 'daily-release',
+    currentTimeIso: '2026-09-03T13:15:49.870Z', decision: undefined,
+  }]);
+});
+
 test('approval results stay inside workspace and keep network disabled', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'codex-approval-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
