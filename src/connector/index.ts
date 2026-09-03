@@ -24,6 +24,8 @@ const {
   token,
   url,
   deviceId,
+  deviceLabel,
+  mode,
   codexBin,
   allowedRoots,
   networkAccess,
@@ -39,7 +41,7 @@ const connectorLock = instanceLock;
 const codex = new CodexAppServer({
   bin: codexBin, allowedRoots, networkAccess,
 });
-const desktop = new CodexDesktopClient();
+const desktop = mode === 'desktop' ? new CodexDesktopClient() : null;
 const downloads = new DownloadManager({
   allowedRoots: [...allowedRoots, generatedImagesDirectory(), visualizationsDirectory()],
   allowAnyFileDownload,
@@ -54,6 +56,8 @@ const handleRequest = createRequestHandler({
   visualizations: { read: readVisualization },
   downloads,
   deviceId,
+  deviceLabel,
+  mode,
 });
 const secureChannels = new ConnectorSecureChannels({
   identity: deviceIdentity,
@@ -120,7 +124,7 @@ async function shutdown() {
   stopped = true;
   secureChannels.clear();
   socket?.close(1000, 'connector shutdown');
-  desktop.close();
+  desktop?.close();
   await downloads.closeAll();
   await codex.close();
   await connectorLock.close();
@@ -129,5 +133,5 @@ async function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
-console.log(`Connecting Codex Anywhere connector to ${new URL(url).origin}`);
+console.log(`Connecting ${deviceLabel} (${deviceId}, ${mode}) to ${new URL(url).origin}`);
 connect();

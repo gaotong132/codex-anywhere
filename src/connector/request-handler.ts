@@ -36,7 +36,7 @@ type DesktopGateway = {
 };
 type Dependencies = {
   codex: CodexGateway;
-  desktop: DesktopGateway;
+  desktop?: DesktopGateway | null;
   attachments: { save(payload: Payload): Promise<any>; read(payload: Payload): Promise<any> };
   visualizations: { read(payload: Payload): Promise<any> };
   downloads: {
@@ -47,6 +47,8 @@ type Dependencies = {
     close(payload: Payload, clientId?: string): Promise<any>;
   };
   deviceId: string;
+  deviceLabel?: string;
+  mode?: 'desktop' | 'headless';
 };
 type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & {
   payload: Payload;
@@ -57,6 +59,7 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
 
 export function createRequestHandler({
   codex, desktop, attachments, visualizations, downloads, deviceId,
+  deviceLabel = deviceId, mode = desktop ? 'desktop' : 'headless',
 }: Dependencies) {
   return async function handleRequest(message: BridgeRequest) {
     const {
@@ -65,7 +68,7 @@ export function createRequestHandler({
     try {
       const data = await dispatchAction({
         action, payload, requestId, clientId, clientDeviceId,
-        codex, desktop, attachments, visualizations, downloads, deviceId,
+        codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode,
       });
       return { type: 'response', clientId, requestId, ok: true, data };
     } catch (error) {
@@ -76,11 +79,14 @@ export function createRequestHandler({
 
 async function dispatchAction({
   action, payload, requestId, clientId, clientDeviceId,
-  codex, desktop, attachments, visualizations, downloads, deviceId,
+  codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode,
 }: DispatchContext) {
   if (action === 'connector.status') {
     return {
       deviceId,
+      deviceLabel,
+      mode,
+      platform: process.platform,
       codexOnline: Boolean(codex.child),
       activeTurn: Boolean(codex.activeTurn),
     };
@@ -88,9 +94,11 @@ async function dispatchAction({
   if (action === 'sessions.list') {
     const sessions = await codex.listSessions({ cwd: payload.cwd });
     let desktopThreads = [];
-    try {
-      desktopThreads = await desktop.listThreads({ callerThreadId: sessions[0]?.id, limit: 50 });
-    } catch { /* app-server status remains the fallback when Desktop is unavailable */ }
+    if (mode === 'desktop' && desktop) {
+      try {
+        desktopThreads = await desktop.listThreads({ callerThreadId: sessions[0]?.id, limit: 50 });
+      } catch { /* app-server status remains the fallback when Desktop is unavailable */ }
+    }
     return {
       sessions: mergeDesktopSessionStatuses(
         sessions,
@@ -125,7 +133,9 @@ async function dispatchAction({
   if (action === 'file.download.close') return downloads.close(payload, downloadOwner);
   if (action === 'file.markdown.read') return downloads.readMarkdown(payload);
   if (action === 'file.text.read') return downloads.readText(payload);
-  if (action === 'turn.start') return startTurn({ codex, desktop, payload, clientId, requestId });
+  if (action === 'turn.start') return startTurn({
+    codex, desktop, mode, payload, clientId, requestId,
+  });
   if (action === 'turn.steer') {
     return {
       ...await codex.steerTurn({ ...payload, clientId, requestId }),
@@ -138,6 +148,7 @@ async function dispatchAction({
     if (pending.approvals?.length) return pending;
     const threadId = String(payload.threadId || '').trim();
     if (!threadId) return pending;
+    if (mode !== 'desktop' || !desktop) return pending;
     try {
       const state = await desktop.readThreadState({
         threadId,
@@ -165,15 +176,16 @@ async function dispatchAction({
 }
 
 async function startTurn({
-  codex, desktop, payload, clientId, requestId,
-}: Pick<DispatchContext, 'codex' | 'desktop' | 'payload' | 'clientId' | 'requestId'>) {
+  codex, desktop, mode, payload, clientId, requestId,
+}: Pick<DispatchContext, 'codex' | 'desktop' | 'mode' | 'payload' | 'clientId' | 'requestId'>) {
   const threadId = String(payload.threadId || '').trim();
-  if (!threadId) {
+  if (!threadId || mode === 'headless') {
     return { ...await codex.startTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
   }
   // Existing Desktop tasks must keep their original writer. Starting or
   // resuming them through the bridge's app-server creates a second writer and
   // makes later Desktop delivery fail with "already has an active writer".
+  if (!desktop) throw new Error('desktop_app_unavailable');
   return desktop.sendMessage({
     threadId,
     text: payload.text,

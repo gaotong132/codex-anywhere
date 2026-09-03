@@ -49,6 +49,8 @@ function createDependencies(overrides = {}) {
       ...overrides.downloads,
     },
     deviceId: 'personal-pc',
+    deviceLabel: overrides.deviceLabel || 'My computer',
+    mode: overrides.mode || 'desktop',
   };
 }
 
@@ -84,9 +86,28 @@ test('request handler keeps connector routing independent from process startup',
     requestId: 'request-1',
     ok: true,
     data: {
-      deviceId: 'personal-pc', codexOnline: true, activeTurn: false,
+      deviceId: 'personal-pc', deviceLabel: 'My computer', mode: 'desktop',
+      platform: process.platform, codexOnline: true, activeTurn: false,
     },
   });
+});
+
+test('headless connectors resume existing sessions through their own app-server', async () => {
+  let started;
+  let desktopCalls = 0;
+  const handle = createRequestHandler(createDependencies({
+    mode: 'headless',
+    codex: { startTurn: async (message) => { started = message; return { threadId: message.threadId }; } },
+    desktop: { sendMessage: async () => { desktopCalls += 1; return {}; } },
+  }));
+
+  const response = await handle(request('turn.start', { threadId: 'ecs-thread', text: 'continue' }));
+  assert.deepEqual(started, {
+    threadId: 'ecs-thread', text: 'continue', requestId: 'request-1', clientId: 'client-1',
+  });
+  assert.equal(desktopCalls, 0);
+  assert.equal(response.ok, true);
+  assert.equal(response.data.delivery, 'appServer');
 });
 
 test('visualization reads stay on the dedicated bounded connector path', async () => {
