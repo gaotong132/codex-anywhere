@@ -178,7 +178,10 @@ export class CodexAppServer extends EventEmitter {
   }
 
   private async spawnAndInitialize(bin: string): Promise<void> {
-    const child = spawn(bin, ['app-server', '--listen', 'stdio://'], {
+    // Unsubscribe must release our writer, not retain it behind the host's idle
+    // grace period while Desktop tries to continue the newly created task.
+    // Scope this override to the Connector child, never the user's Desktop.
+    const child = spawn(bin, ['-c', 'thread_unload_delay_secs=0', 'app-server', '--listen', 'stdio://'], {
       cwd: this.runtimeCwd,
       env: { ...process.env, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'Codex Desktop' },
       shell: false,

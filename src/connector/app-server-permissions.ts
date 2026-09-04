@@ -27,9 +27,10 @@ export function isMcpToolApproval(method: string, params: JsonObject) {
   if (method === 'item/tool/requestUserInput') {
     const questions = params.questions;
     return Array.isArray(questions) && questions.length === 1
-      && typeof questions[0].id === 'string' && questions[0].id.startsWith('mcp_tool_call_approval')
-      && questions[0].options?.some((option: JsonObject) => option.label === 'Allow')
-      && questions[0].options?.some((option: JsonObject) => option.label === 'Cancel');
+      && typeof questions[0]?.id === 'string' && questions[0].id.startsWith('mcp_tool_call_approval')
+      && Array.isArray(questions[0].options)
+      && questions[0].options.some((option: JsonObject) => option?.label === 'Allow')
+      && questions[0].options.some((option: JsonObject) => option?.label === 'Cancel');
   }
   return false;
 }
@@ -45,7 +46,7 @@ export function approvalKind(method: string) {
 
 export function approvalSummary(method: string, params: JsonObject, limit = 4_000) {
   if (isMcpToolApproval(method, params)) {
-    return `${params.serverName || 'MCP'} · ${params.message || params.questions[0].question || 'Tool approval'}\n${JSON.stringify(params._meta?.tool_params || {})}`.slice(0, limit);
+    return `${params.serverName || 'MCP'} · ${params.message || params.questions?.[0]?.question || 'Tool approval'}\n${JSON.stringify(params._meta?.tool_params || {})}`.slice(0, limit);
   }
   const value = params.command || params.reason || params.grantRoot || params.permissions
     || params.path || params.input || method;

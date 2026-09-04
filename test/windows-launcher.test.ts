@@ -33,3 +33,8 @@ test('Windows connector persists an opt-in private browser endpoint across resta
   assert.match(launcher, /\$env:BRIDGE_BROWSER_ENDPOINT_FILE = \[IO.Path\]::GetFullPath\(\$browserEndpointFile\)/);
   assert.match(launcher, /Remove-Item Env:BRIDGE_BROWSER_ENDPOINT_FILE -ErrorAction SilentlyContinue/);
 });
+
+test('Connector disables the host idle writer retention only for its child process', async () => {
+  const source = await readFile(resolve('src/connector/codex-app-server.ts'), 'utf8');
+  assert.match(source, /spawn\(bin, \['-c', 'thread_unload_delay_secs=0', 'app-server'/);
+});
