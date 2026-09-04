@@ -25,3 +25,11 @@ test('Windows login startup uses a GUI host without opening a console', async ()
   assert.match(launcher, /shell\.Run\(command,\s*0,\s*True\)/i);
   assert.match(launcher, /-WindowStyle Hidden/i);
 });
+
+test('Windows connector persists an opt-in private browser endpoint across restarts', async () => {
+  const launcher = await readFile(resolve('scripts/start-connector.ps1'), 'utf8');
+  assert.match(launcher, /Resolve-TextSetting 'BRIDGE_BROWSER_ENDPOINT_FILE' 'browserEndpointFile' ''/);
+  assert.match(launcher, /IsPathRooted\(\$browserEndpointFile\)/);
+  assert.match(launcher, /\$env:BRIDGE_BROWSER_ENDPOINT_FILE = \[IO.Path\]::GetFullPath\(\$browserEndpointFile\)/);
+  assert.match(launcher, /Remove-Item Env:BRIDGE_BROWSER_ENDPOINT_FILE -ErrorAction SilentlyContinue/);
+});

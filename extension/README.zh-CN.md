@@ -40,6 +40,10 @@ Chrome 120+ 的 `chrome://extensions` 中开启开发者模式，加载已解压
    使用此配置启动该分支 Connector；文件由 Connector 创建，含本机 IPC 端口和随机凭证，不得分享。
    不设置变量时浏览器工具功能关闭，不影响原来的会话功能。
 
+   使用 Windows 登录启动器时，在私有 `connector.json` 中持久配置 `browserEndpointFile` 为上述绝对路径，
+   重启后会自动恢复该设置。若 `.codex-anywhere` 目录存在额外读取权限，应创建仅运行用户和管理员可读的
+   私有子目录保存端点文件，不要将 IPC 凭证暴露给其他本机用户。
+
 3. 用与该 Connector 相同的 OS 用户，在该节点的 Codex 配置中注册标准 stdio MCP。路径必须替换为实际绝对路径：
 
    ```sh

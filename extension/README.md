@@ -32,6 +32,9 @@ when upgrading the previous preview. Prefer a separate test browser profile.
    `C:\Users\YOUR_USER\.codex-anywhere\browser-pc.json`. On Windows, restrict directory ACLs to the runtime
    user and administrators. Start the branch Connector with this setting. It creates a private loopback
    port/token file; never share it. Without the setting, browser control remains disabled.
+   With the Windows login launcher, persist that absolute path as `browserEndpointFile` in private
+   `connector.json`. If the parent state directory grants other users read access, use a private child
+   directory restricted to the runtime user and administrators for the endpoint file.
 3. As the same OS user, register the standard stdio MCP server in Codex using actual absolute paths:
 
    ```sh
