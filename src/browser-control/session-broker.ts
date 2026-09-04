@@ -10,8 +10,24 @@ type Pending = { grant: Grant; resolve(value: unknown): void; reject(error: Erro
 export class BrowserSessionBroker {
   private grants = new Map<string, Grant>();
   private pending = new Map<string, Pending>();
+  private bindingIntents = new Map<string, object>();
   constructor(readonly environmentId: string, private send: (frame: Record<string, unknown>) => boolean,
     private now = Date.now, private timeoutMs = 15_000) {}
+
+  async validateAndBind(client: Client, threadId: unknown, targetValue: unknown, validate: (threadId: string) => Promise<unknown>) {
+    const target = parseBrowserTarget(targetValue);
+    const id = requireBrowserId(threadId);
+    if (target.browserDeviceId !== client.clientDeviceId) throw new Error('browser_device_mismatch');
+    const key = `${client.clientDeviceId}:${target.tabId}`;
+    if (this.bindingIntents.size >= 64 && !this.bindingIntents.has(key)) throw new Error('browser_grant_limit');
+    const intent = {};
+    this.bindingIntents.set(key, intent);
+    try {
+      await validate(id);
+      if (this.bindingIntents.get(key) !== intent) throw new Error('browser_authorization_changed');
+      return this.bind(client, id, target);
+    } finally { if (this.bindingIntents.get(key) === intent) this.bindingIntents.delete(key); }
+  }
 
   bind(client: Client, threadId: unknown, targetValue: unknown) {
     const target = parseBrowserTarget(targetValue);
@@ -76,7 +92,7 @@ export class BrowserSessionBroker {
     return {};
   }
 
-  clear() { for (const grant of this.grants.values()) this.remove(grant); }
+  clear() { this.bindingIntents.clear(); for (const grant of this.grants.values()) this.remove(grant); }
   private owned(client: Client, grantId: unknown) {
     const grant = this.grants.get(String(grantId));
     if (!grant || grant.clientId !== client.clientId || grant.clientDeviceId !== client.clientDeviceId) throw new Error('browser_not_authorized');

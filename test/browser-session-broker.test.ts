@@ -27,6 +27,19 @@ test('browser broker binds only the authenticated device and one target per Sess
   assert.throws(() => broker.bind(client, 'thread-1', { ...target, tabId: 2 }), /session_already_bound/);
   assert.deepEqual(broker.status('thread-2'), { authorized: false, online: false });
 });
+test('a delayed Session validation cannot overwrite newer consent or survive connector disconnect', async () => {
+  for (const action of ['replace', 'disconnect'] as const) {
+    const { broker } = setup();
+    let release!: () => void;
+    const old = broker.validateAndBind(client, 'old-task', target, () => new Promise<void>((resolve) => { release = resolve; }));
+    const rejected = assert.rejects(old, /authorization_changed/);
+    if (action === 'replace') await broker.validateAndBind(client, 'new-task', target, async () => ({}));
+    else broker.clear();
+    release(); await rejected;
+    assert.equal(broker.status('old-task').authorized, false);
+    assert.equal(broker.status('new-task').authorized, action === 'replace');
+  }
+});
 test('browser consent survives ten minutes and heartbeat timeout only marks offline', async () => {
   const { broker, grant, advance } = setup(); advance(11 * 60_000);
   assert.equal(broker.status('thread-1').authorized, true);

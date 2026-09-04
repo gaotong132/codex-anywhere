@@ -120,8 +120,7 @@ async function dispatchAction({
     const client = { clientId, clientDeviceId };
     if (action === 'browser.bind') {
       // Validate the existing Session. Never create, resume, or send a prompt here.
-      await codex.readSession(String(payload.threadId || ''));
-      return browser.bind(client, payload.threadId, payload.target);
+      return browser.validateAndBind(client, payload.threadId, payload.target, (threadId) => codex.readSession(threadId));
     }
     if (action === 'browser.status') return browser.status(payload.threadId);
     if (action === 'browser.heartbeat') return browser.heartbeat(client, payload.grantId);
