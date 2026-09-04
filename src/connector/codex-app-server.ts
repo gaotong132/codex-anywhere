@@ -60,6 +60,7 @@ const PACKAGE_VERSION = String((JSON.parse(
 
 type JsonObject = Record<string, any>;
 type CodexAppServerOptions = {
+  releaseRuntimeAfterTurn?: boolean;
   bin?: string;
   runtimeCwd?: string;
   allowedRoots?: string[];
@@ -124,6 +125,7 @@ export class CodexAppServer extends EventEmitter {
   approvals: Map<string, PendingApproval>;
   activeTurn: TurnContext | null;
   private threadRelease: Promise<void>;
+  private releaseRuntimeAfterTurn: boolean;
   sessionMetadata: Map<string, SessionMetadata>;
   sessionModelSettings: Map<string, RolloutModelSettings>;
   private modelSettingsPath: string | null;
@@ -148,6 +150,7 @@ export class CodexAppServer extends EventEmitter {
     this.approvals = new Map();
     this.activeTurn = null;
     this.threadRelease = Promise.resolve();
+    this.releaseRuntimeAfterTurn = options.releaseRuntimeAfterTurn === true;
     this.sessionMetadata = new Map();
     this.modelSettingsPath = options.modelSettingsPath ? resolve(options.modelSettingsPath) : null;
     this.sessionModelSettings = loadSessionModelSettings(this.modelSettingsPath);
@@ -178,10 +181,7 @@ export class CodexAppServer extends EventEmitter {
   }
 
   private async spawnAndInitialize(bin: string): Promise<void> {
-    // Unsubscribe must release our writer, not retain it behind the host's idle
-    // grace period while Desktop tries to continue the newly created task.
-    // Scope this override to the Connector child, never the user's Desktop.
-    const child = spawn(bin, ['-c', 'thread_unload_delay_secs=0', 'app-server', '--listen', 'stdio://'], {
+    const child = spawn(bin, ['app-server', '--listen', 'stdio://'], {
       cwd: this.runtimeCwd,
       env: { ...process.env, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'Codex Desktop' },
       shell: false,
@@ -718,15 +718,31 @@ export class CodexAppServer extends EventEmitter {
   private releaseThread(threadId: unknown): Promise<void> {
     const resolvedThreadId = String(threadId || '').trim();
     if (!resolvedThreadId) return this.threadRelease;
+    const child = this.child;
     const release = this.threadRelease
       .catch(() => undefined)
       .then(() => this.rpcRaw('thread/unsubscribe', { threadId: resolvedThreadId }))
+      .finally(async () => {
+        // Current hosts may retain an unsubscribed writer for minutes. Desktop
+        // mode only uses this runtime for first turns; release our OWN idle child
+        // before handing that same task to Desktop. Never stop a replacement or
+        // a runtime executing another turn. Headless environments keep theirs.
+        if (!this.releaseRuntimeAfterTurn || !child || this.child !== child || this.activeTurn) return;
+        const exited = new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('codex_writer_release_timeout')), 5_000);
+          child.once('close', () => { clearTimeout(timer); resolve(); });
+        });
+        await this.close();
+        await exited;
+      })
       .then(() => undefined);
     this.threadRelease = release.catch((error) => {
       this.emit('diagnostic', `Failed to release Codex thread ${resolvedThreadId}: ${String(error)}`);
     });
     return this.threadRelease;
   }
+
+  async prepareDesktopTurn() { await this.threadRelease; }
 
   async steerTurn({ text, threadId, clientId, requestId }: StartTurnOptions) {
     const targetThreadId = String(threadId || '').trim();

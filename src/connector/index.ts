@@ -43,6 +43,7 @@ if (!instanceLock) {
 }
 const connectorLock = instanceLock;
 const codex = new CodexAppServer({
+  releaseRuntimeAfterTurn: mode === 'desktop',
   bin: codexBin,
   allowedRoots,
   networkAccess,
