@@ -8,6 +8,7 @@ const ESCAPED_INTERNAL_CONTEXT = /(?:\\?<|&lt;)environment_context\b[\s\S]*?(?:\
 const INTERNAL_AGENT_INSTRUCTIONS = /^\s*#\s+AGENTS\.md instructions for\s+[^\r\n]+\s+(?:<INSTRUCTIONS>[\s\S]*<\/INSTRUCTIONS>|&lt;INSTRUCTIONS&gt;[\s\S]*&lt;\/INSTRUCTIONS&gt;)\s*$/i;
 const BARE_URL_BEFORE_CJK_PUNCTUATION = /(?<![<(])(https?:\/\/[^\s<>()]+?)(?=[，。；：！？、）》】])/gu;
 const CONTROL_ENVELOPE_START = /^\s*(?:\\?<(?:codex_delegation|heartbeat|environment_context)\b|&lt;(?:codex_delegation|heartbeat|environment_context)\b)/i;
+const HEARTBEAT_FIELDS = new Set(['automation_id', 'current_time_iso', 'decision', 'message', 'instructions']);
 
 type OrderedXmlNode = Record<string, unknown>;
 
@@ -113,10 +114,79 @@ function parseMessageContent(value: unknown, role: 'user' | 'assistant'): Parsed
     return { text: '', contexts };
   }
 
+  const content = stripAttachedHeartbeats(stripImageAttachments(text).trim(), contexts);
+  return { ...content, text: normalizeBareLinks(content.text) };
+}
+
+// A heartbeat appended to a human-readable report is notification metadata,
+// not a second copy of that report. Only complete, recognizable control blocks
+// outside Markdown examples qualify; ordinary prose and malformed XML stay intact.
+function stripAttachedHeartbeats(text: string, contexts: MessageContext[]): ParsedMessageContent {
+  const opening = /(?:^|\n) {0,3}(?:\\?<|&lt;)heartbeat(?:>|&gt;)/gi;
+  const closing = /(?:\\?<|&lt;)\/heartbeat(?:>|&gt;)/gi;
+  const blocks: { start: number; end: number; context: MessageContext; message: string }[] = [];
+  let match: RegExpExecArray | null;
+  for (let count = 0; count < 16 && (match = opening.exec(text)); count += 1) {
+    const start = match.index + (match[0].startsWith('\n') ? 1 : 0);
+    if (insideMarkdownFence(text, start)) continue;
+    closing.lastIndex = opening.lastIndex;
+    const endTag = closing.exec(text);
+    if (!endTag) break;
+    const end = closing.lastIndex;
+    const envelope = parseEnvelope(text.slice(start, end));
+    if (envelope?.name !== 'heartbeat') continue;
+    if (envelope.children.some((node) => Object.entries(node).some(([name, value]) => (
+      name === '#text' ? typeof value !== 'string' || Boolean(value.trim()) : !HEARTBEAT_FIELDS.has(name)
+    )))) continue;
+    const automationId = childText(envelope.children, 'automation_id').trim();
+    const decision = childText(envelope.children, 'decision').trim();
+    if (!automationId || !['NOTIFY', 'DONT_NOTIFY'].includes(decision)) continue;
+    blocks.push({
+      start, end,
+      context: {
+        kind: 'automation', automationId, decision,
+        currentTimeIso: childText(envelope.children, 'current_time_iso').trim() || undefined,
+      },
+      message: childText(envelope.children, 'message').trim(),
+    });
+    opening.lastIndex = end;
+  }
+  if (!blocks.length) return { text, contexts };
+  let cursor = 0;
+  const parts: string[] = [];
+  for (const block of blocks) {
+    parts.push(text.slice(cursor, block.start));
+    cursor = block.end;
+  }
+  parts.push(text.slice(cursor));
+  const body = parts.join('').replace(/\n[ \t]*\n(?:[ \t]*\n)+/g, '\n\n').trim();
   return {
-    text: normalizeBareLinks(stripImageAttachments(text).trim()),
-    contexts,
+    text: body || [...new Set(blocks.map((block) => block.message).filter(Boolean))].join('\n\n'),
+    contexts: mergeMessageContexts(contexts, blocks.map((block) => block.context)),
   };
+}
+
+function insideMarkdownFence(text: string, position: number) {
+  let fence: string | null = null;
+  for (const line of text.slice(0, position).split('\n')) {
+    const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (!marker) continue;
+    if (!fence) fence = marker[1];
+    else if (marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = null;
+  }
+  return fence !== null;
+}
+
+export function mergeMessageContexts(...groups: (MessageContext[] | undefined)[]): MessageContext[] {
+  const seen = new Set<string>();
+  return groups.flatMap((group) => group || []).filter((context) => {
+    const key = JSON.stringify([
+      context.kind, context.sourceThreadId, context.automationId, context.currentTimeIso, context.decision,
+    ]);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function parseEnvelope(value: string) {
@@ -124,11 +194,16 @@ function parseEnvelope(value: string) {
   if (!CONTROL_ENVELOPE_START.test(value) && !CONTROL_ENVELOPE_START.test(text)) return null;
   try {
     const parsed = envelopeParser.parse(text) as OrderedXmlNode[];
-    const root = parsed.find((node) => node && typeof node === 'object');
+    const roots = parsed.filter((node) => node && typeof node === 'object'
+      && !(typeof node['#text'] === 'string' && !node['#text'].trim()));
+    if (roots.length !== 1) return null;
+    const root = roots[0];
     if (!root) return null;
     for (const name of ['codex_delegation', 'heartbeat', 'environment_context'] as const) {
       const children = root[name];
-      if (Array.isArray(children)) return { name, children: children as OrderedXmlNode[] };
+      if (Array.isArray(children) && text.trimEnd().endsWith(`</${name}>`)) {
+        return { name, children: children as OrderedXmlNode[] };
+      }
     }
   } catch {
     return null;

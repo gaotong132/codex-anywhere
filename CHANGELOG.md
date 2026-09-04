@@ -4,6 +4,9 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Cleaned up automation reports followed by heartbeat control blocks: keep the complete report and any
+  follow-up text, show a compact automation label, and omit internal fields and the redundant summary
+  from display and copying. Escaped blocks and forwarded history are supported; Markdown examples stay intact.
 - Fixed browser pairing links not filling the form, including links opened in an already loaded tab.
   Pairing now stays cancellable, times out after 15 seconds, and restores an editable form on failure
   without automatic retries. Replaced socket and cancelled QR callbacks cannot affect a new attempt.

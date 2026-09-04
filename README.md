@@ -33,7 +33,8 @@ the selected connector node; a small relay you control provides the remote meeti
   turns keep compact tool summaries, configuration changes, and failure or cancellation reasons. Tap a
   completed turn's totals to inspect its bounded unified diff. Long histories open at the latest page and
   load older pages only after you browse upward, preserving your reading position and exposing retryable
-  loading failures.
+  loading failures. Automation reports keep their full body and a compact source label; appended heartbeat
+  control fields and redundant notification summaries stay out of both the message and copied text.
 - **Guide an active task** — append text to a connector-owned run, or use Desktop delivery when the
   existing session supports it. Open the running-status strip for elapsed time and a stop control when the
   selected connector owns that exact turn. Messages are sent directly; Codex Anywhere does not maintain a

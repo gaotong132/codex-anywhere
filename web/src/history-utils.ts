@@ -2,6 +2,7 @@ import { t } from './i18n';
 import {
   parseAssistantMessage,
   parseUserMessage,
+  mergeMessageContexts,
   stripImageAttachments,
 } from '../../src/shared/message-content';
 import type { MessageContext } from '../../src/shared/message-content';
@@ -181,7 +182,7 @@ export function historyItems(turns: Turn[]) {
         ...(visualization ? { visualization } : {}),
         ...(compaction ? { compaction } : {}),
         ...(notice ? { notice } : {}),
-        contexts: item.contexts?.length ? item.contexts : content.contexts,
+        contexts: mergeMessageContexts(item.contexts, content.contexts),
         ...(completedAt ? { completedAt } : {}),
         ...(fileChanges ? { fileChanges } : {}),
       });

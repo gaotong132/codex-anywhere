@@ -172,7 +172,11 @@ function MessageContexts({ item }: { item: TimelineItem }) {
       {contexts.map((context, index) => {
         const isAutomation = context.kind === 'automation';
         const label = isAutomation
-          ? item.kind === 'user' ? t('由已安排任务发送', 'Sent by scheduled task') : t('自动任务通知', 'Automation update')
+          ? context.decision === 'DONT_NOTIFY'
+            ? t('自动任务记录', 'Automation record')
+            : item.kind === 'user' && !context.decision
+              ? t('由已安排任务发送', 'Sent by scheduled task')
+              : t('自动任务通知', 'Automation update')
           : t('来自另一个 Codex 会话', 'From another Codex task');
         const parsedTime = context.currentTimeIso ? new Date(context.currentTimeIso) : null;
         const time = parsedTime && Number.isFinite(parsedTime.getTime())
@@ -182,7 +186,7 @@ function MessageContexts({ item }: { item: TimelineItem }) {
           <span
             className={`message-context ${context.kind}`}
             key={`${context.kind}:${context.sourceThreadId || context.automationId || index}`}
-            title={context.sourceThreadId || context.automationId || label}
+            title={isAutomation ? label : context.sourceThreadId || label}
           >
             {isAutomation
               ? <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></svg>
