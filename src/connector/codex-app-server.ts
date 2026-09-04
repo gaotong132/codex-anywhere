@@ -32,6 +32,7 @@ import {
 import {
   approvalDecisionSummary,
   approvalKind,
+  isMcpToolApproval,
   approvalResult,
   approvalSummary,
   approvedPermissions,
@@ -889,7 +890,13 @@ export class CodexAppServer extends EventEmitter {
 
   handleServerRequest(message: JsonObject) {
     const method = message.method || '';
-    if (!APPROVAL_METHODS.has(method)) {
+    const params = message.params || {};
+    const mcpApproval = isMcpToolApproval(method, params);
+    if (method === 'mcpServer/elicitation/request' && !mcpApproval) {
+      this.writeRpc({ jsonrpc: '2.0', id: message.id, result: { action: 'decline', content: null, _meta: null } });
+      return;
+    }
+    if (!APPROVAL_METHODS.has(method) && !mcpApproval) {
       this.writeRpc({
         jsonrpc: '2.0',
         id: message.id,
@@ -897,7 +904,11 @@ export class CodexAppServer extends EventEmitter {
       });
       return;
     }
-    const params = message.params || {};
+    if (mcpApproval && (!params.threadId || params.threadId !== this.activeTurn?.threadId
+      || (params.turnId && params.turnId !== this.activeTurn?.turnId))) {
+      this.writeRpc({ jsonrpc: '2.0', id: message.id, result: approvalResult(method, false, params) });
+      return;
+    }
     const approvalId = String(message.id);
     const threadId = String(params.threadId || params.conversationId || this.activeTurn?.threadId || '');
     const kind = approvalKind(method);

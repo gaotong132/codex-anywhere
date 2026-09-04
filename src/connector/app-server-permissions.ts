@@ -14,7 +14,28 @@ export type PendingApproval = {
   summary: string;
 };
 
+// Only the host's empty MCP approval form can use our approve/deny UI. Never
+// reinterpret arbitrary elicitation forms (credentials, URLs, custom inputs).
+export function isMcpToolApproval(method: string, params: JsonObject) {
+  if (method === 'mcpServer/elicitation/request') {
+    const schema = params.requestedSchema;
+    return params.mode === 'form' && params._meta?.codex_approval_kind === 'mcp_tool_call'
+      && schema?.type === 'object' && schema.properties && typeof schema.properties === 'object'
+      && !Array.isArray(schema.properties) && Object.keys(schema.properties).length === 0
+      && (!schema.required || (Array.isArray(schema.required) && schema.required.length === 0));
+  }
+  if (method === 'item/tool/requestUserInput') {
+    const questions = params.questions;
+    return Array.isArray(questions) && questions.length === 1
+      && typeof questions[0].id === 'string' && questions[0].id.startsWith('mcp_tool_call_approval')
+      && questions[0].options?.some((option: JsonObject) => option.label === 'Allow')
+      && questions[0].options?.some((option: JsonObject) => option.label === 'Cancel');
+  }
+  return false;
+}
+
 export function approvalKind(method: string) {
+  if (method === 'mcpServer/elicitation/request' || method === 'item/tool/requestUserInput') return 'mcp-tool';
   if (/commandExecution|execCommand/i.test(method)) return 'command';
   if (/fileChange|applyPatch/i.test(method)) return 'file-change';
   if (/permissions/i.test(method)) return 'permission';
@@ -23,6 +44,9 @@ export function approvalKind(method: string) {
 }
 
 export function approvalSummary(method: string, params: JsonObject, limit = 4_000) {
+  if (isMcpToolApproval(method, params)) {
+    return `${params.serverName || 'MCP'} · ${params.message || params.questions[0].question || 'Tool approval'}\n${JSON.stringify(params._meta?.tool_params || {})}`.slice(0, limit);
+  }
   const value = params.command || params.reason || params.grantRoot || params.permissions
     || params.path || params.input || method;
   const text = typeof value === 'string' ? value : JSON.stringify(value);
@@ -51,6 +75,10 @@ export function approvalResult(
   allowedRoots: string[] = [],
   networkAccess = false,
 ) {
+  if (isMcpToolApproval(method, params)) {
+    if (method === 'mcpServer/elicitation/request') return { action: approved ? 'accept' : 'decline', content: approved ? {} : null, _meta: null };
+    return { answers: { [params.questions[0].id]: { answers: [approved ? 'Allow' : 'Cancel'] } } };
+  }
   if (/permissions\/requestApproval/i.test(method)) {
     return approved
       ? { permissions: approvedPermissions(params.permissions, allowedRoots, networkAccess), scope: 'turn' }
