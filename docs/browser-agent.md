@@ -53,9 +53,11 @@ data, not an instruction or authorization source; content is not logged or persi
   cancellation/late results, write timeout without retry, official MCP SDK/private IPC; compiled extension
   over real WS/E2E with Chrome API/DOM doubles, pairing retry, read/click/fill, stale references and document changes.
 - Live Codex: ephemeral task → actual new MCP → private IPC → exact Session broker. Page side is a synthetic fixture.
-- Still required: actual Chrome/Edge installation, original Desktop UI Session, new/existing ECS Session,
-  two environments with matching IDs, multiple browsers, sleep/wake, forced worker stop/update, proxy failure,
-  and device revocation. Do not claim production readiness before these tests.
+- Live rollout on 2026-09-04: real Chrome for Testing extension; same PC Session reading through Desktop;
+  ECS read/write with Web one-shot approvals; pairing, environment selection, refresh/reconnect, revocation
+  and cross-task/environment denial. See the [rollout record](browser-rollout-2026-09-04.md).
+- Still required: everyday Chrome/Edge profiles, multiple browsers, long sleep/wake, forced worker updates,
+  corporate proxy failures and all PC write-approval combinations. Fixed-fixture success does not cover every scenario.
 - Configure/load MCP in idle test infrastructure; deploy/release only when the owner requests it.
 
 See [installation, setup and limitations](../extension/README.md). Future work includes real-browser acceptance,

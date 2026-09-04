@@ -81,9 +81,13 @@ no real pages/business Sessions/global configuration changes):
 npx tsx scripts/probe-browser-mcp.ts --integration
 ```
 
-Verified on local Codex CLI 0.153.0 app-server, 2026-09-04. Actual Chrome/Edge extension installation,
-existing Desktop UI Sessions, ECS, worker suspension and sleep/wake still require test-environment acceptance.
-The available automated browser cannot load Chrome extensions; simulated tests do not prove those scenarios.
+On 2026-09-04 the owner authorized updating Relay/Web and both Connectors. A real unpacked extension in
+isolated Chrome for Testing 151 passed pairing, environment selection and page authorization. The same PC
+Session read the page through Desktop (0.153.0); ECS (0.151.0) read/scrolled/filled/clicked it, with write
+approvals accepted once in Web. Revocation and cross-task/environment denial were checked too.
+See the [rollout record](../docs/browser-rollout-2026-09-04.md). Everyday Chrome/Edge profiles, long sleep/wake,
+forced worker updates and all PC write-approval combinations remain unverified. Reload an installed unpacked
+extension in its management page; the rollout does not force-restart user browsers or business Sessions.
 See [architecture and acceptance gates](../docs/browser-agent.md).
 
 For a fixed manual fixture, run `npx vite --config extension/vite.config.ts --host 127.0.0.1` and open

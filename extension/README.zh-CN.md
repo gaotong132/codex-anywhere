@@ -92,9 +92,13 @@ Chrome 120+ 的 `chrome://extensions` 中开启开发者模式，加载已解压
 npx tsx scripts/probe-browser-mcp.ts --integration
 ```
 
-2026-09-04 在本机 Codex CLI 0.153.0 的 app-server 临时任务验证通过。**这不等于已经验证实际 Desktop UI
-中的旧会话、ECS、真实 Chrome/Edge 扩展安装及休眠唤醒**；这些必须在测试环境完成后才能开放生产。
-当前自动化可控制的浏览器不支持加载 Chrome 扩展，不能以测试替身的成功替代真实安装验收。
+2026-09-04 经所有者授权更新 Relay/Web、PC 和 ECS Connector，并用独立 Chrome for Testing 151
+加载真实扩展验收。PC 0.153.0 的原会话通过 Desktop 路径完成页面读取；ECS 0.151.0 完成
+读取、滚动、输入和点击，写操作经 Web「批准一次」确认。配对填码、环境切换、刷新重连、撤销和
+跨会话/环境拒绝也已实测。详见[部署验收记录](../docs/browser-rollout-2026-09-04.md)。
+
+尚未覆盖用户日常 Chrome/Edge 配置文件、长时间休眠唤醒、强制 worker 更新及全部 PC 写操作审批组合。
+已有 Chrome 扩展须在管理页点「重新加载」；不会强制重启用户浏览器或业务会话。
 
 固定手工测试页：运行 `npx vite --config extension/vite.config.ts --host 127.0.0.1`，打开输出的本机地址下
 `/test/fixtures/control.html`，授权给专门的测试 Session。页面内输入框和计数按钮不提交网络请求。
