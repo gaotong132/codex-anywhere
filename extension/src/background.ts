@@ -95,7 +95,7 @@ async function restoreBinding(captured: Binding, expectedRevision: number) {
   } catch (failure) {
     await page(next.target, next.grantId, { method: 'revoke' }).catch(() => {});
     await connection.request('browser.revoke', { grantId: fresh.grantId }).catch(() => {});
-    if (binding === captured) await revoke();
+    if (binding === captured || binding === next) await revoke();
     throw failure;
   }
 }
@@ -160,6 +160,11 @@ async function authorize(threadId: string) {
     if (binding === candidate) await connection.request('browser.heartbeat', { grantId: candidate.grantId });
     await badge();
   } catch (failure) {
+    if (binding === candidate) {
+      binding = undefined;
+      await chrome.storage.session.remove('binding');
+      await badge(candidate.target.tabId).catch(() => {});
+    }
     await page(target, candidate.grantId, { method: 'revoke' }).catch(() => {});
     await connection.request('browser.revoke', { grantId: candidate.grantId }).catch(() => {}); throw failure;
   }
