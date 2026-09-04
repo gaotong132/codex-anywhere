@@ -77,6 +77,9 @@ generated markup, and preserve a safe plain-text fallback.
 
 ## Extra checks
 
+- Keep shared click/focus rules in `styles/_interaction.scss`; add hover styling through its capability-gated
+  mixin. Preserve keyboard `:focus-visible` and persistent selected states, and ignore touch/drag movement
+  when updating hovered menu options.
 - When POSIX service scripts change, run `sh -n` on each changed script.
 - Keep helper commands and both deployment guides synchronized.
 - For multi-environment changes, test at least two simultaneous connector routes and both `desktop` and

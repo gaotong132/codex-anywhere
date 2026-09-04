@@ -65,6 +65,8 @@ Pull Request 应足够聚焦，便于审阅和说明用户价值。只有成熟�
 
 ## 补充检查
 
+- 点击与焦点规则统一放在 `styles/_interaction.scss`，hover 样式使用其中按设备能力限定的 mixin。
+  保留键盘 `:focus-visible` 和持续选中状态；更新菜单悬停项时忽略触摸与拖动事件。
 - 修改 POSIX 服务脚本后，在 POSIX shell 对每个改动脚本执行 `sh -n`。
 - 辅助命令与中英文部署指南保持一致。
 - 多环境改动至少验证两个同时在线的连接器路由，以及 `desktop`、`headless` 两种投递模式。

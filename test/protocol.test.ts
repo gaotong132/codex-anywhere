@@ -1532,14 +1532,12 @@ test('message metadata stays in a fixed sibling row outside the bubble', async (
 
 test('mobile controls suppress transient tap rectangles without hiding keyboard focus', async () => {
   const stylesSource = await readFile(resolve('web/src/styles.scss'), 'utf8');
-  assert.match(
-    stylesSource,
-    /\.topbar\s*>\s*\.icon-button,\s*\n\.model-config-summary,\s*\n\.permission-mode-summary\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;[\s\S]*?touch-action:\s*manipulation;/,
-  );
-  assert.match(stylesSource, /&:focus:not\(:focus-visible\)\s*\{\s*outline:\s*none;\s*\}/);
+  const interactionSource = await readFile(resolve('web/src/styles/_interaction.scss'), 'utf8');
+  assert.match(stylesSource, /@use '\.\/styles\/interaction';/);
+  assert.match(interactionSource, /:root\s*\{\s*-webkit-tap-highlight-color:\s*transparent;/);
+  assert.match(interactionSource, /:where\(button, a\[href\], summary,[\s\S]*?touch-action:\s*manipulation;/);
+  assert.match(interactionSource, /&:focus:not\(:focus-visible\)\s*\{\s*outline:\s*none;\s*\}/);
   assert.match(stylesSource, /\.icon-button\s*\{[\s\S]*?&:focus-visible\s*\{\s*outline:\s*2px solid #6798ff;/);
-  assert.match(stylesSource, /\.custom-select-trigger\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/);
-  assert.match(stylesSource, /\.custom-select-option\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/);
   assert.match(stylesSource, /\.environment-picker-select\.custom-select\.open \.custom-select-trigger svg\s*\{\s*stroke:\s*#77869d;/);
 });
 
@@ -1547,9 +1545,9 @@ test('file-change action suppresses touch flash while retaining keyboard focus',
   const stylesSource = await readFile(resolve('web/src/styles.scss'), 'utf8');
   assert.match(
     stylesSource,
-    /\.message-change-summary\s*\{[\s\S]*?&\.interactive\s*\{[\s\S]*?-webkit-tap-highlight-color:\s*transparent;/,
+    /\.message-change-summary\s*\{[\s\S]*?&\.interactive\s*\{[^}]*background:\s*transparent;/,
   );
-  assert.match(stylesSource, /&\.interactive:hover,\s*&\.interactive:focus-visible\s*\{[^}]*background:\s*transparent;/);
+  assert.match(stylesSource, /&\.interactive:focus-visible\s*\{[^}]*background:\s*transparent;/);
   assert.match(stylesSource, /&\.interactive:focus-visible\s*\{\s*outline:\s*2px solid #6798ff;/);
 });
 

@@ -1,0 +1,26 @@
+@use 'tokens' as *;
+
+// Inherited by every control, including links, sliders and future components.
+// Remove the browser's transient tap overlay, not the control's selected state.
+:root { -webkit-tap-highlight-color: transparent; }
+
+button {
+  appearance: none;
+  -webkit-appearance: none;
+  user-select: none;
+}
+
+:where(button, a[href], summary, [role='button'], [role='option']) {
+  touch-action: manipulation;
+
+  &:focus:not(:focus-visible) { outline: none; }
+  &:focus-visible { outline: 2px solid $focus; outline-offset: 2px; }
+}
+
+// Touch browsers can retain :hover after a tap. Hover decoration belongs only
+// to a fine pointer that supports hovering; keyboard focus is styled separately.
+@mixin hover($condition: '') {
+  @media (hover: hover) and (pointer: fine) {
+    &:hover#{$condition} { @content; }
+  }
+}

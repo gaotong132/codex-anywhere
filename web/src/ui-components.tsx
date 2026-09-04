@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { t } from './i18n';
 import type { FileDownloadState } from './app-types';
+import { isHoverPointer } from './pointer-interaction';
 
 type SidebarIconName = 'plus' | 'search' | 'edit' | 'panel-open' | 'panel-close';
 
@@ -134,7 +135,7 @@ export function CustomSelect({
               aria-selected={index === selectedIndex}
               className={`custom-select-option${option.leading ? ' has-leading' : ''}${index === activeIndex ? ' active' : ''}${index === selectedIndex ? ' selected' : ''}`}
               title={option.label}
-              onPointerMove={() => setActiveIndex(index)}
+              onPointerMove={(event) => { if (isHoverPointer(event)) setActiveIndex(index); }}
               onClick={() => choose(index)}
             >
               {option.leading && <span className="custom-select-option-leading" aria-hidden="true">{option.leading}</span>}

@@ -4,6 +4,9 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Unified click feedback across buttons, links, menus, and disclosure controls: suppress native tap
+  flashes, limit hover styling to hover-capable pointers, and preserve selected colors and keyboard focus.
+  Touch scrolling no longer changes the hovered menu option; reasoning sliders avoid text-input focus halos.
 - Cleaned up automation reports followed by heartbeat control blocks: keep the complete report and any
   follow-up text, show a compact automation label, and omit internal fields and the redundant summary
   from display and copying. Escaped blocks and forwarded history are supported; Markdown examples stay intact.
