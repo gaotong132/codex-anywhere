@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+## v0.2.1 — 2026-09-04
+
 - Unified click feedback across buttons, links, menus, and disclosure controls: suppress native tap
   flashes, limit hover styling to hover-capable pointers, and preserve selected colors and keyboard focus.
   Touch scrolling no longer changes the hovered menu option; reasoning sliders avoid text-input focus halos.
