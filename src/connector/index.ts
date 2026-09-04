@@ -1,4 +1,6 @@
 import { WebSocket } from 'ws';
+import { BrowserSessionBroker } from '../browser-control/session-broker.js';
+import { startBrowserEndpoint } from '../browser-control/local-endpoint.js';
 import { CodexAppServer } from './codex-app-server.js';
 import { CodexDesktopClient } from './codex-desktop.js';
 import { readImageAttachment, saveImageAttachment } from './attachments.js';
@@ -52,7 +54,13 @@ const downloads = new DownloadManager({
   allowedRoots: [...allowedRoots, generatedImagesDirectory(), visualizationsDirectory()],
   allowAnyFileDownload,
 });
+// Opt in per environment; no MCP listener or configuration change on stable installs.
+const browser = process.env.BRIDGE_BROWSER_ENDPOINT_FILE
+  ? new BrowserSessionBroker(deviceId, (frame) => secureChannels.sendEvent(frame)) : undefined;
+const browserEndpoint = browser
+  ? await startBrowserEndpoint(browser, process.env.BRIDGE_BROWSER_ENDPOINT_FILE!) : undefined;
 const handleRequest = createRequestHandler({
+  browser,
   codex,
   desktop,
   attachments: {
@@ -122,6 +130,7 @@ function connect() {
 
 function scheduleReconnect() {
   if (stopped) return;
+  browser?.clear();
   secureChannels.clear();
   const delay = Math.min(30_000, 1_000 * (2 ** reconnectAttempt)) + Math.floor(Math.random() * 500);
   reconnectAttempt += 1;
@@ -130,6 +139,7 @@ function scheduleReconnect() {
 
 async function shutdown() {
   stopped = true;
+  await browserEndpoint?.close();
   secureChannels.clear();
   socket?.close(1000, 'connector shutdown');
   desktop?.close();

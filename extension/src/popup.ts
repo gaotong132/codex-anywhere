@@ -1,46 +1,56 @@
 import './popup.css';
-import type { BrowserSnapshot } from '../../src/browser-control/readonly-controller.js';
-
-const grant = document.querySelector<HTMLButtonElement>('#grant')!;
-const snapshot = document.querySelector<HTMLButtonElement>('#snapshot')!;
-const stop = document.querySelector<HTMLButtonElement>('#stop')!;
-const status = document.querySelector<HTMLElement>('#status')!;
-const output = document.querySelector<HTMLElement>('#output')!;
-let authorized = false;
-let revision = 0;
-
-async function command(type: string) {
-  const request = ++revision;
-  grant.disabled = snapshot.disabled = true;
-  // Cancellation remains available while tab discovery or reading is pending.
-  stop.disabled = type === 'stop' || type === 'status';
-  if (type === 'stop') { authorized = false; output.textContent = ''; status.textContent = '正在撤销…'; }
-  try {
-    const response = await chrome.runtime.sendMessage({ type });
-    if (request !== revision) return;
-    if (!response?.ok) throw new Error(response?.error || '扩展连接已中断，请重新打开。');
-    if (type === 'snapshot') {
-      const result = response.result as BrowserSnapshot;
-      output.textContent = result.nodes.map((node) => `[${node.tag}] ${node.text}`).join('\n')
-        + (result.truncated ? '\n\n[内容已截断]' : '');
-    } else {
-      output.textContent = '';
-      authorized = Boolean(response.result.origin);
-      status.textContent = authorized ? `本机只读授权：${response.result.origin}` : '尚未授权';
-    }
-  } catch (error) {
-    if (request !== revision) return;
-    authorized = false;
-    output.textContent = '';
-    status.textContent = error instanceof Error ? error.message : '读取失败，请重新授权。';
-  } finally {
-    if (request === revision) {
-      grant.disabled = false;
-      snapshot.disabled = stop.disabled = !authorized;
-    }
+const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const url = element<HTMLInputElement>('url');
+const environment = element<HTMLSelectElement>('environment');
+const session = element<HTMLSelectElement>('session');
+let pending = 0;
+let signature = '';
+let acting = false;
+function render(state: any) {
+  element('status').textContent = state.error || (state.connecting ? '正在连接…' : state.connected ? '端到端加密连接' : state.relayOnline ? '请选择在线运行环境' : '尚未连接');
+  element('setup').hidden = state.relayOnline || state.connecting;
+  element('selection').hidden = !state.relayOnline || Boolean(state.binding) || state.connecting;
+  element('authorized').hidden = !state.binding;
+  element('cancel').hidden = !state.connecting;
+  element('extension-origin').textContent = state.extensionOrigin;
+  if (!url.value && state.origin) url.value = state.origin;
+  if (state.binding) {
+    element('task').textContent = state.binding.title;
+    element('page').textContent = state.binding.origin;
+    element('authorized').querySelector('h1')!.textContent = state.connected ? '已连接到会话' : '已授权 · 当前离线';
   }
+  const next = JSON.stringify([state.devices, state.environmentId, state.sessions]);
+  if (signature !== next) {
+    signature = next;
+    const oldSession = session.value;
+    environment.replaceChildren(...state.devices.map((id: string) => new Option(id, id)));
+    environment.value = state.environmentId;
+    session.replaceChildren(new Option('选择已有会话…', ''), ...state.sessions.map((item: any) => new Option(item.title, item.id)));
+    if (state.sessions.some((item: any) => item.id === oldSession)) session.value = oldSession;
+  }
+  element<HTMLButtonElement>('grant').disabled = !state.connected || !session.value;
 }
-grant.addEventListener('click', () => void command('grant'));
-snapshot.addEventListener('click', () => void command('snapshot'));
-stop.addEventListener('click', () => void command('stop'));
+async function command(type: string, payload: object = {}) {
+  const revision = ++pending; acting = true;
+  try {
+    const response = await chrome.runtime.sendMessage({ type, ...payload });
+    if (revision !== pending) return;
+    if (!response.ok) throw new Error(response.error);
+    if (type === 'connect') url.value = '';
+    render(response.result);
+  } catch (error) { if (revision === pending) element('status').textContent = error instanceof Error ? error.message : '操作未完成，请重试'; }
+  finally { if (revision === pending) acting = false; }
+}
+element('connect').onclick = () => { element('cancel').hidden = false; void command('connect', { url: url.value }); };
+element('cancel').onclick = () => void command('cancel');
+element('grant').onclick = () => void command('grant', { threadId: session.value });
+element('revoke').onclick = () => void command('revoke');
+element('disconnect').onclick = () => void command('disconnect');
+environment.onchange = () => void command('environment', { environmentId: environment.value });
+session.onchange = () => { element<HTMLButtonElement>('grant').disabled = !session.value; };
 void command('status');
+setInterval(() => {
+  if (acting) return;
+  const revision = pending;
+  void chrome.runtime.sendMessage({ type: 'status' }).then((response) => { if (revision === pending && response.ok) render(response.result); }).catch(() => {});
+}, 1500);

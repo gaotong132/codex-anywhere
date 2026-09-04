@@ -92,8 +92,9 @@ tool output are not copied into these summaries.
 ## Browser Agent development preview
 
 Browser control is being developed in this repository as an independently built extension and browser
-control module. The first milestone is **local-only, explicitly authorized, read-only page preview**.
-It does not connect ECS/Codex to your browser yet and is not enabled in the production Web bridge.
+control module. The development branch now connects an explicitly authorized page to an **existing Session**
+on PC, ECS, or another Connector, using encrypted routing and session-bound MCP read/click/fill/scroll tools.
+It requires opt-in Relay/Connector/MCP setup and real-browser acceptance; production is not changed automatically.
 See the [development plan](docs/browser-agent.md) and [extension instructions](extension/README.md).
 
 ## Architecture

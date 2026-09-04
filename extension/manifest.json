@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "Codex Anywhere Browser — Local Preview",
+  "name": "Codex Anywhere Browser",
   "version": "0.0.1",
-  "version_name": "0.0.1 development (local read-only preview)",
-  "description": "Development preview: explicitly authorize and inspect one tab locally. No remote connection or page actions.",
+  "version_name": "0.0.1 development (session browser control)",
+  "description": "Authorize one page to your existing Anywhere Session. Continue on any connected PC or ECS environment.",
   "minimum_chrome_version": "120",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "storage"],
+  "icons": { "16": "icon-16.png", "32": "icon-32.png", "48": "icon-48.png", "128": "icon-128.png" },
   "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_popup": "popup.html", "default_title": "Codex Anywhere · 本机只读预览" },
+  "action": { "default_popup": "popup.html", "default_title": "Codex Anywhere · 授权当前页", "default_icon": { "16": "icon-16.png", "32": "icon-32.png" } },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'"
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src wss: ws://127.0.0.1:* ws://localhost:* ws://[::1]:*"
   }
 }

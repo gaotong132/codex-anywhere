@@ -121,6 +121,7 @@ import {
 import type { TimelineNotice } from '../../src/shared/timeline-notice';
 import { PresenceIndicator } from './presence-indicator';
 import { PermissionModeControl } from './permission-mode-control';
+import { BrowserSessionStatus } from './browser-session-status';
 import {
   normalizePermissionMode,
 } from '../../src/shared/permission-mode';
@@ -2440,6 +2441,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                 disabled={!online || executionActive}
                 onChange={savePermissionMode}
               />
+              <BrowserSessionStatus key={`${environmentId}:${threadId}`} environmentId={environmentId} threadId={threadId} online={online} request={request} />
             </div>
           </div>
           <PresenceIndicator

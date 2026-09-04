@@ -4,10 +4,12 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
-- Started Browser Agent development in isolated modules: task/document-bound in-memory grants, bounded
-  read requests, revocation, replay rejection, and a separately built local-only MV3 extension preview.
-  Added isolation/race/privacy tests and a phased design. Remote pairing, Relay routing, MCP integration,
-  and page interaction remain disabled/unimplemented; this does not change the production bridge.
+- Replaced the local-only browser prototype with opt-in extension pairing, environment/existing Session
+  selection and document consent; added session-bound MCP snapshot/click/fill/scroll tools over E2E routing
+  and private loopback IPC. No ten-minute grant expiry, no replacement Session, no Desktop writer takeover.
+- Added a compact popup, fixed icon/tab-specific status, secondary revoke menu and Web Session status.
+  Added SDK/IPC and compiled-worker real WS/E2E regression tests and a live ephemeral Codex probe.
+  Actual Chrome/Edge, Desktop UI and ECS acceptance remain required; no production deployment or release.
 
 ## v0.2.1 — 2026-09-04
 

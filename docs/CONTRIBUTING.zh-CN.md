@@ -27,7 +27,7 @@ npm run build
 | `src/connector` | Codex app-server/Desktop 集成、历史、文件、审批和重连 |
 | `src/shared` | 严格协议、鉴权、加密、活动状态、消息和共享文件类型基础能力 |
 | `src/browser-control` | 实验性的任务/文档授权、请求生命周期和可信宿主适配接口；未接入生产 |
-| `extension` | 独立构建的 MV3 扩展；当前仅提供本机只读预览 |
+| `extension` | 独立构建的 MV3 扩展；显式启用的原 Session 浏览器控制 |
 | `test` | 集成、行为、安全与回归测试 |
 | `scripts` | 转发服务管理，以及 Windows、Linux 连接器安装和守护 |
 | `docs` / `deploy` | 用户文档、示意图和可选入口示例 |

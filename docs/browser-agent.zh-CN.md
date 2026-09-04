@@ -1,74 +1,60 @@
-# Browser Agent 开发方案
+# Browser Agent 架构与验收
 
 [English](browser-agent.md) | 简体中文
 
-当前状态：基础内核与**本机只读预览**；尚未开放生产远程浏览器功能。稳定基线为 `v0.2.1`，同仓库开发
-分支为 `codex/browser-agent`。扩展独立构建、独立安装；未收到明确发布要求时，不再新增 Tag，也不为
-试用开发预览而重启现网服务。
+分支 `codex/browser-agent`，稳定基线 `v0.2.1`。当前实现为可配置的会话浏览器控制开发版；不自动发布、
+打 Tag、合并 main 或重启现网。目标覆盖 PC Desktop、ECS CLI 及其他 Connector，浏览器是资源而不是执行环境。
 
-## 目标与模块边界
+## 用户路径
 
-首个远程目标是：ECS 上的 Codex 任务能够读取、随后操作另一台电脑上明确授权的一个 Chrome/Edge 标签页。
-浏览器设备是资源，不是 Codex 执行环境。Web 界面负责选择任务、浏览器与管理授权；逐次页面操作不依赖
-Web 界面始终打开。被控浏览器所在电脑仍须保持开机。
+扩展连接 Anywhere → 选择环境 → 选择已有 Session → 授权当前页 → 在 Anywhere 原会话继续对话。
+主界面不再放本机读取/停止实验按钮或十分钟倒计时。撤销/换会话在更多菜单，工具栏固定图标配标签页专属小状态点。
 
-| 模块 | 职责 | 当前进度 |
-| --- | --- | --- |
-| 浏览器控制内核 `src/browser-control` | 严格请求、任务/文档身份、授权、取消、截止时间与输出限制 | 已有只读基础与测试 |
-| 浏览器扩展 `extension` | 本机确认、绑定文档的操作、撤销与本机状态 | 仅本机解压版预览 |
-| Codex 适配 / Browser MCP | 窄工具接口、可信调用者身份、结构化结果 | 仅适配解析器；未注册或接通工具 |
-| Connector 集成 | 将工具绑定到自身持有的活动轮次，管理控制器生命周期 | 待开发 |
-| Relay / 设备注册 | 独立浏览器角色、明确配对、加密路由与撤销 | 待开发；生产协议不变 |
-| Web 控制界面 | 浏览器设备、任务与标签页授权申请、状态及停止 | 待开发；现有环境选择器不变 |
-| 运维 / 测试 / 文档 | 独立构建安装、兼容性、端到端隔离验证 | 已有构建与初始测试/文档；远程及真实浏览器验证待做 |
+## 模块
 
-## 开放远程访问前必须成立的信任边界
+| 模块 | 职责 |
+| --- | --- |
+| `extension/src/connection.ts` | 独立设备配对、WS、复用现有 E2E 客户端、请求截止时间 |
+| `extension/src/background.ts` | 选择与授权、文档绑定、同意恢复、重连、撤销、序号校验 |
+| `extension/src/page-agent.ts` | 固定隔离脚本，快照、稳定引用、点击、输入、滚动 |
+| `src/browser-control/session-broker.ts` | 每环境的 Session→浏览器授权路由；并发、超时、回包隔离 |
+| `src/browser-control/local-endpoint.ts` | 仅 loopback 的令牌保护 IPC；私有状态文件 |
+| `src/browser-control/mcp-server.ts` | 官方 SDK 的 stdio MCP，四个窄工具，宿主身份校验 |
+| Connector / Relay | 显式能力开关、加密请求/事件、精确扩展 Origin 白名单 |
+| `web/src/browser-session-status.tsx` | 当前环境、当前 Session 的浏览器连接状态 |
 
-每份授权同时绑定 `(environmentId, threadId, controllerId)` 与
-`(browserDeviceId, tabId, documentId, origin)`。工具参数只描述操作，**不能决定可信任务身份**。
-禁止从当前选中、最近使用或其他方便的任务推断调用者。扩展端必须校验授权，不能只依赖 Web 或 Relay；
-重连不能恢复已经撤销的同意。
+复用现有已批准 `client` 设备角色及加密信封，而不是新增不兼容的第三种身份协议。扩展拥有独立设备密钥，
+不共享 Web 身份，不把自身作为 Connector 列入环境。Bridge v4 不变；扩展要求 Connector 明确提供
+`browserControl` 能力，未启用时不能授权。普通 Web Origin 校验保持原样。
 
-初始内核只接受 `browser.snapshot`：携带授权 ID、严格递增序号、请求 ID 和有界截止时间。授权只存内存，
-同一浏览器标签页独占，最多十分钟；单次请求最多十五秒。读取前后检查文档，撤销或过期后丢弃迟到结果，
-被停止/替换的异步请求不能覆盖新授权。这些规则**不等于端点鉴权**；远程传输仍须有明确配对和端到端加密。
+## 可信调用者与隔离
 
-2026-09-04 对本机 Codex CLI `0.153.0` 生成的实验性 app-server 类型进行检查，确认
-`DynamicToolCallParams` 在 `arguments` 之外包含 `threadId`、`turnId`、`callId`。适配解析器用宿主
-明确持有的任务/轮次校验这一候选边界。**这只是协议类型探测，不是实际工具调用联调。** 尚未确认普通
-MCP 配置能够提供可信的逐次任务身份。最终选择 MCP 接入方式之前，必须验证真实宿主传输；如果无法携带
-经过验证的上下文，应使用真正绑定任务的适配器/端点，不能用模型传入 ID 代替。
+标准 MCP 每次调用的 `_meta.x-codex-turn-metadata` 由 Codex 宿主填入 `thread_id`、`turn_id`。
+本机 CLI 0.153.0 已通过真实临时任务验证。源码依据：
+[MCP tool call](https://github.com/openai/codex/blob/main/codex-rs/core/src/mcp_tool_call.rs)、
+[turn metadata](https://github.com/openai/codex/blob/main/codex-rs/core/src/turn_metadata.rs)。
+这是宿主兼容性依赖，不承诺所有旧版本都有；缺失/矛盾则拒绝。工具 schema 不接受会话 ID、环境 ID 或任意脚本。
 
-浏览器请求版本目前是独立实验契约，不是 Relay 已接受的生产消息。新增浏览器端点时，要同步修改协议、
-要求精确能力集合，并测试拒绝旧版本和未知角色；不能增加明文或通配来源的兼容通道。
+授权绑定环境、原 Session、认证设备、连接路由、grantId、tabId、documentId、origin。模型无法选择其他会话。
+每 Session 最多一个授权标签页；每授权最多一个在途操作。撤销/重绑取消待处理请求，旧回包不能结束新请求。
+只读请求也不回退到“最近任务”。Desktop 保持原写入端，连接器从不为了接浏览器而 resume 接管。
 
-## 开发顺序与验收门槛
+授权无 TTL；45 秒心跳只决定在线状态。网络重连旋转 grantId，不重放操作。浏览器 session storage 只保存
+当前浏览器生命周期的同意；页面导航/关闭/手动撤销立即失效。页面内容只进入所属工具响应，不进入日志或持久缓存。
+读写通过固定 `ISOLATED` 脚本和精确 `documentIds` 执行，页面指令不构成授权。
 
-1. **基础阶段（本次）。** 只读契约、授权内核、超时/撤销、独立扩展、考虑隐私且有界的文字提取与测试。
-   扩展保持本机运行，使用 `connect-src 'none'`。参见[构建与手工验证](../extension/README.zh-CN.md)。
-2. **可信 Codex 绑定。** 在 ECS 上自身持有的 app-server 轮次中执行真实工具调用，核对外层任务/轮次
-   身份及中断行为；覆盖两个并发任务、伪造身份参数与适配器重启，再据此确定 MCP/宿主适配的接入方式。
-3. **加密配对与远程只读。** 新增独立浏览器端点角色、明确配对、鉴权 E2E 通道和文档授权；同时验证
-   两个执行环境、两个浏览器。撤销、替换、断线后不能泄露正文或继承授权。打开 Web 控制界面不能自动
-   授权标签页，也不能放宽现有 WebSocket 来源校验。
-4. **有界页面操作。** 先加入绑定当前快照的稳定元素引用，再实现点击、输入、滚动和等待。旧引用必须
-   安全失败。提交表单、购买、删除等外部副作用须有明确本机确认；不提供任意脚本执行或 Cookie/密码导出。
-5. **控制界面与发布加固。** 明确展示任务、环境、浏览器、站点、授权剩余时间、操作状态和停止按钮。
-   验证真实 Chrome/Edge 安装、后台休眠、电脑睡眠唤醒、代理/网络故障、扩展更新及独立部署；由所有者
-   指定后再发布。
+## 验证与发布门槛
 
-网页文字与工具结果都是不可信内容，不能作为指令或权限变更。日志不记录页面正文、表单值、完整 URL、
-配对秘密或设备密钥。本阶段不涉及原生弹窗、桌面控制、凭证提取、所有标签页访问或隐藏的后台授权。
-当前预览不需要本机 OS Helper；后续只有具体需求证明必要时才评估。
+- 已实现自动测试：严格输入、身份伪造、不同任务/设备拒绝、无十分钟超时、心跳离线、在途取消、迟到回包、
+  写操作超时不重试、MCP SDK/IPC；构建后 worker 配对与真 WS/E2E 路由、页面读/点击/输入、旧引用、页面变更和重试。
+- 已跑真实 Codex 临时任务 → 新 MCP → 私有 IPC → 对应 Session broker；页面侧为明确标注的合成 fixture。
+- 待实际安装验收：Chrome/Edge、原有 Desktop UI Session、新/已有 ECS Session、两环境同 ID、多浏览器、
+  休眠唤醒、worker 强制停止/更新、代理故障与设备撤销。没有这些实测，不宣称生产可用。
+- 在空闲测试环境注册/加载 MCP；先在固定测试页验收，绝不向业务任务发送测试消息。由所有者指定后才部署/发布。
 
-公司代理仍可能阻断 WebSocket。符合公司策略的 HTTPS 备用传输是独立项目；安装扩展不会自动解决，
-也不意味着获得绕过公司网络策略的授权。
+安装、配置与限制见[扩展说明](../extension/README.zh-CN.md)。
 
-## 参考资料
+## 后续
 
-- [Chrome activeTab 权限](https://developer.chrome.com/docs/extensions/develop/concepts/activeTab)
-- [Chrome scripting 与文档定位](https://developer.chrome.com/docs/extensions/reference/api/scripting)
-- [扩展后台生命周期](https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle)
-- [Codex app-server](https://developers.openai.com/codex/app-server/)
-- [Codex MCP 配置](https://developers.openai.com/codex/mcp/)
-- [官方 TypeScript MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk)
+补齐真实浏览器验收、增量 UI 状态与审批体验，再评估多标签页和更复杂页面交互。企业代理的 HTTPS 备用传输
+是独立需求；扩展不获得绕过公司网络策略的能力。浏览器电脑仍须开机，ECS 的 24×7 只保证执行节点可用。

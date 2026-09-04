@@ -1,47 +1,100 @@
-# 浏览器扩展：本机开发预览
+# Anywhere 浏览器扩展（开发分支）
 
 [English](README.md) | 简体中文
 
-这是 Browser Agent 的首个阶段，**不是远程浏览器控制成品**。你可以手动授权一个普通 HTTP(S) 标签页，
-在本机扩展弹窗内查看有长度限制的页面文字。它不会配对 Relay、连接 ECS/Codex、点击、输入、导航或上传内容。
+连接 Anywhere → 选择运行环境（PC、ECS 或其他已连接节点）→ 选择**已有 Session** → 授权当前页。
+之后回到 Anywhere，在这个原会话中让 Codex 读取、点击、输入、滚动该页。没有新建/借用其他会话的回退。
+Manifest 的 `0.0.1` 是未发布的开发标识，不代表项目发布。当前不自动更新现网。
 
-## 构建与试用
+## 构建与安装
 
-在仓库根目录执行，要求 Node.js 22+：
+使用 Node.js 22+，在仓库根目录运行：
 
-```bash
+```sh
 npm ci
 npm run check
-npm run build:extension
+npm run build
 npm run test:extension
 ```
 
-1. 建议使用 Chrome 120+ 或兼容 Chromium 的 Edge 的独立测试用户配置。
-2. 打开浏览器的“扩展管理”页面，启用开发者模式，选择“加载已解压的扩展”。
-3. 选择仓库内的 `extension/dist`，不是源码目录 `extension`；扩展产物与根目录 `dist` 内的生产 Web 资源分开。
-4. 打开不含敏感信息的测试网页，点击扩展按钮，再手动授权当前标签页。
-5. 点击“读取页面”查看文字；“停止并清除”会撤销授权并清空弹窗内容。
-6. 刷新或导航网页，确认再次读取需要重新授权。试用结束后，在扩展管理页移除这个开发扩展即可卸载。
+Chrome 120+ 的 `chrome://extensions` 中开启开发者模式，加载已解压的 **`extension/dist`**。
+从旧预览升级时，在扩展管理页点“重新加载”。建议先用独立测试浏览器配置文件。
 
-授权最多持续十分钟；页面导航（包括保守处理的同源 URL 变化）、关闭标签页、手动停止、到期或扩展后台
-重启都会使授权失效。仅关闭弹窗不会立刻撤销授权；需要点“停止”，或等待到期/后台重启。读取与标签页
-发现最多等待十五秒，等待过程中仍可停止。
+## 一次性配置
 
-## 能力与隐私边界
+扩展不是独立的 Codex 客户端，只有安装扩展还不够：Relay、所选 Connector 和 Codex MCP 都要配置。
 
-- 仅申请 `activeTab`、`scripting`；没有常驻网站访问权限或所有标签页授权。拒绝内容脚本/网站消息，
-  只在已授权顶层文档的隔离执行环境中运行扩展随包提供的固定函数。
-- 扩展页面 CSP 禁止网络连接。未实现设备配对、遥测、页面内容持久化、Cookie/密码导出、任意 JavaScript
-  执行或桌面控制。
-- 预览跳过输入框/文本域/选择框的值、可编辑区域、隐藏区域、脚本、iframe，以及带
-  `data-anywhere-private` 标记的区域。只返回文字和元素标签，不返回属性或完整 URL。
-- **这不是自动敏感信息脱敏。** 可见正文自身仍可能包含隐私；CSS 可见性判断为尽力而为，不读取 Canvas、
-  Shadow DOM 或嵌入框架。
-- 默认最多 100 个文本节点、8,000 个字符；绝对上限为 200 / 16,000。遍历最多 5,000 个节点，祖先检查
-  最多 64 层。弹窗只显示纯文本，不执行网页提供的 HTML。
+1. 在扩展面板或扩展管理页获取 ID。Relay 的环境变量增加精确 Origin：
 
-自动测试覆盖协议、授权、竞态和 DOM 提取。构建成功或模拟驱动测试不等于已验证实际安装的 Chrome/Edge，
-也不等于远程 Codex 已连通；使用解压版前请完成上述手工检查。
+   ```dotenv
+   BRIDGE_EXTENSION_ORIGINS=chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+   ```
 
-后续阶段见[开发方案](../docs/browser-agent.zh-CN.md)。Manifest 中的 `0.0.1` 只是未发布的开发标识，
-不是项目的新版本发布或 Tag。
+   把示例 ID 换成实际 ID。多个 Origin 用逗号分隔，禁止通配符。Compose 已透传此设置。
+   需在计划的更新窗口重启测试 Relay 后生效，不要为了试插件重启业务现网。
+
+2. 在每个希望被选中的 Connector 主机上设置 `BRIDGE_BROWSER_ENDPOINT_FILE`，值为**绝对路径**，
+   位于该运行用户的私有状态目录，不能在仓库、网站静态目录或共享目录下。例如 Windows
+   `C:\Users\YOUR_USER\.codex-anywhere\browser-pc.json`；Linux
+   `/home/YOUR_USER/.codex-anywhere/browser-ecs.json`。Windows 目录 ACL 必须仅允许运行用户及管理员。
+   使用此配置启动该分支 Connector；文件由 Connector 创建，含本机 IPC 端口和随机凭证，不得分享。
+   不设置变量时浏览器工具功能关闭，不影响原来的会话功能。
+
+3. 用与该 Connector 相同的 OS 用户，在该节点的 Codex 配置中注册标准 stdio MCP。路径必须替换为实际绝对路径：
+
+   ```sh
+   codex mcp add anywhere_browser -- node /ABSOLUTE/REPO/build/browser-control/mcp-server.js /ABSOLUTE/PRIVATE/browser-endpoint.json
+   ```
+
+   Windows 示例（`node` 应可由 Desktop 找到，否则写 Node 的绝对路径）：
+
+   ```powershell
+   codex mcp add anywhere_browser -- node "D:\project\codex-anywhere\build\browser-control\mcp-server.js" "C:\Users\YOUR_USER\.codex-anywhere\browser-pc.json"
+   ```
+
+   确认 `codex mcp list` 中存在此工具；重新加载 Codex 的 MCP 配置。Desktop 可能需要在任务空闲时重启应用。
+   **不新建替代 Session**：原会话必须实际列出 `anywhere_browser_snapshot/click/fill/scroll` 才能操作。
+   兼容性依赖宿主提供 `x-codex-turn-metadata.thread_id/turn_id`；缺失时安全拒绝，不接受模型填 ID。
+   参考 [Codex MCP 配置](https://developers.openai.com/codex/mcp/)。
+
+4. 按[部署文档](../docs/deployment.zh-CN.md)生成一条新的单次浏览器配对链接，粘贴进扩展。
+   已被 Web 浏览器消费的链接不能重用；这注册的是独立的扩展设备。配对成功后只保留设备密钥和服务器 Origin，
+   不保留配对秘密。公网必须 HTTPS/WSS，仅 localhost 允许 HTTP/WS。公司代理若阻断 WS，插件不会绕过。
+
+## 使用与边界
+
+- 选择环境与现有 Session，确认标题后点“授权当前页面”。现在一个扩展只绑定一个页面；一个 Session
+  也只绑定一个浏览器标签页。更多菜单可更换会话、撤销授权或断开；不再有实验性“读取页面/停止并清除”。
+- 回到 Anywhere 的原会话，例如发送“读取已授权页面的标题”或“在这个测试页的搜索框输入 demo”。
+  Web 的会话栏会显示浏览器连接状态。操作可能改变网站数据，只授权可信页面并明确需要的操作。
+- **授权没有 10 分钟限制**。单次操作最多 15 秒。20 秒心跳维持连接；超过 45 秒未收到心跳显示离线。
+  正文和操作通过现有端到端加密通道传输，Relay 不读取内容。
+- 关闭弹窗不撤销授权。后台 worker 重启/网络重连只恢复当前浏览器生命周期中、相同 Session、相同文档的同意，
+  且旋转授权 ID；撤销、标签页关闭、页面导航（含保守处理的同源 URL 变化）、浏览器重启后须重新授权。
+  网络断开时不会重放点击/输入；超时操作可能已执行，先读取页面确认，不能盲目重试。
+- 工具只使用当前快照生成的元素引用，输入/点击后旧引用失效。不支持任意 JavaScript、Cookie/密码导出、
+  文件上传、浏览器内部页、iframe、shadow DOM、canvas、原生弹窗或桌面控制。可见正文仍可能含敏感信息，
+  这不是自动脱敏系统。密码/敏感输入、表单值、隐藏和 `data-anywhere-private` 区域不会进入快照。
+- 工具调用使用 Codex 宿主给出的 Session/轮次身份，而非模型参数。PC Desktop 会话仍由 Desktop 持有，
+  Connector 不接管写入端，也不对其他任务发送报告。
+
+## 验证记录与待验收项
+
+已覆盖真实本地 Relay/WebSocket/E2E + **构建后 worker** + Chrome API/DOM 测试替身，包含配对重试、
+原 Session 路由、读/点击/输入、旧引用、跨任务拒绝和撤销。另有官方 MCP SDK → 私有 IPC → broker 联调。
+
+```sh
+# 可选：会调用真实 Codex，仅创建临时测试任务、读取合成 fixture，不访问业务会话/网页或修改全局配置。
+npx tsx scripts/probe-browser-mcp.ts --integration
+```
+
+2026-09-04 在本机 Codex CLI 0.153.0 的 app-server 临时任务验证通过。**这不等于已经验证实际 Desktop UI
+中的旧会话、ECS、真实 Chrome/Edge 扩展安装及休眠唤醒**；这些必须在测试环境完成后才能开放生产。
+当前自动化可控制的浏览器不支持加载 Chrome 扩展，不能以测试替身的成功替代真实安装验收。
+
+固定手工测试页：运行 `npx vite --config extension/vite.config.ts --host 127.0.0.1`，打开输出的本机地址下
+`/test/fixtures/control.html`，授权给专门的测试 Session。页面内输入框和计数按钮不提交网络请求。
+`test/fixtures/evaluation.xml` 是十道独立只读模型评估题（读取目录和订单两个区块，必要时滚动），
+答案固定；该文件是验收用例，不是已执行的模型评分报告。
+
+参见[架构与验收清单](../docs/browser-agent.zh-CN.md)。

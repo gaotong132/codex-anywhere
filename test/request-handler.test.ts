@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRequestHandler } from '../src/connector/request-handler.js';
+import { BrowserSessionBroker } from '../src/browser-control/session-broker.js';
 
 function createDependencies(overrides = {}) {
   return {
@@ -62,6 +63,25 @@ function createDependencies(overrides = {}) {
 function request(action, payload = {}) {
   return { action, payload, requestId: 'request-1', clientId: 'client-1' };
 }
+
+test('browser authorization validates an existing Session without sending or creating a turn', async () => {
+  const reads: string[] = [];
+  const dependencies = createDependencies({ codex: {
+    readSession: async (threadId: string) => { reads.push(threadId); if (threadId === 'missing') throw new Error('session_not_found'); return {}; },
+    startTurn: async () => assert.fail('binding must not create or resume a writer'),
+  }, desktop: { sendMessage: async () => assert.fail('binding must not send any message') } });
+  const browser = new BrowserSessionBroker('personal-pc', () => true);
+  const handle = createRequestHandler({ ...dependencies, browser });
+  const payload = { threadId: 'original', target: { browserDeviceId: 'browser-a', tabId: 1, documentId: 'doc-a', origin: 'https://example.com' } };
+  const bound = await handle({ ...request('browser.bind', payload), clientDeviceId: 'browser-a' });
+  assert.equal(bound.ok, true); assert.deepEqual(reads, ['original']);
+  assert.equal(browser.status('original').authorized, true);
+  assert.equal((await handle({ ...request('browser.bind', { ...payload, threadId: 'missing' }), clientDeviceId: 'browser-a' })).ok, false);
+  assert.equal(browser.status('missing').authorized, false);
+  assert.equal((await handle(request('browser.bind', payload))).ok, false);
+  const disabled = createRequestHandler(dependencies);
+  assert.equal((await disabled({ ...request('browser.bind', payload), clientDeviceId: 'browser-a' })).ok, false);
+});
 
 test('file downloads stay authorized to the stable browser identity across relay reconnects', async () => {
   const owners = [];

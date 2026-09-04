@@ -1,4 +1,5 @@
 import { publicError } from '../shared/protocol.js';
+import type { BrowserSessionBroker } from '../browser-control/session-broker.js';
 import {
   mergeDesktopSessionStatuses,
   type DesktopThreadStatus,
@@ -41,6 +42,7 @@ type DesktopGateway = {
   renameThread(options: Payload): Promise<any>;
 };
 type Dependencies = {
+  browser?: BrowserSessionBroker;
   codex: CodexGateway;
   desktop?: DesktopGateway | null;
   attachments: { save(payload: Payload): Promise<any>; read(payload: Payload): Promise<any> };
@@ -70,7 +72,7 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
 const DESKTOP_STATUS_CACHE_MS = 15_000;
 
 export function createRequestHandler({
-  codex, desktop, attachments, visualizations, downloads, deviceId,
+  codex, desktop, attachments, visualizations, downloads, deviceId, browser,
   deviceLabel = deviceId, mode = desktop ? 'desktop' : 'headless',
   networkAccess = false, allowFullAccess = false,
 }: Dependencies) {
@@ -97,7 +99,7 @@ export function createRequestHandler({
     try {
       const data = await dispatchAction({
         action, payload, requestId, clientId, clientDeviceId,
-        codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode,
+        codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode, browser,
         networkAccess, allowFullAccess, getDesktopThreads, refreshDesktopThreads,
       });
       return { type: 'response', clientId, requestId, ok: true, data };
@@ -109,9 +111,24 @@ export function createRequestHandler({
 
 async function dispatchAction({
   action, payload, requestId, clientId, clientDeviceId,
-  codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode,
+  codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode, browser,
   networkAccess, allowFullAccess, getDesktopThreads, refreshDesktopThreads,
 }: DispatchContext) {
+  if (action.startsWith('browser.')) {
+    if (!browser) throw new Error('browser_control_not_enabled_on_connector');
+    if (!clientId || !clientDeviceId) throw new Error('browser_authenticated_device_required');
+    const client = { clientId, clientDeviceId };
+    if (action === 'browser.bind') {
+      // Validate the existing Session. Never create, resume, or send a prompt here.
+      await codex.readSession(String(payload.threadId || ''));
+      return browser.bind(client, payload.threadId, payload.target);
+    }
+    if (action === 'browser.status') return browser.status(payload.threadId);
+    if (action === 'browser.heartbeat') return browser.heartbeat(client, payload.grantId);
+    if (action === 'browser.revoke') return browser.revoke(client, payload.grantId);
+    if (action === 'browser.result') return browser.result(client, payload);
+    throw new Error('browser_unknown_action');
+  }
   if (action === 'connector.status') {
     return {
       deviceId,
@@ -120,7 +137,7 @@ async function dispatchAction({
       platform: process.platform,
       codexOnline: Boolean(codex.child),
       activeTurn: Boolean(codex.activeTurn),
-      capabilities: { networkAccess, fullAccess: allowFullAccess },
+      capabilities: { networkAccess, fullAccess: allowFullAccess, ...(browser ? { browserControl: true } : {}) },
     };
   }
   if (action === 'sessions.list') {

@@ -28,7 +28,7 @@ attachment, file-access, or rendering behavior.
 | `src/connector` | Codex app-server/Desktop integration, history, files, approvals, and reconnect |
 | `src/shared` | Strict protocol, authentication, encryption, activity, message, and shared file-type primitives |
 | `src/browser-control` | Experimental task/document grants, request lifetime and trusted-host adapter seam; not wired into production |
-| `extension` | Independently built MV3 extension; currently local-only read preview |
+| `extension` | Independently built MV3 extension; opt-in existing-Session browser control |
 | `test` | Integration, behavior, security, and regression tests |
 | `scripts` | Relay administration plus Windows and Linux connector installation/watchdogs |
 | `docs` / `deploy` | User documentation, diagrams, and optional ingress example |

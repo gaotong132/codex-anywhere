@@ -1,0 +1,1 @@
+.browser-session-status { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted, #8893a5); font-size: 11px; padding: 2px 6px; border: 1px solid currentColor; border-radius: 5px; }
