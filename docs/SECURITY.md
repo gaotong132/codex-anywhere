@@ -10,6 +10,22 @@ fallback.
 
 Codex Anywhere is designed for one trusted user. It is not a multi-tenant identity service.
 
+## Desktop task isolation
+
+Mobile delivery binds the native Desktop caller and destination to the same selected task. The bridge
+never borrows another existing task as a controller or reply destination. Sending, renaming, and reading
+task approval status enforce this boundary before opening the native pipe; invalid identities fail closed.
+Only model and reasoning settings can enter delivery overrides, never a task ID, message, or caller.
+
+Desktop may represent mobile input using tool-delivery metadata. Its source task must still be the
+destination itself, not another project. Delivery failure never retries through a different task or takes
+over a Desktop-owned writer. Tests cover concurrent sends, delayed settings, and rejected identities.
+
+Updating only the ECS relay does not update a Windows connector: rebuild and restart the PC connector
+too. This correction prevents new cross-task delivery; it does not erase previously misdelivered messages
+or repair a model's existing context. Preserve incident evidence and review affected tasks before reusing
+them for sensitive work; do not blindly edit live rollout files or delete unrelated conversation history.
+
 ## Report a vulnerability
 
 Use [GitHub private vulnerability reporting](https://github.com/gaotong132/codex-anywhere/security/advisories/new).

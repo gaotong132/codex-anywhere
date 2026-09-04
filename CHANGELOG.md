@@ -2,6 +2,13 @@
 
 English | [简体中文](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- Fixed a Desktop task-isolation defect: mobile input no longer borrows another conversation as its
+  source, which could cause repair summaries to be sent into that unrelated task. Task-scoped native calls
+  now bind caller and destination, reject mismatches, and never fall back to another task on failure.
+  Rebuild and restart the Windows connector as well as updating the relay; existing history is not changed.
+
 ## v0.2.0 — 2026-09-04
 
 - Added isolated execution environments, including the existing Windows/Desktop connector and a 24×7

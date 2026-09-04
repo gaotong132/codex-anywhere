@@ -422,7 +422,7 @@ test('desktop native pipe frames use a little-endian length prefix', () => {
   assert.deepEqual(JSON.parse(frame.subarray(4).toString('utf8')), message);
 });
 
-test('desktop follow-up includes the caller required by the native app protocol', async () => {
+test('desktop follow-up binds the native caller to the destination task', async () => {
   const desktop = new CodexDesktopClient();
   let call;
   desktop.getClient = async () => ({
@@ -434,14 +434,14 @@ test('desktop follow-up includes the caller required by the native app protocol'
   });
   assert.deepEqual(await desktop.sendMessage({
     threadId: 'target-thread', text: '普通用户消息', requestId: 'request-1',
-    callerThreadId: 'controller-thread', model: 'gpt-5.6-sol', thinking: 'high',
+    model: 'gpt-5.6-sol', thinking: 'high',
   }), { threadId: 'target-thread', delivery: 'desktop' });
   assert.equal(call.method, 'tools/call');
   assert.equal(call.params.arguments.threadId, 'target-thread');
   assert.equal(call.params.arguments.prompt, '普通用户消息');
   assert.equal(call.params.arguments.model, 'gpt-5.6-sol');
   assert.equal(call.params.arguments.thinking, 'high');
-  assert.equal(call.params.threadId, 'controller-thread');
+  assert.equal(call.params.threadId, 'target-thread');
 });
 
 test('desktop session rename uses the native task title tool', async () => {
@@ -452,11 +452,11 @@ test('desktop session rename uses the native task title tool', async () => {
     return { success: true };
   };
   assert.deepEqual(await desktop.renameThread({
-    threadId: 'target-thread', name: '  Mobile follow-up  ', callerThreadId: 'controller-thread',
+    threadId: 'target-thread', name: '  Mobile follow-up  ',
   }), { threadId: 'target-thread', title: 'Mobile follow-up' });
   assert.equal(call.tool, 'set_thread_title');
   assert.deepEqual(call.arguments, { threadId: 'target-thread', title: 'Mobile follow-up' });
-  assert.equal(call.callerThreadId, 'controller-thread');
+  assert.equal(call.callerThreadId, 'target-thread');
 });
 
 test('session names are trimmed and bounded before reaching either execution environment', () => {
@@ -516,7 +516,7 @@ test('desktop thread state exposes waiting approval without loading conversation
     };
   };
   assert.deepEqual(await desktop.readThreadState({
-    threadId: 'thread-1', callerThreadId: 'controller-thread',
+    threadId: 'thread-1',
   }), { status: 'active', waitingOnApproval: true });
   assert.equal(call.tool, 'read_thread');
   assert.equal(call.arguments.turnLimit, 1);

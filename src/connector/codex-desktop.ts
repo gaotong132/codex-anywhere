@@ -7,6 +7,7 @@ const PIPE_PREFIX = 'codex-browser-use-';
 const MAX_FRAME_BYTES = 4 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const STATUS_ENRICHMENT_TIMEOUT_MS = 1_000;
+const TASK_SCOPED_TOOLS = new Set(['send_message_to_thread', 'set_thread_title', 'read_thread']);
 
 type JsonObject = Record<string, any>;
 type DesktopClientOptions = { timeoutMs?: number };
@@ -14,7 +15,6 @@ type DesktopMessage = {
   threadId: unknown;
   text: unknown;
   requestId: unknown;
-  callerThreadId?: unknown;
   model?: unknown;
   thinking?: unknown;
 };
@@ -37,10 +37,9 @@ export class CodexDesktopClient {
     this.client = null;
   }
 
-  async sendMessage({ threadId, text, requestId, callerThreadId, model, thinking }: DesktopMessage) {
-    const targetThreadId = String(threadId || '').trim();
+  async sendMessage({ threadId, text, requestId, model, thinking }: DesktopMessage) {
+    const targetThreadId = requireThreadId(threadId);
     const prompt = String(text || '').trim();
-    if (!targetThreadId) throw new Error('thread_id_required');
     if (!prompt) throw new Error('message_required');
     let result: JsonObject;
     try {
@@ -52,11 +51,14 @@ export class CodexDesktopClient {
           ...(String(model || '').trim() ? { model: String(model).trim() } : {}),
           ...(String(thinking || '').trim() ? { thinking: String(thinking).trim() } : {}),
         },
-        callerThreadId: String(callerThreadId || targetThreadId),
+        // Desktop persists this caller as source_thread_id. A mobile user's
+        // input must never masquerade as a delegation from another task.
+        callerThreadId: targetThreadId,
         callId: `bridge-${requestId}`,
       });
     } catch (error) {
       const desktopError = error as DesktopHostError;
+      if (desktopError?.message === 'desktop_thread_identity_mismatch') throw error;
       if (/timeout/i.test(String(desktopError?.message || error))) throw new Error('desktop_delivery_timeout');
       if (desktopError?.code === 'desktop_host_error') {
         throw new Error(`desktop_delivery_failed:${desktopError.message || 'unknown error'}`);
@@ -70,27 +72,23 @@ export class CodexDesktopClient {
     return { threadId: targetThreadId, delivery: 'desktop' };
   }
 
-  async renameThread({ threadId, name, callerThreadId }: {
+  async renameThread({ threadId, name }: {
     threadId?: unknown;
     name?: unknown;
-    callerThreadId?: unknown;
   }) {
-    const targetThreadId = String(threadId || '').trim();
-    const caller = String(callerThreadId || '').trim();
-    if (!targetThreadId || targetThreadId.length > 256 || /[\0\r\n]/.test(targetThreadId) || !caller) {
-      throw new Error('thread_id_required');
-    }
+    const targetThreadId = requireThreadId(threadId);
     const title = normalizeSessionName(name);
     let result: JsonObject;
     try {
       result = await this.callTool({
         tool: 'set_thread_title',
         arguments: { threadId: targetThreadId, title },
-        callerThreadId: caller,
+        callerThreadId: targetThreadId,
         callId: `bridge-rename-${randomUUID()}`,
       });
     } catch (error) {
       const desktopError = error as DesktopHostError;
+      if (desktopError?.message === 'desktop_thread_identity_mismatch') throw error;
       if (/timeout/i.test(String(desktopError?.message || error))) throw new Error('desktop_rename_timeout');
       if (desktopError?.code === 'desktop_host_error') {
         throw new Error(`desktop_rename_failed:${desktopError.message || 'unknown error'}`);
@@ -125,10 +123,8 @@ export class CodexDesktopClient {
     }));
   }
 
-  async readThreadState({ threadId, callerThreadId }: { threadId?: unknown; callerThreadId?: unknown }) {
-    const targetThreadId = String(threadId || '').trim();
-    const caller = String(callerThreadId || '').trim();
-    if (!targetThreadId || !caller) throw new Error('thread_id_required');
+  async readThreadState({ threadId }: { threadId?: unknown }) {
+    const targetThreadId = requireThreadId(threadId);
     const result = await this.callTool({
       tool: 'read_thread',
       arguments: {
@@ -137,7 +133,7 @@ export class CodexDesktopClient {
         includeOutputs: false,
         maxOutputCharsPerItem: 1_000,
       },
-      callerThreadId: caller,
+      callerThreadId: targetThreadId,
       callId: `bridge-read-state-${randomUUID()}`,
     });
     if (result?.success !== true) throw new Error('desktop_thread_read_failed');
@@ -154,12 +150,23 @@ export class CodexDesktopClient {
     { tool, arguments: toolArguments, callerThreadId, callId }: ToolCall,
     options: { timeoutMs?: number; resetOnError?: boolean } = {},
   ): Promise<JsonObject> {
+    // Snapshot before the asynchronous pipe lookup, so the validated target
+    // cannot be replaced while a connection is being established.
+    const argumentsSnapshot = { ...toolArguments };
+    // A bridge request is never an inter-task delegation. Fail before opening
+    // the Desktop pipe if a task-scoped call tries to borrow another identity.
+    if (TASK_SCOPED_TOOLS.has(tool) || Object.hasOwn(argumentsSnapshot, 'threadId')) {
+      const target = requireThreadId(argumentsSnapshot.threadId);
+      if (target !== argumentsSnapshot.threadId || target !== callerThreadId) {
+        throw new Error('desktop_thread_identity_mismatch');
+      }
+    }
     const timeoutMs = Number.isFinite(options.timeoutMs)
       ? Math.max(250, Number(options.timeoutMs)) : this.timeoutMs;
     const client = await this.getClient(timeoutMs);
     try {
       return await client.request('tools/call', {
-        arguments: toolArguments,
+        arguments: argumentsSnapshot,
         callId,
         namespace: 'codex_app',
         threadId: callerThreadId,
@@ -200,6 +207,13 @@ export class CodexDesktopClient {
     this.client?.close();
     this.client = null;
   }
+}
+
+function requireThreadId(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('thread_id_required');
+  const id = value.trim();
+  if (!id || id.length > 256 || /[\0\r\n]/.test(id)) throw new Error('thread_id_required');
+  return id;
 }
 
 async function probePipe(pipePath: string, timeoutMs: number): Promise<NativePipeClient | null> {

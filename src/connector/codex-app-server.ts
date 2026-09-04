@@ -375,13 +375,6 @@ export class CodexAppServer extends EventEmitter {
     return filePath ? needsDesktopPermissionRecovery(filePath) : false;
   }
 
-  getControllerThreadId(targetThreadId: unknown) {
-    const target = String(targetThreadId || '').trim();
-    // Desktop requires a valid caller task for app tool requests. Prefer a
-    // different known task so the destination stays writable and explicit.
-    return [...this.sessionMetadata.keys()].find((threadId) => threadId !== target) || target;
-  }
-
   async readSessionTail(
     threadId: string, filePath?: string, options: { paged?: boolean; cursor?: string | null } = {},
   ) {

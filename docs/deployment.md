@@ -196,6 +196,7 @@ the strict protocol does not support mixed versions.
 | The context ring is empty | Update both checkouts and fully refresh the browser; the selected session must also contain token accounting reported by Codex |
 | Older history does not load | Scroll away from the latest edge and continue upward; automatic paging is intentionally disabled until the user starts browsing older content. Use the visible retry control after a request failure |
 | The session list opens before a running Desktop badge appears | This is expected: app-server sessions return immediately and Desktop activity is merged asynchronously on a later poll |
+| Mobile input appears to come from an unrelated task, or task identity validation blocks delivery | Stop sending, update and restart the Windows connector too (not just ECS), and review affected history. Native caller and destination must be the same task; never work around a failure by borrowing another task |
 | Stop is unavailable for a running task | Only the exact turn owned by the selected connector can be interrupted from Web. Desktop-owned work must be stopped on the computer |
 | An expected environment is missing | Confirm its systemd/Windows connector is running and approved, then wait for relay presence to refresh |
 | A Linux session cannot continue after its first turn | Confirm `CODEX_CONNECTOR_MODE=headless`, update the checkout, and restart the systemd service |

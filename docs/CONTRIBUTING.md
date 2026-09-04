@@ -59,6 +59,10 @@ their focused `src/connector` modules instead of accumulating in the process/RPC
    coalesce concurrent refreshes, bound native calls, and keep app-server state as the fallback.
 9. Stop only the connector-owned turn whose thread identity matches the current session. Do not substitute
    process termination, task archival, or a Desktop-owned action for the official app-server interrupt.
+10. Bind native Desktop task calls to the destination itself. Never pick another business task as a caller
+    or controller: Desktop records it as the source of a delegation and may cause replies to cross projects.
+    Test both source and destination, including concurrent delivery and failure paths; a mocked success
+    response alone does not prove task isolation.
 
 The network protocol has one exact current version. Do not add plaintext, old-version, or
 missing-capability compatibility paths. A mandatory wire-format or capability change must update browser,

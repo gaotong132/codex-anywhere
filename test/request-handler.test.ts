@@ -21,7 +21,6 @@ function createDependencies(overrides = {}) {
       stopTurn: async () => ({ stopped: true }),
       listApprovals: () => ({ approvals: [] }),
       respondApproval: async () => ({}),
-      getControllerThreadId: () => 'controller-thread',
       getDesktopTurnOverrides: () => ({}),
       isLargeSession: async () => false,
       canOwnSession: () => true,
@@ -146,7 +145,7 @@ test('session rename stays inside the selected execution environment', async () 
   }));
   assert.equal(desktopResponse.data.title, 'Desktop task');
   assert.deepEqual(desktopCalls, [{
-    threadId: 'desktop-thread', name: 'Desktop task', callerThreadId: 'controller-thread',
+    threadId: 'desktop-thread', name: 'Desktop task',
   }]);
 
   const headlessCalls = [];
@@ -331,7 +330,7 @@ test('existing sessions are always delivered through Desktop without bridge take
   }));
   const response = await handle(request('turn.start', { threadId: 'target-thread', text: 'hello' }));
   assert.deepEqual(delivered, {
-    threadId: 'target-thread', text: 'hello', requestId: 'request-1', callerThreadId: 'controller-thread',
+    threadId: 'target-thread', text: 'hello', requestId: 'request-1',
   });
   assert.equal(appServerCalls, 0);
   assert.equal(response.ok, true);
@@ -354,10 +353,48 @@ test('active Desktop sessions receive follow-up messages immediately through Des
   }));
   assert.deepEqual(delivered, {
     threadId: 'target-thread', text: 'adjust this now', requestId: 'request-1',
-    callerThreadId: 'controller-thread',
   });
   assert.equal(appServerCalls, 0);
   assert.deepEqual(response.data, { threadId: 'target-thread', delivery: 'desktop' });
+});
+
+test('browser fields and model settings cannot override the Desktop destination or source', async () => {
+  let sent;
+  const handle = createRequestHandler(createDependencies({
+    codex: {
+      getDesktopTurnOverrides: async () => ({
+        model: 'gpt-5.6-sol', thinking: 'high',
+        threadId: 'another-project', callerThreadId: 'production-thread',
+        text: 'unexpected text', requestId: 'unexpected-request',
+      }),
+    },
+    desktop: { sendMessage: async (message) => { sent = message; return { threadId: message.threadId }; } },
+  }));
+  const response = await handle(request('turn.start', {
+    threadId: 'selected-thread', text: 'User input', callerThreadId: 'production-thread',
+    sourceThreadId: 'another-project', requestId: 'browser-request',
+  }));
+  assert.equal(response.ok, true);
+  assert.deepEqual(sent, {
+    threadId: 'selected-thread', text: 'User input', requestId: 'request-1',
+    model: 'gpt-5.6-sol', thinking: 'high',
+  });
+});
+
+test('delayed model resolution cannot move a message to a later selected session', async () => {
+  let resolveFirst;
+  const firstSettings = new Promise((resolve) => { resolveFirst = resolve; });
+  const sent = [];
+  const handle = createRequestHandler(createDependencies({
+    codex: { getDesktopTurnOverrides: (id) => id === 'thread-a' ? firstSettings : {} },
+    desktop: { sendMessage: async (message) => { sent.push(message); return { threadId: message.threadId }; } },
+  }));
+  const first = handle(request('turn.start', { threadId: 'thread-a', text: 'A' }));
+  await handle(request('turn.start', { threadId: 'thread-b', text: 'B' }));
+  resolveFirst({});
+  await first;
+  assert.deepEqual(sent.map(({ threadId, text }) => [threadId, text]), [['thread-b', 'B'], ['thread-a', 'A']]);
+  assert.ok(sent.every((message) => !Object.hasOwn(message, 'callerThreadId')));
 });
 
 test('turn stop stays bound to the selected connector-owned thread', async () => {
@@ -392,7 +429,7 @@ test('an explicit model choice is applied to the next Desktop-owned turn', async
   }));
   assert.deepEqual(delivered, {
     threadId: 'target-thread', text: 'continue', requestId: 'request-1',
-    callerThreadId: 'controller-thread', model: 'gpt-5.6-sol', thinking: 'xhigh',
+    model: 'gpt-5.6-sol', thinking: 'xhigh',
   });
   assert.equal(response.ok, true);
 });
@@ -429,14 +466,14 @@ test('existing sessions preserve configured Desktop turn overrides', async () =>
   }));
   const response = await handle(request('turn.start', { threadId: 'target-thread', text: 'continue' }));
   assert.deepEqual(sent, {
-    threadId: 'target-thread', text: 'continue', requestId: 'request-1', callerThreadId: 'controller-thread',
+    threadId: 'target-thread', text: 'continue', requestId: 'request-1',
     model: 'gpt-5.6-sol', thinking: 'high',
   });
   assert.equal(response.data.delivery, 'desktop');
   assert.equal(appServerCalls, 0);
 });
 
-test('active Desktop sessions preserve the required caller task', async () => {
+test('active Desktop sessions preserve the explicit destination without a caller override', async () => {
   let sent;
   let appServerCalls = 0;
   const handle = createRequestHandler(createDependencies({
@@ -448,7 +485,7 @@ test('active Desktop sessions preserve the required caller task', async () => {
   }));
   const response = await handle(request('turn.start', { threadId: 'target-thread', text: 'hello' }));
   assert.deepEqual(sent, {
-    threadId: 'target-thread', text: 'hello', requestId: 'request-1', callerThreadId: 'controller-thread',
+    threadId: 'target-thread', text: 'hello', requestId: 'request-1',
   });
   assert.equal(response.ok, true);
   assert.equal(response.data.delivery, 'desktop');
