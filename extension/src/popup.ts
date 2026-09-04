@@ -3,6 +3,8 @@ const element = <T extends HTMLElement>(id: string) => document.getElementById(i
 const url = element<HTMLInputElement>('url');
 const environment = element<HTMLSelectElement>('environment');
 const session = element<HTMLSelectElement>('session');
+const manifest = chrome.runtime.getManifest();
+element('build-info').textContent = manifest.version_name || manifest.version;
 let pending = 0;
 let signature = '';
 let acting = false;

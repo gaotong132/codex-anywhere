@@ -11,15 +11,17 @@ test('compiled popup locks stale selection during an environment switch and reco
   const base = { connected: true, relayOnline: true, devices: ['pc', 'ecs'], environmentId: 'pc',
     sessions: [{ id: 'test-task', title: 'Test task' }], extensionOrigin: 'chrome-extension://fixture' };
   let settle: ((value: unknown) => void) | undefined;
+  const manifest = JSON.parse(await readFile('extension/dist/manifest.json', 'utf8'));
   const context = createContext({ document, setInterval: () => 0,
     MutationObserver: class { observe() {} },
     Option: function(text: string, value: string) { const option = document.createElement('option'); option.textContent = text; option.value = value; return option; },
-    chrome: { runtime: { sendMessage: (message: { type: string }) => message.type === 'status'
+    chrome: { runtime: { getManifest: () => manifest, sendMessage: (message: { type: string }) => message.type === 'status'
       ? Promise.resolve({ ok: true, result: base }) : new Promise((resolve) => { settle = resolve; }) } },
   });
   runInContext(await readFile('extension/dist/popup.js', 'utf8'), context);
   const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
   await tick();
+  assert.equal(document.querySelector('#build-info')!.textContent, manifest.version_name);
   const session = document.querySelector('#session') as HTMLSelectElement;
   const environment = document.querySelector('#environment') as HTMLSelectElement;
   const grant = document.querySelector('#grant') as HTMLButtonElement;

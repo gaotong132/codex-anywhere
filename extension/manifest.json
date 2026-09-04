@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Codex Anywhere Browser",
-  "version": "0.0.1",
-  "version_name": "0.0.1 development (session browser control)",
+  "version": "0.2.1",
+  "version_name": "0.2.1 dev",
   "description": "Authorize one page to your existing Anywhere Session. Continue on any connected PC or ECS environment.",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "scripting", "storage"],

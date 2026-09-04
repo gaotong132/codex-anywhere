@@ -4,7 +4,9 @@ English | [简体中文](README.zh-CN.md)
 
 Connect to Anywhere, choose an execution environment (PC, ECS, or any connected node), choose an **existing
 Session**, and authorize the current page. Continue that original Session in Anywhere to read, click, fill,
-and scroll. No replacement Session is created. Manifest `0.0.1` is an unpublished development identifier.
+and scroll. No replacement Session is created. The built manifest follows the root `package.json` version
+and displays `version dev (build fingerprint)`. The content fingerprint identifies the loaded artifacts;
+it does not publish a release or create a Tag.
 
 ## Build and install
 
@@ -19,6 +21,11 @@ npm run test:extension
 
 Use Chrome 120+ → Extensions → Developer mode → Load unpacked → **`extension/dist`**. Reload the extension
 when upgrading the previous preview. Prefer a separate test browser profile.
+
+Click the **reload arrow on the extension card**, not the browser's page refresh button. Confirm the version
+and fingerprint on the card or popup footer match `version_name` in `extension/dist/manifest.json`.
+If it still shows `0.0.1`, the new build has not loaded. Clear historical entries on the extension's Errors
+page, then reopen the popup and check whether any new errors appear.
 
 ## One-time setup on test infrastructure
 

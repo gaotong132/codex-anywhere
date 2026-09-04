@@ -9,6 +9,7 @@
     <section id="selection" hidden><label for="environment">运行环境</label><select id="environment"></select><label for="session">继续哪个 Session</label><select id="session"></select><p class="hint">授权后，在这个原会话中对话，即可读取、点击、输入和滚动当前页。PC 和 ECS 均可。</p><button id="grant" class="primary">授权当前页面</button><p class="fine">页面内容会端到端加密发给选中的环境。操作可能改变网站数据，请仅授权可信页面。</p></section>
     <section id="authorized" hidden><div class="connected-icon">✓</div><h1>已连接到会话</h1><p id="task"></p><p id="page" class="hint"></p><p class="fine">回到 Anywhere，继续这个 Session 即可操作。授权无倒计时；页面导航后需重新授权。</p></section>
     <button id="cancel" class="secondary" hidden>取消连接</button>
+    <p id="build-info" class="fine" aria-label="扩展构建版本"></p>
   </main>
   <script type="module" src="/src/popup.ts"></script>
 </body></html>
