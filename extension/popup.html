@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Anywhere Browser Preview</title></head>
+<body>
+  <main>
+    <span class="eyebrow">CODEX ANYWHERE · 开发预览</span>
+    <h1>浏览器只读预览</h1>
+    <p>仅在本机读取你授权的当前页面，不连接 ECS，不上传内容，也不会点击或输入。</p>
+    <p class="notice">可见正文仍可能包含隐私信息。请先用测试网页验证。</p>
+    <div id="status" role="status">尚未授权</div>
+    <button id="grant">授权当前标签页（最多 10 分钟）</button>
+    <div class="actions"><button id="snapshot" disabled>读取页面</button><button id="stop" disabled>停止并清除</button></div>
+    <pre id="output" aria-label="本机页面预览"></pre>
+  </main>
+  <script type="module" src="/src/popup.ts"></script>
+</body>
+</html>

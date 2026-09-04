@@ -4,6 +4,11 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Started Browser Agent development in isolated modules: task/document-bound in-memory grants, bounded
+  read requests, revocation, replay rejection, and a separately built local-only MV3 extension preview.
+  Added isolation/race/privacy tests and a phased design. Remote pairing, Relay routing, MCP integration,
+  and page interaction remain disabled/unimplemented; this does not change the production bridge.
+
 ## v0.2.1 — 2026-09-04
 
 - Unified click feedback across buttons, links, menus, and disclosure controls: suppress native tap

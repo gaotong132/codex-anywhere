@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/browser-agent']
   pull_request:
 
 permissions:
@@ -23,5 +23,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run test:extension
       - if: matrix.node-version == 24
         run: docker build -t codex-anywhere:test .

@@ -21,16 +21,19 @@
     "build": "npm run build:web && npm run build:node",
     "build:web": "vite build",
     "build:node": "tsc -p tsconfig.node.json",
+    "build:extension": "vite build --config extension/vite.config.ts",
     "docs:hero": "tsx scripts/generate-readme-hero.ts",
     "dev": "vite --host 127.0.0.1",
     "server": "npm run build && node build/server/index.js",
     "serve": "node build/server/index.js",
     "connector": "npm run build:node && node build/connector/index.js",
-    "typecheck": "npm run typecheck:web && npm run typecheck:node && npm run typecheck:test",
+    "typecheck": "npm run typecheck:web && npm run typecheck:node && npm run typecheck:test && npm run typecheck:extension",
+    "typecheck:extension": "tsc -p extension/tsconfig.json --noEmit",
     "typecheck:web": "tsc -p tsconfig.json --noEmit",
     "typecheck:node": "tsc -p tsconfig.node.json --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "test": "tsx --test test/*.test.ts",
+    "test:extension": "npm run build:extension && tsx --test extension/test/*.test.ts",
     "check": "npm run typecheck && npm test"
   },
   "dependencies": {
@@ -56,6 +59,7 @@
     "ws": "8.21.3"
   },
   "devDependencies": {
+    "@types/chrome": "0.2.8",
     "@types/node": "^22.20.1",
     "@types/qrcode": "1.5.6",
     "@types/react": "19.2.18",
@@ -63,6 +67,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "6.1.1",
     "sass": "1.103.1",
+    "linkedom": "0.18.13",
     "tsx": "^4.23.13",
     "typescript": "7.0.2",
     "vite": "8.2.2"

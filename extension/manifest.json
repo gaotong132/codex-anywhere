@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Codex Anywhere Browser — Local Preview",
+  "version": "0.0.1",
+  "version_name": "0.0.1 development (local read-only preview)",
+  "description": "Development preview: explicitly authorize and inspect one tab locally. No remote connection or page actions.",
+  "minimum_chrome_version": "120",
+  "permissions": ["activeTab", "scripting"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "Codex Anywhere · 本机只读预览" },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src 'none'"
+  }
+}
