@@ -50,7 +50,8 @@ page, then reopen the popup and check whether any new errors appear.
 
    On Windows quote paths and use an absolute Node executable if Desktop cannot resolve `node`. Check
    `codex mcp list`, then reload MCP configuration; Desktop may need a restart when tasks are idle.
-   The **original Session** must expose `anywhere_browser_snapshot/click/fill/scroll`. Never start a substitute.
+   The **original Session** must expose `anywhere_browser_list_pages/snapshot/click/fill/scroll/open_link`. Never start a substitute.
+   Update/reload the Connector and MCP while idle as well; reloading the Chrome extension alone is insufficient for these changes.
    Host metadata `x-codex-turn-metadata.thread_id/turn_id` is required; missing context fails closed.
    See [Codex MCP configuration](https://developers.openai.com/codex/mcp/).
 4. Generate a fresh single-use browser pairing link using the [deployment instructions](../docs/deployment.md).
@@ -62,8 +63,15 @@ page, then reopen the popup and check whether any new errors appear.
 ## Use and boundaries
 
 - Choose the environment and existing Session, verify its title, authorize the current page, then converse
-  in that Session in Anywhere. The Web header shows browser status. This version binds one page per extension
-  and one browser tab per Session. The secondary menu revokes, changes Session, or disconnects.
+  in that Session in Anywhere. Keep one manually authorized root per extension/Session. Revoke the root and its
+  children from the secondary menu before selecting another root or Session.
+- Optionally enable AI-opened same-site children in the popup and approve the current site's Chrome permission.
+  Without it, single-page control still works. `open_link` or a click on a new-tab link from a fresh snapshot creates
+  a same-origin managed child. No arbitrary URLs, manually opened tabs, unsolicited site popups or cross-origin
+  links/redirects inherit consent. Chrome stores site permission, while runtime checks still require the exact origin
+  (including port), document and Session. Multiple managed pages require an explicit `pageId` from the list tool.
+- Web says “Browser authorized” with a child count. Its hint distinguishes unverified MCP tools from a recorded
+  successful call; heartbeat alone does not prove model tool availability. In-app CUA and Anywhere are separate browsers.
 - No ten-minute consent limit; commands time out after 15 seconds. Heartbeats run every 20 seconds;
   more than 45 seconds without a heartbeat means offline, not expired consent. The Relay only transports
   end-to-end encrypted operation/results frames.
@@ -71,6 +79,9 @@ page, then reopen the popup and check whether any new errors appear.
   within the current browser lifetime, with a new grant ID. Revocation, tab closure, navigation (including
   conservative same-origin URL changes), or browser restart requires new consent. Timed-out writes may have
   executed: inspect before retrying. Writes are never replayed automatically after disconnect.
+- Root navigation/closure/revocation stops all children; child navigation stops only that child. A connector restart
+  that loses child provenance restores only the root; ask AI to open children again. Tabs are not automatically closed.
+  Optional site permissions can be removed in Chrome extension settings.
 - Page content is untrusted and may contain sensitive visible text. Snapshots omit form values, sensitive
   inputs, hidden/private regions; this is not automatic secret redaction. References are snapshot-scoped and
   invalidated after click/fill. No arbitrary scripts, password/cookie export, file upload, browser internal

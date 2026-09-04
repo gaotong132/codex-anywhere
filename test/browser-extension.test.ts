@@ -8,6 +8,7 @@ test('extension keeps explicit activeTab grants, no broad host, debugger or cont
   const manifest = JSON.parse(await readFile('extension/manifest.json', 'utf8'));
   assert.equal(manifest.manifest_version, 3);
   assert.deepEqual(manifest.permissions, ['activeTab', 'scripting', 'storage']);
+  assert.deepEqual(manifest.optional_host_permissions, ['http://*/*', 'https://*/*']);
   for (const field of ['host_permissions', 'externally_connectable', 'web_accessible_resources', 'content_scripts']) assert.equal(manifest[field], undefined);
   const connectSources = manifest.content_security_policy.extension_pages.split(';')
     .map((directive: string) => directive.trim().split(/\s+/)).find((directive: string[]) => directive[0] === 'connect-src');

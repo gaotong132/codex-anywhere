@@ -3,6 +3,7 @@ import { requireBrowserId, requireInteger, requireRecord } from './contracts.js'
 export type BrowserOperation =
   | { method: 'snapshot' }
   | { method: 'click'; ref: string }
+  | { method: 'open_link'; ref: string }
   | { method: 'fill'; ref: string; text: string }
   | { method: 'scroll'; deltaY: number };
 
@@ -13,6 +14,7 @@ export function parseOperation(value: unknown): BrowserOperation {
     return { method: 'scroll', deltaY: requireInteger(input.deltaY, -2000, 2000) };
   }
   if (input.method === 'click' && Object.keys(input).length === 2) return { method: 'click', ref: requireBrowserId(input.ref) };
+  if (input.method === 'open_link' && Object.keys(input).length === 2) return { method: 'open_link', ref: requireBrowserId(input.ref) };
   if (input.method === 'fill' && Object.keys(input).length === 3 && typeof input.text === 'string' && input.text.length <= 4000) {
     return { method: 'fill', ref: requireBrowserId(input.ref), text: input.text };
   }

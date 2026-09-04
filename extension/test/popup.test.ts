@@ -37,3 +37,26 @@ test('compiled popup locks stale selection during an environment switch and reco
   assert.equal(grant.disabled, true);
   assert.match(document.querySelector('#status')!.textContent!, /Test connection failed/);
 });
+
+test('child permission is requested only on its explicit button, for the exact root site', async () => {
+  const { document } = parseHTML(await readFile('extension/dist/popup.html', 'utf8'));
+  for (const select of document.querySelectorAll('select')) Object.defineProperty(select, 'value', { writable: true, value: '' });
+  const state = { connected: true, relayOnline: true, devices: ['pc'], environmentId: 'pc', sessions: [], childPermission: false,
+    binding: { title: 'Root', origin: 'https://example.com', sitePermissionPattern: 'https://example.com/*' } };
+  const requested: any[] = [];
+  let allow = false;
+  const context = createContext({ document, setInterval: () => 0, MutationObserver: class { observe() {} },
+    Option: function(text: string, value: string) { const option = document.createElement('option'); option.textContent = text; option.value = value; return option; },
+    chrome: { runtime: { getManifest: () => ({ version: 'test' }), sendMessage: async () => ({ ok: true, result: state }) },
+      permissions: { request: async (options: any) => { requested.push(options); state.childPermission = allow; return allow; } } } });
+  runInContext(await readFile('extension/dist/popup.js', 'utf8'), context);
+  const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+  await tick(); assert.equal(requested.length, 0);
+  const button = document.querySelector('#enable-children') as HTMLButtonElement;
+  button.onclick!(new Event('click') as any); await tick();
+  assert.deepEqual(JSON.parse(JSON.stringify(requested)), [{ origins: ['https://example.com/*'] }]);
+  assert.match(document.querySelector('#status')!.textContent!, /起始页仍可正常使用/);
+  assert.equal(button.disabled, false);
+  allow = true; button.onclick!(new Event('click') as any); await tick();
+  assert.equal(button.disabled, true); assert.equal(button.textContent, '已允许同站子页');
+});

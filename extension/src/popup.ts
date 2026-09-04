@@ -14,6 +14,7 @@ function controls() {
   environment.disabled = acting;
   session.disabled = acting;
   element<HTMLButtonElement>('grant').disabled = acting || !lastState?.connected || !session.value;
+  element<HTMLButtonElement>('enable-children').disabled = acting || !lastState?.binding || lastState?.childPermission;
 }
 function render(state: any) {
   lastState = state;
@@ -27,7 +28,9 @@ function render(state: any) {
   if (state.binding) {
     element('task').textContent = state.binding.title;
     element('page').textContent = state.binding.origin;
-    element('authorized').querySelector('h1')!.textContent = state.connected ? '已连接到会话' : '已授权 · 当前离线';
+    element('authorized').querySelector('h1')!.textContent = state.connected ? '起始页已授权' : '已授权 · 当前离线';
+    element('children-status').textContent = `AI 纳管子页：${state.childCount || 0} 个。${state.currentManaged ? '' : '当前标签页不在授权范围内。'}`;
+    element('enable-children').textContent = state.childPermission ? '已允许同站子页' : '允许 AI 打开的同站子页';
   }
   const next = JSON.stringify([state.devices, state.environmentId, state.sessions]);
   if (signature !== next) {
@@ -44,7 +47,12 @@ async function command(type: string, payload: object = {}) {
   const revision = ++pending; acting = true;
   controls();
   try {
-    const response = await chrome.runtime.sendMessage({ type, ...payload });
+    if (type === 'enable-children') {
+      // Called synchronously from the button handler: Chrome requires a user gesture.
+      const granted = await chrome.permissions.request({ origins: [lastState.binding.sitePermissionPattern] });
+      if (!granted) throw new Error('未允许同站子页，起始页仍可正常使用。');
+    }
+    const response = await chrome.runtime.sendMessage({ type: type === 'enable-children' ? 'status' : type, ...payload });
     if (revision !== pending) return;
     if (!response.ok) throw new Error(response.error);
     if (type === 'connect') url.value = '';
@@ -61,6 +69,7 @@ element('connect').onclick = () => { element('cancel').hidden = false; void comm
 element('cancel').onclick = () => void command('cancel');
 element('grant').onclick = () => void command('grant', { threadId: session.value });
 element('revoke').onclick = () => void command('revoke');
+element('enable-children').onclick = () => void command('enable-children');
 element('disconnect').onclick = () => void command('disconnect');
 environment.onchange = () => void command('environment', { environmentId: environment.value });
 session.onchange = controls;

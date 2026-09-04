@@ -124,6 +124,8 @@ async function dispatchAction({
       return browser.validateAndBind(client, payload.threadId, payload.target, (threadId) => codex.readSession(threadId));
     }
     if (action === 'browser.status') return browser.status(payload.threadId);
+    if (action === 'browser.adopt') return browser.adopt(client, payload.operationRequestId, payload.parentGrantId, payload.target);
+    if (action === 'browser.restore') return browser.restore(client, payload.grantId, payload.target);
     if (action === 'browser.heartbeat') return browser.heartbeat(client, payload.grantId);
     if (action === 'browser.revoke') return browser.revoke(client, payload.grantId);
     if (action === 'browser.result') return browser.result(client, payload);
@@ -207,11 +209,11 @@ async function dispatchAction({
   if (action === 'file.markdown.read') return downloads.readMarkdown(payload);
   if (action === 'file.text.read') return downloads.readText(payload);
   if (action === 'turn.start') return startTurn({
-    codex, desktop, mode, payload, clientId, requestId,
+    codex, desktop, mode, payload, clientId, requestId, browser,
   });
   if (action === 'turn.steer') {
     return {
-      ...await codex.steerTurn({ ...payload, clientId, requestId }),
+      ...await codex.steerTurn({ ...payload, text: browser?.withContext(String(payload.threadId || '').trim(), payload.text) ?? payload.text, clientId, requestId }),
       delivery: 'appServer',
     };
   }
@@ -248,11 +250,11 @@ async function dispatchAction({
 }
 
 async function startTurn({
-  codex, desktop, mode, payload, clientId, requestId,
-}: Pick<DispatchContext, 'codex' | 'desktop' | 'mode' | 'payload' | 'clientId' | 'requestId'>) {
+  codex, desktop, mode, payload, clientId, requestId, browser,
+}: Pick<DispatchContext, 'codex' | 'desktop' | 'mode' | 'payload' | 'clientId' | 'requestId' | 'browser'>) {
   const threadId = String(payload.threadId || '').trim();
   if (!threadId || mode === 'headless') {
-    return { ...await codex.startTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
+    return { ...await codex.startTurn({ ...payload, text: browser?.withContext(threadId, payload.text) ?? payload.text, clientId, requestId }), delivery: 'appServer' };
   }
   // Existing Desktop tasks must keep their original writer. Starting or
   // resuming them through the bridge's app-server creates a second writer and
@@ -262,7 +264,7 @@ async function startTurn({
   const { model, thinking } = await codex.getDesktopTurnOverrides(threadId);
   return desktop.sendMessage({
     threadId,
-    text: payload.text,
+    text: browser?.withContext(threadId, payload.text) ?? payload.text,
     requestId,
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),

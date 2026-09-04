@@ -6,6 +6,7 @@
   "description": "Authorize one page to your existing Anywhere Session. Continue on any connected PC or ECS environment.",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "scripting", "storage"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
   "icons": { "16": "icon-16.png", "32": "icon-32.png", "48": "icon-48.png", "128": "icon-128.png" },
   "background": { "service_worker": "background.js", "type": "module" },
   "action": { "default_popup": "popup.html", "default_title": "Codex Anywhere · 授权当前页", "default_icon": { "16": "icon-16.png", "32": "icon-32.png" } },

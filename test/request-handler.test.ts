@@ -64,6 +64,39 @@ function request(action, payload = {}) {
   return { action, payload, requestId: 'request-1', clientId: 'client-1' };
 }
 
+test('browser context follows only the exact PC/headless turn, steer and revocation without extra messages', async () => {
+  for (const mode of ['desktop', 'headless'] as const) {
+    const calls: any[] = [];
+    const dependencies = createDependencies({ mode, codex: {
+      startTurn: async (payload: any) => { calls.push(payload); return {}; },
+      steerTurn: async (payload: any) => { calls.push(payload); return {}; },
+    }, desktop: { sendMessage: async (payload: any) => { calls.push(payload); return {}; } } });
+    const browser = new BrowserSessionBroker(mode, () => true);
+    const client = { clientId: 'extension', clientDeviceId: 'browser-a' };
+    const root = browser.bind(client, 'bound', { browserDeviceId: 'browser-a', tabId: 1, documentId: 'doc-a', origin: 'https://private.example.com' });
+    browser.heartbeat(client, root.grantId);
+    const handler = createRequestHandler({ ...dependencies, browser });
+    for (const action of ['turn.start', 'turn.steer']) {
+      assert.equal((await handler(request(action, { threadId: 'bound', text: 'Inspect current page', turnId: 'turn-1' }))).ok, true);
+      assert.equal((await handler(request(action, { threadId: 'other', text: 'Unrelated task', turnId: 'turn-1' }))).ok, true);
+    }
+    assert.equal(calls.length, 4);
+    for (const payload of [calls[0], calls[2]]) {
+      assert.equal(payload.threadId, 'bound');
+      assert.match(payload.text, /^Inspect current page\n\n\[Anywhere browser context/);
+      assert.match(payload.text, /1 explicitly authorized/);
+      assert.match(payload.text, /anywhere_browser_list_pages/);
+      assert.match(payload.text, /MCP tools unavailable/);
+      assert.doesNotMatch(payload.text, /private\.example|browser-a|doc-a/);
+    }
+    assert.equal(calls[1].text, 'Unrelated task'); assert.equal(calls[3].text, 'Unrelated task');
+    browser.revoke(client, root.grantId);
+    await handler(request('turn.start', { threadId: 'bound', text: 'Continue' }));
+    assert.match(calls[4].text, /0 explicitly authorized/);
+    assert.equal(browser.status('bound').online, false);
+  }
+});
+
 test('browser authorization validates an existing Session without sending or creating a turn', async () => {
   const reads: string[] = [];
   const dependencies = createDependencies({ codex: {

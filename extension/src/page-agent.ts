@@ -56,6 +56,15 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
   if (!entry || !entry.element.isConnected || !visible(entry.element) || entry.html !== entry.element.outerHTML || sensitive(entry.element)) throw new Error('browser_stale_element_read_again');
   const element = entry.element as HTMLElement;
   if (element.matches(':disabled,[aria-disabled="true"],input[type="file"],input[type="password"],input[type="hidden"]')) throw new Error('browser_element_not_allowed');
+  if (input.operation.method === 'open_link' || (input.operation.method === 'click' && element instanceof HTMLAnchorElement && element.target === '_blank')) {
+    if (!(element instanceof HTMLAnchorElement) || element.hasAttribute('download')) throw new Error('browser_link_required');
+    const url = new URL(element.href);
+    if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.origin !== input.origin) return { denied: 'browser_child_origin_denied' as const };
+    state.refs.clear();
+    // The worker creates exactly this tab and records its identity. Do not click
+    // website handlers/window.open and then guess which tab they opened.
+    return { openInNewTab: url.href };
+  }
   if (input.operation.method === 'click') {
     if (element instanceof HTMLAnchorElement && (!/^https?:$/.test(new URL(element.href).protocol) || element.target === '_blank' || element.hasAttribute('download'))) throw new Error('browser_navigation_not_allowed');
     const rect = element.getBoundingClientRect();

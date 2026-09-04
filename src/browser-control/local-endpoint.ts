@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { mkdir, writeFile, chmod, readFile, unlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { secretMatches } from '../shared/protocol.js';
-import { requireBrowserId } from './contracts.js';
+import { requireBrowserId, requireRecord } from './contracts.js';
 import { parseOperation } from './operations.js';
 import type { BrowserSessionBroker } from './session-broker.js';
 
@@ -23,8 +23,16 @@ export async function startBrowserEndpoint(broker: BrowserSessionBroker, stateFi
         body += String(chunk);
         if (body.length > 12_000) throw new Error('browser_invalid_request');
       }
-      const input = JSON.parse(body);
-      const result = await broker.execute(requireBrowserId(input.threadId), requireBrowserId(input.turnId), parseOperation(input.operation));
+      const input = requireRecord(JSON.parse(body), ['threadId', 'turnId', 'operation', 'pageId', 'method', 'offset', 'limit']);
+      const threadId = requireBrowserId(input.threadId), turnId = requireBrowserId(input.turnId);
+      let result: unknown;
+      if (input.method === 'list_pages') {
+        requireRecord(input, ['threadId', 'turnId', 'method', 'offset', 'limit']);
+        result = broker.listPages(threadId, turnId, input.offset as number | undefined, input.limit as number | undefined);
+      } else {
+        requireRecord(input, ['threadId', 'turnId', 'operation', 'pageId']);
+        result = await broker.execute(threadId, turnId, parseOperation(input.operation), input.pageId === undefined ? undefined : requireBrowserId(input.pageId));
+      }
       response.end(JSON.stringify({ result }));
     } catch (error) {
       response.writeHead(400).end(JSON.stringify({ error: error instanceof Error && /^browser_[a-z_]+$/.test(error.message) ? error.message : 'browser_operation_failed' }));

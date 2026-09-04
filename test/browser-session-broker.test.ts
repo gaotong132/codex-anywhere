@@ -124,7 +124,8 @@ test('official MCP SDK → private loopback → exact Session broker round trip'
   const [left, right] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(left), sdk.connect(right)]);
   t.after(async () => { await sdk.close(); await server.close(); });
-  const tools = await sdk.listTools(); assert.equal(tools.tools.length, 4);
+  const tools = await sdk.listTools(); assert.equal(tools.tools.length, 6);
+  assert.match(sdk.getInstructions()!, /NOT Codex in-app CUA/);
   const _meta = { 'x-codex-turn-metadata': { thread_id: 'thread-1', turn_id: 'turn-1' } };
   const result = await sdk.callTool({ name: 'anywhere_browser_snapshot', arguments: {}, _meta });
   assert.match(JSON.stringify(result), /fixture-only/); assert.notEqual(result.isError, true);
@@ -132,4 +133,55 @@ test('official MCP SDK → private loopback → exact Session broker round trip'
   const wrong = await sdk.callTool({ name: 'anywhere_browser_snapshot', arguments: {}, _meta: { 'x-codex-turn-metadata': { thread_id: 'other', turn_id: 'turn-1' } } });
   assert.equal(wrong.isError, true);
   const spoof = await sdk.callTool({ name: 'anywhere_browser_snapshot', arguments: { threadId: 'other' }, _meta }); assert.equal(spoof.isError, true);
+  const pages = await sdk.callTool({ name: 'anywhere_browser_list_pages', arguments: {}, _meta });
+  assert.match(JSON.stringify(pages), /authorized-root/);
+  assert.match(JSON.stringify(pages), new RegExp(grant.grantId));
+  const badPage = await sdk.callTool({ name: 'anywhere_browser_snapshot', arguments: { pageId: 'other' }, _meta });
+  assert.equal(badPage.isError, true);
+  assert.match(JSON.stringify(badPage), /list_pages/);
+  const listSpoof = await sdk.callTool({ name: 'anywhere_browser_list_pages', arguments: { threadId: 'thread-1' }, _meta });
+  assert.equal(listSpoof.isError, true);
+});
+
+test('only a live AI open operation can adopt same-origin children; root remains singular', async () => {
+  const { broker, grant, events } = setup();
+  const childTarget = { ...target, tabId: 2, documentId: 'child-doc' };
+  assert.throws(() => broker.adopt(client, 'missing', grant.grantId, childTarget), /child_operation_required/);
+  const opening = broker.execute('thread-1', 'turn-1', { method: 'open_link', ref: 'link-ref' });
+  const event = events[0].payload;
+  assert.throws(() => broker.adopt(client, event.requestId, grant.grantId, { ...childTarget, origin: 'https://other.com' }), /child_origin_denied/);
+  const child = broker.adopt(client, event.requestId, grant.grantId, childTarget);
+  assert.throws(() => broker.adopt(client, event.requestId, grant.grantId, { ...childTarget, tabId: 3 }), /child_operation_required/);
+  broker.heartbeat(client, child.grantId);
+  broker.result(client, { ...event, ok: true, result: { opened: true, pageId: child.grantId } });
+  await opening;
+  const listed = broker.listPages('thread-1', 'turn-1', 0, 1);
+  assert.equal(listed.total, 2); assert.equal(listed.nextOffset, 1);
+  assert.equal(broker.listPages('thread-1', 'turn-1', 1, 1).pages[0].kind, 'ai-opened');
+  await assert.rejects(broker.execute('thread-1', 'turn-1', { method: 'snapshot' }), /selection_required/);
+  await assert.rejects(broker.execute('other-thread', 'turn-1', { method: 'snapshot' }, child.grantId), /not_authorized/);
+  assert.throws(() => broker.bind(client, 'thread-1', { ...target, tabId: 3 }), /session_already_bound/);
+  const reading = broker.execute('thread-1', 'turn-1', { method: 'snapshot' }, child.grantId);
+  assert.equal(events[1].payload.target.tabId, 2);
+  const rejected = assert.rejects(reading, /authorization_changed/);
+  broker.revoke(client, grant.grantId); await rejected;
+  assert.equal(broker.listPages('thread-1', 'turn-1').total, 0);
+});
+
+test('authenticated reconnect preserves child provenance but rotates IDs; restart cannot restore unknown children', async () => {
+  const { broker, grant, events } = setup();
+  const opening = broker.execute('thread-1', 'turn-1', { method: 'open_link', ref: 'r' });
+  const childTarget = { ...target, tabId: 2, documentId: 'child-doc' };
+  const child = broker.adopt(client, events[0].payload.requestId, grant.grantId, childTarget);
+  broker.result(client, { ...events[0].payload, ok: true }); await opening;
+  const reconnected = { ...client, clientId: 'client-2' };
+  assert.throws(() => broker.restore({ ...reconnected, clientDeviceId: 'other' }, child.grantId, childTarget), /restore_unavailable/);
+  const rootNext = broker.restore(reconnected, grant.grantId, target);
+  const childNext = broker.restore(reconnected, child.grantId, childTarget);
+  assert.notEqual(rootNext.grantId, grant.grantId); assert.notEqual(childNext.grantId, child.grantId);
+  assert.equal(broker.status('thread-1').lastToolSuccessAt, null);
+  await assert.rejects(broker.execute('thread-1', 'turn-1', { method: 'snapshot' }, child.grantId), /not_authorized/);
+  broker.revoke(reconnected, rootNext.grantId);
+  assert.equal(broker.listPages('thread-1', 'turn-1').total, 0);
+  assert.throws(() => broker.restore(reconnected, childNext.grantId, childTarget), /restore_unavailable/);
 });
