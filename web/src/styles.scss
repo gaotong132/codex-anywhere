@@ -125,6 +125,8 @@ input:focus, textarea:focus { border-color: $focus !important; box-shadow: 0 0 0
 .pairing-dialog h2 { margin: 0; color: #edf3fc; font-size: 20px; }
 .pairing-dialog header > button { width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 1px solid #303b4e; border-radius: 50%; color: #a7b3c6; background: #151d2a; font-size: 21px; line-height: 1; }
 .pairing-dialog form { display: grid; gap: 8px; padding: 18px 22px 10px; }
+.pairing-attempt { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 22px 12px; color: #aebacf; font-size: 12px; }
+.pairing-attempt button { flex-shrink: 0; padding: 7px 12px; border: 1px solid #344257; border-radius: 8px; color: #e4ebf7; background: #192333; }
 .pairing-dialog label { color: #aebacf; font-size: 12px; font-weight: 700; }
 .pairing-value-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .pairing-value-row input { min-width: 0; height: 44px; padding: 0 12px; border: 1px solid #2b3547; border-radius: 11px; background: #090e17; }

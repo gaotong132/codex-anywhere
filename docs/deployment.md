@@ -141,6 +141,12 @@ A camera is optional: open or paste the link, or upload a QR screenshot on the p
 stays in the browser. After pairing, that browser profile reconnects with its own approved device key;
 there is no shared browser token or recovery login.
 
+Opening a link automatically fills and opens the pairing form; click **Pair** to connect. Opening another
+link in the same tab replaces the draft. An attempt can be cancelled without closing the page and ends
+after 15 seconds if authentication does not complete. Invalid, used, or expired codes leave an editable
+form with an error; correct the code or generate a new link and retry. Failed pairing does not retry
+automatically. Refreshing before success discards the in-memory code; reopen or paste the link.
+
 ## 4. Verify
 
 ```bash

@@ -4,6 +4,9 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Fixed browser pairing links not filling the form, including links opened in an already loaded tab.
+  Pairing now stays cancellable, times out after 15 seconds, and restores an editable form on failure
+  without automatic retries. Replaced socket and cancelled QR callbacks cannot affect a new attempt.
 - Fixed a Desktop task-isolation defect: mobile input no longer borrows another conversation as its
   source, which could cause repair summaries to be sent into that unrelated task. Task-scoped native calls
   now bind caller and destination, reject mismatches, and never fall back to another task on failure.

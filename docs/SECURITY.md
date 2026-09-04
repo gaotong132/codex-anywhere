@@ -55,6 +55,10 @@ keystore; anyone who compromises the profile can act as that browser until the d
 
 The pairing credential is carried in the URL fragment, removed before the WebSocket connects, and stored
 by the relay only as a one-way verifier until it expires or is consumed.
+Opening a link prefills an editable form and requires a click to pair. New pending credentials stay only
+in page memory, not browser storage. Cancellation, failure, or the 15-second authentication deadline stops
+the attempt; callbacks from a replaced socket cannot authenticate or modify the next attempt. Reconnection
+after successful enrollment still uses the approved device key.
 
 ```mermaid
 sequenceDiagram

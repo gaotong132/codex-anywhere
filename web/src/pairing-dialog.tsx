@@ -8,12 +8,17 @@ import { t } from './i18n';
 
 type PairingDialogProps = {
   open: boolean;
+  value: string;
+  onValueChange: (value: string) => void;
+  pairing: boolean;
+  status: string;
+  error: string;
+  onCancel: () => void;
   onClose: () => void;
   onPair: (credential: BrowserPairingCredential) => void;
 };
 
-export function PairingDialog({ open, onClose, onPair }: PairingDialogProps) {
-  const [value, setValue] = useState('');
+export function PairingDialog({ open, value, onValueChange, pairing, status, error: connectionError, onCancel, onClose, onPair }: PairingDialogProps) {
   const [error, setError] = useState('');
   const [hasCamera, setHasCamera] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
@@ -21,11 +26,15 @@ export function PairingDialog({ open, onClose, onPair }: PairingDialogProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const scannerRef = useRef<QrScanner | null>(null);
+  const scanGenerationRef = useRef(0);
 
   const stopCamera = () => {
+    scanGenerationRef.current += 1;
     scannerRef.current?.destroy();
     scannerRef.current = null;
     setCameraActive(false);
+    setReadingImage(false);
+    if (fileRef.current) fileRef.current.value = '';
   };
 
   useEffect(() => {
@@ -38,7 +47,13 @@ export function PairingDialog({ open, onClose, onPair }: PairingDialogProps) {
     return stopCamera;
   }, [open]);
 
+  useEffect(() => {
+    setError('');
+    stopCamera();
+  }, [value, pairing]);
+
   const accept = (input: string) => {
+    if (pairing) return;
     try {
       const credential = parseBrowserPairingCredential(input);
       setError('');
@@ -57,10 +72,14 @@ export function PairingDialog({ open, onClose, onPair }: PairingDialogProps) {
   const startCamera = async () => {
     if (!videoRef.current) return;
     setError('');
+    stopCamera();
+    const generation = scanGenerationRef.current;
     try {
-      stopCamera();
       const { default: Scanner } = await import('qr-scanner');
-      const scanner = new Scanner(videoRef.current, (result) => accept(result.data), {
+      if (generation !== scanGenerationRef.current || !videoRef.current) return;
+      const scanner = new Scanner(videoRef.current, (result) => {
+        if (generation === scanGenerationRef.current) accept(result.data);
+      }, {
         preferredCamera: 'environment',
         highlightScanRegion: true,
         highlightCodeOutline: true,
@@ -70,6 +89,7 @@ export function PairingDialog({ open, onClose, onPair }: PairingDialogProps) {
       setCameraActive(true);
       await scanner.start();
     } catch {
+      if (generation !== scanGenerationRef.current) return;
       stopCamera();
       setError(t('无法使用摄像头，请粘贴链接或上传二维码截图', 'Camera unavailable. Paste the link or upload a QR screenshot.'));
     }
@@ -77,6 +97,8 @@ export function PairingDialog({ open, onClose, onPair }: PairingDialogProps) {
 
   const readImage = async (file: File | undefined) => {
     if (!file) return;
+    stopCamera();
+    const generation = scanGenerationRef.current;
     setReadingImage(true);
     setError('');
     try {
@@ -85,12 +107,16 @@ export function PairingDialog({ open, onClose, onPair }: PairingDialogProps) {
         returnDetailedScanResult: true,
         alsoTryWithoutScanRegion: true,
       });
-      accept(result.data);
+      if (generation === scanGenerationRef.current) accept(result.data);
     } catch {
-      setError(t('图片中没有识别到有效二维码', 'No valid QR code was found in the image'));
+      if (generation === scanGenerationRef.current) {
+        setError(t('图片中没有识别到有效二维码', 'No valid QR code was found in the image'));
+      }
     } finally {
-      setReadingImage(false);
-      if (fileRef.current) fileRef.current.value = '';
+      if (generation === scanGenerationRef.current) {
+        setReadingImage(false);
+        if (fileRef.current) fileRef.current.value = '';
+      }
     }
   };
 
@@ -116,12 +142,17 @@ export function PairingDialog({ open, onClose, onPair }: PairingDialogProps) {
               autoComplete="off"
               spellCheck={false}
               value={value}
-              onChange={(event) => setValue(event.target.value)}
+              disabled={pairing}
+              onChange={(event) => { setError(''); onValueChange(event.target.value); }}
               placeholder={t('粘贴一次性配对链接', 'Paste the one-time pairing link')}
             />
-            <button type="submit" className="primary" disabled={!value.trim()}>{t('配对', 'Pair')}</button>
+            <button type="submit" className="primary" disabled={pairing || !value.trim()}>{pairing ? t('配对中…', 'Pairing…') : t('配对', 'Pair')}</button>
           </div>
         </form>
+        {pairing && <div className="pairing-attempt" role="status">
+          <span>{status}</span>
+          <button type="button" onClick={onCancel}>{t('取消配对', 'Cancel pairing')}</button>
+        </div>}
         <div className="pairing-alternatives">
           <input
             ref={fileRef}
@@ -130,11 +161,11 @@ export function PairingDialog({ open, onClose, onPair }: PairingDialogProps) {
             accept="image/*"
             onChange={(event) => void readImage(event.target.files?.[0])}
           />
-          <button type="button" onClick={() => fileRef.current?.click()} disabled={readingImage}>
+          <button type="button" onClick={() => fileRef.current?.click()} disabled={readingImage || pairing}>
             {readingImage ? t('正在识别…', 'Reading…') : t('上传二维码截图', 'Upload QR screenshot')}
           </button>
           {hasCamera && (
-            <button type="button" onClick={() => cameraActive ? stopCamera() : void startCamera()}>
+            <button type="button" disabled={pairing} onClick={() => cameraActive ? stopCamera() : void startCamera()}>
               {cameraActive ? t('关闭摄像头', 'Stop camera') : t('使用摄像头扫描', 'Scan with camera')}
             </button>
           )}
@@ -146,7 +177,7 @@ export function PairingDialog({ open, onClose, onPair }: PairingDialogProps) {
           '摄像头不是必需的：可以粘贴链接，或上传二维码截图。图片只在当前浏览器中识别。',
           'A camera is optional: paste the link or upload a QR screenshot. Images are decoded only in this browser.',
         )}</p>
-        {error && <p className="pairing-error" role="alert">{error}</p>}
+        {(error || connectionError) && <p className="pairing-error" role="alert">{error || connectionError}</p>}
       </section>
     </div>
   );

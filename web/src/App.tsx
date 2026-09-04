@@ -142,9 +142,9 @@ import {
   browserPairingVerifier,
   createBrowserPairingProof,
   encodeBrowserPairingCredential,
-  parseBrowserPairingCredential,
   type BrowserPairingCredential,
 } from '../../src/shared/pairing-auth';
+import { PAIRING_TIMEOUT_MS, PENDING_PAIRING_KEY, pairingFailureMessage, takePairingInput } from './pairing-input';
 import type {
   Approval,
   AwaitingDesktopTurn,
@@ -173,7 +173,6 @@ const INITIAL_BOOTSTRAP_TIMEOUT_MS = 10_000;
 const SESSION_ATTENTION_KEY = 'bridge.sessionAttention.v1';
 const LAST_THREAD_KEY = 'bridge.lastThreadId';
 const NEW_SESSION_CWD_KEY = 'bridge.newSessionCwd';
-const PENDING_PAIRING_KEY = 'bridge.pendingPairing.v1';
 const NEW_TURN_KEY = '__new_turn__';
 type ScreenWakeLockSentinel = { released: boolean; release(): Promise<void> };
 type WakeLockNavigator = Navigator & {
@@ -182,25 +181,6 @@ type WakeLockNavigator = Navigator & {
 const PairingDialog = lazy(() => import('./pairing-dialog').then((module) => ({
   default: module.PairingDialog,
 })));
-
-function loadInitialBrowserPairing() {
-  let serialized = '';
-  if (location.hash.startsWith('#pair=')) {
-    serialized = location.hash;
-    history.replaceState(history.state, '', `${location.pathname}${location.search}`);
-  } else {
-    try { serialized = sessionStorage.getItem(PENDING_PAIRING_KEY) || ''; } catch { /* blocked store */ }
-  }
-  if (!serialized) return null;
-  try {
-    const credential = parseBrowserPairingCredential(serialized);
-    try { sessionStorage.setItem(PENDING_PAIRING_KEY, encodeBrowserPairingCredential(credential)); } catch { /* memory only */ }
-    return credential;
-  } catch {
-    try { sessionStorage.removeItem(PENDING_PAIRING_KEY); } catch { /* blocked store */ }
-    return null;
-  }
-}
 
 function loadSessionAttention(environmentId = DEFAULT_ENVIRONMENT_ID): SessionAttentionState {
   try {
@@ -220,9 +200,11 @@ function storeSessionAttention(environmentId: string, value: SessionAttentionSta
 }
 
 
-export default function App() {
-  const [pairingCredential, setPairingCredential] = useState<BrowserPairingCredential | null>(loadInitialBrowserPairing);
-  const [pairingDialogOpen, setPairingDialogOpen] = useState(false);
+export default function App({ initialPairingInput = null }: { initialPairingInput?: string | null } = {}) {
+  const [pairingCredential, setPairingCredential] = useState<BrowserPairingCredential | null>(null);
+  const [pairingInput, setPairingInput] = useState(initialPairingInput || '');
+  const [pairingError, setPairingError] = useState('');
+  const [pairingDialogOpen, setPairingDialogOpen] = useState(initialPairingInput !== null);
   const initialEnvironmentIdRef = useRef(loadSelectedEnvironmentId());
   const [environmentId, setEnvironmentId] = useState(initialEnvironmentIdRef.current);
   const [environmentIds, setEnvironmentIds] = useState(() => mergeKnownEnvironmentIds(
@@ -235,7 +217,7 @@ export default function App() {
   });
   const [authenticated, setAuthenticated] = useState(false);
   const [initialBootstrapPending, setInitialBootstrapPending] = useState(() => (
-    hasApprovedBrowserDevice() || Boolean(pairingCredential)
+    hasApprovedBrowserDevice() && initialPairingInput === null
   ));
   const [sessionsInitialized, setSessionsInitialized] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -296,8 +278,9 @@ export default function App() {
 
   const socketRef = useRef<WebSocket | null>(null);
   const pairingCredentialRef = useRef(pairingCredential);
-  const approvedDeviceRef = useRef(hasApprovedBrowserDevice());
+  const approvedDeviceRef = useRef(hasApprovedBrowserDevice() && initialPairingInput === null);
   const authAttemptModeRef = useRef<'device' | 'pairing'>('device');
+  const pairingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const reconnectWantedRef = useRef(false);
@@ -348,7 +331,6 @@ export default function App() {
 
   useEffect(() => { threadIdRef.current = threadId; }, [threadId]);
   useEffect(() => { environmentIdRef.current = environmentId; }, [environmentId]);
-  useEffect(() => { pairingCredentialRef.current = pairingCredential; }, [pairingCredential]);
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { ownedTurnThreadIdRef.current = ownedTurnThreadId; }, [ownedTurnThreadId]);
   useEffect(() => {
@@ -698,6 +680,12 @@ export default function App() {
       markBrowserDeviceApproved();
       pairingCredentialRef.current = null;
       setPairingCredential(null);
+      if (pairingTimeoutRef.current) clearTimeout(pairingTimeoutRef.current);
+      pairingTimeoutRef.current = null;
+      authAttemptModeRef.current = 'device';
+      setPairingInput('');
+      setPairingError('');
+      setPairingDialogOpen(false);
       try {
         sessionStorage.removeItem(PENDING_PAIRING_KEY);
       } catch { /* blocked store */ }
@@ -924,8 +912,39 @@ export default function App() {
   const clearPendingPairing = useCallback(() => {
     pairingCredentialRef.current = null;
     setPairingCredential(null);
+    if (pairingTimeoutRef.current) clearTimeout(pairingTimeoutRef.current);
+    pairingTimeoutRef.current = null;
     try { sessionStorage.removeItem(PENDING_PAIRING_KEY); } catch { /* blocked store */ }
   }, []);
+
+  const stopPairing = useCallback((error = '', keepDialogOpen = true) => {
+    reconnectWantedRef.current = false;
+    clearReconnectTimer();
+    clearPendingPairing();
+    const socket = socketRef.current;
+    // Detach before closing: a late challenge/auth.ok/close from this attempt
+    // must not affect cancellation or a newly entered pairing code.
+    socketRef.current = null;
+    socketAuthenticatedRef.current = false;
+    socket?.close(1000, 'pairing stopped');
+    secureChannelRef.current?.clear();
+    secureChannelRef.current = null;
+    connectorOnlineRef.current = false;
+    setConnecting(false);
+    setOnline(false);
+    setAuthenticated(false);
+    finishInitialBootstrap();
+    rejectPendingRequests(t('配对已结束', 'Pairing ended'));
+    setPairingError(error);
+    setPairingDialogOpen(keepDialogOpen);
+    setStatusText(error || t('已取消配对，可以重新输入', 'Pairing cancelled. You can enter another code.'));
+    // Closing an unsubmitted link must not discard an existing device approval.
+    if (!keepDialogOpen && hasApprovedBrowserDevice()) {
+      approvedDeviceRef.current = true;
+      reconnectWantedRef.current = true;
+      scheduleReconnectRef.current(true);
+    }
+  }, [clearPendingPairing, clearReconnectTimer, finishInitialBootstrap, rejectPendingRequests]);
 
   const hasAuthenticationMaterial = useCallback(() => (
     approvedDeviceRef.current
@@ -956,6 +975,7 @@ export default function App() {
     socketRef.current = socket;
     socketAuthenticatedRef.current = false;
     socket.addEventListener('message', (incoming) => {
+      if (socketRef.current !== socket) return;
       lastServerActivityRef.current = Date.now();
       try {
         const message = JSON.parse(String(incoming.data)) as BridgeMessage;
@@ -996,6 +1016,10 @@ export default function App() {
     });
     socket.addEventListener('close', (event) => {
       if (socketRef.current !== socket) return;
+      if (!socketAuthenticatedRef.current && authAttemptModeRef.current === 'pairing') {
+        stopPairing(pairingFailureMessage(event.code));
+        return;
+      }
       const replayPending = reconnectWantedRef.current
         && ![4003, 4403, 4406, 4407, 4429].includes(event.code);
       socketRef.current = null;
@@ -1014,11 +1038,6 @@ export default function App() {
       if (event.code === 4003) {
         reconnectWantedRef.current = false;
         finishInitialBootstrap();
-        if (authAttemptModeRef.current === 'pairing') {
-          clearPendingPairing();
-          setStatusText(t('配对链接无效或已过期', 'Pairing link is invalid or expired'));
-          return;
-        }
         setAuthenticated(false);
         setStatusText(t('配对凭据无效或已过期', 'Pairing credential is invalid or expired'));
         return;
@@ -1026,15 +1045,10 @@ export default function App() {
       if (event.code === 4403) {
         setAuthenticated(false);
         finishInitialBootstrap();
-        if (authAttemptModeRef.current === 'device') {
-          approvedDeviceRef.current = false;
-          clearBrowserDeviceApproval();
-          reconnectWantedRef.current = false;
-          setStatusText(t('这台设备的授权已失效，请重新配对', 'This device is no longer approved. Pair it again.'));
-          return;
-        }
-        setStatusText(t('当前设备等待管理员批准…', 'Waiting for administrator approval…'));
-        scheduleReconnectRef.current();
+        approvedDeviceRef.current = false;
+        clearBrowserDeviceApproval();
+        reconnectWantedRef.current = false;
+        setStatusText(t('这台设备的授权已失效，请重新配对', 'This device is no longer approved. Pair it again.'));
         return;
       }
       if (event.code === 4407) {
@@ -1067,8 +1081,8 @@ export default function App() {
       if (socketRef.current === socket) setStatusText(t('连接失败', 'Connection failed'));
     });
   }, [
-    clearPendingPairing, clearReconnectTimer, finishInitialBootstrap, hasAuthenticationMaterial,
-    rejectPendingRequests, updateExecution,
+    clearReconnectTimer, finishInitialBootstrap, hasAuthenticationMaterial,
+    rejectPendingRequests, stopPairing, updateExecution,
   ]);
 
   const scheduleReconnect = useCallback((immediate = false) => {
@@ -1099,20 +1113,38 @@ export default function App() {
 
   const pairBrowser = useCallback((credential: BrowserPairingCredential) => {
     const serialized = encodeBrowserPairingCredential(credential);
+    clearPendingPairing();
     pairingCredentialRef.current = credential;
     setPairingCredential(credential);
+    setPairingInput(serialized);
+    setPairingError('');
     approvedDeviceRef.current = false;
     clearBrowserDeviceApproval();
-    try { sessionStorage.setItem(PENDING_PAIRING_KEY, serialized); } catch { /* memory only */ }
     authAttemptModeRef.current = 'pairing';
     reconnectWantedRef.current = true;
     reconnectAttemptRef.current = 0;
-    setInitialBootstrapPending(true);
+    setInitialBootstrapPending(false);
     setSessionsInitialized(false);
-    setPairingDialogOpen(false);
+    setPairingDialogOpen(true);
     setStatusText(t('正在安全配对…', 'Pairing securely…'));
-    openSocket(true);
-  }, [openSocket]);
+    pairingTimeoutRef.current = setTimeout(() => stopPairing(pairingFailureMessage(4001)), PAIRING_TIMEOUT_MS);
+    try { openSocket(true); } catch { stopPairing(pairingFailureMessage(1006)); }
+  }, [clearPendingPairing, openSocket, stopPairing]);
+
+  useEffect(() => {
+    const receivePairingLink = () => {
+      let storage: Storage | undefined;
+      try { storage = sessionStorage; } catch { /* blocked store */ }
+      const input = takePairingInput(location, history, storage);
+      if (input === null) return;
+      stopPairing();
+      approvedDeviceRef.current = false;
+      setPairingInput(input);
+      setStatusText(t('已读取配对链接，请确认配对', 'Pairing link loaded. Confirm to pair.'));
+    };
+    window.addEventListener('hashchange', receivePairingLink);
+    return () => window.removeEventListener('hashchange', receivePairingLink);
+  }, [stopPairing]);
 
   useEffect(() => {
     reconnectWantedRef.current = hasAuthenticationMaterial();
@@ -1151,6 +1183,8 @@ export default function App() {
     return () => {
       reconnectWantedRef.current = false;
       clearReconnectTimer();
+      if (pairingTimeoutRef.current) clearTimeout(pairingTimeoutRef.current);
+      pairingTimeoutRef.current = null;
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       document.removeEventListener('visibilitychange', handleVisibility);
@@ -2193,7 +2227,7 @@ export default function App() {
     [executionActive, timeline],
   );
 
-  if (initialBootstrapPending) return <StartupScreen status={statusText} />;
+  if (initialBootstrapPending && !pairingDialogOpen) return <StartupScreen status={statusText} />;
 
   if (!authenticated) {
     return (
@@ -2212,7 +2246,13 @@ export default function App() {
           <Suspense fallback={null}>
             <PairingDialog
               open
-              onClose={() => setPairingDialogOpen(false)}
+              value={pairingInput}
+              onValueChange={(value) => { setPairingInput(value); setPairingError(''); }}
+              pairing={Boolean(pairingCredential)}
+              status={statusText}
+              error={pairingError}
+              onCancel={() => stopPairing()}
+              onClose={() => stopPairing('', false)}
               onPair={pairBrowser}
             />
           </Suspense>
