@@ -10,6 +10,6 @@
   "background": { "service_worker": "background.js", "type": "module" },
   "action": { "default_popup": "popup.html", "default_title": "Codex Anywhere · 授权当前页", "default_icon": { "16": "icon-16.png", "32": "icon-32.png" } },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; connect-src wss: ws://127.0.0.1:* ws://localhost:* ws://[::1]:*"
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src wss: ws://127.0.0.1:* ws://localhost:*"
   }
 }

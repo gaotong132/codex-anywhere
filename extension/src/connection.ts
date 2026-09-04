@@ -6,8 +6,9 @@ import { BrowserSecureChannel } from '../../web/src/secure-channel-client.js';
 type Frame = Record<string, any>;
 export function parseConnectionUrl(input: string) {
   const url = new URL(input.trim());
+  // Keep plain WS hosts aligned with manifest CSP: IPv6 literal sources are invalid.
   if (url.username || url.password || url.search || (url.protocol !== 'https:'
-    && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)))) throw new Error('browser_https_url_required');
+    && !(url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname)))) throw new Error('browser_https_url_required');
   const pairing = url.hash ? parseBrowserPairingCredential(input) : undefined;
   return { origin: url.origin, socketUrl: `${url.protocol === 'https:' ? 'wss:' : 'ws:'}//${url.host}/ws`, pairing };
 }

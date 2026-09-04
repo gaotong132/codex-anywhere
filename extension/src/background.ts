@@ -173,6 +173,7 @@ async function authorize(threadId: string) {
 function safeError(value: unknown) {
   const code = value instanceof Error ? value.message : '';
   const messages: Record<string, string> = {
+    browser_https_url_required: '请使用 HTTPS 地址；本机 HTTP 仅支持 localhost 或 127.0.0.1。',
     browser_control_not_enabled_on_connector: '这个环境尚未启用浏览器工具，请先按安装文档配置连接器和 MCP。',
     browser_session_already_bound: '这个 Session 已绑定另一标签页或浏览器，请先在那里撤销授权。',
     browser_connect_timeout: '连接超时。检查 Relay 的扩展 Origin 白名单、配对链接和代理。',

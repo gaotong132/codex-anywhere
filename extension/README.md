@@ -49,7 +49,8 @@ when upgrading the previous preview. Prefer a separate test browser profile.
 4. Generate a fresh single-use browser pairing link using the [deployment instructions](../docs/deployment.md).
    Paste it in the extension; a link already consumed by the Web client cannot be reused. This enrolls a separate
    extension device. Only its private device key and server Origin persist, not the pairing secret. Public
-   connections require HTTPS/WSS; only localhost permits HTTP/WS. Corporate proxy WS blocking is not bypassed.
+   connections require HTTPS/WSS; only `localhost` or `127.0.0.1` permits HTTP/WS.
+   Chrome CSP does not support IPv6 literal sources, so do not use `[::1]` for local HTTP. Corporate proxy WS blocking is not bypassed.
 
 ## Use and boundaries
 

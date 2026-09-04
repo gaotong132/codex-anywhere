@@ -63,7 +63,8 @@ Chrome 120+ 的 `chrome://extensions` 中开启开发者模式，加载已解压
 
 4. 按[部署文档](../docs/deployment.zh-CN.md)生成一条新的单次浏览器配对链接，粘贴进扩展。
    已被 Web 浏览器消费的链接不能重用；这注册的是独立的扩展设备。配对成功后只保留设备密钥和服务器 Origin，
-   不保留配对秘密。公网必须 HTTPS/WSS，仅 localhost 允许 HTTP/WS。公司代理若阻断 WS，插件不会绕过。
+   不保留配对秘密。公网必须 HTTPS/WSS，仅 `localhost` 或 `127.0.0.1` 允许 HTTP/WS。
+   Chrome CSP 不支持 IPv6 字面地址来源，因此本机 HTTP 请勿使用 `[::1]`。公司代理若阻断 WS，插件不会绕过。
 
 ## 使用与边界
 
