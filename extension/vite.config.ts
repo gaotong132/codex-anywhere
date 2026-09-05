@@ -23,12 +23,14 @@ export default defineConfig({
     } },
   }],
   build: {
+    modulePreload: false,
     outDir: 'dist',
     emptyOutDir: true,
     rolldownOptions: {
       input: {
         background: fileURLToPath(new URL('src/background.ts', import.meta.url)),
         popup: fileURLToPath(new URL('popup.html', import.meta.url)),
+        sidepanel: fileURLToPath(new URL('sidepanel.html', import.meta.url)),
       },
       output: { entryFileNames: '[name].js' },
     },

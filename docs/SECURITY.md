@@ -53,6 +53,12 @@ keystore; anyone who compromises the profile can act as that browser until the d
 
 ## Pairing flow
 
+The experimental side panel permits embedding only at `/extension/sidepanel` by an exact allowlisted extension
+Origin; normal pages remain non-embeddable. Chat and extension keep separate device identities. The Web-to-panel
+interface carries only environment/Session selection and online state, never private keys or page execution
+commands. Authorization requires a user click in extension UI and validates the real window, tab, document,
+and current connector environment.
+
 The pairing credential is carried in the URL fragment, removed before the WebSocket connects, and stored
 by the relay only as a one-way verifier until it expires or is consumed.
 Opening a link prefills an editable form and requires a click to pair. New pending credentials stay only

@@ -7,7 +7,7 @@ import { parseConnectionUrl } from '../extension/src/connection.js';
 test('extension keeps explicit activeTab grants, no broad host, debugger or content-script access', async () => {
   const manifest = JSON.parse(await readFile('extension/manifest.json', 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ['activeTab', 'scripting', 'storage']);
+  assert.deepEqual(manifest.permissions, ['activeTab', 'scripting', 'storage', 'sidePanel']);
   assert.deepEqual(manifest.optional_host_permissions, ['http://*/*', 'https://*/*']);
   for (const field of ['host_permissions', 'externally_connectable', 'web_accessible_resources', 'content_scripts']) assert.equal(manifest[field], undefined);
   const connectSources = manifest.content_security_policy.extension_pages.split(';')

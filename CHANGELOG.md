@@ -4,6 +4,10 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Add experimental side panel chat using the live Web app, with current-Session selection and explicit page
+  authorization. Preserve separate pairing and worker-owned grants; add an allowlisted embed entry, source
+  and freshness checks, and window/document-replacement regressions.
+
 - Support GPT-6 Astra through the selected Connector's live model catalog. Show all advertised reasoning
   levels, including distinct Max and Ultra options, and preserve them when editing or saving settings.
 - Keep injected browser guidance out of displayed user messages and history matching, and drain pending

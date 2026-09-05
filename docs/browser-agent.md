@@ -3,20 +3,32 @@
 English | [简体中文](browser-agent.zh-CN.md)
 
 Browser Agent is included in `main` as an **experimental add-on**, disabled by default. It requires a separate
-extension build and installation plus explicit Relay, Connector, and MCP configuration. Normal session
+extension build and installation plus Relay configuration; page control also needs Connector/MCP setup. Normal session
 features do not require it; its configuration, interactions, and compatibility may still change.
 PC Desktop, ECS CLI and other Connector environments use the same path; a browser is a resource, not an
 execution environment.
 
 ## Experience
 
-Connect extension → choose environment → choose an **existing Session** → authorize current page → continue
-in that original Anywhere Session. No ten-minute consent timer or experimental read/stop controls. A secondary
+Click extension → open the live Web chat in the side panel → choose environment and Session → chat, optionally
+authorize the current page. Chat does not require browser control; page authorization still requires separate
+extension pairing through Page control settings and Connector/MCP setup. No ten-minute consent timer or experimental read/stop controls. A secondary
 menu revokes/changes Session. The toolbar has a fixed icon and tab-specific status dot.
 
 Keep one manually authorized root, not arbitrary multi-tab binding. Optional site permission enables same-origin
 tabs created by AI `open_link` calls or clicks on `target=_blank` links. Manually opened tabs, unsolicited website
 popups and cross-origin links/redirects are not adopted. List managed pages and specify `pageId` when more than one exists.
+
+## Side panel embedding boundary
+
+The local `sidepanel.html` shell embeds the live Web app at `/extension/sidepanel`. Only this relay entry allows
+an exact `BRIDGE_EXTENSION_ORIGINS` member through `frame-ancestors`; normal pages retain embedding denial.
+Web publishes only versioned environment/Session selection and online state tied to a random frame channel.
+The shell validates the source window, site, sequence, and freshness. Messages cannot authorize a page, supply
+a browser target, or call extension APIs; device private keys never cross this interface. On an explicit
+authorization click, the shell captures the real window/tab and the worker records document identity before
+network waits and validates it again before binding. The worker owns control connections and grants independently
+of the chat frame. Closing chat does not revoke consent, and selecting another Session does not transfer it.
 
 ## Modules
 

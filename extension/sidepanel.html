@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Codex Anywhere</title></head>
+<body>
+  <header class="panel-header"><img src="icon-32.png" width="22" height="22" alt=""><strong>Anywhere</strong><span class="experimental">实验性</span><button id="settings" title="侧栏设置" aria-label="侧栏设置">设置</button></header>
+  <section id="setup" class="setup">
+    <h1>在侧栏继续对话</h1><p>填写你的 Anywhere 地址。已有 Web 配对可在同一浏览器中继续使用；首次使用请在聊天页配对。</p>
+    <form id="open-form"><label for="relay-url">Anywhere 地址</label><input id="relay-url" type="url" placeholder="https://your-anywhere/" required autocomplete="off" spellcheck="false"><button class="primary" type="submit" id="open-chat">打开聊天</button></form>
+    <p id="setup-error" role="alert"></p><p class="fine">Relay 需允许以下扩展 Origin：</p><code id="extension-origin"></code>
+  </section>
+  <section id="browser-bar" hidden>
+    <div class="selection"><span id="session-title">正在读取会话…</span><button id="grant" disabled>授权当前页</button></div>
+    <p id="browser-status" role="status" aria-live="polite"></p>
+    <div class="browser-actions"><button id="browser-settings">页面控制设置</button><button id="revoke" hidden>撤销页面授权</button><button id="reload">重新加载聊天</button></div>
+  </section>
+  <div id="frame-wrap" hidden><iframe id="chat" title="Codex Anywhere 聊天" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox" allow="clipboard-read; clipboard-write"></iframe></div>
+  <p id="frame-error" role="status" hidden>聊天页面尚未连接。请检查网络、Relay 是否已更新以及扩展 Origin 白名单，然后重新加载聊天。</p>
+  <dialog id="control-dialog"><header><strong>页面控制（可选）</strong><button id="close-controls" aria-label="关闭页面控制设置">关闭</button></header><p>聊天沿用 Web 身份；页面控制需要插件自己的配对链接。请勿重复使用已消费的链接。</p><iframe src="popup.html" title="页面控制设置"></iframe></dialog>
+  <footer id="build-info"></footer>
+  <script type="module" src="/src/sidepanel.ts"></script>
+</body></html>

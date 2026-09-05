@@ -97,6 +97,8 @@ tool output are not copied into these summaries.
 The Anywhere Browser extension (Browser Agent) is an **experimental add-on**, disabled by default and built,
 installed, and configured separately when needed. Normal Codex Anywhere session features do not require it;
 its configuration, interactions, and compatibility may still change.
+Click the extension icon to open the existing Web chat in the browser side panel. Choose an environment
+and Session to chat directly; page control remains separately authorized.
 It connects an explicitly authorized page to an **existing Session**
 on PC, ECS, or another Connector, using encrypted routing and session-bound MCP read/click/fill/scroll tools.
 It requires opt-in Relay/Connector/MCP setup and real-browser acceptance; production is not changed automatically.
