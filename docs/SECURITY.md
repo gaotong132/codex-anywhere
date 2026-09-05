@@ -36,7 +36,10 @@ Do not put credentials, private addresses, conversation content, or local paths 
 - Codex, projects, attachments, and generated files stay on the selected connector node. Personal
   computers accept no public inbound connection; a same-host ECS connector uses the relay's loopback entry.
 - The relay has no conversation database and does not intentionally persist messages, previews,
-  visualizations, or download chunks. It persists only device trust state.
+  visualizations, or download chunks. It persists device trust state and a separate private mode-0600
+  snapshot containing device IDs, roles, connection counts, and last connected/seen timestamps. The
+  activity snapshot contains no keys, IP addresses, or content and has no public query endpoint. Only
+  the Relay writes activity, separately from administrator approvals and revocations.
 - A browser enrolls through a ten-minute, single-use pairing link, then authenticates with its approved
   Ed25519 key. There is no shared browser token or recovery login.
 - Every connector needs its connector-only secret and a separately administrator-approved Ed25519

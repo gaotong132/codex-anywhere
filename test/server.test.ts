@@ -10,6 +10,7 @@ import { createConnectorAuthProof } from '../src/shared/auth.js';
 import { createDeviceAuthProof, createDeviceIdentity, type DeviceIdentity } from '../src/shared/device-auth.js';
 import type { DeviceRegistry } from '../src/server/device-registry.js';
 import { requireCurrentProtocol } from '../src/shared/protocol-contract.js';
+import { readDeviceActivity } from '../src/server/device-activity.js';
 import {
   DEVICE_KEY_AUTH_CONTEXT,
   browserPairingVerifier,
@@ -87,6 +88,58 @@ async function authenticateSocket({
   }
   return { ...opened, auth: await nextJson(opened.socket), identity };
 }
+
+test('live Relay activity counts only authenticated sockets and follows ping, close and revocation', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'anywhere-live-activity-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  let now = Date.now();
+  const server = createBridgeServer({ connectorToken: TOKEN, deviceRegistryPath: join(directory, 'devices.json'),
+    clock: () => now, heartbeatIntervalMs: 50 });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+  const unauthenticated = await openSocket(url);
+  unauthenticated.socket.pong();
+  assert.equal(readDeviceActivity(server.deviceActivity.path)!.devices.length, 0);
+  unauthenticated.socket.close();
+  const first = await authenticateSocket({ url, role: 'client', registry: server.deviceRegistry });
+  const second = await authenticateSocket({ url, role: 'client', registry: server.deviceRegistry, identity: first.identity });
+  const row = () => readDeviceActivity(server.deviceActivity.path)!.devices.find((device) => device.id === first.identity.id)!;
+  assert.equal(row().connections, 2);
+  now += 5000;
+  const pong = new Promise<void>((resolve) => second.socket.on('message', (data) => { if (JSON.parse(String(data)).type === 'pong') resolve(); }));
+  second.socket.send('{"type":"ping"}'); await pong;
+  server.deviceActivity.flush(); assert.equal(row().lastSeenAt, now);
+  first.socket.close(); await once(first.socket, 'close');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(row().connections, 1);
+  const revoked = once(second.socket, 'close');
+  server.deviceRegistry.remove('client', first.identity.id);
+  await revoked;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  server.deviceActivity.flush();
+  assert.equal(readDeviceActivity(server.deviceActivity.path)!.devices.length, 0);
+  const response = await fetch(`http://127.0.0.1:${address.port}/devices.json.activity.json`);
+  assert.doesNotMatch(await response.text(), new RegExp(first.identity.id));
+});
+
+test('activity keeps replacement Connector counts separate from a browser using the same identity', async (t) => {
+  const server = createBridgeServer({ connectorToken: TOKEN });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(() => server.close());
+  const url = `ws://127.0.0.1:${address.port}/ws`;
+  const identity = createDeviceIdentity();
+  const browser = await authenticateSocket({ url, role: 'client', registry: server.deviceRegistry, identity });
+  const old = await authenticateSocket({ url, role: 'connector', token: TOKEN, deviceId: 'pc', registry: server.deviceRegistry, identity });
+  const closed = once(old.socket, 'close');
+  const replacement = await authenticateSocket({ url, role: 'connector', token: TOKEN, deviceId: 'pc', registry: server.deviceRegistry, identity });
+  await closed;
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const devices = server.deviceActivity.snapshot().devices;
+  assert.equal(devices.find((device) => device.role === 'connector')!.connections, 1);
+  assert.equal(devices.find((device) => device.role === 'client')!.connections, 1);
+  browser.socket.close(); replacement.socket.close();
+});
 
 test('server requires the current protocol and rejects missing protocol metadata', async (t) => {
   const server = createBridgeServer({ connectorToken: TOKEN });

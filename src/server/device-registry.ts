@@ -158,6 +158,11 @@ export class DeviceRegistry {
     };
   }
 
+  listApproved() {
+    this.refresh();
+    return this.state.approved.map((entry) => ({ ...entry }));
+  }
+
   createBrowserPairing(now = Date.now()) {
     this.refresh();
     this.prune(false, now);

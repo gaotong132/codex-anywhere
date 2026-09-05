@@ -180,9 +180,21 @@ Run these commands in the ECS checkout:
 | `./scripts/relay.sh pending` | List endpoints awaiting approval |
 | `./scripts/relay.sh approve` | Review and approve a pending endpoint |
 | `./scripts/relay.sh pair <public-url>` | Create a single-use browser pairing link |
-| `./scripts/relay.sh devices` | List approved endpoints |
+| `./scripts/relay.sh devices` | List approved endpoints, status, connection counts, and last connected/seen times |
+| `./scripts/relay.sh devices --json` | Output device and activity records as JSON for scripts |
 | `./scripts/relay.sh revoke` | Revoke an approved endpoint |
 | `./scripts/relay.sh update` | Fast-forward `main`, rebuild, restart, verify, and restart an enabled same-host headless connector |
+
+Devices are sorted by approval time, newest first, using the same selection numbers as `revoke`. Multiple
+connections from one device are aggregated. Online and last seen reflect WebSocket connections and
+heartbeats, not user interaction. Text timestamps use UTC; JSON timestamps use Unix milliseconds.
+History starts after upgrading; unobserved timestamps are "not recorded" (`null` in JSON), never inferred
+from approval time.
+
+The Relay alone writes a private `devices.json.activity.json` beside the device registry every five seconds
+and on authentication/disconnection. A running snapshot older than 15 seconds reports unknown status
+(`null` connections in JSON). Clean shutdown reports offline; restart retains history and resets counts.
+The snapshot has no public endpoint and does not change pairing identities or automatically revoke devices.
 
 Keep relay and connector checkouts on the same revision. A same-checkout Linux service is restarted by
 `relay.sh update`; for a connector on another host, pull and restart `codex-anywhere-connector.service`.

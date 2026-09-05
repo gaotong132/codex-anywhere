@@ -4,6 +4,10 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Extend `relay.sh devices` with online/offline/unknown status, connection counts, last connected/seen
+  timestamps, and `--json`. Persist private activity separately from device trust, retain history across
+  restarts, and report stale snapshots as unknown.
+
 - Recover orphaned browser roots after a tab closes and the extension loses its local grant record. Explicit authorization
   can replace this device's old root or a fully stale browser tree, revoke children, and cancel pending operations; automatic
   recovery and delayed validation cannot reclaim newer consent.

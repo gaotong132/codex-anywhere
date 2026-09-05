@@ -22,6 +22,7 @@ import {
   type CurrentProtocol,
 } from '../shared/protocol-contract.js';
 import { DeviceRegistry } from './device-registry.js';
+import { ACTIVITY_INTERVAL_MS, DeviceActivity, deviceActivityPath } from './device-activity.js';
 import { SIDEPANEL_PATH, sidePanelTarget } from '../shared/sidepanel.js';
 import {
   MAX_FRAME_BYTES,
@@ -103,6 +104,8 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       options.connectorToken ? null : resolve('data/devices.json')
     );
   const deviceRegistry = options.deviceRegistry || new DeviceRegistry(configuredRegistryPath);
+  const deviceActivity = new DeviceActivity(deviceActivityPath(deviceRegistry.filePath), () => deviceRegistry.listApproved(), options.clock);
+  let activityTimer: ReturnType<typeof setInterval> | undefined;
   const connectors = new Map<string, AliveWebSocket>();
   const clients = new Map<string, AliveWebSocket>();
   const socketMeta = new WeakMap<AliveWebSocket, SocketMeta>();
@@ -162,7 +165,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
     authTimer.unref?.();
     const authChallenge = randomBytes(32).toString('hex');
     socket.isAlive = true;
-    socket.on('pong', () => { socket.isAlive = true; });
+    socket.on('pong', () => { socket.isAlive = true; deviceActivity.seen(socket); });
 
     socket.on('message', (data) => {
       try {
@@ -179,12 +182,15 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
             authLimiter, clientAddress, deviceRegistry,
           });
           if (authenticated) {
+            const identity = socketMeta.get(socket)!;
+            deviceActivity.connected(socket, identity.role, identity.device.id);
             sessionTimer = setTimeout(() => socket.close(4005, 'authentication expired'), sessionMaxAgeMs);
             sessionTimer.unref?.();
             broadcastPresence(clients, connectors);
           }
           return;
         }
+        deviceActivity.seen(socket);
         if (message.type === 'ping') {
           safeSend(socket, { type: 'pong', at: Date.now() });
           return;
@@ -202,6 +208,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
     socket.on('close', () => {
       clearTimeout(authTimer);
       if (sessionTimer) clearTimeout(sessionTimer);
+      deviceActivity.disconnected(socket);
       const meta = socketMeta.get(socket);
       if (!meta) return;
       if (meta.role === 'client') clients.delete(meta.id);
@@ -232,7 +239,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   heartbeat.unref?.();
 
   return {
-    httpServer, webSocketServer, connectors, clients, deviceRegistry,
+    httpServer, webSocketServer, connectors, clients, deviceRegistry, deviceActivity,
     async listen(port = 3300, host = '127.0.0.1') {
       await new Promise<void>((resolveListen, reject) => {
         const onError = (error: Error) => reject(error);
@@ -242,10 +249,15 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
           resolveListen();
         });
       });
+      deviceActivity.flush();
+      activityTimer = setInterval(() => deviceActivity.flush(), ACTIVITY_INTERVAL_MS);
+      activityTimer.unref?.();
       return httpServer.address();
     },
     async close() {
       clearInterval(heartbeat);
+      clearInterval(activityTimer);
+      deviceActivity.stop();
       for (const socket of webSocketServer.clients) socket.close(1001, 'server shutdown');
       await new Promise<void>((resolveClose) => httpServer.close(() => resolveClose()));
     },

@@ -143,7 +143,7 @@ bridge cannot hold up startup. Codex Anywhere does not implement ACP.
 | Application traffic | Authenticated X25519 exchange and XChaCha20-Poly1305 encryption between browser and connector |
 | Execution nodes | Outbound connections only; Windows credentials use current-user DPAPI, while the Linux service keeps a mode-0600 environment file and device identity |
 | Files | Root-bound image and bounded text/code/Markdown previews, confirmed resumable downloads bound to one approved device and file, and sandboxed visualizations |
-| Relay | Loopback-bound reference service, reduced container privileges, bounded logs, and device trust records only |
+| Relay | Loopback-bound reference service, reduced container privileges, bounded logs, and private device trust/activity records |
 
 The relay is still trusted infrastructure: it serves Web code, manages device trust, and can observe routing
 metadata, timing, and ciphertext size. A compromised relay, browser profile, or connector computer is not

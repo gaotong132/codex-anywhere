@@ -75,7 +75,7 @@ Usage: ./scripts/relay.sh <command>
   approve            Review and approve a pending connector
   pending            List pending devices
   pair <public-url>  Create a ten-minute, single-use browser pairing link
-  devices            List approved devices
+  devices [--json]   List approved devices with connection activity
   revoke             Select and revoke an approved device
   update             Pull main, rebuild, restart, and verify the relay
   help               Show this help
@@ -120,8 +120,11 @@ case "$command_name" in
     run_admin pair "$1"
     ;;
   devices)
-    [ "$#" -eq 0 ] || die 'devices does not accept arguments.'
-    run_admin list-approved
+    if [ "$#" -gt 1 ] || { [ "$#" -eq 1 ] && [ "$1" != '--json' ]; }; then
+      die 'Usage: ./scripts/relay.sh devices [--json]'
+    fi
+    require_compose
+    docker compose exec -T bridge node build/server/device-admin.js list-approved "$@"
     ;;
   revoke)
     [ "$#" -eq 0 ] || die 'revoke does not accept arguments.'

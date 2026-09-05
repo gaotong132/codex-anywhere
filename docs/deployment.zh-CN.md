@@ -167,9 +167,18 @@ journalctl -u codex-anywhere-connector -n 50 --no-pager
 | `./scripts/relay.sh pending` | 查看待批准端点 |
 | `./scripts/relay.sh approve` | 审核并批准待处理端点 |
 | `./scripts/relay.sh pair <公网地址>` | 生成单次浏览器配对链接 |
-| `./scripts/relay.sh devices` | 查看已批准端点 |
+| `./scripts/relay.sh devices` | 查看已批准端点、在线状态、连接数及最近连接/最后在线时间 |
+| `./scripts/relay.sh devices --json` | 输出设备与活跃记录的 JSON，便于脚本处理 |
 | `./scripts/relay.sh revoke` | 撤销已批准端点 |
 | `./scripts/relay.sh update` | 快进更新 `main`、重建并验证；同机已启用的无头连接器也会重启 |
+
+设备按批准时间倒序排列，与 `revoke` 的选择序号一致。同一设备的多个连接合并统计；在线和最后在线反映
+WebSocket 连接与心跳，不代表用户正在操作。文本时间为 UTC，JSON 时间为 Unix 毫秒。活跃历史从升级后开始
+记录，未观察到的时间显示“未记录”（JSON 为 `null`），不会用批准时间冒充最后在线时间。
+
+Relay 在设备注册表旁单独写入私有 `devices.json.activity.json`，每 5 秒及认证/断连时更新。运行中快照超过
+15 秒未更新时显示“状态未知”（JSON 连接数为 `null`）；正常停止显示离线，重启保留历史并重新统计连接。
+这份快照不通过公网接口提供，也不改变配对身份或自动撤销设备。
 
 转发服务和连接器仓库应保持同一提交。同一仓库中的 Linux 服务会由 `relay.sh update` 重启；其他主机
 上的连接器需要拉取代码并重启 `codex-anywhere-connector.service`。更新 ECS 后，在 Windows 更新仓库、

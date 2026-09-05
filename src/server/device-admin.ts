@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline/promises';
 import QRCode from 'qrcode';
 import { DeviceRegistry, type ApprovedDevice, type PendingDevice } from './device-registry.js';
 import { browserPairingFragment } from '../shared/pairing-auth.js';
+import { activityForDevice, activityIsCurrent, deviceActivityPath, readDeviceActivity, type DeviceActivitySnapshot } from './device-activity.js';
 
 type DeviceAdminIo = {
   question(prompt: string): Promise<string>;
@@ -44,7 +45,16 @@ function describeApproved(device: ApprovedDevice, index: number, isChinese: bool
   const role = isChinese
     ? (device.role === 'client' ? '浏览器' : '连接器')
     : device.role;
-  return `${index + 1}. ${role} · ${device.label} · ${approvedAt}`;
+  return `${index + 1}. ${role} · ${device.label.replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')} · ${approvedAt}`;
+}
+
+const timeText = (value: number | null, isChinese: boolean) => value === null ? (isChinese ? '未记录' : 'not recorded') : new Date(value).toISOString();
+function describeActivity(device: ApprovedDevice, snapshot: DeviceActivitySnapshot | null, now: number, isChinese: boolean) {
+  const activity = activityForDevice(snapshot, device.role, device.id, now);
+  const state = isChinese ? { online: '在线', offline: '离线', unknown: '状态未知' }[activity.status] : activity.status;
+  return isChinese
+    ? `   ${state} · 连接数 ${activity.connections ?? '未知'} · 最近连接 ${timeText(activity.lastConnectedAt, true)} · 最后在线 ${timeText(activity.lastSeenAt, true)}`
+    : `   ${state} · connections ${activity.connections ?? 'unknown'} · last connected ${timeText(activity.lastConnectedAt, false)} · last seen ${timeText(activity.lastSeenAt, false)}`;
 }
 
 async function revokeApprovedDevice({
@@ -58,13 +68,31 @@ async function revokeApprovedDevice({
   operator: DeviceAdminIo;
   isChinese: boolean;
 }) {
-  const devices = registry.list().approved.sort((left, right) => right.approvedAt - left.approvedAt);
+  const devices = registry.listApproved().sort((left, right) => right.approvedAt - left.approvedAt);
+  const snapshot = readDeviceActivity(deviceActivityPath(registry.filePath));
+  const now = Date.now();
+  if (args[0] === 'list-approved' && args.includes('--json')) {
+    operator.write(JSON.stringify({ version: 1, sampledAt: snapshot?.updatedAt ?? null, activityAvailable: activityIsCurrent(snapshot, now),
+      devices: devices.map((device, index) => ({ index: index + 1, id: device.id, role: device.role, label: device.label,
+        ...(device.routeDeviceId ? { routeDeviceId: device.routeDeviceId } : {}), approvedAt: device.approvedAt,
+        ...activityForDevice(snapshot, device.role, device.id, now) })) }, null, 2) + '\n');
+    return 'listed';
+  }
   if (!devices.length) {
     operator.write(isChinese ? '没有已批准设备。\n' : 'No approved devices.\n');
     return 'empty';
   }
   operator.write(`${isChinese ? '已批准设备' : 'Approved devices'}:\n${devices
-    .map((device, index) => describeApproved(device, index, isChinese)).join('\n')}\n\n`);
+    .map((device, index) => `${describeApproved(device, index, isChinese)}\n${describeActivity(device, snapshot, now, isChinese)}`).join('\n')}\n\n`);
+  operator.write(isChinese
+    ? '时间为 UTC。在线/最后在线反映连接与心跳，不代表用户正在操作；旧历史显示“未记录”。\n'
+    : 'Times are UTC. Online/last seen reflect connections and heartbeats, not user interaction; older history is not recorded.\n');
+  if (snapshot) operator.write(isChinese
+    ? `状态采样：${timeText(snapshot.updatedAt, true)}${snapshot.relayState === 'stopped' ? '（Relay 已停止）' : ''}\n`
+    : `Activity sampled: ${timeText(snapshot.updatedAt, false)}${snapshot.relayState === 'stopped' ? ' (Relay stopped)' : ''}\n`);
+  if (!activityIsCurrent(snapshot, now)) operator.write(isChinese
+    ? '活跃快照缺失或已过期，连接状态未知。请检查 Relay 是否运行并已更新。\n'
+    : 'Activity snapshot is missing or stale; connection state is unknown. Check that the Relay is running and updated.\n');
   if (args[0] === 'list-approved') return 'listed';
 
   const argument = args[0] === 'revoke' ? args[1] : undefined;
