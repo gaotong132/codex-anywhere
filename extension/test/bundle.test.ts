@@ -18,6 +18,7 @@ const popup = `chrome-extension://${extensionId}/popup.html`;
 const TOKEN = 'browser-integration-test-connector-token-123456';
 
 async function harness(t: test.TestContext) {
+  let duringSessionsList: (() => void) | undefined;
   const relay = createBridgeServer({ connectorToken: TOKEN, extensionOrigins: [`chrome-extension://${extensionId}`] });
   const address = await relay.listen(0, '127.0.0.1');
   assert.ok(address && typeof address !== 'string');
@@ -36,7 +37,7 @@ async function harness(t: test.TestContext) {
         const client = { clientId: frame.clientId, clientDeviceId: frame.clientDeviceId };
         let data: unknown;
         if (frame.action === 'connector.status') data = { capabilities: { browserControl: true } };
-        else if (frame.action === 'sessions.list') data = { sessions: [{ id: 'task-a', title: 'Fixture A' }, { id: 'task-b', title: 'Fixture B' }] };
+        else if (frame.action === 'sessions.list') { duringSessionsList?.(); data = { sessions: [{ id: 'task-a', title: 'Fixture A' }, { id: 'task-b', title: 'Fixture B' }] }; }
         else if (frame.action === 'browser.bind') data = broker.bind(client, p.threadId, p.target);
         else if (frame.action === 'browser.adopt') data = broker.adopt(client, p.operationRequestId, p.parentGrantId, p.target);
         else if (frame.action === 'browser.restore') data = broker.restore(client, p.grantId, p.target);
@@ -68,6 +69,8 @@ async function harness(t: test.TestContext) {
   let createdTabs = 0;
   let clicks = 0;
   let injections = 0;
+  let onActionClicked!: (tab: Frame) => void;
+  const openedPanels: Frame[] = [];
   const intervals = new Set<ReturnType<typeof setInterval>>();
   const sockets: WebSocket[] = [];
   function makePage(id: number, url: string) {
@@ -96,11 +99,12 @@ async function harness(t: test.TestContext) {
   const chrome = {
     permissions: { contains: async () => sitePermission },
     storage: { local, session },
-    action: { setBadgeText: async (value: Frame) => { badges.push(value); }, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
-    runtime: { id: extensionId, getURL: () => popup, onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } } },
-    tabs: { query: async () => [{ id: activeTab, url: pages.get(activeTab)!.url }],
+    sidePanel: { open: async (options: Frame) => { openedPanels.push(options); } },
+    action: { onClicked: { addListener: (callback: typeof onActionClicked) => { onActionClicked = callback; } }, setBadgeText: async (value: Frame) => { badges.push(value); }, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
+    runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } } },
+    tabs: { query: async () => [{ id: activeTab, windowId: 1, active: true, url: pages.get(activeTab)!.url }],
       create: async (options: Frame) => { const id = pages.size + 1; createdTabs++; assert.ok(pages.has(options.openerTabId)); pages.set(id, makePage(id, options.url)); return { id }; },
-      get: async (id: number) => ({ id, url: pages.get(id)!.url, status: 'complete' }),
+      get: async (id: number) => ({ id, windowId: 1, active: id === activeTab, url: pages.get(id)!.url, status: 'complete' }),
       onUpdated: { addListener: (listener: typeof onUpdated) => { onUpdated = listener; } }, onRemoved: { addListener: (listener: typeof onRemoved) => { onRemoved = listener; } } },
     scripting: { executeScript: async (options: Frame) => {
       assert.equal(options.world, 'ISOLATED');
@@ -125,8 +129,8 @@ async function harness(t: test.TestContext) {
   });
   runInContext(await readFile('extension/dist/background.js', 'utf8'), context, { timeout: 1000 });
   const sender = { id: extensionId, url: popup };
-  const send = (type: string, payload: Frame = {}) => new Promise<Frame>((resolve, reject) => {
-    if (!onMessage({ type, ...payload }, sender, resolve)) reject(new Error('popup_rejected'));
+  const send = (type: string, payload: Frame = {}, from = sender) => new Promise<Frame>((resolve, reject) => {
+    if (!onMessage({ type, ...payload }, from, resolve)) reject(new Error('popup_rejected'));
   });
   t.after(async () => {
     await send('disconnect');
@@ -136,6 +140,9 @@ async function harness(t: test.TestContext) {
   });
   const pairing = relay.deviceRegistry.createBrowserPairing();
   return { broker, send, sender, receive: (...args: Parameters<typeof onMessage>) => onMessage(...args),
+    sendPanel: (type: string, payload: Frame = {}) => send(type, payload, { id: extensionId, url: `chrome-extension://${extensionId}/sidepanel.html` }),
+    onSessionList: (callback: () => void) => { duringSessionsList = callback; },
+    openPanel: (windowId: number) => onActionClicked({ id: activeTab, windowId }), openedPanels,
     pairUrl: `${origin}/#pair=${encodeBrowserPairingCredential(pairing.credential)}`, origin,
     local, session, badges, document, clicks: () => clicks, injections: () => injections,
     dropConnection: () => { for (const client of relay.clients.values()) client.close(1001, 'test disconnect'); },
@@ -144,10 +151,44 @@ async function harness(t: test.TestContext) {
     navigate: (id = 1) => onUpdated(id, { status: 'loading' }), close: (id = 1) => onRemoved(id), replace: () => { pages.get(1)!.documentId = 'doc-b'; } };
 }
 
+test('side panel grants only the explicitly selected original Session and keeps it when the panel reopens', async (t) => {
+  const h = await harness(t);
+  assert.equal((await h.send('connect', { url: h.pairUrl })).ok, true);
+  const payload = { relayOrigin: h.origin, environmentId: 'pc', threadId: 'task-b',
+    tabId: 1, windowId: 1, url: 'https://example.com/private?secret=query' };
+  assert.equal(h.receive({ type: 'panel.grant', ...payload }, h.sender, () => {}), false);
+  assert.equal((await h.sendPanel('panel.grant', { ...payload, relayOrigin: 'https://wrong.example' })).ok, false);
+  assert.equal((await h.sendPanel('panel.grant', { ...payload, windowId: 9 })).ok, false);
+  assert.equal((await h.sendPanel('panel.grant', payload)).ok, true);
+  assert.equal(h.broker.status('task-b').authorized, true);
+  assert.equal(h.broker.status('task-a').authorized, false);
+  const before = (await h.sendPanel('status', { windowId: 1 })).result.binding.grantId;
+  const after = (await h.sendPanel('status', { windowId: 1 })).result.binding.grantId;
+  assert.equal(before, after);
+  const snapshot: any = await h.broker.execute('task-b', 'turn-panel', { method: 'snapshot' });
+  assert.ok(snapshot.nodes.length > 0);
+  await h.sendPanel('revoke');
+  assert.equal(h.broker.status('task-b').authorized, false);
+});
+
+test('side panel refuses a replacement document even at the same URL after a network wait', async (t) => {
+  const h = await harness(t);
+  assert.equal((await h.send('connect', { url: h.pairUrl })).ok, true);
+  h.onSessionList(h.replace);
+  const result = await h.sendPanel('panel.grant', { relayOrigin: h.origin, environmentId: 'pc', threadId: 'task-a',
+    tabId: 1, windowId: 1, url: 'https://example.com/private?secret=query' });
+  assert.equal(result.ok, false);
+  assert.equal(h.broker.status('task-a').authorized, false);
+  assert.equal(h.clicks(), 0);
+});
+
 test('built extension pairs over real WS/E2E, selects original Session, reads/clicks/fills, and revokes', async (t) => {
   const h = await harness(t);
   const connected = await h.send('connect', { url: h.pairUrl });
   assert.equal(connected.ok, true, JSON.stringify(connected));
+  h.openPanel(7);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.openedPanels)), [{ windowId: 7 }]);
+  assert.equal(h.injections(), 0, 'opening the side panel must not inject into or authorize a page');
   assert.equal(connected.result.connected, true);
   assert.deepEqual(JSON.parse(JSON.stringify(connected.result.devices)), ['pc']);
   assert.doesNotMatch(JSON.stringify(h.local.values), /pair=|v1\./);

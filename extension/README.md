@@ -3,7 +3,7 @@
 English | [简体中文](README.zh-CN.md)
 
 This extension is an **experimental add-on** for Codex Anywhere, disabled by default. It requires a separate
-build and installation plus explicit Relay, Connector, and MCP configuration. Normal session features do
+build and installation plus explicit Relay configuration; page control also needs Connector and MCP setup. Normal session features do
 not require it; its configuration, interactions, and compatibility may still change.
 
 Connect to Anywhere, choose an execution environment (PC, ECS, or any connected node), choose an **existing
@@ -11,6 +11,28 @@ Session**, and authorize the current page. Continue that original Session in Any
 and scroll. No replacement Session is created. The built manifest follows the root `package.json` version
 and displays `version dev (build fingerprint)`. The content fingerprint identifies the loaded artifacts;
 it does not publish a release or create a Tag.
+
+## Side panel chat
+
+1. Update the relay and allow the actual extension ID in `BRIDGE_EXTENSION_ORIGINS` (see configuration below).
+2. Click the toolbar icon, enter the Anywhere server address, such as `https://your-anywhere/`, and choose
+   **Open chat**, granting access to that site. Enter only the server address here; pairing links belong in
+   the chat page or **Page control settings**.
+3. The panel loads the live Web app. Select a PC/ECS environment and Session to chat, configure models, or
+   handle approvals. The same browser profile and site can reuse existing Web pairing when host permission
+   is granted; otherwise pair in the chat page.
+4. For page control, pair the extension separately through **Page control settings**, select the chat Session,
+   and click **Authorize current page**. Web and extension identities remain separate; one pairing link cannot be used twice.
+
+Changing the chat Session does not transfer existing page consent. The panel shows the environment and Session
+that actually own the grant. After switching tabs, click the toolbar icon on the target tab again if authorization
+is unavailable, then explicitly authorize it. Closing the panel does not revoke page control. Revocation removes
+the root and its children; navigation, tab closure, and document replacement retain the existing revocation rules.
+
+Chat UI updates follow Relay/Web deployment: use **Reload chat** to load new code. Control protocol changes still
+require an extension update. Missing/stale chat state disables authorization; a connection warning points to relay
+updates, the Origin allowlist, and network setup. Camera access may be restricted in the frame; paste a pairing link
+or upload a QR screenshot instead. Actual Chrome/Edge side panels, clipboard, downloads, and sleep recovery need acceptance checks.
 
 ## Build and install
 

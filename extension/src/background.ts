@@ -22,10 +22,10 @@ let error = '';
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let retries = 0;
 let reconnectEnabled = false;
-const summary = (binding: Binding) => ({ grantId: binding.grantId, title: binding.title, pageTitle: binding.pageTitle,
+const summary = (binding: Binding) => ({ grantId: binding.grantId, environmentId: binding.environmentId, title: binding.title, pageTitle: binding.pageTitle,
   threadId: binding.threadId, origin: binding.target.origin, sitePermissionPattern: sitePattern(binding.target.origin), tabId: binding.target.tabId, child: binding.rootTabId !== undefined });
-async function status() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+async function status(windowId?: number) {
+  const [tab] = await chrome.tabs.query({ active: true, ...(windowId === undefined ? { currentWindow: true } : { windowId }) });
   const current = tab?.id === undefined ? undefined : bindings.get(tab.id);
   const root = [...bindings.values()].find((entry) => entry.rootTabId === undefined);
   return { connected: connection?.ready() ?? false, relayOnline: connection?.online ?? false,
@@ -50,7 +50,7 @@ async function badge(tabId: number) {
   const active = Boolean(binding);
   await chrome.action.setBadgeText({ tabId, text: active ? (connection?.ready() ? '•' : '!') : '' });
   await chrome.action.setBadgeBackgroundColor({ tabId, color: connection?.ready() ? '#22a884' : '#b77926' });
-  await chrome.action.setTitle({ tabId, title: active ? `Anywhere · ${connection?.ready() ? '已授权' : '离线'} · ${binding?.title}` : 'Codex Anywhere · 授权当前页' });
+  await chrome.action.setTitle({ tabId, title: active ? `Anywhere · ${connection?.ready() ? '已授权' : '离线'} · ${binding?.title}` : 'Codex Anywhere · 打开聊天侧栏' });
 }
 
 function changed() {
@@ -215,11 +215,14 @@ async function connect(url: string, restoring = false) {
   } finally { if (revision === expectedRevision) connecting = false; changed(); }
 }
 
-async function authorize(threadId: string) {
+type PanelTarget = { tabId: number; windowId: number; url: string; documentId: string };
+
+async function authorize(threadId: string, requested?: PanelTarget) {
   if (connecting || !connection.ready() || !sessions.some((session) => session.id === threadId)) throw new Error('browser_select_existing_session');
   let expectedRevision = revision;
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = requested ? await chrome.tabs.get(requested.tabId) : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
   if (tab?.id === undefined) throw new Error('browser_no_tab');
+  if (requested && (!tab.active || tab.windowId !== requested.windowId || tab.url !== requested.url)) throw new Error('browser_document_changed');
   const tabOrigin = browserOrigin(tab.url);
   if (revision !== expectedRevision) throw new Error('browser_authorization_changed');
   const revoking = revokeAll(); expectedRevision = revision;
@@ -228,7 +231,8 @@ async function authorize(threadId: string) {
   try {
     await revoking; if (!current()) throw new Error('browser_authorization_changed');
     const [document] = await chrome.scripting.executeScript({ target: { tabId: tab.id, frameIds: [0] }, world: 'ISOLATED', func: () => location.origin });
-    if (!document?.documentId || document.result !== tabOrigin || !current()) throw new Error('browser_document_changed');
+    if (!document?.documentId || document.result !== tabOrigin || !current()
+      || (requested && document.documentId !== requested.documentId)) throw new Error('browser_document_changed');
     const target: BrowserTarget = { browserDeviceId: identity.id, tabId: tab.id, documentId: document.documentId, origin: tabOrigin };
     const result = await connection.request('browser.bind', { threadId, target });
     const candidate: Binding = { grantId: result.grantId, environmentId: connection.environmentId, threadId,
@@ -246,6 +250,37 @@ async function authorize(threadId: string) {
       await connection.request('browser.revoke', { grantId: candidate.grantId }).catch(() => {}); throw failure;
     }
   } finally { if (intents.get(tab.id) === intent) intents.delete(tab.id); }
+}
+
+async function authorizeFromPanel(message: Frame) {
+  if (message.relayOrigin !== origin || connecting || !connection.ready()) throw new Error('browser_connector_offline');
+  if (!Number.isSafeInteger(message.tabId) || message.tabId < 0 || !Number.isSafeInteger(message.windowId)
+    || message.windowId < 0 || typeof message.url !== 'string') throw new Error('browser_no_tab');
+  const environmentId = requireBrowserId(message.environmentId);
+  const threadId = requireBrowserId(message.threadId);
+  let expectedRevision = revision;
+  const tab = await chrome.tabs.get(message.tabId);
+  if (!tab.active || tab.windowId !== message.windowId || tab.url !== message.url) throw new Error('browser_document_changed');
+  const tabOrigin = browserOrigin(tab.url);
+  const [document] = await chrome.scripting.executeScript({ target: { tabId: message.tabId, frameIds: [0] },
+    world: 'ISOLATED', func: () => location.origin });
+  if (!document?.documentId || document.result !== tabOrigin || revision !== expectedRevision) throw new Error('browser_document_changed');
+  // Capture the exact document before any network wait. A reload to the same URL
+  // must not transfer consent to the replacement document.
+  const target: PanelTarget = { tabId: message.tabId, windowId: message.windowId, url: message.url, documentId: document.documentId };
+  if (connection.environmentId !== environmentId) {
+    const revoking = revokeAll(); expectedRevision = revision;
+    await revoking;
+    if (revision !== expectedRevision) throw new Error('browser_authorization_changed');
+    await selectEnvironment(environmentId, expectedRevision);
+  } else {
+    const response = await connection.request('sessions.list');
+    if (revision !== expectedRevision) throw new Error('browser_authorization_changed');
+    sessions = (response.sessions ?? []).slice(0, 200).map((session: Frame) => ({ id: session.id,
+      title: String(session.name || session.title || session.preview || session.id).slice(0, 100) }));
+  }
+  if (revision !== expectedRevision || connection.environmentId !== environmentId) throw new Error('browser_authorization_changed');
+  await authorize(threadId, target);
 }
 
 function safeError(value: unknown) {
@@ -288,9 +323,11 @@ const ready = (async () => {
 })();
 
 chrome.runtime.onMessage.addListener((message: Frame, sender, respond) => {
-  if (sender.id !== chrome.runtime.id || sender.tab || sender.url !== chrome.runtime.getURL('popup.html')) return false;
+  const panel = sender.url === chrome.runtime.getURL('sidepanel.html');
+  if (sender.id !== chrome.runtime.id || sender.tab || (!panel && sender.url !== chrome.runtime.getURL('popup.html'))) return false;
+  if (message.type === 'panel.grant' && !panel) return false;
   void ready.then(async () => {
-    if (message.type === 'status') return status();
+    if (message.type === 'status') return status(panel && Number.isSafeInteger(message.windowId) ? message.windowId : undefined);
     error = '';
     if (message.type === 'connect') await connect(String(message.url));
     else if (message.type === 'cancel') { revision++; intents.clear(); reconnectEnabled = false; connecting = false; clearTimeout(reconnectTimer); reconnectTimer = undefined; connection.close(); }
@@ -299,12 +336,18 @@ chrome.runtime.onMessage.addListener((message: Frame, sender, respond) => {
       await revoking; if (revision === expectedRevision) await selectEnvironment(String(message.environmentId), expectedRevision);
     }
     else if (message.type === 'grant') await authorize(String(message.threadId));
+    else if (message.type === 'panel.grant') await authorizeFromPanel(message);
     else if (message.type === 'revoke') await revokeAll();
     else if (message.type === 'disconnect') { reconnectEnabled = false; await revokeAll(); connection.close(); origin = ''; await chrome.storage.local.remove('origin'); }
     else throw new Error('browser_invalid_request');
     return status();
   }).then((result) => respond({ ok: true, result })).catch((failure) => { error = safeError(failure); respond({ ok: false, error }); });
   return true;
+});
+// Each toolbar click also obtains activeTab for that page. Opening the panel
+// alone never authorizes page control or injects a script.
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.windowId !== undefined) void chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
 });
 chrome.tabs.onRemoved.addListener((tabId) => { void revokeTab(tabId).catch(() => {}); });
 chrome.tabs.onUpdated.addListener((tabId, change) => {

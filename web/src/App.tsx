@@ -122,6 +122,7 @@ import type { TimelineNotice } from '../../src/shared/timeline-notice';
 import { PresenceIndicator } from './presence-indicator';
 import { PermissionModeControl } from './permission-mode-control';
 import { BrowserSessionStatus } from './browser-session-status';
+import { useSidePanelSession } from './sidepanel-session';
 import {
   normalizePermissionMode,
 } from '../../src/shared/permission-mode';
@@ -2227,6 +2228,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     () => executionActive ? latestTurnProgressItemId(timeline) : null,
     [executionActive, timeline],
   );
+
+  useSidePanelSession({ environmentId, threadId: authenticated ? threadId : null,
+    title: String(sessions.find((session) => session.id === threadId)?.title || '').slice(0, 160),
+    online: authenticated && online });
 
   if (initialBootstrapPending && !pairingDialogOpen) return <StartupScreen status={statusText} />;
 

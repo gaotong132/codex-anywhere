@@ -3,14 +3,15 @@
   "name": "Codex Anywhere Browser",
   "version": "0.2.1",
   "version_name": "0.2.1 dev",
-  "description": "Authorize one page to your existing Anywhere Session. Continue on any connected PC or ECS environment.",
+  "description": "Chat in the Anywhere side panel and optionally authorize the current page to your Session. Experimental add-on.",
   "minimum_chrome_version": "120",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "sidePanel"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "icons": { "16": "icon-16.png", "32": "icon-32.png", "48": "icon-48.png", "128": "icon-128.png" },
   "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_popup": "popup.html", "default_title": "Codex Anywhere · 授权当前页", "default_icon": { "16": "icon-16.png", "32": "icon-32.png" } },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "action": { "default_title": "Codex Anywhere · 打开聊天侧栏", "default_icon": { "16": "icon-16.png", "32": "icon-32.png" } },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'none'; connect-src wss: ws://127.0.0.1:* ws://localhost:*"
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src wss: ws://127.0.0.1:* ws://localhost:*; frame-src 'self' https: http://127.0.0.1:* http://localhost:*"
   }
 }

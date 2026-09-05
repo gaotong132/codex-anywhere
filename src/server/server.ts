@@ -22,6 +22,7 @@ import {
   type CurrentProtocol,
 } from '../shared/protocol-contract.js';
 import { DeviceRegistry } from './device-registry.js';
+import { SIDEPANEL_PATH, sidePanelTarget } from '../shared/sidepanel.js';
 import {
   MAX_FRAME_BYTES,
   createId,
@@ -63,6 +64,7 @@ type BridgeServerOptions = {
   deviceRegistry?: DeviceRegistry;
 };
 type HttpContext = {
+  extensionOrigins: readonly string[];
   request: IncomingMessage;
   response: ServerResponse;
   trustProxy: boolean;
@@ -120,7 +122,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
 
   const httpServer = createServer((request, response) => {
     handleHttpRequest({
-      request, response, trustProxy, uiLanguage, staticHandler,
+      request, response, trustProxy, uiLanguage, staticHandler, extensionOrigins,
     });
   });
   const webSocketServer = new WebSocketServer({
@@ -250,7 +252,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   };
 }
 
-function handleHttpRequest({ request, response, trustProxy, uiLanguage, staticHandler }: HttpContext) {
+function handleHttpRequest({ request, response, trustProxy, uiLanguage, staticHandler, extensionOrigins }: HttpContext) {
   setSecurityHeaders(response, request, trustProxy);
   const method = String(request.method || 'GET').toUpperCase();
   if (method !== 'GET' && method !== 'HEAD') {
@@ -281,6 +283,15 @@ function handleHttpRequest({ request, response, trustProxy, uiLanguage, staticHa
   if (pathname === '/config.js') {
     serveRuntimeConfig(response, uiLanguage, headOnly);
     return;
+  }
+  if (pathname === SIDEPANEL_PATH) {
+    const target = sidePanelTarget(new URL(request.url!, 'http://localhost'));
+    if (!target || !extensionOrigins.includes(target.origin)) {
+      response.writeHead(403, { 'cache-control': 'no-store', 'content-type': 'text/plain; charset=utf-8' });
+      response.end(headOnly ? '' : 'Side panel unavailable. Allow this extension Origin in BRIDGE_EXTENSION_ORIGINS on the relay.');
+      return;
+    }
+    setSecurityHeaders(response, request, trustProxy, target.origin);
   }
   staticHandler(request, response, () => {
     response.writeHead(404, { 'cache-control': 'no-store' });
@@ -554,16 +565,17 @@ function serveRuntimeConfig(
   response.end(headOnly ? '' : body);
 }
 
-function setSecurityHeaders(response: ServerResponse, request: IncomingMessage, trustProxy: boolean) {
+function setSecurityHeaders(response: ServerResponse, request: IncomingMessage, trustProxy: boolean, embeddingOrigin?: string) {
   response.setHeader('x-content-type-options', 'nosniff');
-  response.setHeader('x-frame-options', 'DENY');
+  if (embeddingOrigin) response.removeHeader('x-frame-options');
+  else response.setHeader('x-frame-options', 'DENY');
   response.setHeader('cross-origin-opener-policy', 'same-origin');
   response.setHeader('cross-origin-resource-policy', 'same-origin');
   response.setHeader('referrer-policy', 'no-referrer');
   response.setHeader('strict-transport-security', 'max-age=31536000; includeSubDomains');
   response.setHeader('permissions-policy', 'camera=(self), microphone=(), geolocation=()');
   const webSocketSource = currentWebSocketSource(request, trustProxy);
-  response.setHeader('content-security-policy', `default-src 'self'; connect-src 'self'${webSocketSource ? ` ${webSocketSource}` : ''}; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
+  response.setHeader('content-security-policy', `default-src 'self'; connect-src 'self'${webSocketSource ? ` ${webSocketSource}` : ''}; style-src 'self'; script-src 'self'; img-src 'self' data: blob:; frame-src 'self' blob:; object-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors ${embeddingOrigin || "'none'"}`);
 }
 
 function currentWebSocketSource(request: IncomingMessage | undefined, trustProxy: boolean) {
