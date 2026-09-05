@@ -26,14 +26,17 @@ if (process.argv.includes('--server')) {
   });
   await server.connect(new StdioServerTransport());
 } else {
-  const integration = process.argv.includes('--integration');
+  const writeProbe = process.argv.includes('--write');
+  const integration = process.argv.includes('--integration') || writeProbe;
   const directory = integration ? await mkdtemp(join(tmpdir(), 'anywhere-live-browser-probe-')) : '';
   const endpointFile = join(directory, 'endpoint.json');
   const browserClient = { clientId: 'probe-client', clientDeviceId: 'probe-browser' };
   const broker = new BrowserSessionBroker('probe-environment', (frame: any) => {
-    if (frame.payload.operation.method !== 'snapshot') return false;
+    if (!['snapshot', ...(writeProbe ? ['click'] : [])].includes(frame.payload.operation.method)) return false;
     queueMicrotask(() => broker.result(browserClient, { ...frame.payload, ok: true,
-      result: { marker: 'anywhere-browser-probe', threadId: frame.payload.threadId, turnId: frame.payload.turnId, text: 'Synthetic read-only fixture; no real webpage was accessed.' } }));
+      result: { marker: 'anywhere-browser-probe', threadId: frame.payload.threadId, turnId: frame.payload.turnId,
+        method: frame.payload.operation.method, nodes: [{ ref: 'probe-button', tag: 'button', text: 'Synthetic increment' }],
+        text: 'Synthetic fixture; no real webpage was accessed.' } }));
     return true;
   });
   const endpoint = integration ? await startBrowserEndpoint(broker, endpointFile) : undefined;
@@ -46,6 +49,7 @@ if (process.argv.includes('--server')) {
   let finish!: () => void;
   const completed = new Promise<void>((resolve) => { finish = resolve; });
   let found = false;
+  let writeFound = false;
   let expectedThread = '';
   const rejectPending = () => { for (const request of pending.values()) request.reject(new Error('probe_host_stopped')); pending.clear(); finish(); };
   child.on('error', rejectPending); child.on('exit', rejectPending);
@@ -76,28 +80,30 @@ if (process.argv.includes('--server')) {
           const value = parsed.untrustedBrowserResult ?? parsed;
           if (value.marker === 'anywhere-browser-probe') {
             found = value.threadId === expectedThread && typeof value.turnId === 'string' && value.turnId.length > 0;
-            console.log(JSON.stringify({ metadataMatchesTask: found, integration, metaKeys: value.metaKeys }));
+            if (found && value.method === 'click') writeFound = true;
+            console.log(JSON.stringify({ metadataMatchesTask: found, integration, method: value.method, metaKeys: value.metaKeys }));
           }
         } catch { /* Ignore unrelated tool output. */ }
       }
     }
-    if (frame.method === 'turn/completed') { console.log(JSON.stringify({ turnStatus: frame.params?.turn?.status, verified: found })); finish(); }
+    if (frame.method === 'turn/completed') { console.log(JSON.stringify({ turnStatus: frame.params?.turn?.status, verified: found && (!writeProbe || writeFound) })); finish(); }
   });
   try {
     await rpc('initialize', { clientInfo: { name: 'anywhere-browser-probe', version: '0.0.1' }, capabilities: { experimentalApi: true } });
     const thread = await rpc('thread/start', { cwd: process.cwd(), ephemeral: true, approvalPolicy: 'never', sandbox: 'read-only',
       config: { 'mcp_servers.anywhere_browser_probe': { command: process.execPath,
         args: integration ? ['--import', 'tsx', fileURLToPath(new URL('../src/browser-control/mcp-server.ts', import.meta.url)), endpointFile]
-          : ['--import', 'tsx', fileURLToPath(import.meta.url), '--server'], required: true } },
+          : ['--import', 'tsx', fileURLToPath(import.meta.url), '--server'], required: true,
+        ...(writeProbe ? { tools: { anywhere_browser_click: { approval_mode: 'approve' } } } : {}) } },
     });
     expectedThread = thread.thread.id;
     if (integration) {
       const grant = broker.bind(browserClient, expectedThread, { browserDeviceId: browserClient.clientDeviceId, tabId: 1, documentId: 'probe-document', origin: 'https://example.com' });
       broker.heartbeat(browserClient, grant.grantId);
     }
-    console.log('Ephemeral test task started; asking only for host identity metadata.');
-    await rpc('turn/start', { threadId: expectedThread, input: [{ type: 'text', text: `Call the MCP tool anywhere_browser_probe.${integration ? 'anywhere_browser_snapshot' : 'inspect_caller'} once. This is an authorized synthetic read-only fixture. Do not use shell, web, files, or other tools. Then answer DONE.` }] });
+    console.log('Ephemeral test task started; only synthetic fixture tools are requested.');
+    await rpc('turn/start', { threadId: expectedThread, input: [{ type: 'text', text: `Call the MCP tool anywhere_browser_probe.${integration ? 'anywhere_browser_snapshot' : 'inspect_caller'} once.${writeProbe ? ' Then use anywhere_browser_probe.anywhere_browser_click on the returned Synthetic increment button ref. This in-memory test click is explicitly authorized and changes no real website.' : ''} This is an authorized synthetic fixture. Do not use shell, web, files, or other tools. Then answer DONE.` }] });
     await completed;
-    if (!found) process.exitCode = 1;
+    if (!found || (writeProbe && !writeFound)) process.exitCode = 1;
   } finally { clearTimeout(timer); child.kill(); await endpoint?.close(); if (directory) await rm(directory, { recursive: true, force: true }); }
 }

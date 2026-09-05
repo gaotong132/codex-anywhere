@@ -89,6 +89,26 @@ page, then reopen the popup and check whether any new errors appear.
    On Windows quote paths and use an absolute Node executable if Desktop cannot resolve `node`. Check
    `codex mcp list`, then reload MCP configuration; Desktop may need a restart when tasks are idle.
    The **original Session** must expose `anywhere_browser_list_pages/snapshot/click/fill/scroll/open_link`. Never start a substitute.
+
+   For direct execution in an authorized Session, preapprove these four specific tools in that host's Codex `config.toml`:
+
+   ```toml
+   [mcp_servers.anywhere_browser.tools.anywhere_browser_click]
+   approval_mode = "approve"
+   [mcp_servers.anywhere_browser.tools.anywhere_browser_fill]
+   approval_mode = "approve"
+   [mcp_servers.anywhere_browser.tools.anywhere_browser_scroll]
+   approval_mode = "approve"
+   [mcp_servers.anywhere_browser.tools.anywhere_browser_open_link]
+   approval_mode = "approve"
+   ```
+
+   Reload Codex MCP afterward. This removes per-call host prompts for those tools only; page consent, Session isolation,
+   site permissions and task scope still apply. Keep truthful write annotations and other MCP/global approval settings.
+   `MCP tool call requires approval, but approval policy is never` means Codex blocked execution; it is not evidence of
+   a browser, login or cross-origin failure. See [MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+   Run `npx tsx scripts/probe-browser-mcp.ts --write` to verify an explicitly preapproved click under `never`
+   using an ephemeral synthetic task, without accessing a real website.
    Update/reload the Connector and MCP while idle as well; reloading the Chrome extension alone is insufficient for these changes.
    Host metadata `x-codex-turn-metadata.thread_id/turn_id` is required; missing context fails closed.
    See [Codex MCP configuration](https://developers.openai.com/codex/mcp/).
@@ -104,12 +124,16 @@ page, then reopen the popup and check whether any new errors appear.
   in that Session in Anywhere. Keep one manually authorized root per extension/Session. Revoke the root and its
   children from the secondary menu before selecting another root or Session.
 - Site access granted by the side panel also permits AI-opened same-site children. Older temporary root grants
-  can request that optional permission from settings. `open_link` or a click on a new-tab link from a fresh snapshot creates
-  a same-origin managed child. No arbitrary URLs, manually opened tabs, unsolicited site popups or cross-origin
-  links/redirects inherit consent. Chrome stores site permission, while runtime checks still require the exact origin
+  can request that optional permission from settings. `open_link` or a link click from a fresh snapshot creates
+  a same-origin managed child, keeping its parent authorized. Cross-origin destinations/redirects or missing site permission
+  open a visible tab for the user to authorize, without reading or adopting it. No arbitrary URLs, manually opened tabs or
+  unsolicited site popups inherit consent. Chrome stores site permission, while runtime checks still require the exact origin
   (including port), document and Session. Multiple managed pages require an explicit `pageId` from the list tool.
 - Web says “Browser authorized” with a child count. Its hint distinguishes unverified MCP tools from a recorded
   successful call; heartbeat alone does not prove model tool availability. In-app CUA and Anywhere are separate browsers.
+- Execute task-required navigation, search, clicks and ordinary input directly. Pause at actual login, passwords,
+  verification, new site permissions or actions outside the requested scope. Checking ECS status includes opening its
+  console and instance list, not starting/stopping instances. A Login link alone does not establish the login state.
 - No ten-minute consent limit; commands time out after 15 seconds. Heartbeats run every 20 seconds;
   more than 45 seconds without a heartbeat means offline, not expired consent. The Relay only transports
   end-to-end encrypted operation/results frames.

@@ -95,7 +95,26 @@ Chrome 120+ 的 `chrome://extensions` 中开启开发者模式，加载已解压
    **不新建替代 Session**：原会话必须实际提供 `anywhere_browser_list_pages/snapshot/click/fill/scroll/open_link`。
    更新这轮代码后，Connector 与 MCP 也需更新并在空闲时重新加载；只重新加载 Chrome 扩展不够。
    兼容性依赖宿主提供 `x-codex-turn-metadata.thread_id/turn_id`；缺失时安全拒绝，不接受模型填 ID。
-   参考 [Codex MCP 配置](https://developers.openai.com/codex/mcp/)。
+   参考 [Codex MCP 配置](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)。
+
+   要让已经授权的会话直接执行浏览器任务，在同一主机的 Codex `config.toml` 中为这四个具体工具预授权：
+
+   ```toml
+   [mcp_servers.anywhere_browser.tools.anywhere_browser_click]
+   approval_mode = "approve"
+   [mcp_servers.anywhere_browser.tools.anywhere_browser_fill]
+   approval_mode = "approve"
+   [mcp_servers.anywhere_browser.tools.anywhere_browser_scroll]
+   approval_mode = "approve"
+   [mcp_servers.anywhere_browser.tools.anywhere_browser_open_link]
+   approval_mode = "approve"
+   ```
+
+   修改后重新加载 Codex MCP。此配置只免除这四个工具的逐次宿主审批；插件的页面授权、会话隔离、站点权限
+   和用户任务范围仍生效，不修改全局审批策略或其他 MCP。工具保持真实的读写标注。如果出现
+   `MCP tool call requires approval, but approval policy is never`，说明调用被 Codex 在执行前拦截，
+   不能据此认定浏览器离线、未登录或跨域失败。可用 `npx tsx scripts/probe-browser-mcp.ts --write`
+   在临时合成任务中验证 `never` 策略下预授权的点击，探针不访问实际网页。
 
 4. 按[部署文档](../docs/deployment.zh-CN.md)生成一条新的单次浏览器配对链接，粘贴进扩展。
    已被 Web 浏览器消费的链接不能重用；这注册的是独立的扩展设备。配对成功后只保留设备密钥和服务器 Origin，
@@ -108,10 +127,13 @@ Chrome 120+ 的 `chrome://extensions` 中开启开发者模式，加载已解压
   更多菜单可撤销起始页及子页，再更换会话或页面；不再有实验性“读取页面/停止并清除”。
 - 侧栏授权时允许的站点权限也支持 AI 打开的同站子页；使用旧临时授权时，可在设置中补充该站点权限。
   然后在原会话说“把这个页面的详情链接打开到新标签页并查看”。AI 通过 `open_link` 或点击新页链接创建的
-  同源子页会自动纳管；手动页签、网站自己弹窗、跨源链接/重定向不会继承授权。链接必须来自当前快照，
+  同源子页会自动纳管；跨源链接/重定向或缺少站点权限时，先打开目标页供用户授权，不读取或纳管该页。
+  手动页签和网站自己弹窗不会继承授权。普通链接点击也使用这个开页流程，保留原页授权。链接必须来自当前快照，
   不接受任意 URL。权限按站点由 Chrome 保存，实际操作仍校验精确来源（包括端口）、页面和会话。
   多个受管页面时模型先列举，再明确选择 `pageId`；不会默认操作第一个页面。
 - 回到 Anywhere 的原会话，例如发送“读取已授权页面的标题”或“在这个测试页的搜索框输入 demo”。
+  任务所需的导航、搜索、普通点击和输入应直接执行，实际遇到登录、密码、验证码、新站点权限或超出任务范围
+  的操作才暂停。“检查 ECS 状态”包括进入控制台和实例列表，不包含开关机；看到“登录”链接本身不代表已确认未登录。
   Web 显示“浏览器已授权”和子页数量，提示区区分 MCP 尚未验证与最近工具调用成功；心跳在线并不代表模型
   已加载工具。CUA 内置浏览器和 Anywhere 扩展不是同一个浏览器。操作可能改变网站数据，请明确需要的操作。
 - **授权没有 10 分钟限制**。单次操作最多 15 秒。20 秒心跳维持连接；超过 45 秒未收到心跳显示离线。

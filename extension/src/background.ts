@@ -108,23 +108,28 @@ async function handleOperation(frame: Frame) {
       if (bindings.size >= 64) throw new Error('browser_grant_limit');
       const expectedRevision = revision;
       const current = () => revision === expectedRevision && bindings.get(captured.target.tabId) === captured && connection.ready();
-      const target = await openManagedTab(result.openInNewTab, captured.target, request.deadline, current);
+      const opened = await openManagedTab(result.openInNewTab, captured.target, request.deadline, current);
       if (!current()) throw new Error('browser_authorization_changed');
-      const adopted = await connection.request('browser.adopt', { operationRequestId: request.requestId, parentGrantId: captured.grantId, target });
-      const child: Binding = { ...captured, target, grantId: adopted.grantId, sequence: 0, pageTitle: undefined, rootTabId: captured.rootTabId ?? captured.target.tabId };
-      try {
-        if (!current()) throw new Error('browser_authorization_changed');
-        await page(target, child.grantId, { method: 'authorize' }, request.deadline);
-        if (!current()) throw new Error('browser_authorization_changed');
-        bindings.set(target.tabId, child); await persist();
-        await connection.request('browser.heartbeat', { grantId: child.grantId });
-        await badge(target.tabId);
-        result = { opened: true, pageId: child.grantId, origin: target.origin };
-      } catch (failure) {
-        await revokeBinding(child);
-        await page(target, child.grantId, { method: 'revoke' }).catch(() => {});
-        await connection.request('browser.revoke', { grantId: child.grantId }).catch(() => {});
-        throw failure;
+      if ('authorizationRequired' in opened) {
+        result = { opened: true, authorizationRequired: true, origin: opened.origin };
+      } else {
+        const target = opened.target;
+        const adopted = await connection.request('browser.adopt', { operationRequestId: request.requestId, parentGrantId: captured.grantId, target });
+        const child: Binding = { ...captured, target, grantId: adopted.grantId, sequence: 0, pageTitle: undefined, rootTabId: captured.rootTabId ?? captured.target.tabId };
+        try {
+          if (!current()) throw new Error('browser_authorization_changed');
+          await page(target, child.grantId, { method: 'authorize' }, request.deadline);
+          if (!current()) throw new Error('browser_authorization_changed');
+          bindings.set(target.tabId, child); await persist();
+          await connection.request('browser.heartbeat', { grantId: child.grantId });
+          await badge(target.tabId);
+          result = { opened: true, pageId: child.grantId, origin: target.origin };
+        } catch (failure) {
+          await revokeBinding(child);
+          await page(target, child.grantId, { method: 'revoke' }).catch(() => {});
+          await connection.request('browser.revoke', { grantId: child.grantId }).catch(() => {});
+          throw failure;
+        }
       }
     }
     if (bindings.get(captured.target.tabId) !== captured) return;

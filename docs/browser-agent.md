@@ -16,8 +16,10 @@ extension pairing through Page control settings and Connector/MCP setup. Setting
 the chat owns environment and Session selection, with authorization and revocation above it. The toolbar has a fixed icon and tab-specific status dot.
 
 Keep one manually authorized root, not arbitrary multi-tab binding. Site permission requested on authorization also enables same-origin
-tabs created by AI `open_link` calls or clicks on `target=_blank` links. Manually opened tabs, unsolicited website
-popups and cross-origin links/redirects are not adopted. List managed pages and specify `pageId` when more than one exists.
+tabs created by AI `open_link` calls or ordinary link clicks. Cross-origin destinations/redirects and missing site permissions
+open a visible tab and return `authorizationRequired`, without injecting or granting access. The user can log in and authorize
+that destination. Manually opened tabs and unsolicited website popups are not adopted. List managed pages and specify `pageId`
+when more than one exists.
 
 ## Side panel embedding boundary
 
@@ -84,6 +86,12 @@ MCP initialization instructions distinguish the extension from in-app CUA. Start
 snapshot the chosen page. Empty CUA tabs do not prove extension disconnection. Anywhere-delivered Desktop, headless and steer
 messages append a current exact-Session authorization count and tool guidance, with no extra turn, page content, URL or secret.
 Messages entered directly in Desktop do not pass through the Connector; they rely on the reloaded MCP instructions.
+
+Guidance tells the model to execute task-required navigation, search, ordinary clicks and input directly, verifying the
+result and pausing for actual login, verification, new permissions or out-of-scope actions. Host MCP approval rejection,
+browser connectivity and website login are diagnosed separately. Follow the extension setup to preapprove the four specific
+write tools with `approval_mode="approve"` under Codex `never`; retain truthful annotations and other approval settings.
+Both current and older generated guidance suffixes remain hidden by history parsing.
 
 Web says “Browser authorized”, distinguishing page heartbeat from the last successful tool call, and reports unverified
 tools when there is no call evidence. These changes require matching Connector/MCP, Web and extension updates; editing the

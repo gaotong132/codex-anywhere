@@ -72,6 +72,8 @@ async function harness(t: test.TestContext) {
   let createdTabs = 0;
   let clicks = 0;
   let injections = 0;
+  const injectedTabs: number[] = [];
+  let nextRedirect: string | undefined;
   let onActionClicked!: (tab: Frame) => void;
   const openedPanels: Frame[] = [];
   const intervals = new Set<ReturnType<typeof setInterval>>();
@@ -107,7 +109,8 @@ async function harness(t: test.TestContext) {
     action: { onClicked: { addListener: (callback: typeof onActionClicked) => { onActionClicked = callback; } }, setBadgeText: async (value: Frame) => { badges.push(value); }, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
     runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } } },
     tabs: { query: async () => [{ id: activeTab, windowId: 1, active: true, url: pages.get(activeTab)!.url }],
-      create: async (options: Frame) => { const id = pages.size + 1; createdTabs++; assert.ok(pages.has(options.openerTabId)); pages.set(id, makePage(id, options.url)); return { id }; },
+      create: async (options: Frame) => { const id = pages.size + 1; createdTabs++; assert.ok(pages.has(options.openerTabId)); pages.set(id, makePage(id, nextRedirect ?? options.url)); nextRedirect = undefined; if (options.active) activeTab = id; return { id }; },
+      update: async (id: number, options: Frame) => { assert.ok(pages.has(id)); if (options.active) activeTab = id; return { id }; },
       get: async (id: number) => ({ id, windowId: 1, active: id === activeTab, url: pages.get(id)!.url, status: 'complete' }),
       onUpdated: { addListener: (listener: typeof onUpdated) => { onUpdated = listener; } }, onRemoved: { addListener: (listener: typeof onRemoved) => { onRemoved = listener; } } },
     scripting: { executeScript: async (options: Frame) => {
@@ -118,6 +121,7 @@ async function harness(t: test.TestContext) {
       const { pageContext, documentId } = fixture;
       if (options.target.documentIds && options.target.documentIds[0] !== documentId) throw new Error('document_replaced');
       injections++;
+      injectedTabs.push(options.target.tabId);
       pageContext.args = options.args ?? [];
       let result;
       try { result = runInContext(`(${options.func.toString()})(...args)`, pageContext, { timeout: 1000 }); }
@@ -158,6 +162,7 @@ async function harness(t: test.TestContext) {
     local, session, badges, document, clicks: () => clicks, injections: () => injections,
     dropConnection: () => { for (const client of relay.clients.values()) client.close(1001, 'test disconnect'); },
     allowChildren: () => { sitePermission = true; }, createdTabs: () => createdTabs,
+    injectedTabs, redirectNext: (url: string) => { nextRedirect = url; }, activeTab: () => activeTab,
     loseActiveTab: () => { activeTabPermission = false; },
     reloadWithoutOldTab: async () => {
       // Reload clears session storage but preserves the extension's paired key.
@@ -324,10 +329,6 @@ test('transport reconnect rotates the grant for the same Session and document, n
 test('one root adopts only AI-created same-origin child tabs, preserves them across reconnect and revokes the tree', async (t) => {
   const h = await harness(t);
   await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
-  const snapshot: any = await h.broker.execute('task-a', 'turn-1', { method: 'snapshot' });
-  const ref = snapshot.nodes.find((node: Frame) => node.text === 'Open child').ref;
-  await assert.rejects(h.broker.execute('task-a', 'turn-1', { method: 'open_link', ref }), /child_permission_required/);
-  assert.equal(h.createdTabs(), 0);
   h.allowChildren();
   const fresh: any = await h.broker.execute('task-a', 'turn-1', { method: 'snapshot' });
   const opened: any = await h.broker.execute('task-a', 'turn-1', { method: 'open_link', ref: fresh.nodes.find((node: Frame) => node.text === 'Open child').ref });
@@ -351,18 +352,39 @@ test('one root adopts only AI-created same-origin child tabs, preserves them acr
   assert.equal(h.createdTabs(), 1, 'reconnect must not replay tab creation');
   const child = h.broker.listPages('task-a', 'turn-2').pages.find((page) => page.kind === 'ai-opened')!;
   const childSnapshot: any = await h.broker.execute('task-a', 'turn-2', { method: 'snapshot' }, child.pageId);
-  await assert.rejects(h.broker.execute('task-a', 'turn-2', { method: 'open_link', ref: childSnapshot.nodes.find((node: Frame) => node.text === 'Cross origin').ref }, child.pageId), /child_origin_denied/);
-  assert.equal(h.createdTabs(), 1);
+  const handoff: any = await h.broker.execute('task-a', 'turn-2', { method: 'open_link', ref: childSnapshot.nodes.find((node: Frame) => node.text === 'Cross origin').ref }, child.pageId);
+  assert.equal(handoff.authorizationRequired, true);
+  assert.equal(handoff.pageId, undefined);
+  assert.equal(h.createdTabs(), 2);
+  assert.equal(h.broker.listPages('task-a', 'turn-2').total, 2);
+  assert.ok(!h.injectedTabs.includes(h.activeTab()), 'a foreign destination must not be injected');
   h.navigate();
   await assert.rejects(h.broker.execute('task-a', 'turn-2', { method: 'snapshot' }, child.pageId), /not_authorized|authorization_changed|operation_failed/);
   assert.equal(h.broker.listPages('task-a', 'turn-2').total, 0);
 });
 
+test('missing site permission and cross-origin redirects open a visible handoff without adopting or reading it', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  for (const redirect of [false, true]) {
+    if (redirect) { h.allowChildren(); h.redirectNext('https://login.example/auth'); }
+    const snapshot: any = await h.broker.execute('task-a', 'turn-handoff', { method: 'snapshot' });
+    const result: any = await h.broker.execute('task-a', 'turn-handoff', { method: 'click', ref: snapshot.nodes.find((node: Frame) => node.text === 'Open child').ref });
+    assert.equal(result.opened, true); assert.equal(result.authorizationRequired, true);
+    assert.equal(result.origin, redirect ? 'https://login.example' : 'https://example.com');
+    assert.equal(result.pageId, undefined);
+    assert.ok(!h.injectedTabs.includes(h.activeTab()));
+    assert.equal(h.broker.listPages('task-a', 'turn-handoff').total, 1);
+    assert.equal(h.session.values.bindings.length, 1);
+  }
+});
+
 test('manual authorization replaces the one root; child navigation never revokes its root', async (t) => {
   const h = await harness(t);
   await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' }); h.allowChildren();
+  h.document.querySelector('a[target="_blank"]')!.removeAttribute('target');
   const snapshot: any = await h.broker.execute('task-a', 'turn-1', { method: 'snapshot' });
-  // Ordinary AI clicks on target=_blank links use the same controlled creation path.
+  // Same-tab links also keep their parent authorized by using controlled creation.
   const opened: any = await h.broker.execute('task-a', 'turn-1', { method: 'click', ref: snapshot.nodes.find((node: Frame) => node.text === 'Open child').ref });
   h.navigate(2);
   await assert.rejects(h.broker.execute('task-a', 'turn-1', { method: 'snapshot' }, opened.pageId), /not_authorized|authorization_changed|operation_failed/);
@@ -370,4 +392,18 @@ test('manual authorization replaces the one root; child navigation never revokes
   h.manualTab(); await h.send('grant', { threadId: 'task-b' });
   assert.equal(h.broker.status('task-a').authorized, false);
   assert.equal(h.broker.listPages('task-b', 'turn-1').total, 1);
+});
+
+test('link handoff rejects scripts, embedded credentials and downloads before creating a tab', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const link = h.document.querySelector('a[target="_blank"]')!;
+  for (const href of ['javascript:alert(1)', 'file:///private', 'https://user:secret@foreign.example/path', 'https://example.com/download']) {
+    link.setAttribute('href', href);
+    if (href.endsWith('/download')) link.setAttribute('download', 'file');
+    const snapshot: any = await h.broker.execute('task-a', 'turn-link', { method: 'snapshot' });
+    await assert.rejects(h.broker.execute('task-a', 'turn-link', { method: 'open_link', ref: snapshot.nodes.find((node: Frame) => node.text === 'Open child').ref }), /operation_failed/);
+    assert.equal(h.createdTabs(), 0);
+    assert.equal(h.broker.listPages('task-a', 'turn-link').total, 1);
+  }
 });

@@ -4,6 +4,10 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Execute authorized browser tasks directly, distinguish host MCP approval rejection from site/login failures, and
+  document per-tool preapproval under Codex `never`. Open new-site destinations for user authorization without reading
+  them; ordinary links preserve the parent page. Keep older browser guidance hidden in history and add a real host write probe.
+
 - Extend `relay.sh devices` with online/offline/unknown status, connection counts, last connected/seen
   timestamps, and `--json`. Persist private activity separately from device trust, retain history across
   restarts, and report stale snapshots as unknown.
