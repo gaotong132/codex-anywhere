@@ -22,6 +22,7 @@ let error = '';
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let retries = 0;
 let reconnectEnabled = false;
+let grantReplacementSupported = false;
 const summary = (binding: Binding) => ({ grantId: binding.grantId, environmentId: binding.environmentId, title: binding.title, pageTitle: binding.pageTitle,
   threadId: binding.threadId, origin: binding.target.origin, sitePermissionPattern: sitePattern(binding.target.origin), tabId: binding.target.tabId, child: binding.rootTabId !== undefined });
 async function status(windowId?: number) {
@@ -149,7 +150,7 @@ async function restoreBinding(captured: Binding, expectedRevision: number) {
     // never recreate child consent from an arbitrary target submitted as bind.
     if (captured.rootTabId !== undefined || revision !== expectedRevision || bindings.get(captured.target.tabId) !== captured) throw new Error('browser_restore_unavailable');
     for (const child of [...bindings.values()]) if (child.rootTabId === captured.target.tabId) await revokeBinding(child);
-    fresh = await connection.request('browser.bind', { threadId: captured.threadId, target: captured.target });
+    fresh = await connection.request('browser.bind', { threadId: captured.threadId, target: captured.target, recoverOnly: true });
   }
   if (revision !== expectedRevision || bindings.get(captured.target.tabId) !== captured) {
     await connection.request('browser.revoke', { grantId: fresh.grantId }).catch(() => {}); return;
@@ -170,11 +171,13 @@ async function restoreBinding(captured: Binding, expectedRevision: number) {
 }
 
 async function selectEnvironment(environmentId: string, expectedRevision = revision) {
+  grantReplacementSupported = false;
   await connection.select(environmentId);
   if (revision !== expectedRevision) throw new Error('browser_environment_changed');
   const capability = await connection.request('connector.status');
   if (revision !== expectedRevision) throw new Error('browser_environment_changed');
   if (!capability.capabilities?.browserControl) throw new Error('browser_control_not_enabled_on_connector');
+  grantReplacementSupported = capability.capabilities.browserGrantReplacement === true;
   const response = await connection.request('sessions.list');
   if (revision !== expectedRevision) throw new Error('browser_environment_changed');
   sessions = (response.sessions ?? []).slice(0, 200).map((session: Frame) => ({ id: session.id, title: String(session.name || session.title || session.preview || session.id).slice(0, 100) }));
@@ -234,7 +237,9 @@ async function authorize(threadId: string, requested?: PanelTarget) {
     if (!document?.documentId || document.result !== tabOrigin || !current()
       || (requested && document.documentId !== requested.documentId)) throw new Error('browser_document_changed');
     const target: BrowserTarget = { browserDeviceId: identity.id, tabId: tab.id, documentId: document.documentId, origin: tabOrigin };
-    const result = await connection.request('browser.bind', { threadId, target });
+    // Only a fresh authorization click can replace an orphaned root. Automatic
+    // restore intentionally omits this flag and cannot retake a replaced page.
+    const result = await connection.request('browser.bind', { threadId, target, replaceExisting: true });
     const candidate: Binding = { grantId: result.grantId, environmentId: connection.environmentId, threadId,
       title: sessions.find((session) => session.id === threadId)?.title || threadId, pageTitle: tab.title?.slice(0, 100), target, sequence: 0 };
     try {
@@ -285,6 +290,9 @@ async function authorizeFromPanel(message: Frame) {
 
 function safeError(value: unknown) {
   const code = value instanceof Error ? value.message : '';
+  if (code === 'browser_session_already_bound' && !grantReplacementSupported) {
+    return '当前环境的连接器需更新后才能清理旧页签授权。请更新该环境的 Connector，再授权当前页。';
+  }
   const messages: Record<string, string> = {
     browser_https_url_required: '请使用 HTTPS 地址；本机 HTTP 仅支持 localhost 或 127.0.0.1。',
     browser_control_not_enabled_on_connector: '这个环境尚未启用浏览器工具，请先按安装文档配置连接器和 MCP。',
@@ -293,7 +301,7 @@ function safeError(value: unknown) {
     browser_connector_offline: '页面控制尚未连接，请在设置中连接后重试。',
     browser_select_existing_session: '当前会话暂不可用，请在聊天中选择已有会话后重试。',
     browser_grant_limit: '已达到 64 个页面的保护上限，请先撤销不再需要的页面。',
-    browser_session_already_bound: '这个 Session 已有一个起始页，请先在原浏览器中撤销授权。',
+    browser_session_already_bound: '此会话仍被其他浏览器占用。请撤销其授权，或在旧浏览器离线 45 秒后重新授权当前页。',
     browser_authorization_changed: '页面或连接已变化，请在目标页面重新授权。',
     browser_connect_timeout: '连接超时。检查 Relay 的扩展 Origin 白名单、配对链接和代理。',
     browser_pairing_failed: '配对失败。请生成新的单次配对链接后重试。',

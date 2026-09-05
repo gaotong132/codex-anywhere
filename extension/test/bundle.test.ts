@@ -36,9 +36,11 @@ async function harness(t: test.TestContext) {
         const p = frame.payload;
         const client = { clientId: frame.clientId, clientDeviceId: frame.clientDeviceId };
         let data: unknown;
-        if (frame.action === 'connector.status') data = { capabilities: { browserControl: true } };
+        if (frame.action === 'connector.status') data = { capabilities: { browserControl: true, browserGrantReplacement: true } };
         else if (frame.action === 'sessions.list') { duringSessionsList?.(); data = { sessions: [{ id: 'task-a', title: 'Fixture A' }, { id: 'task-b', title: 'Fixture B' }] }; }
-        else if (frame.action === 'browser.bind') data = broker.bind(client, p.threadId, p.target);
+        else if (frame.action === 'browser.bind') data = broker.bind(client, p.threadId, p.target, {
+          replaceExisting: p.replaceExisting === true, recoverOnly: p.recoverOnly === true,
+        });
         else if (frame.action === 'browser.adopt') data = broker.adopt(client, p.operationRequestId, p.parentGrantId, p.target);
         else if (frame.action === 'browser.restore') data = broker.restore(client, p.grantId, p.target);
         else if (frame.action === 'browser.heartbeat') data = broker.heartbeat(client, p.grantId);
@@ -96,6 +98,7 @@ async function harness(t: test.TestContext) {
       set: async (data: Frame) => Object.assign(values, data), remove: async (key: string) => { delete values[key]; } };
   };
   const local = storage(); const session = storage();
+  let workerGeneration = 0;
   const badges: Frame[] = [];
   const chrome = {
     permissions: { contains: async () => sitePermission },
@@ -125,11 +128,17 @@ async function harness(t: test.TestContext) {
   class BrowserSocket extends WebSocket {
     constructor(url: string) { super(url, { origin: `chrome-extension://${extensionId}` }); sockets.push(this); }
   }
-  const context = createContext({ chrome, URL, crypto, TextEncoder, TextDecoder, WebSocket: BrowserSocket, AbortController,
-    setTimeout, clearTimeout, setInterval: (callback: () => void, delay: number) => { const timer = setInterval(callback, delay); intervals.add(timer); return timer; },
+  const workerSource = await readFile('extension/dist/background.js', 'utf8');
+  const startWorker = () => {
+    const generation = ++workerGeneration;
+    const context = createContext({ chrome, URL, crypto, TextEncoder, TextDecoder, WebSocket: BrowserSocket, AbortController,
+    setTimeout: (callback: () => void, delay: number) => setTimeout(() => { if (generation === workerGeneration) callback(); }, delay),
+    clearTimeout, setInterval: (callback: () => void, delay: number) => { const timer = setInterval(callback, delay); intervals.add(timer); return timer; },
     clearInterval: (timer: ReturnType<typeof setInterval>) => { clearInterval(timer); intervals.delete(timer); },
   });
-  runInContext(await readFile('extension/dist/background.js', 'utf8'), context, { timeout: 1000 });
+    runInContext(workerSource, context, { timeout: 1000 });
+  };
+  startWorker();
   const sender = { id: extensionId, url: popup };
   const send = (type: string, payload: Frame = {}, from = sender) => new Promise<Frame>((resolve, reject) => {
     if (!onMessage({ type, ...payload }, from, resolve)) reject(new Error('popup_rejected'));
@@ -150,6 +159,22 @@ async function harness(t: test.TestContext) {
     dropConnection: () => { for (const client of relay.clients.values()) client.close(1001, 'test disconnect'); },
     allowChildren: () => { sitePermission = true; }, createdTabs: () => createdTabs,
     loseActiveTab: () => { activeTabPermission = false; },
+    reloadWithoutOldTab: async () => {
+      // Reload clears session storage but preserves the extension's paired key.
+      // The old tab closes while no worker is present to deliver browser.revoke.
+      for (const timer of intervals) clearInterval(timer);
+      intervals.clear();
+      for (const connection of sockets) { connection.onmessage = null; connection.onclose = null; connection.terminate(); }
+      for (const key of Object.keys(session.values)) delete session.values[key];
+      pages.delete(1); activeTab = 10;
+      pages.set(10, makePage(10, 'https://example.com/reopened'));
+      startWorker();
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if ((await send('status')).result.connected) return;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      throw new Error('reloaded_worker_did_not_reconnect');
+    },
     manualTab: () => { const id = pages.size + 1; pages.set(id, makePage(id, 'https://example.com/manual')); activeTab = id; return id; },
     navigate: (id = 1) => onUpdated(id, { status: 'loading' }), close: (id = 1) => onRemoved(id), replace: () => { pages.get(1)!.documentId = 'doc-b'; } };
 }
@@ -183,6 +208,27 @@ test('side panel refuses a replacement document even at the same URL after a net
   assert.equal(result.ok, false);
   assert.equal(h.broker.status('task-a').authorized, false);
   assert.equal(h.clicks(), 0);
+});
+
+test('a reloaded extension with a closed old tab can authorize the current page without its lost grant record', async (t) => {
+  const h = await harness(t);
+  assert.equal((await h.sendPanel('connect', { url: h.pairUrl })).ok, true);
+  assert.equal((await h.sendPanel('panel.grant', { relayOrigin: h.origin, environmentId: 'pc', threadId: 'task-b',
+    tabId: 1, windowId: 1, url: 'https://example.com/private?secret=query' })).ok, true);
+  const oldGrant = h.broker.listPages('task-b', 'turn-reload').pages[0].pageId;
+  const deviceKey = h.local.values.privateKey;
+  await h.reloadWithoutOldTab();
+  assert.equal(h.local.values.privateKey, deviceKey, 'pairing must survive reload');
+  assert.equal((await h.sendPanel('status', { windowId: 1 })).result.binding, null);
+  assert.equal(h.broker.status('task-b').authorized, true, 'the missed close event leaves a Connector-side grant');
+  const result = await h.sendPanel('panel.grant', { relayOrigin: h.origin, environmentId: 'pc', threadId: 'task-b',
+    tabId: 10, windowId: 1, url: 'https://example.com/reopened' });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  const pages = h.broker.listPages('task-b', 'turn-reload').pages;
+  assert.equal(pages.length, 1); assert.notEqual(pages[0].pageId, oldGrant);
+  const snapshot = await h.broker.execute('task-b', 'turn-reload', { method: 'snapshot' });
+  assert.match(JSON.stringify(snapshot), /Fixture page 10/);
+  assert.equal(h.broker.status('task-a').authorized, false);
 });
 
 test('side panel controls a normal site after explicit host access even without a toolbar activeTab grant', async (t) => {

@@ -4,6 +4,10 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Recover orphaned browser roots after a tab closes and the extension loses its local grant record. Explicit authorization
+  can replace this device's old root or a fully stale browser tree, revoke children, and cancel pending operations; automatic
+  recovery and delayed validation cannot reclaim newer consent.
+
 - Fix normal-page authorization after switching tabs with the side panel open: read active-tab metadata and request
   current-site access on the authorization click. Remove duplicate environment/Session selectors from control settings;
   use the current chat Session and cancel consent if the target or Session changes during the permission prompt.

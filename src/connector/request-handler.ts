@@ -121,7 +121,9 @@ async function dispatchAction({
     const client = { clientId, clientDeviceId };
     if (action === 'browser.bind') {
       // Validate the existing Session. Never create, resume, or send a prompt here.
-      return browser.validateAndBind(client, payload.threadId, payload.target, (threadId) => codex.readSession(threadId));
+      return browser.validateAndBind(client, payload.threadId, payload.target, (threadId) => codex.readSession(threadId), {
+        replaceExisting: payload.replaceExisting === true, recoverOnly: payload.recoverOnly === true,
+      });
     }
     if (action === 'browser.status') return browser.status(payload.threadId);
     if (action === 'browser.adopt') return browser.adopt(client, payload.operationRequestId, payload.parentGrantId, payload.target);
@@ -139,7 +141,7 @@ async function dispatchAction({
       platform: process.platform,
       codexOnline: Boolean(codex.child),
       activeTurn: Boolean(codex.activeTurn),
-      capabilities: { networkAccess, fullAccess: allowFullAccess, ...(browser ? { browserControl: true } : {}) },
+      capabilities: { networkAccess, fullAccess: allowFullAccess, ...(browser ? { browserControl: true, browserGrantReplacement: true } : {}) },
     };
   }
   if (action === 'sessions.list') {

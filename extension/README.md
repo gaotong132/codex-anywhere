@@ -32,6 +32,11 @@ Changing the Session, tab, or document during the permission prompt requires a n
 Closing the panel does not revoke page control. Revocation removes
 the root and its children; navigation, tab closure, and document replacement retain the existing revocation rules.
 
+If a closed tab still occupies the Session, update the selected Connector and extension, then click **Authorize current
+page** again. This explicit grant can replace this extension's orphaned root, or another browser's root when every page
+in its tree has missed heartbeats for 45 seconds. Replacement revokes the old tree and cancels pending operations.
+Offline status alone never transfers consent, and another live browser is not displaced. Existing pairing is preserved.
+
 Chat UI updates follow Relay/Web deployment: use **Reload chat** to load new code. Control protocol changes still
 require an extension update. Missing/stale chat state disables authorization; a connection warning points to relay
 updates, the Origin allowlist, and network setup. Camera access may be restricted in the frame; paste a pairing link

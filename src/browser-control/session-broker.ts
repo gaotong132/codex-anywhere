@@ -4,6 +4,7 @@ import { parseOperation, type BrowserOperation } from './operations.js';
 import { browserContext } from '../shared/browser-context.js';
 
 type Client = { clientId: string; clientDeviceId: string };
+type BindOptions = { replaceExisting?: boolean; recoverOnly?: boolean };
 type Grant = Client & { id: string; threadId: string; target: BrowserTarget; seenAt: number; sequence: number; active: boolean; lastToolSuccessAt?: number; rootGrantId?: string };
 type Pending = { grant: Grant; operation: BrowserOperation; adopted?: boolean; resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
 
@@ -16,29 +17,39 @@ export class BrowserSessionBroker {
   constructor(readonly environmentId: string, private send: (frame: Record<string, unknown>) => boolean,
     private now = Date.now, private timeoutMs = 15_000) {}
 
-  async validateAndBind(client: Client, threadId: unknown, targetValue: unknown, validate: (threadId: string) => Promise<unknown>) {
+  async validateAndBind(client: Client, threadId: unknown, targetValue: unknown, validate: (threadId: string) => Promise<unknown>, options: BindOptions = {}) {
     const target = parseBrowserTarget(targetValue);
     const id = requireBrowserId(threadId);
     if (target.browserDeviceId !== client.clientDeviceId) throw new Error('browser_device_mismatch');
-    const key = `${client.clientDeviceId}:${target.tabId}`;
-    if (this.bindingIntents.size >= 64 && !this.bindingIntents.has(key)) throw new Error('browser_grant_limit');
+    // Both a tab and a Session can be replaced while Session validation awaits.
+    // A delayed click must not reclaim either from a newer authorization.
+    const keys = [`tab:${client.clientDeviceId}:${target.tabId}`, `session:${id}`];
+    if (this.bindingIntents.size + keys.filter((key) => !this.bindingIntents.has(key)).length > 128) throw new Error('browser_grant_limit');
     const intent = {};
-    this.bindingIntents.set(key, intent);
+    for (const key of keys) this.bindingIntents.set(key, intent);
     try {
       await validate(id);
-      if (this.bindingIntents.get(key) !== intent) throw new Error('browser_authorization_changed');
-      return this.bind(client, id, target);
-    } finally { if (this.bindingIntents.get(key) === intent) this.bindingIntents.delete(key); }
+      if (keys.some((key) => this.bindingIntents.get(key) !== intent)) throw new Error('browser_authorization_changed');
+      return this.bind(client, id, target, options);
+    } finally { for (const key of keys) if (this.bindingIntents.get(key) === intent) this.bindingIntents.delete(key); }
   }
 
-  bind(client: Client, threadId: unknown, targetValue: unknown) {
+  bind(client: Client, threadId: unknown, targetValue: unknown, options: BindOptions = {}) {
     const target = parseBrowserTarget(targetValue);
     if (target.browserDeviceId !== client.clientDeviceId) throw new Error('browser_device_mismatch');
     const id = requireBrowserId(threadId);
-    const root = this.forSession(id).find((grant) => !grant.rootGrantId);
-    if (root && (root.clientDeviceId !== client.clientDeviceId || root.target.tabId !== target.tabId)) throw new Error('browser_session_already_bound');
+    const sessionGrants = this.forSession(id);
+    const root = sessionGrants.find((grant) => !grant.rootGrantId);
     const existing = [...this.grants.values()].find((grant) => grant.clientDeviceId === client.clientDeviceId && grant.target.tabId === target.tabId);
-    if (this.grants.size >= 64 && !existing) throw new Error('browser_grant_limit');
+    if (options.recoverOnly === true && (root || existing)) throw new Error('browser_restore_unavailable');
+    // Manual consent may replace this device's orphaned grant. A different
+    // browser must have missed the full heartbeat window, including all children
+    // and newly bound (not yet active) pages. Offline alone never expires consent.
+    const replaceRoot = root && options.replaceExisting === true && (root.clientDeviceId === client.clientDeviceId
+      || sessionGrants.every((grant) => this.now() - grant.seenAt >= 45_000));
+    if (root && !replaceRoot && (root.clientDeviceId !== client.clientDeviceId || root.target.tabId !== target.tabId)) throw new Error('browser_session_already_bound');
+    if (this.grants.size >= 64 && !existing && !replaceRoot) throw new Error('browser_grant_limit');
+    if (replaceRoot) this.remove(root);
     for (const grant of this.grants.values()) {
       if (grant.clientDeviceId === client.clientDeviceId && grant.target.tabId === target.tabId) this.remove(grant);
     }

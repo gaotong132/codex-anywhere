@@ -58,8 +58,13 @@ ephemeral task in local CLI 0.153.0, not inferred from tool arguments. Source:
 This is a host compatibility dependency: missing/contradictory context fails closed; no model-provided identity fallback.
 
 Each grant binds environment, original Session, authenticated device, connection route, grant ID, tab ID,
-document ID and origin. One root per Session plus AI-created same-origin child tabs (64 grants maximum per connector),
-one in-flight operation per grant. A child requires its authenticated owner's live open operation; a model-supplied raw tab ID
+document ID and origin. Each Session has one root plus AI-created same-origin child tabs (64 grants maximum per connector).
+Explicit `browser.bind` consent uses `replaceExisting: true` to replace the same authenticated device's orphaned
+root, or a different browser's tree after every page misses heartbeats for 45 seconds. Session validation precedes atomic
+tree revocation and pending-operation cancellation; the new document must acknowledge before tools can run. Validation
+intents cover both tab and Session, so older clicks cannot overwrite newer consent. Automatic recovery omits replacement
+and uses `recoverOnly: true` only when both Session and tab are unbound. `browserGrantReplacement` advertises Connector support.
+Only one operation may be in flight per grant. A child requires its authenticated owner's live open operation; a model-supplied raw tab ID
 never grants access. Multiple pages require explicit `pageId`; there is no first-page fallback. Revocation/rebinding cancels
 pending calls; stale results cannot finish a new request. Desktop keeps its existing writer; browser setup never
 resumes or takes it over. No test messages are sent into business tasks.

@@ -47,6 +47,70 @@ test('browser consent survives ten minutes and heartbeat timeout only marks offl
   broker.heartbeat(client, grant.grantId);
   assert.equal(broker.status('thread-1').online, true);
 });
+
+test('explicit replacement recovers the same browser orphan and revokes its children and pending operations', async () => {
+  const { broker, grant, events } = setup();
+  const opening = broker.execute('thread-1', 'turn-1', { method: 'open_link', ref: 'link' });
+  const child = broker.adopt(client, events[0].payload.requestId, grant.grantId, { ...target, tabId: 2, documentId: 'child' });
+  broker.result(client, { ...events[0].payload, ok: true }); await opening;
+  broker.heartbeat(client, child.grantId);
+  const pending = broker.execute('thread-1', 'turn-1', { method: 'snapshot' }, child.grantId);
+  const rejected = assert.rejects(pending, /authorization_changed/);
+  const reconnected = { ...client, clientId: 'new-connection' };
+  const next = await broker.validateAndBind(reconnected, 'thread-1', { ...target, tabId: 3, documentId: 'new-page' }, async () => ({}), { replaceExisting: true });
+  await rejected;
+  assert.equal(broker.status('thread-1').pageCount, 1);
+  assert.equal(broker.status('thread-1').online, false, 'new document must acknowledge authorization first');
+  broker.heartbeat(reconnected, next.grantId);
+  assert.equal(broker.status('thread-1').online, true);
+  assert.throws(() => broker.heartbeat(client, grant.grantId), /not_authorized/);
+  assert.throws(() => broker.restore(client, grant.grantId, target), /restore_unavailable/);
+  assert.throws(() => broker.heartbeat(client, child.grantId), /not_authorized/);
+  assert.throws(() => broker.result(client, { ...events[1].payload, ok: true }), /request_expired/);
+});
+
+test('a different browser can replace only an entirely stale grant tree on explicit authorization', async () => {
+  const { broker, grant, events, advance } = setup();
+  const other = { clientId: 'other-client', clientDeviceId: 'other-browser' };
+  const nextTarget = { ...target, browserDeviceId: other.clientDeviceId, tabId: 99 };
+  const opening = broker.execute('thread-1', 'turn-1', { method: 'open_link', ref: 'link' });
+  const child = broker.adopt(client, events[0].payload.requestId, grant.grantId, { ...target, tabId: 2, documentId: 'child' });
+  broker.result(client, { ...events[0].payload, ok: true }); await opening;
+  assert.throws(() => broker.bind(other, 'thread-1', nextTarget, { replaceExisting: true }), /session_already_bound/);
+  advance(45_000); broker.heartbeat(client, child.grantId);
+  assert.throws(() => broker.bind(other, 'thread-1', nextTarget, { replaceExisting: true }), /session_already_bound/);
+  advance(45_000);
+  assert.throws(() => broker.bind(other, 'thread-1', nextTarget), /session_already_bound/, 'offline does not expire consent');
+  const next = broker.bind(other, 'thread-1', nextTarget, { replaceExisting: true });
+  assert.equal(broker.status('thread-1').pageCount, 1);
+  assert.equal(broker.listPages('thread-1', 'turn-1').pages[0].pageId, next.grantId);
+  assert.throws(() => broker.restore(client, grant.grantId, target), /restore_unavailable/);
+});
+
+test('fresh unacknowledged grants cannot be taken by another browser and recovery cannot overwrite newer consent', () => {
+  const { broker, grant } = setup();
+  const other = { clientId: 'other-client', clientDeviceId: 'other-browser' };
+  const fresh = broker.bind(client, 'thread-1', target);
+  assert.throws(() => broker.bind(other, 'thread-1', { ...target, browserDeviceId: other.clientDeviceId }, { replaceExisting: true }), /session_already_bound/);
+  assert.throws(() => broker.bind(client, 'thread-1', target, { recoverOnly: true }), /restore_unavailable/);
+  assert.throws(() => broker.bind(client, 'another-thread', target, { recoverOnly: true }), /restore_unavailable/);
+  assert.equal(broker.listPages('thread-1', 'turn-1').pages[0].pageId, fresh.grantId);
+  broker.clear();
+  const recovered = broker.bind(client, 'thread-1', target, { recoverOnly: true });
+  assert.notEqual(recovered.grantId, grant.grantId);
+});
+
+test('failed validation preserves the old root and a delayed cross-tab replacement cannot override a newer click', async () => {
+  const { broker, grant } = setup();
+  await assert.rejects(broker.validateAndBind(client, 'thread-1', { ...target, tabId: 2 }, async () => { throw new Error('session_unavailable'); }, { replaceExisting: true }));
+  assert.equal(broker.listPages('thread-1', 'turn-1').pages[0].pageId, grant.grantId);
+  let release!: () => void;
+  const delayed = broker.validateAndBind(client, 'thread-1', { ...target, tabId: 2 }, () => new Promise<void>((resolve) => { release = resolve; }), { replaceExisting: true });
+  const rejected = assert.rejects(delayed, /authorization_changed/);
+  const newest = await broker.validateAndBind(client, 'thread-1', { ...target, tabId: 3 }, async () => ({}), { replaceExisting: true });
+  release(); await rejected;
+  assert.equal(broker.listPages('thread-1', 'turn-1').pages[0].pageId, newest.grantId);
+});
 test('a registered grant cannot operate until the page confirms readiness', async () => {
   const { broker } = setup();
   const grant = broker.bind(client, 'thread-1', target);

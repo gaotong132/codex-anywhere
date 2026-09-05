@@ -61,6 +61,9 @@ and current connector environment.
 The extension uses `tabs` for active-tab metadata and requests optional access to the current site on the user's
 authorization click. Chrome may retain this site permission, which also supports AI-created same-origin children;
 actual Session/document grants still require an explicit click and never adopt other manually opened tabs.
+Explicit new-page consent can replace this extension's old root, or another browser's grant tree when every page has
+missed heartbeats for 45 seconds. Old grants, children, late results, and recovery attempts lose authority; no old-browser
+page content is read. A fresh heartbeat anywhere in another browser's tree prevents replacement.
 
 The pairing credential is carried in the URL fragment, removed before the WebSocket connects, and stored
 by the relay only as a one-way verifier until it expires or is consumed.
