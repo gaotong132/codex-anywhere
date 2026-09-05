@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { stripBrowserContext } from './browser-context.js';
 
 const USER_REQUEST_SECTION = /(?:^|\r?\n)##\s+My request:\s*(?:\r?\n|$)([\s\S]*)/i;
 const IMAGE_ATTACHMENT = /<image\b[^>]*?(?:\/\s*>|>\s*<\/image\s*>)/gi;
@@ -104,6 +105,7 @@ function parseMessageContent(value: unknown, role: 'user' | 'assistant'): Parsed
     return { text: '', contexts };
   }
 
+  if (role === 'user') text = stripBrowserContext(text);
   const request = USER_REQUEST_SECTION.exec(text);
   if (request) text = request[1];
   else if (

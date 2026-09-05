@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Manual model evaluation, NOT an automated pass record. For each independent question,
+     authorize a fresh copy of control.html to a test Session. Read the catalog and order
+     sections using snapshots/viewport scrolling only; never click or fill the demo controls. -->
+<evaluation>
+  <qa_pair><question>根据测试页目录和订单，每件至少 3 kg 的产品中，哪种产品的订单金额最高？只返回产品名。</question><answer>Atlas</answer></qa_pair>
+  <qa_pair><question>综合两张表，整个固定订单的总金额是多少元？只返回数字。</question><answer>255</answer></qa_pair>
+  <qa_pair><question>综合两张表，整个固定订单的货物总质量是多少 kg？只返回数字。</question><answer>70</answer></qa_pair>
+  <qa_pair><question>订单中，按所有商品总价除以总件数计算的平均每件金额是多少元？只返回数字。</question><answer>12.75</answer></qa_pair>
+  <qa_pair><question>只计算目录中每件不超过 2 kg 的产品，这次订单共需支付多少元？只返回数字。</question><answer>120</answer></qa_pair>
+  <qa_pair><question>本次订单里，哪种产品对总运输质量的贡献最大？只返回产品名。</question><answer>Boreal</answer></qa_pair>
+  <qa_pair><question>订单金额并列最高的产品中，哪种产品的订单总质量更小？只返回产品名。</question><answer>Ember</answer></qa_pair>
+  <qa_pair><question>根据两张表，单价最低的产品在订单中合计花费多少元？只返回数字。</question><answer>42</answer></qa_pair>
+  <qa_pair><question>只计算每件至少 3 kg 的产品，这次订单共有多少件？只返回数字。</question><answer>15</answer></qa_pair>
+  <qa_pair><question>假设仅从固定订单移除单价最高的产品，剩余订单总质量是多少 kg？只返回数字。</question><answer>68</answer></qa_pair>
+</evaluation>

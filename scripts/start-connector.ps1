@@ -91,6 +91,10 @@ function Resolve-TextSetting {
 
 $bridgeUrl = Resolve-TextSetting 'BRIDGE_URL' 'bridgeUrl' 'ws://127.0.0.1:3300/ws'
 $deviceId = Resolve-TextSetting 'BRIDGE_DEVICE_ID' 'deviceId' 'personal-pc'
+$browserEndpointFile = Resolve-TextSetting 'BRIDGE_BROWSER_ENDPOINT_FILE' 'browserEndpointFile' ''
+if ($browserEndpointFile -and -not [IO.Path]::IsPathRooted($browserEndpointFile)) {
+    throw 'Browser endpoint state file must use an absolute private path.'
+}
 $allowedRootsFromEnvironment = [Environment]::GetEnvironmentVariable('CODEX_ALLOWED_ROOTS', 'Process')
 if (-not [string]::IsNullOrWhiteSpace($allowedRootsFromEnvironment)) {
     $allowedRoots = $allowedRootsFromEnvironment.Trim()
@@ -239,6 +243,8 @@ if (-not $desktopCodex -and -not (Get-Command codex.exe -ErrorAction SilentlyCon
     $env:BRIDGE_URL = $bridgeUrl
     $env:BRIDGE_DEVICE_ID = $deviceId
     $env:BRIDGE_DEVICE_PRIVATE_KEY = $devicePrivateKey
+    if ($browserEndpointFile) { $env:BRIDGE_BROWSER_ENDPOINT_FILE = [IO.Path]::GetFullPath($browserEndpointFile) }
+    else { Remove-Item Env:BRIDGE_BROWSER_ENDPOINT_FILE -ErrorAction SilentlyContinue }
     $env:CODEX_ALLOWED_ROOTS = $allowedRoots
     $env:CODEX_ALLOW_ANY_FILE_DOWNLOAD = $allowAnyFileDownload
     $env:CODEX_NETWORK_ACCESS = $networkAccess
@@ -275,6 +281,7 @@ finally {
     Remove-Item Env:BRIDGE_URL -ErrorAction SilentlyContinue
     Remove-Item Env:BRIDGE_DEVICE_ID -ErrorAction SilentlyContinue
     Remove-Item Env:BRIDGE_DEVICE_PRIVATE_KEY -ErrorAction SilentlyContinue
+    Remove-Item Env:BRIDGE_BROWSER_ENDPOINT_FILE -ErrorAction SilentlyContinue
     Remove-Item Env:CODEX_ALLOWED_ROOTS -ErrorAction SilentlyContinue
     Remove-Item Env:CODEX_ALLOW_ANY_FILE_DOWNLOAD -ErrorAction SilentlyContinue
     Remove-Item Env:CODEX_NETWORK_ACCESS -ErrorAction SilentlyContinue

@@ -5,33 +5,7 @@ import { friendlyError } from './app-utils';
 import { t } from './i18n';
 import { CustomSelect } from './ui-components';
 import type { ModelConfigDraft, ModelOption, SessionModelConfig } from './app-types';
-
-function reasoningEffortLabel(value: string) {
-  const labels: Record<string, [string, string]> = {
-    none: ['无', 'None'], minimal: ['轻度', 'Light'], low: ['轻度', 'Light'], medium: ['中', 'Medium'],
-    high: ['高', 'High'], xhigh: ['极高', 'X-high'], max: ['极高', 'X-high'], ultra: ['极高', 'X-high'],
-  };
-  return labels[value] ? t(...labels[value]) : value;
-}
-
-const REASONING_SLIDER_LEVELS = new Set(['low', 'medium', 'high', 'xhigh']);
-
-function reasoningSliderOptions(model: ModelOption | undefined) {
-  const standard = model?.supportedReasoningEfforts
-    .filter((option) => REASONING_SLIDER_LEVELS.has(option.reasoningEffort)) || [];
-  return standard.length ? standard : model?.supportedReasoningEfforts || [];
-}
-
-function reasoningSliderValue(model: ModelOption | undefined, value: string) {
-  const options = reasoningSliderOptions(model);
-  if (options.some((option) => option.reasoningEffort === value)) return value;
-  if ((value === 'max' || value === 'ultra')
-    && options.some((option) => option.reasoningEffort === 'xhigh')) return 'xhigh';
-  if (options.some((option) => option.reasoningEffort === model?.defaultReasoningEffort)) {
-    return model!.defaultReasoningEffort;
-  }
-  return options[0]?.reasoningEffort || value;
-}
+import { reasoningEffortLabel, reasoningSliderOptions, reasoningSliderValue } from './model-reasoning';
 
 function fastTierAvailable(model: ModelOption | undefined) {
   return Boolean(model?.serviceTiers.some((tier) => /(?:fast|priority)/i.test(`${tier.id} ${tier.name}`)));

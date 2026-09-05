@@ -27,6 +27,8 @@ attachment, file-access, or rendering behavior.
 | `src/server` | HTTP/WebSocket relay, endpoint authentication, routing, and device registry |
 | `src/connector` | Codex app-server/Desktop integration, history, files, approvals, and reconnect |
 | `src/shared` | Strict protocol, authentication, encryption, activity, message, and shared file-type primitives |
+| `src/browser-control` | Experimental task/document grants, request lifetime and trusted-host adapter seam; not wired into production |
+| `extension` | Independently built MV3 extension; opt-in existing-Session browser control |
 | `test` | Integration, behavior, security, and regression tests |
 | `scripts` | Relay administration plus Windows and Linux connector installation/watchdogs |
 | `docs` / `deploy` | User documentation, diagrams, and optional ingress example |
@@ -76,6 +78,11 @@ relay, or local-computer trust boundary. Load large renderers on demand, bound t
 generated markup, and preserve a safe plain-text fallback.
 
 ## Extra checks
+
+- For Browser Agent work, read [the development plan](browser-agent.md), run `npm run test:extension`
+  as well as the normal checks, and test cancellation, document replacement, and concurrent task bindings.
+  Never treat model-provided task identifiers or a browser tab ID alone as authorization. Keep remote
+  access disabled until trusted task binding and encrypted endpoint pairing pass end-to-end tests.
 
 - Keep shared click/focus rules in `styles/_interaction.scss`; add hover styling through its capability-gated
   mixin. Preserve keyboard `:focus-visible` and persistent selected states, and ignore touch/drag movement

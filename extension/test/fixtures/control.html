@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>Anywhere Browser 固定测试页</title>
+<style>body{font:16px/1.8 system-ui;max-width:800px;margin:40px auto;padding:0 20px;color:#243047}section{min-height:850px}table{border-collapse:collapse;width:100%}th,td{padding:10px;border-bottom:1px solid #ddd;text-align:left}input,button{font:inherit;padding:8px}</style>
+<h1>Anywhere Browser 固定测试页</h1><p>仅合成数据，没有账号、支付、网络提交或业务副作用。</p>
+<p><a href="child.html" target="_blank">打开同站测试子页（独立交互验收）</a></p>
+<section><h2>产品目录</h2><table><tr><th>产品</th><th>每件质量（kg）</th><th>单价（元）</th></tr><tr><td>Atlas</td><td>3</td><td>12</td></tr><tr><td>Boreal</td><td>5</td><td>7</td></tr><tr><td>Cedar</td><td>2</td><td>20</td></tr><tr><td>Dawn</td><td>4</td><td>9</td></tr><tr><td>Ember</td><td>1</td><td>30</td></tr></table></section>
+<section><h2>固定订单</h2><table><tr><th>产品</th><th>件数</th></tr><tr><td>Atlas</td><td>4</td></tr><tr><td>Boreal</td><td>6</td></tr><tr><td>Cedar</td><td>3</td></tr><tr><td>Dawn</td><td>5</td></tr><tr><td>Ember</td><td>2</td></tr></table><p>以上表格用于只读 MCP 评估，请勿为评估操作下方交互示例。</p></section>
+<section><h2>交互示例（单独验收）</h2><label for="query">搜索测试</label><input id="query" type="search" placeholder="输入 demo"><p id="echo">尚未输入</p><button id="increment" type="button">计数 +1</button><p id="count">计数：0</p><div data-anywhere-private>private-fixture-marker</div><input type="password" value="password-fixture-marker"><textarea hidden>hidden-draft-marker</textarea></section>
+<script>let count=0;document.querySelector('#increment').onclick=()=>{document.querySelector('#count').textContent=`计数：${++count}`};document.querySelector('#query').oninput=(event)=>{document.querySelector('#echo').textContent=`当前输入：${event.target.value}`};</script></html>

@@ -4,6 +4,17 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Support GPT-6 Astra through the selected Connector's live model catalog. Show all advertised reasoning
+  levels, including distinct Max and Ultra options, and preserve them when editing or saving settings.
+- Keep injected browser guidance out of displayed user messages and history matching, and drain pending
+  RPCs before releasing a Desktop connector runtime so concurrent reads finish normally.
+- Replaced the local-only browser prototype with opt-in extension pairing, environment/existing Session
+  selection and document consent; added session-bound MCP snapshot/click/fill/scroll tools over E2E routing
+  and private loopback IPC. No ten-minute grant expiry, no replacement Session, no Desktop writer takeover.
+- Added a compact popup, fixed icon/tab-specific status, secondary revoke menu and Web Session status.
+  Added SDK/IPC and compiled-worker real WS/E2E regression tests and a live ephemeral Codex probe.
+  Actual Chrome/Edge, Desktop UI and ECS acceptance remain required; no production deployment or release.
+
 ## v0.2.1 — 2026-09-04
 
 - Unified click feedback across buttons, links, menus, and disclosure controls: suppress native tap

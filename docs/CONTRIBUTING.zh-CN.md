@@ -26,6 +26,8 @@ npm run build
 | `src/server` | HTTP/WebSocket 转发、端点鉴权、路由和设备注册表 |
 | `src/connector` | Codex app-server/Desktop 集成、历史、文件、审批和重连 |
 | `src/shared` | 严格协议、鉴权、加密、活动状态、消息和共享文件类型基础能力 |
+| `src/browser-control` | 实验性的任务/文档授权、请求生命周期和可信宿主适配接口；未接入生产 |
+| `extension` | 独立构建的 MV3 扩展；显式启用的原 Session 浏览器控制 |
 | `test` | 集成、行为、安全与回归测试 |
 | `scripts` | 转发服务管理，以及 Windows、Linux 连接器安装和守护 |
 | `docs` / `deploy` | 用户文档、示意图和可选入口示例 |
@@ -64,6 +66,10 @@ Pull Request 应足够聚焦，便于审阅和说明用户价值。只有成熟�
 标记必须清洗，并始终保留安全纯文本回退。
 
 ## 补充检查
+
+- Browser Agent 开发先阅读[开发方案](browser-agent.zh-CN.md)，常规检查之外执行
+  `npm run test:extension`，验证取消、文档替换及多任务并发隔离。模型传入的任务 ID 或单独的标签页 ID
+  都不能作为授权。可信任务绑定与加密端点配对通过端到端测试之前，远程访问保持关闭。
 
 - 点击与焦点规则统一放在 `styles/_interaction.scss`，hover 样式使用其中按设备能力限定的 mixin。
   保留键盘 `:focus-visible` 和持续选中状态；更新菜单悬停项时忽略触摸与拖动事件。

@@ -1,4 +1,5 @@
 import { publicError } from '../shared/protocol.js';
+import type { BrowserSessionBroker } from '../browser-control/session-broker.js';
 import {
   mergeDesktopSessionStatuses,
   type DesktopThreadStatus,
@@ -30,6 +31,7 @@ type CodexGateway = {
   listApprovals(threadId: unknown, clientId?: string): any;
   respondApproval(approvalId: unknown, approved: boolean, threadId?: unknown): Promise<any>;
   getDesktopTurnOverrides(threadId: string): Promise<Payload> | Payload;
+  prepareDesktopTurn?(): Promise<void>;
   isLargeSession(threadId: string): Promise<boolean>;
   canOwnSession(threadId: string): boolean;
   needsDesktopPermissionRecovery(threadId: string): Promise<boolean>;
@@ -41,6 +43,7 @@ type DesktopGateway = {
   renameThread(options: Payload): Promise<any>;
 };
 type Dependencies = {
+  browser?: BrowserSessionBroker;
   codex: CodexGateway;
   desktop?: DesktopGateway | null;
   attachments: { save(payload: Payload): Promise<any>; read(payload: Payload): Promise<any> };
@@ -70,7 +73,7 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
 const DESKTOP_STATUS_CACHE_MS = 15_000;
 
 export function createRequestHandler({
-  codex, desktop, attachments, visualizations, downloads, deviceId,
+  codex, desktop, attachments, visualizations, downloads, deviceId, browser,
   deviceLabel = deviceId, mode = desktop ? 'desktop' : 'headless',
   networkAccess = false, allowFullAccess = false,
 }: Dependencies) {
@@ -97,7 +100,7 @@ export function createRequestHandler({
     try {
       const data = await dispatchAction({
         action, payload, requestId, clientId, clientDeviceId,
-        codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode,
+        codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode, browser,
         networkAccess, allowFullAccess, getDesktopThreads, refreshDesktopThreads,
       });
       return { type: 'response', clientId, requestId, ok: true, data };
@@ -109,9 +112,25 @@ export function createRequestHandler({
 
 async function dispatchAction({
   action, payload, requestId, clientId, clientDeviceId,
-  codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode,
+  codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode, browser,
   networkAccess, allowFullAccess, getDesktopThreads, refreshDesktopThreads,
 }: DispatchContext) {
+  if (action.startsWith('browser.')) {
+    if (!browser) throw new Error('browser_control_not_enabled_on_connector');
+    if (!clientId || !clientDeviceId) throw new Error('browser_authenticated_device_required');
+    const client = { clientId, clientDeviceId };
+    if (action === 'browser.bind') {
+      // Validate the existing Session. Never create, resume, or send a prompt here.
+      return browser.validateAndBind(client, payload.threadId, payload.target, (threadId) => codex.readSession(threadId));
+    }
+    if (action === 'browser.status') return browser.status(payload.threadId);
+    if (action === 'browser.adopt') return browser.adopt(client, payload.operationRequestId, payload.parentGrantId, payload.target);
+    if (action === 'browser.restore') return browser.restore(client, payload.grantId, payload.target);
+    if (action === 'browser.heartbeat') return browser.heartbeat(client, payload.grantId);
+    if (action === 'browser.revoke') return browser.revoke(client, payload.grantId);
+    if (action === 'browser.result') return browser.result(client, payload);
+    throw new Error('browser_unknown_action');
+  }
   if (action === 'connector.status') {
     return {
       deviceId,
@@ -120,7 +139,7 @@ async function dispatchAction({
       platform: process.platform,
       codexOnline: Boolean(codex.child),
       activeTurn: Boolean(codex.activeTurn),
-      capabilities: { networkAccess, fullAccess: allowFullAccess },
+      capabilities: { networkAccess, fullAccess: allowFullAccess, ...(browser ? { browserControl: true } : {}) },
     };
   }
   if (action === 'sessions.list') {
@@ -190,11 +209,11 @@ async function dispatchAction({
   if (action === 'file.markdown.read') return downloads.readMarkdown(payload);
   if (action === 'file.text.read') return downloads.readText(payload);
   if (action === 'turn.start') return startTurn({
-    codex, desktop, mode, payload, clientId, requestId,
+    codex, desktop, mode, payload, clientId, requestId, browser,
   });
   if (action === 'turn.steer') {
     return {
-      ...await codex.steerTurn({ ...payload, clientId, requestId }),
+      ...await codex.steerTurn({ ...payload, text: browser?.withContext(String(payload.threadId || '').trim(), payload.text) ?? payload.text, clientId, requestId }),
       delivery: 'appServer',
     };
   }
@@ -231,20 +250,21 @@ async function dispatchAction({
 }
 
 async function startTurn({
-  codex, desktop, mode, payload, clientId, requestId,
-}: Pick<DispatchContext, 'codex' | 'desktop' | 'mode' | 'payload' | 'clientId' | 'requestId'>) {
+  codex, desktop, mode, payload, clientId, requestId, browser,
+}: Pick<DispatchContext, 'codex' | 'desktop' | 'mode' | 'payload' | 'clientId' | 'requestId' | 'browser'>) {
   const threadId = String(payload.threadId || '').trim();
   if (!threadId || mode === 'headless') {
-    return { ...await codex.startTurn({ ...payload, clientId, requestId }), delivery: 'appServer' };
+    return { ...await codex.startTurn({ ...payload, text: browser?.withContext(threadId, payload.text) ?? payload.text, clientId, requestId }), delivery: 'appServer' };
   }
   // Existing Desktop tasks must keep their original writer. Starting or
   // resuming them through the bridge's app-server creates a second writer and
   // makes later Desktop delivery fail with "already has an active writer".
   if (!desktop) throw new Error('desktop_app_unavailable');
+  await codex.prepareDesktopTurn?.();
   const { model, thinking } = await codex.getDesktopTurnOverrides(threadId);
   return desktop.sendMessage({
     threadId,
-    text: payload.text,
+    text: browser?.withContext(threadId, payload.text) ?? payload.text,
     requestId,
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),

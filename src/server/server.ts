@@ -47,6 +47,7 @@ type SocketMeta =
   | { role: 'client'; id: string; device: AuthenticatedDevice }
   | { role: 'connector'; deviceId: string; device: AuthenticatedDevice };
 type BridgeServerOptions = {
+  extensionOrigins?: string[];
   connectorToken?: unknown;
   publicDir?: string;
   uiLanguage?: unknown;
@@ -78,6 +79,8 @@ type AuthLimiterOptions = {
 type AuthEntry = { failures: number; windowStartedAt: number; lockedUntil: number };
 
 export function createBridgeServer(options: BridgeServerOptions = {}) {
+  const extensionOrigins = options.extensionOrigins ?? (process.env.BRIDGE_EXTENSION_ORIGINS || '').split(',').map((value) => value.trim()).filter(Boolean);
+  if (extensionOrigins.some((origin) => !/^chrome-extension:\/\/[a-p]{32}$/.test(origin))) throw new Error('invalid_extension_origin_allowlist');
   const connectorToken = String(options.connectorToken || process.env.BRIDGE_CONNECTOR_TOKEN || '');
   if (connectorToken.length < 32) throw new Error('BRIDGE_CONNECTOR_TOKEN must contain at least 32 characters');
   const publicDir = resolve(options.publicDir || defaultPublicDir);
@@ -135,7 +138,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       socket.destroy();
       return;
     }
-    if (request.method !== 'GET' || url.pathname !== '/ws' || !originAllowed(request)) {
+    if (request.method !== 'GET' || url.pathname !== '/ws' || !originAllowed(request, extensionOrigins)) {
       if (url.pathname === '/ws') socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
       socket.destroy();
       return;
@@ -632,9 +635,10 @@ function getClientAddress(request: IncomingMessage, trustProxy: boolean) {
   return String(request.socket.remoteAddress || 'unknown').replace(/^::ffff:/, '');
 }
 
-function originAllowed(request: IncomingMessage) {
+function originAllowed(request: IncomingMessage, extensionOrigins: readonly string[] = []) {
   const origin = String(request.headers.origin || '').trim();
   if (!origin) return true;
+  if (/^chrome-extension:\/\/[a-p]{32}$/.test(origin)) return extensionOrigins.includes(origin);
   try {
     const originUrl = new URL(origin);
     const host = String(request.headers.host || '').trim().toLocaleLowerCase();

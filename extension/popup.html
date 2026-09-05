@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Codex Anywhere Browser</title></head>
+<body>
+  <main>
+    <header><img src="icon-32.png" width="24" height="24" alt=""><strong>Anywhere</strong><span class="pill">浏览器</span><details><summary aria-label="更多设置">···</summary><div class="menu"><button id="revoke">撤销起始页及所有子页</button><button id="disconnect">断开 Anywhere</button></div></details></header>
+    <div id="status" role="status" aria-live="polite">正在连接…</div>
+    <section id="setup"><label for="url">Anywhere 地址或配对链接</label><input id="url" type="password" placeholder="https://your-anywhere/#pair=…" autocomplete="off" spellcheck="false"><button id="connect" class="primary">连接 Anywhere</button><p class="hint">首次连接需要新的单次配对链接。Relay 需允许此扩展的 Origin：</p><code id="extension-origin"></code></section>
+    <section id="selection" hidden><label for="environment">运行环境</label><select id="environment"></select><label for="session">继续哪个 Session</label><select id="session"></select><p class="hint">授权后，在这个原会话中对话，即可读取、点击、输入和滚动当前页。PC 和 ECS 均可。</p><button id="grant" class="primary">授权当前页面</button><p class="fine">页面内容会端到端加密发给选中的环境。操作可能改变网站数据，请仅授权可信页面。</p></section>
+    <section id="authorized" hidden><div class="connected-icon">✓</div><h1>起始页已授权</h1><p id="task"></p><p id="page" class="hint"></p><p id="children-status" class="hint"></p><button id="enable-children" class="secondary">允许 AI 打开的同站子页</button><p class="fine">可选的站点权限，用于 AI 从起始页打开的新标签页；不自动纳管手动页签或网站弹窗。跨站需重新授权。</p><p class="fine">在 Anywhere 原会话中继续对话。页面在线不代表 MCP 工具已加载；工具调用成功后才有链路验证记录。起始页导航或撤销后，所有子页一并停止纳管。</p></section>
+    <button id="cancel" class="secondary" hidden>取消连接</button>
+    <p id="build-info" class="fine" aria-label="扩展构建版本"></p>
+  </main>
+  <script type="module" src="/src/popup.ts"></script>
+</body></html>
