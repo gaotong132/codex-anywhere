@@ -8,8 +8,13 @@ export function localFilePathFromHref(href?: string) {
   if (!href) return null;
   let value = href.trim();
   try { value = decodeURIComponent(value); } catch { return null; }
+  const httpLink = /^https?:\/\//i.test(value);
   if (/^file:\/\//i.test(value)) {
-    try { value = decodeURIComponent(new URL(value).pathname); } catch { return null; }
+    try {
+      const url = new URL(value);
+      if (url.hostname && url.hostname !== 'localhost') return null;
+      value = decodeURIComponent(url.pathname);
+    } catch { return null; }
   } else if (/^https?:\/\//i.test(value)) {
     try {
       const url = new URL(value);
@@ -19,6 +24,7 @@ export function localFilePathFromHref(href?: string) {
   }
   value = value.replace(/[?#].*$/, '');
   if (/^\/[A-Za-z]:[\\/]/.test(value)) value = value.slice(1);
+  if (!httpLink && /^\/[^/]/.test(value)) return value.replace(/:\d+$/, '');
   if (!/^[A-Za-z]:[\\/]/.test(value) && !/^\\\\[^\\]/.test(value)) return null;
   return value.replace(/:\d+$/, '').replace(/\//g, '\\');
 }
@@ -42,7 +48,7 @@ export function isTextPreviewFilePath(path: string) {
 }
 
 export function localFilePathFromRelativeHref(href: string | undefined, basePath?: string) {
-  if (!href || !basePath || !/^[A-Za-z]:[\\/]/.test(basePath)) return null;
+  if (!href || !basePath || !/^(?:[A-Za-z]:[\\/]|\/[^/])/.test(basePath)) return null;
   const value = href.trim();
   if (!value || value.startsWith('#') || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value) || value.startsWith('//')) {
     return null;
@@ -50,6 +56,9 @@ export function localFilePathFromRelativeHref(href: string | undefined, basePath
   let decoded;
   try { decoded = decodeURIComponent(value).replace(/[?#].*$/, ''); } catch { return null; }
   if (!decoded) return null;
+  if (basePath.startsWith('/')) {
+    return decoded.startsWith('/') ? decoded : `${basePath.slice(0, basePath.lastIndexOf('/') + 1)}${decoded}`;
+  }
   const separator = Math.max(basePath.lastIndexOf('\\'), basePath.lastIndexOf('/'));
   if (separator < 2) return null;
   return `${basePath.slice(0, separator + 1)}${decoded.replace(/\//g, '\\')}`;

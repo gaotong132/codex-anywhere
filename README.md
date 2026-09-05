@@ -66,6 +66,7 @@ Clicking a supported local file link opens a read-only preview without leaving t
 | File | Browser behavior |
 | --- | --- |
 | Markdown | Rendered Markdown; Mermaid blocks render on demand and relative links remain usable |
+| SVG | Rendered image with Image/Source controls; local image references and `svg` code blocks also render |
 | Common source and config files | Code preview with language detection and on-demand syntax highlighting |
 | Plain text, logs, CSV, and TSV | Plain-text preview with horizontal scrolling |
 | Binary, sensitive, or unrecognized files | Existing confirmed download flow; no inline preview |
@@ -74,6 +75,10 @@ Text previews accept only regular UTF-8 files up to 2 MiB inside configured conn
 extensions such as `.env`, `.pem`, and `.key` are intentionally excluded. Every preview keeps a Download
 button, and highlighting falls back to escaped plain code if a language is unavailable or the input is
 too large to highlight efficiently.
+
+SVG previews use an isolated image context, preserving vector detail without executing scripts or loading
+external resources. Self-contained SVGs (including embedded styles and images) work best. Malformed SVGs
+keep the source and download available. Local file links support Windows and Linux connector paths.
 
 ### Per-turn code changes
 

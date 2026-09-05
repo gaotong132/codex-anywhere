@@ -17,6 +17,7 @@ import {
   localFilePathFromRelativeHref,
 } from './file-utils';
 import { CodePreview } from './code-preview';
+import { isSvgCodeClass, isSvgFilePath, LocalSvgImage, SvgPreview } from './svg-preview';
 import { t } from './i18n';
 import { progressTypewriterKey, type TimelineItem } from './history-utils';
 import { isMermaidCodeClass, MermaidDiagram } from './mermaid-diagram';
@@ -205,11 +206,13 @@ const MessageMarkdown = memo(function MessageMarkdown({
   attachmentPath,
   basePath,
   onDownloadFile,
+  onReadTextFile,
 }: {
   text: string;
   attachmentPath?: string;
   basePath?: string;
   onDownloadFile: (path: string) => void;
+  onReadTextFile?: MessageBubbleProps['onReadTextFile'];
 }) {
   const components = useMemo<Components>(() => ({
     pre: ({ node: _node, children, ...props }) => {
@@ -218,6 +221,9 @@ const MessageMarkdown = memo(function MessageMarkdown({
       if (code && isMermaidCodeClass(code.props.className)) {
         const source = String(code.props.children ?? '').replace(/\n$/, '');
         return <MermaidDiagram source={source} />;
+      }
+      if (code && isSvgCodeClass(code.props.className)) {
+        return <SvgPreview source={String(code.props.children ?? '').replace(/\n$/, '')} />;
       }
       return <pre {...props}>{children}</pre>;
     },
@@ -235,6 +241,10 @@ const MessageMarkdown = memo(function MessageMarkdown({
       const localPath = localFilePathFromHref(src) || localFilePathFromRelativeHref(src, basePath);
       if (!localPath) return <img {...props} src={src} alt={alt || ''} loading="lazy" />;
       if (attachmentPath === localPath) return null;
+      if (isSvgFilePath(localPath) && onReadTextFile) {
+        return <LocalSvgImage path={localPath} name={alt || localFileName(localPath)}
+          onRead={onReadTextFile} onOpen={onDownloadFile} />;
+      }
       return (
         <a href={src} onClick={(event) => {
           event.preventDefault();
@@ -242,7 +252,7 @@ const MessageMarkdown = memo(function MessageMarkdown({
         }}>{alt || localFileName(localPath)}</a>
       );
     },
-  }), [attachmentPath, basePath, onDownloadFile]);
+  }), [attachmentPath, basePath, onDownloadFile, onReadTextFile]);
   return (
     <ReactMarkdown
       remarkPlugins={markdownPlugins}
@@ -562,6 +572,7 @@ function MessageBubbleComponent({
         <MessageMarkdown
           text={item.text}
           attachmentPath={item.attachment?.path}
+          onReadTextFile={onReadTextFile}
           onDownloadFile={(path) => void openLocalFile(path)}
         />
         {item.attachment && (
@@ -680,11 +691,13 @@ function MessageBubbleComponent({
               )}
               {filePreview.status === 'ready' && filePreview.kind === 'markdown' && (
                 <article className="message assistant markdown-preview-content">
-                  <MessageMarkdown text={filePreview.content} basePath={filePreview.path} onDownloadFile={(path) => void openLocalFile(path)} />
+                  <MessageMarkdown text={filePreview.content} basePath={filePreview.path} onReadTextFile={onReadTextFile} onDownloadFile={(path) => void openLocalFile(path)} />
                 </article>
               )}
               {filePreview.status === 'ready' && filePreview.kind !== 'markdown' && (
-                <CodePreview content={filePreview.content} language={filePreview.language} />
+                isSvgFilePath(filePreview.path)
+                  ? <SvgPreview key={filePreview.path} source={filePreview.content} name={filePreview.name} />
+                  : <CodePreview content={filePreview.content} language={filePreview.language} />
               )}
             </main>
           </div>

@@ -4,6 +4,9 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Render linked SVG files, local SVG image references, and `svg` code blocks as isolated vector images, with
+  source viewing and existing downloads preserved. Resolve Linux file links and Markdown-relative paths alongside Windows paths.
+
 - Execute authorized browser tasks directly, distinguish host MCP approval rejection from site/login failures, and
   document per-tool preapproval under Codex `never`. Open new-site destinations for user authorization without reading
   them; ordinary links preserve the parent page. Keep older browser guidance hidden in history and add a real host write probe.

@@ -890,6 +890,15 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
 .markdown-preview-state { display: grid; min-height: 45dvh; place-items: center; align-content: center; gap: 12px; color: #8f9db1; font-size: 12px; text-align: center; }
 .markdown-preview-state button { height: 32px; border: 1px solid #354968; border-radius: 8px; padding: 0 12px; color: #aecaef; background: #18263a; cursor: pointer; }
 .markdown-preview-state.failed { color: #e8a4aa; }
+.svg-preview { display: block; width: 100%; max-width: 1120px; margin: 12px auto; overflow: hidden; border: 1px solid #334056; border-radius: 12px; }
+.svg-preview-toolbar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; color: #b9cdf0; background: #17202e; }
+.svg-preview-toolbar > span { min-width: 0; flex: 1; @include truncate; font-size: 12px; }
+.svg-preview-toolbar button { padding: 5px 10px; border: 1px solid #334056; border-radius: 7px; color: #b9cdf0; background: transparent; cursor: pointer; }
+.svg-preview-toolbar button[aria-pressed="true"] { color: #fff; background: #304b70; }
+.svg-preview-canvas, .local-svg-image { display: grid; min-height: 80px; place-items: center; padding: 12px; overflow: auto; color: #334056; background: #fff; color-scheme: light; }
+.svg-preview-image { display: block; width: 100%; height: auto; max-height: 75dvh; object-fit: contain; }
+.local-svg-image { max-width: 100%; margin: 8px 0; border-radius: 10px; cursor: zoom-in; }
+.svg-preview .code-file-preview { border: 0; border-radius: 0; }
 .turn-diff-truncated { max-width: 1120px; margin: 0 auto 10px; padding: 8px 11px; border: 1px solid #6f5730; border-radius: 8px; color: #e6bf79; background: #251e13; font-size: 11px; }
 .turn-diff-lightbox {
   background:
