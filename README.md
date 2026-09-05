@@ -40,6 +40,9 @@ the selected connector node; a small relay you control provides the remote meeti
   selected connector owns that exact turn. Messages are sent directly; Codex Anywhere does not maintain a
   Web queue.
 - **Choose how Codex works** — view or change the model, reasoning effort, fast mode, and approval mode.
+  GPT-6 Astra (`gpt-6-astra`) appears when available in the selected connector's Codex model catalog;
+  reasoning choices follow that environment, including Max and Ultra when advertised. See the
+  [official Codex model guide](https://learn.chatgpt.com/docs/models) for model availability.
   Headless connectors support user approval, Codex auto-review, or an explicitly enabled full-access mode;
   the selection and new-task default stay scoped to the current execution environment.
 - **Use the results on mobile** — preview sent or generated images; open linked Markdown, source, config,

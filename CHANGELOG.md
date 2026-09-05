@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Support GPT-6 Astra through the selected Connector's live model catalog. Show all advertised reasoning
+  levels, including distinct Max and Ultra options, and preserve them when editing or saving settings.
 - Keep injected browser guidance out of displayed user messages and history matching, and drain pending
   RPCs before releasing a Desktop connector runtime so concurrent reads finish normally.
 - Replaced the local-only browser prototype with opt-in extension pairing, environment/existing Session

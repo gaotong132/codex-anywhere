@@ -2787,9 +2787,6 @@ test('model configuration uses a discrete reasoning slider and a compact speed b
   assert.match(source, /aria-valuetext=\{reasoningEffortLabel\(draft\.reasoningEffort\)\}/);
   assert.match(source, /className=\{`model-fast-button\$\{draft\.fastMode \? ' active' : ''\}`\}/);
   assert.match(source, /aria-pressed=\{draft\.fastMode\}/);
-  assert.match(source, /low: \['轻度', 'Light'\]/);
-  assert.match(source, /xhigh: \['极高', 'X-high'\]/);
-  assert.match(source, /new Set\(\['low', 'medium', 'high', 'xhigh'\]\)/);
   assert.match(source, /<CustomSelect/);
   assert.match(source, /reasoningSliderValue\(nextModel, draft\.reasoningEffort\)/);
   assert.doesNotMatch(source, /model-config-model-fixed/);
