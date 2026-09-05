@@ -35,8 +35,10 @@ It preserves the existing E2E protocol, device identities, workspace boundaries,
 
 - `npm run check`: type checks and 337 tests, including new download, preview size, extension lifecycle, RPC dispatch,
   and rollout cache regressions.
-- `npm run test:extension`: 21 tests covering the compiled worker, pairing, reconnect, current-Session page consent,
+- `npm run test:extension`: 22 tests covering the compiled worker, pairing, reconnect, current-Session page consent,
   child pages, and revocation.
+- Connection status remains pending until environment initialization finishes; page authorization stays disabled
+  during that interval, including after a worker reload.
 - `npm run build`: production Web and Node builds.
 - Headless Chrome checks using the actual React components: normal and empty file downloads, truncated-transfer
   rejection, cancellation, capability cleanup, SVG file/image/code previews, source switching, mobile layout,

@@ -29,7 +29,7 @@ async function status(windowId?: number) {
   const [tab] = await chrome.tabs.query({ active: true, ...(windowId === undefined ? { currentWindow: true } : { windowId }) });
   const current = tab?.id === undefined ? undefined : bindings.get(tab.id);
   const root = [...bindings.values()].find((entry) => entry.rootTabId === undefined);
-  return { connected: connection?.ready() ?? false, relayOnline: connection?.online ?? false,
+  return { connected: !connecting && (connection?.ready() ?? false), relayOnline: connection?.online ?? false,
     connecting, busy: busy.size > 0, origin, error, devices: connection?.devices ?? [], environmentId: connection?.environmentId ?? '', sessions,
     binding: root ? summary(root) : null, currentManaged: Boolean(current), childCount: Math.max(0, bindings.size - (root ? 1 : 0)),
     childPermission: root ? await chrome.permissions.contains({ origins: [sitePattern(root.target.origin)] }) : false,

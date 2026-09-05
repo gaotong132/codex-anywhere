@@ -37,8 +37,8 @@ function render() {
   const selected = currentSelection();
   const connected = state.origin === relayOrigin && state.relayOnline;
   const pageAvailable = Boolean(activeTab?.url && /^https?:\/\//.test(activeTab.url));
-  grant.disabled = busy || !selected || !pageAvailable;
-  grant.textContent = connected ? '授权当前页' : '连接页面控制';
+  grant.disabled = busy || state.connecting === true || !selected || !pageAvailable;
+  grant.textContent = state.connecting ? '正在连接…' : connected ? '授权当前页' : '连接页面控制';
   element('session-title').textContent = selected
     ? `${selected.environmentId} · ${selected.title || selected.threadId}`
     : selection ? '请在聊天页连接环境并选择会话' : '正在读取聊天会话…';

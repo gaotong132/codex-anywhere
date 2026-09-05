@@ -18,7 +18,7 @@ const popup = `chrome-extension://${extensionId}/popup.html`;
 const TOKEN = 'browser-integration-test-connector-token-123456';
 
 async function harness(t: test.TestContext) {
-  let duringSessionsList: (() => void) | undefined;
+  let duringSessionsList: (() => void | Promise<void>) | undefined;
   const relay = createBridgeServer({ connectorToken: TOKEN, extensionOrigins: [`chrome-extension://${extensionId}`] });
   const address = await relay.listen(0, '127.0.0.1');
   assert.ok(address && typeof address !== 'string');
@@ -37,7 +37,7 @@ async function harness(t: test.TestContext) {
         const client = { clientId: frame.clientId, clientDeviceId: frame.clientDeviceId };
         let data: unknown;
         if (frame.action === 'connector.status') data = { capabilities: { browserControl: true, browserGrantReplacement: true } };
-        else if (frame.action === 'sessions.list') { duringSessionsList?.(); data = { sessions: [{ id: 'task-a', title: 'Fixture A' }, { id: 'task-b', title: 'Fixture B' }] }; }
+        else if (frame.action === 'sessions.list') { await duringSessionsList?.(); data = { sessions: [{ id: 'task-a', title: 'Fixture A' }, { id: 'task-b', title: 'Fixture B' }] }; }
         else if (frame.action === 'browser.bind') data = broker.bind(client, p.threadId, p.target, {
           replaceExisting: p.replaceExisting === true, recoverOnly: p.recoverOnly === true,
         });
@@ -156,7 +156,7 @@ async function harness(t: test.TestContext) {
   const pairing = relay.deviceRegistry.createBrowserPairing();
   return { broker, send, sender, receive: (...args: Parameters<typeof onMessage>) => onMessage(...args),
     sendPanel: (type: string, payload: Frame = {}) => send(type, payload, { id: extensionId, url: `chrome-extension://${extensionId}/sidepanel.html` }),
-    onSessionList: (callback: () => void) => { duringSessionsList = callback; },
+    onSessionList: (callback: () => void | Promise<void>) => { duringSessionsList = callback; },
     openPanel: (windowId: number) => onActionClicked({ id: activeTab, windowId }), openedPanels,
     pairUrl: `${origin}/#pair=${encodeBrowserPairingCredential(pairing.credential)}`, origin,
     local, session, badges, document, clicks: () => clicks, injections: () => injections,
@@ -183,6 +183,27 @@ async function harness(t: test.TestContext) {
     manualTab: () => { const id = pages.size + 1; pages.set(id, makePage(id, 'https://example.com/manual')); activeTab = id; return id; },
     navigate: (id = 1) => onUpdated(id, { status: 'loading' }), close: (id = 1) => onRemoved(id), replace: () => { pages.get(1)!.documentId = 'doc-b'; } };
 }
+
+test('connection status stays pending until environment initialization finishes', async (t) => {
+  const h = await harness(t);
+  let started!: () => void;
+  let release!: () => void;
+  const entered = new Promise<void>((resolve) => { started = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  h.onSessionList(() => { started(); return gate; });
+  const connecting = h.send('connect', { url: h.pairUrl });
+  await entered;
+  try {
+    const state = (await h.send('status')).result;
+    assert.equal(state.relayOnline, true);
+    assert.equal(state.connecting, true);
+    assert.equal(state.connected, false);
+  } finally { release(); }
+  const result = await connecting;
+  assert.equal(result.ok, true);
+  assert.equal(result.result.connecting, false);
+  assert.equal(result.result.connected, true);
+});
 
 test('side panel grants only the explicitly selected original Session and keeps it when the panel reopens', async (t) => {
   const h = await harness(t);
