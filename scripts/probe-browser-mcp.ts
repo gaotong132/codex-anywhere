@@ -91,7 +91,9 @@ if (process.argv.includes('--server')) {
   try {
     await rpc('initialize', { clientInfo: { name: 'anywhere-browser-probe', version: '0.0.1' }, capabilities: { experimentalApi: true } });
     const thread = await rpc('thread/start', { cwd: process.cwd(), ephemeral: true, approvalPolicy: 'never', sandbox: 'read-only',
-      config: { 'mcp_servers.anywhere_browser_probe': { command: process.execPath,
+      // Prevent duplicate tool names from selecting the installed business endpoint.
+      // This override belongs only to the ephemeral probe task.
+      config: { 'mcp_servers.anywhere_browser.enabled': false, 'mcp_servers.anywhere_browser_probe': { command: process.execPath,
         args: integration ? ['--import', 'tsx', fileURLToPath(new URL('../src/browser-control/mcp-server.ts', import.meta.url)), endpointFile]
           : ['--import', 'tsx', fileURLToPath(import.meta.url), '--server'], required: true,
         ...(writeProbe ? { tools: { anywhere_browser_click: { approval_mode: 'approve' } } } : {}) } },
