@@ -125,6 +125,8 @@ export class CodexAppServer extends EventEmitter {
   approvals: Map<string, PendingApproval>;
   activeTurn: TurnContext | null;
   private threadRelease: Promise<void>;
+  private runtimeRelease: Promise<void> | null = null;
+  private inflightRpcs = new Set<Promise<unknown>>();
   private releaseRuntimeAfterTurn: boolean;
   sessionMetadata: Map<string, SessionMetadata>;
   sessionModelSettings: Map<string, RolloutModelSettings>;
@@ -160,6 +162,7 @@ export class CodexAppServer extends EventEmitter {
   }
 
   async ensureStarted(): Promise<void> {
+    if (this.runtimeRelease) await this.runtimeRelease;
     if (this.readyPromise) return this.readyPromise;
     if (this.child?.stdin?.writable) return;
     this.readyPromise = this.startProcess();
@@ -728,12 +731,23 @@ export class CodexAppServer extends EventEmitter {
         // before handing that same task to Desktop. Never stop a replacement or
         // a runtime executing another turn. Headless environments keep theirs.
         if (!this.releaseRuntimeAfterTurn || !child || this.child !== child || this.activeTurn) return;
-        const exited = new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error('codex_writer_release_timeout')), 5_000);
-          child.once('close', () => { clearTimeout(timer); resolve(); });
-        });
-        await this.close();
-        await exited;
+        let finishRelease!: () => void;
+        this.runtimeRelease = new Promise<void>((resolve) => { finishRelease = resolve; });
+        try {
+          // Let already dispatched RPCs finish. New calls wait for the next
+          // runtime, including later steps of an existing multi-RPC operation.
+          await Promise.allSettled([...this.inflightRpcs]);
+          if (this.child !== child || this.activeTurn) return;
+          const exited = new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => reject(new Error('codex_writer_release_timeout')), 5_000);
+            child.once('close', () => { clearTimeout(timer); resolve(); });
+          });
+          await this.close();
+          await exited;
+        } finally {
+          this.runtimeRelease = null;
+          finishRelease();
+        }
       })
       .then(() => undefined);
     this.threadRelease = release.catch((error) => {
@@ -857,6 +871,10 @@ export class CodexAppServer extends EventEmitter {
   }
 
   async rpcRaw<T = any>(method: string, params: JsonObject = {}, timeoutMs = RPC_TIMEOUT_MS): Promise<T> {
+    if (this.runtimeRelease) {
+      await this.runtimeRelease;
+      await this.ensureStarted();
+    }
     const id = ++this.nextId;
     const promise = new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -876,7 +894,9 @@ export class CodexAppServer extends EventEmitter {
         pending.reject(error instanceof Error ? error : new Error(String(error)));
       }
     }
-    return promise;
+    this.inflightRpcs.add(promise);
+    try { return await promise; }
+    finally { this.inflightRpcs.delete(promise); }
   }
 
   sendRpcNotification(method: string, params: JsonObject, includeId = false) {

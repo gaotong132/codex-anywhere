@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Keep injected browser guidance out of displayed user messages and history matching, and drain pending
+  RPCs before releasing a Desktop connector runtime so concurrent reads finish normally.
 - Replaced the local-only browser prototype with opt-in extension pairing, environment/existing Session
   selection and document consent; added session-bound MCP snapshot/click/fill/scroll tools over E2E routing
   and private loopback IPC. No ten-minute grant expiry, no replacement Session, no Desktop writer takeover.
