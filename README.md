@@ -92,10 +92,12 @@ before/after totals. Completed turns retain compact counts for tools, commands, 
 plus bounded model-setting changes and failure or cancellation reasons. Raw reasoning, tool arguments, and
 tool output are not copied into these summaries.
 
-## Browser Agent development preview
+## Browser Agent (experimental add-on)
 
-Browser control is being developed in this repository as an independently built extension and browser
-control module. The development branch now connects an explicitly authorized page to an **existing Session**
+The Anywhere Browser extension (Browser Agent) is an **experimental add-on**, disabled by default and built,
+installed, and configured separately when needed. Normal Codex Anywhere session features do not require it;
+its configuration, interactions, and compatibility may still change.
+It connects an explicitly authorized page to an **existing Session**
 on PC, ECS, or another Connector, using encrypted routing and session-bound MCP read/click/fill/scroll tools.
 It requires opt-in Relay/Connector/MCP setup and real-browser acceptance; production is not changed automatically.
 See the [development plan](docs/browser-agent.md) and [extension instructions](extension/README.md).

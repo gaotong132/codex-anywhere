@@ -2,8 +2,9 @@
 
 [English](browser-agent.md) | 简体中文
 
-分支 `codex/browser-agent`，稳定基线 `v0.2.1`。当前实现为可配置的会话浏览器控制开发版；不自动发布、
-打 Tag、合并 main 或重启现网。目标覆盖 PC Desktop、ECS CLI 及其他 Connector，浏览器是资源而不是执行环境。
+Browser Agent 已纳入 `main`，仍属于**实验性附加特性**，默认关闭，需要单独构建、安装插件并显式配置
+Relay、Connector 和 MCP。日常会话功能无需安装插件；其配置、交互和兼容性仍可能调整。
+目标覆盖 PC Desktop、ECS CLI 及其他 Connector，浏览器是资源而不是执行环境。
 
 ## 用户路径
 

@@ -1,6 +1,10 @@
-# Anywhere Browser extension (development branch)
+# Anywhere Browser extension (experimental add-on)
 
 English | [简体中文](README.zh-CN.md)
+
+This extension is an **experimental add-on** for Codex Anywhere, disabled by default. It requires a separate
+build and installation plus explicit Relay, Connector, and MCP configuration. Normal session features do
+not require it; its configuration, interactions, and compatibility may still change.
 
 Connect to Anywhere, choose an execution environment (PC, ECS, or any connected node), choose an **existing
 Session**, and authorize the current page. Continue that original Session in Anywhere to read, click, fill,

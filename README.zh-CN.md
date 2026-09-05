@@ -77,9 +77,11 @@ Codex 提供 Token 统计时，右上角活动状态环也会显示模型上下�
 可获得的压缩前后用量。已完成轮次会保留工具、命令、编辑和其他操作的精简计数，以及有界的模型配置
 变化、失败或中止原因；这些汇总不会复制原始推理、工具参数或工具输出。
 
-## Browser Agent 开发预览
+## Browser Agent（实验性附加特性）
 
-浏览器控制在同一仓库内开发，扩展与浏览器控制模块独立构建。开发分支已实现：连接 Anywhere，选择 PC、
+Anywhere 浏览器插件（Browser Agent）是**实验性附加特性**，默认关闭，按需单独构建、安装和配置。
+日常使用 Codex Anywhere 的会话功能无需安装此插件；插件的配置、交互和兼容性仍可能调整。
+当前支持：连接 Anywhere，选择 PC、
 ECS 或其他环境的**已有 Session**，授权当前页，再由原会话通过加密链路和 MCP 读取、点击、输入、滚动。
 需要显式配置 Relay/Connector/MCP 并完成真实浏览器验收；不会自动更新现网。
 详见[开发方案](docs/browser-agent.zh-CN.md)与[扩展使用说明](extension/README.zh-CN.md)。
