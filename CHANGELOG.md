@@ -4,6 +4,10 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Fix normal-page authorization after switching tabs with the side panel open: read active-tab metadata and request
+  current-site access on the authorization click. Remove duplicate environment/Session selectors from control settings;
+  use the current chat Session and cancel consent if the target or Session changes during the permission prompt.
+
 - Add experimental side panel chat using the live Web app, with current-Session selection and explicit page
   authorization. Preserve separate pairing and worker-owned grants; add an allowlisted embed entry, source
   and freshness checks, and window/document-replacement regressions.

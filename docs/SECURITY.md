@@ -58,6 +58,9 @@ Origin; normal pages remain non-embeddable. Chat and extension keep separate dev
 interface carries only environment/Session selection and online state, never private keys or page execution
 commands. Authorization requires a user click in extension UI and validates the real window, tab, document,
 and current connector environment.
+The extension uses `tabs` for active-tab metadata and requests optional access to the current site on the user's
+authorization click. Chrome may retain this site permission, which also supports AI-created same-origin children;
+actual Session/document grants still require an explicit click and never adopt other manually opened tabs.
 
 The pairing credential is carried in the URL fragment, removed before the WebSocket connects, and stored
 by the relay only as a one-way verifier until it expires or is consumed.

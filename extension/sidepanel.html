@@ -15,7 +15,7 @@
   </section>
   <div id="frame-wrap" hidden><iframe id="chat" title="Codex Anywhere 聊天" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-popups-to-escape-sandbox" allow="clipboard-read; clipboard-write"></iframe></div>
   <p id="frame-error" role="status" hidden>聊天页面尚未连接。请检查网络、Relay 是否已更新以及扩展 Origin 白名单，然后重新加载聊天。</p>
-  <dialog id="control-dialog"><header><strong>页面控制（可选）</strong><button id="close-controls" aria-label="关闭页面控制设置">关闭</button></header><p>聊天沿用 Web 身份；页面控制需要插件自己的配对链接。请勿重复使用已消费的链接。</p><iframe src="popup.html" title="页面控制设置"></iframe></dialog>
+  <dialog id="control-dialog"><header><strong>页面控制设置</strong><button id="close-controls" aria-label="关闭页面控制设置">关闭</button></header><p>授权直接使用聊天当前选中的会话。首次连接页面控制时，使用插件自己的新配对链接；已有配对无需重做。</p><iframe src="popup.html" title="页面控制连接设置"></iframe></dialog>
   <footer id="build-info"></footer>
   <script type="module" src="/src/sidepanel.ts"></script>
 </body></html>

@@ -6,8 +6,8 @@ This extension is an **experimental add-on** for Codex Anywhere, disabled by def
 build and installation plus explicit Relay configuration; page control also needs Connector and MCP setup. Normal session features do
 not require it; its configuration, interactions, and compatibility may still change.
 
-Connect to Anywhere, choose an execution environment (PC, ECS, or any connected node), choose an **existing
-Session**, and authorize the current page. Continue that original Session in Anywhere to read, click, fill,
+In side panel chat, choose an execution environment (PC, ECS, or any connected node) and an **existing
+Session**, then authorize the current page. Continue that original Session in Anywhere to read, click, fill,
 and scroll. No replacement Session is created. The built manifest follows the root `package.json` version
 and displays `version dev (build fingerprint)`. The content fingerprint identifies the loaded artifacts;
 it does not publish a release or create a Tag.
@@ -22,11 +22,14 @@ it does not publish a release or create a Tag.
    handle approvals. The same browser profile and site can reuse existing Web pairing when host permission
    is granted; otherwise pair in the chat page.
 4. For page control, pair the extension separately through **Page control settings**, select the chat Session,
-   and click **Authorize current page**. Web and extension identities remain separate; one pairing link cannot be used twice.
+   and click **Authorize current page**, allowing the current site's access when Chrome prompts. Settings do not
+   ask for another environment or Session: authorization uses the current chat selection. Web and extension identities
+   remain separate; one pairing link cannot be used twice. Reloading the existing extension preserves pairing.
 
 Changing the chat Session does not transfer existing page consent. The panel shows the environment and Session
-that actually own the grant. After switching tabs, click the toolbar icon on the target tab again if authorization
-is unavailable, then explicitly authorize it. Closing the panel does not revoke page control. Revocation removes
+that actually own the grant. After switching tabs, authorize directly from the panel without another toolbar click.
+Changing the Session, tab, or document during the permission prompt requires a new authorization click.
+Closing the panel does not revoke page control. Revocation removes
 the root and its children; navigation, tab closure, and document replacement retain the existing revocation rules.
 
 Chat UI updates follow Relay/Web deployment: use **Reload chat** to load new code. Control protocol changes still
@@ -46,7 +49,11 @@ npm run test:extension
 ```
 
 Use Chrome 120+ → Extensions → Developer mode → Load unpacked → **`extension/dist`**. Reload the extension
-when upgrading the previous preview. Prefer a separate test browser profile.
+when upgrading the previous preview, and re-enable it if Chrome asks you to accept the added permission. Prefer a separate test browser profile.
+
+The `tabs` permission provides the active tab's address in the panel's window. Site access remains optional and is
+requested only on an authorization click. Chrome may remember that site permission; actual control still requires
+the selected Session, exact tab, and document grant. Other manually opened tabs are never automatically adopted.
 
 Click the **reload arrow on the extension card**, not the browser's page refresh button. Confirm the version
 and fingerprint on the card or popup footer match `version_name` in `extension/dist/manifest.json`.
@@ -88,11 +95,11 @@ page, then reopen the popup and check whether any new errors appear.
 
 ## Use and boundaries
 
-- Choose the environment and existing Session, verify its title, authorize the current page, then converse
+- Choose the environment and existing Session in chat, verify its title above the chat, authorize the current page, then converse
   in that Session in Anywhere. Keep one manually authorized root per extension/Session. Revoke the root and its
   children from the secondary menu before selecting another root or Session.
-- Optionally enable AI-opened same-site children in the popup and approve the current site's Chrome permission.
-  Without it, single-page control still works. `open_link` or a click on a new-tab link from a fresh snapshot creates
+- Site access granted by the side panel also permits AI-opened same-site children. Older temporary root grants
+  can request that optional permission from settings. `open_link` or a click on a new-tab link from a fresh snapshot creates
   a same-origin managed child. No arbitrary URLs, manually opened tabs, unsolicited site popups or cross-origin
   links/redirects inherit consent. Chrome stores site permission, while runtime checks still require the exact origin
   (including port), document and Session. Multiple managed pages require an explicit `pageId` from the list tool.
