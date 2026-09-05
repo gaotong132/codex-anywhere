@@ -27,8 +27,8 @@ attachment, file-access, or rendering behavior.
 | `src/server` | HTTP/WebSocket relay, endpoint authentication, routing, and device registry |
 | `src/connector` | Codex app-server/Desktop integration, history, files, approvals, and reconnect |
 | `src/shared` | Strict protocol, authentication, encryption, activity, message, and shared file-type primitives |
-| `src/browser-control` | Experimental task/document grants, request lifetime and trusted-host adapter seam; not wired into production |
-| `extension` | Independently built MV3 extension; opt-in existing-Session browser control |
+| `src/browser-control` | Session/document grants, request lifetime, and MCP interface for the experimental add-on; disabled by default, opt-in |
+| `extension` | Independently built MV3 extension; experimental add-on for optional existing-Session browser control |
 | `test` | Integration, behavior, security, and regression tests |
 | `scripts` | Relay administration plus Windows and Linux connector installation/watchdogs |
 | `docs` / `deploy` | User documentation, diagrams, and optional ingress example |

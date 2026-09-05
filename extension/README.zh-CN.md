@@ -1,6 +1,9 @@
-# Anywhere 浏览器扩展（开发分支）
+# Anywhere 浏览器扩展（实验性附加特性）
 
 [English](README.md) | 简体中文
+
+此插件是 Codex Anywhere 的**实验性附加特性**，默认关闭，需要单独构建、安装并显式配置
+Relay、Connector 和 MCP。日常会话功能无需安装此插件；其配置、交互和兼容性仍可能调整。
 
 连接 Anywhere → 选择运行环境（PC、ECS 或其他已连接节点）→ 选择**已有 Session** → 授权当前页。
 之后回到 Anywhere，在这个原会话中让 Codex 读取、点击、输入、滚动该页。没有新建/借用其他会话的回退。

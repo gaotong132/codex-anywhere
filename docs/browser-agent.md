@@ -2,9 +2,11 @@
 
 English | [简体中文](browser-agent.zh-CN.md)
 
-Branch `codex/browser-agent`, stable baseline `v0.2.1`. This is an opt-in development implementation, not a
-production rollout. No automatic tag/release/main merge or service restart. PC Desktop, ECS CLI and other
-Connector environments use the same path; a browser is a resource, not an execution environment.
+Browser Agent is included in `main` as an **experimental add-on**, disabled by default. It requires a separate
+extension build and installation plus explicit Relay, Connector, and MCP configuration. Normal session
+features do not require it; its configuration, interactions, and compatibility may still change.
+PC Desktop, ECS CLI and other Connector environments use the same path; a browser is a resource, not an
+execution environment.
 
 ## Experience
 
