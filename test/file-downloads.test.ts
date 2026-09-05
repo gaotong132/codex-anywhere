@@ -206,6 +206,7 @@ test('code previews are allowlisted, bounded, UTF-8, and restricted to configure
   const sensitive = join(allowedRoot, '.env');
   const outside = join(outsideRoot, 'private.ts');
   const invalidUtf8 = join(allowedRoot, 'invalid.py');
+  const bomFile = join(allowedRoot, 'bom.md');
   await Promise.all([
     writeFile(typescript, 'export const answer: number = 42;'),
     writeFile(plainText, 'started'),
@@ -214,6 +215,7 @@ test('code previews are allowlisted, bounded, UTF-8, and restricted to configure
     writeFile(sensitive, 'TOKEN=secret'),
     writeFile(outside, 'export const secret = true;'),
     writeFile(invalidUtf8, Buffer.from([0xff, 0xfe, 0xfd])),
+    writeFile(bomFile, '\uFEFF# 中文'),
   ]);
   const downloads = new DownloadManager({
     auditPath: null, allowedRoots: [allowedRoot], allowAnyFileDownload: true,
@@ -230,6 +232,9 @@ test('code previews are allowlisted, bounded, UTF-8, and restricted to configure
   assert.equal((await downloads.readText({ path: plainText })).kind, 'text');
   assert.equal((await downloads.readText({ path: markdown })).kind, 'markdown');
   assert.equal((await downloads.readText({ path: cmake })).language, 'cmake');
+  const bomDocument = await downloads.readText({ path: bomFile });
+  assert.equal(bomDocument.content, '\uFEFF# 中文');
+  assert.equal(Buffer.byteLength(bomDocument.content), bomDocument.size);
   await assert.rejects(() => downloads.readText({ path: sensitive }), /text_preview_type_not_allowed/);
   await assert.rejects(() => downloads.readText({ path: outside }), /text_preview_path_not_allowed/);
   await assert.rejects(() => downloads.readText({ path: invalidUtf8 }), /text_preview_encoding_invalid/);

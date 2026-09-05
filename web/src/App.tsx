@@ -37,16 +37,8 @@ import {
   prepareImageFile,
   type UploadedImage,
 } from './image-utils';
-import {
-  decodeBase64Chunk,
-  localFileName,
-  safeDownloadName,
-} from './file-utils';
-import {
-  downloadCanContinue,
-  runResumableDownloadRequest,
-  waitForDownloadReady,
-} from './download-resume';
+import { useFileTransfer } from './file-transfer';
+import { useFilePreviews } from './file-preview-client';
 import { t } from './i18n';
 import {
   friendlyError,
@@ -93,7 +85,6 @@ import {
 } from './session-configuration';
 import {
   BridgeRequestManager,
-  DEFAULT_BRIDGE_REQUEST_TIMEOUT_MS,
   type BridgeRequestOptions as RequestOptions,
 } from './bridge-request-manager';
 import { BrowserSecureChannel } from './secure-channel-client';
@@ -152,18 +143,12 @@ import type {
   AwaitingDesktopTurn,
   BridgeMessage,
   DownloadedImage,
-  DownloadFileChunk,
-  FileDownloadState,
   FollowState,
   HistoryPage,
-  OpenedDownload,
   PendingImage,
   PendingApprovals,
   Session,
   TurnStartResult,
-  TextPreviewDocument,
-  TurnDiffDocument,
-  VisualizationDocument,
 } from './app-types';
 
 const HISTORY_PAGE_SIZE = 6;
@@ -176,10 +161,6 @@ const SESSION_ATTENTION_KEY = 'bridge.sessionAttention.v1';
 const LAST_THREAD_KEY = 'bridge.lastThreadId';
 const NEW_SESSION_CWD_KEY = 'bridge.newSessionCwd';
 const NEW_TURN_KEY = '__new_turn__';
-type ScreenWakeLockSentinel = { released: boolean; release(): Promise<void> };
-type WakeLockNavigator = Navigator & {
-  wakeLock?: { request(type: 'screen'): Promise<ScreenWakeLockSentinel> };
-};
 const PairingDialog = lazy(() => import('./pairing-dialog').then((module) => ({
   default: module.PairingDialog,
 })));
@@ -267,7 +248,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     setActivity: setLiveActivity,
     setProgress: setTurnProgress,
   } = useConversationExecution();
-  const [fileDownload, setFileDownload] = useState<FileDownloadState | null>(null);
   const [creatingNewSession, setCreatingNewSession] = useState(false);
   const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
@@ -312,10 +292,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const newSessionAutoSendRef = useRef(false);
   const sendingRef = useRef(false);
   const attachmentLoadsRef = useRef(new Set<string>());
-  const fileDownloadRef = useRef(false);
-  const fileDownloadCancelRef = useRef(false);
-  const fileDownloadAbortRef = useRef<AbortController | null>(null);
-  const downloadWakeLockRef = useRef<ScreenWakeLockSentinel | null>(null);
   const sessionRefreshInFlightRef = useRef(false);
   const olderHistoryLoadingRef = useRef(false);
   const liveHistoryHydratedThreadRef = useRef<string | null>(null);
@@ -387,25 +363,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [newSessionDialogOpen]);
 
-  useLayoutEffect(() => {
-    const element = messageListRef.current;
-    if (!element) return;
-    if (preserveScrollHeightRef.current != null) {
-      element.scrollTop += element.scrollHeight - preserveScrollHeightRef.current;
-      preserveScrollHeightRef.current = null;
-    } else if (shouldScrollBottomRef.current || autoFollowLatestRef.current) {
-      shouldScrollBottomRef.current = false;
-      const scrollToLatest = () => {
-        element.scrollTop = element.scrollHeight;
-      };
-      scrollToLatest();
-      const frame = requestAnimationFrame(scrollToLatest);
-      return () => cancelAnimationFrame(frame);
-    }
-  }, [
-    timeline, executionState, attachmentUrls, fileDownload, approval,
-    initialBootstrapPending,
-  ]);
 
   useEffect(() => {
     const element = messageListRef.current;
@@ -552,6 +509,32 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     payload: Record<string, unknown>,
     options: RequestOptions = {},
   ): Promise<T> => requestManagerRef.current!.request<T>(action, payload, options), []);
+
+  const { fileDownload, downloadLocalFile, cancelFileDownload } = useFileTransfer({
+    online, request, reportTimelineError, environmentIdRef, selectedRequestRef, connectorOnlineRef, secureChannelRef,
+  });
+  const { readVisualization, readTextFile, readTurnDiff } = useFilePreviews(request, threadId);
+
+  useLayoutEffect(() => {
+    const element = messageListRef.current;
+    if (!element) return;
+    if (preserveScrollHeightRef.current != null) {
+      element.scrollTop += element.scrollHeight - preserveScrollHeightRef.current;
+      preserveScrollHeightRef.current = null;
+    } else if (shouldScrollBottomRef.current || autoFollowLatestRef.current) {
+      shouldScrollBottomRef.current = false;
+      const scrollToLatest = () => {
+        element.scrollTop = element.scrollHeight;
+      };
+      scrollToLatest();
+      const frame = requestAnimationFrame(scrollToLatest);
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [
+    timeline, executionState, attachmentUrls, fileDownload, approval,
+    initialBootstrapPending,
+  ]);
+
 
   const {
     modelConfig,
@@ -1404,6 +1387,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       setDrawerOpen(false);
       return;
     }
+    cancelFileDownload();
     optimisticRestoreRef.current = null;
     selectedRequestRef.current += 1;
     const requestVersion = selectedRequestRef.current;
@@ -1434,7 +1418,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     activeTurnIdRef.current = '';
     setDrawerOpen(false);
     if (nextThreadId) void loadHistory(nextThreadId, null, requestVersion);
-  }, [loadHistory, resetExecutionPresentation, updateSessionAttention]);
+  }, [cancelFileDownload, loadHistory, resetExecutionPresentation, updateSessionAttention]);
 
   const selectEnvironment = useCallback((value: string) => {
     const nextEnvironmentId = normalizeEnvironmentId(value);
@@ -1444,10 +1428,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     }
 
     selectedRequestRef.current += 1;
-    fileDownloadCancelRef.current = true;
-    fileDownloadAbortRef.current?.abort();
+    cancelFileDownload();
     rejectPendingRequests(t('已切换执行环境', 'Execution environment changed'));
-    setFileDownload(null);
     secureChannelRef.current?.clear();
     secureChannelRef.current = null;
     connectorOnlineRef.current = false;
@@ -1485,7 +1467,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     } else {
       setStatusText(environmentOfflineLabel(nextEnvironmentId));
     }
-  }, [beginSecureChannel, rejectPendingRequests, resetExecution, selectSession]);
+  }, [beginSecureChannel, cancelFileDownload, rejectPendingRequests, resetExecution, selectSession]);
 
   const beginNewSession = useCallback(() => {
     setNewSessionPrompt('');
@@ -1944,260 +1926,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     approval?.actionable, authenticated, connectionEpoch, executionState, online, request,
     threadId, updateExecution,
   ]);
-
-  const acquireDownloadWakeLock = useCallback(async () => {
-    if (!fileDownloadRef.current || document.visibilityState !== 'visible'
-      || (downloadWakeLockRef.current && !downloadWakeLockRef.current.released)) return;
-    const wakeLock = (navigator as WakeLockNavigator).wakeLock;
-    if (!wakeLock?.request) {
-      setFileDownload((current) => (current ? { ...current, protection: 'foreground-only' } : current));
-      return;
-    }
-    try {
-      const sentinel = await wakeLock.request('screen');
-      if (!fileDownloadRef.current) {
-        await sentinel.release().catch(() => {});
-        return;
-      }
-      downloadWakeLockRef.current = sentinel;
-      setFileDownload((current) => (current ? { ...current, protection: 'screen-awake' } : current));
-    } catch {
-      setFileDownload((current) => (current ? { ...current, protection: 'foreground-only' } : current));
-    }
-  }, []);
-
-  const releaseDownloadWakeLock = useCallback(async () => {
-    const sentinel = downloadWakeLockRef.current;
-    downloadWakeLockRef.current = null;
-    if (sentinel && !sentinel.released) await sentinel.release().catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!fileDownloadRef.current) return;
-    const paused = !downloadCanContinue({
-      visible: document.visibilityState === 'visible',
-      online,
-      channelReady: Boolean(secureChannelRef.current?.isReady()),
-    });
-    setFileDownload((current) => (current ? {
-      ...current,
-      paused,
-      pauseReason: paused
-        ? (document.visibilityState === 'visible' ? 'connection' : 'background')
-        : undefined,
-    } : current));
-  }, [online]);
-
-  useEffect(() => {
-    const syncDownloadVisibility = () => {
-      if (!fileDownloadRef.current) return;
-      if (document.visibilityState === 'visible') {
-        void acquireDownloadWakeLock();
-        return;
-      }
-      setFileDownload((current) => (current ? {
-        ...current, paused: true, pauseReason: 'background',
-      } : current));
-    };
-    document.addEventListener('visibilitychange', syncDownloadVisibility);
-    return () => document.removeEventListener('visibilitychange', syncDownloadVisibility);
-  }, [acquireDownloadWakeLock]);
-
-  const downloadLocalFile = useCallback(async (path: string) => {
-    if (fileDownloadRef.current) return;
-    const sourceEnvironmentId = environmentIdRef.current;
-    const selectionVersion = selectedRequestRef.current;
-    const wakeLockSupported = Boolean((navigator as WakeLockNavigator).wakeLock?.request);
-    const sourceName = environmentShortName(environmentIdRef.current);
-    const accepted = window.confirm(
-      t(
-        `是否从${sourceName}下载以下文件？\n\n${path}\n\n${wakeLockSupported ? '下载期间会保持屏幕常亮。若手动息屏或切到后台，下载会安全暂停，回到本页后自动续传。' : '当前浏览器无法保证后台下载，请保持屏幕亮起；若息屏中断，回到本页后会自动续传。'}`,
-        `Download this file from ${sourceName}?\n\n${path}\n\n${wakeLockSupported ? 'The screen will stay awake during the download. If you lock it or leave the page, the transfer pauses safely and resumes when you return.' : 'This browser cannot guarantee background downloads. Keep the screen awake; if interrupted, the transfer resumes when you return.'}`,
-      ),
-    );
-    if (!accepted) return;
-    fileDownloadRef.current = true;
-    fileDownloadCancelRef.current = false;
-    const abortController = new AbortController();
-    fileDownloadAbortRef.current = abortController;
-    const initiallyPaused = !downloadCanContinue({
-      visible: document.visibilityState === 'visible',
-      online,
-      channelReady: Boolean(secureChannelRef.current?.isReady()),
-    });
-    setFileDownload({
-      name: localFileName(path),
-      size: 0,
-      received: 0,
-      paused: initiallyPaused,
-      pauseReason: initiallyPaused
-        ? (document.visibilityState === 'visible' ? 'connection' : 'background')
-        : undefined,
-      protection: 'checking',
-    });
-    void acquireDownloadWakeLock();
-    let opened: OpenedDownload | null = null;
-    try {
-      const isReady = () => downloadCanContinue({
-        visible: document.visibilityState === 'visible',
-        online: connectorOnlineRef.current
-          && environmentIdRef.current === sourceEnvironmentId
-          && selectedRequestRef.current === selectionVersion,
-        channelReady: Boolean(secureChannelRef.current?.isReady()),
-      });
-      const pauseDownload = () => setFileDownload((current) => (current ? {
-        ...current,
-        paused: true,
-        pauseReason: document.visibilityState === 'visible' ? 'connection' : 'background',
-      } : current));
-      const resumeDownload = () => setFileDownload((current) => (current ? {
-        ...current, paused: false, pauseReason: undefined,
-      } : current));
-      const resilientRequest = async <T,>(action: string, payload: Record<string, unknown>) => (
-        runResumableDownloadRequest<T>({
-          signal: abortController.signal,
-          isReady,
-          onPause: pauseDownload,
-          onResume: resumeDownload,
-          request: () => request<T>(action, payload, {
-            timeoutMs: DEFAULT_BRIDGE_REQUEST_TIMEOUT_MS,
-            signal: abortController.signal,
-          }),
-        })
-      );
-      opened = await resilientRequest<OpenedDownload>(
-        'file.download.open',
-        { path, confirmed: true },
-      );
-      if (!opened.downloadId || !opened.downloadToken || !Number.isSafeInteger(opened.size) || opened.size < 0) {
-        throw new Error('download_capability_invalid');
-      }
-      setFileDownload((current) => ({
-        name: opened!.name,
-        size: opened!.size,
-        received: 0,
-        paused: false,
-        protection: current?.protection || 'checking',
-      }));
-      const parts: BlobPart[] = [];
-      let offset = 0;
-      while (true) {
-        if (fileDownloadCancelRef.current) throw new Error('download_cancelled');
-        const chunk = await resilientRequest<DownloadFileChunk>('file.download.chunk', {
-          downloadId: opened.downloadId,
-          downloadToken: opened.downloadToken,
-          offset,
-        });
-        if (fileDownloadCancelRef.current) throw new Error('download_cancelled');
-        const emptyComplete = opened.size === 0 && chunk.done && chunk.nextOffset === 0;
-        if (chunk.offset !== offset || !Number.isSafeInteger(chunk.nextOffset)
-          || (!emptyComplete && chunk.nextOffset <= offset) || chunk.nextOffset > opened.size) {
-          throw new Error('download_chunk_invalid');
-        }
-        const bytes = decodeBase64Chunk(chunk.data);
-        if (bytes.byteLength !== chunk.nextOffset - offset) throw new Error('download_chunk_invalid');
-        parts.push(bytes);
-        offset = chunk.nextOffset;
-        const transferPaused = !isReady();
-        setFileDownload((current) => (current ? {
-          ...current,
-          name: opened!.name,
-          size: opened!.size,
-          received: offset,
-          paused: transferPaused,
-          pauseReason: transferPaused
-            ? (document.visibilityState === 'visible' ? 'connection' : 'background')
-            : undefined,
-        } : current));
-        if (chunk.done) break;
-      }
-      await waitForDownloadReady({
-        signal: abortController.signal,
-        isReady: () => document.visibilityState === 'visible'
-          && environmentIdRef.current === sourceEnvironmentId
-          && selectedRequestRef.current === selectionVersion,
-        onPause: pauseDownload,
-      });
-      if (fileDownloadCancelRef.current
-        || environmentIdRef.current !== sourceEnvironmentId
-        || selectedRequestRef.current !== selectionVersion) {
-        throw new Error('download_cancelled');
-      }
-      resumeDownload();
-      const url = URL.createObjectURL(new Blob(parts, { type: 'application/octet-stream' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = safeDownloadName(opened.name);
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch (error) {
-      if (!(error instanceof Error && error.message === 'download_cancelled')) {
-        reportTimelineError(error);
-      }
-    } finally {
-      const ownsDownload = fileDownloadAbortRef.current === abortController;
-      if (opened
-        && environmentIdRef.current === sourceEnvironmentId
-        && selectedRequestRef.current === selectionVersion) {
-        void request('file.download.close', {
-          downloadId: opened.downloadId,
-          downloadToken: opened.downloadToken,
-        }).catch(() => {});
-      }
-      if (ownsDownload) {
-        fileDownloadRef.current = false;
-        fileDownloadCancelRef.current = false;
-        fileDownloadAbortRef.current = null;
-        await releaseDownloadWakeLock();
-        setFileDownload(null);
-      }
-    }
-  }, [acquireDownloadWakeLock, online, releaseDownloadWakeLock, reportTimelineError, request]);
-
-  const readVisualization = useCallback(async (path: string) => {
-    const result = await request<VisualizationDocument>('visualization.read', { path });
-    if (result?.content && result.content.length <= 2 * 1024 * 1024 && !result.content.includes('\0')) {
-      return URL.createObjectURL(new Blob([result.content], { type: 'text/html' }));
-    }
-    throw new Error('visualization_content_invalid');
-  }, [request]);
-
-  const readTextFile = useCallback(async (path: string) => {
-    const result = await request<TextPreviewDocument>('file.text.read', { path });
-    if (!result || typeof result.name !== 'string' || typeof result.content !== 'string'
-      || !Number.isSafeInteger(result.size) || result.size < 0 || result.size > 2 * 1024 * 1024
-      || !['markdown', 'code', 'text'].includes(result.kind)
-      || typeof result.language !== 'string' || !/^[a-z0-9-]{1,32}$/.test(result.language)
-      || result.content.includes('\0')) {
-      throw new Error('text_preview_content_invalid');
-    }
-    return result;
-  }, [request]);
-
-  const readTurnDiff = useCallback(async (turnId: string) => {
-    const selectedThreadId = String(threadId || '').trim();
-    const selectedTurnId = String(turnId || '').trim();
-    if (!selectedThreadId || !selectedTurnId) throw new Error('turn_diff_unavailable');
-    const result = await request<TurnDiffDocument>('session.turn.diff.read', {
-      threadId: selectedThreadId,
-      turnId: selectedTurnId,
-    });
-    if (!result || result.threadId !== selectedThreadId || result.turnId !== selectedTurnId
-      || typeof result.content !== 'string' || result.content.includes('\0')
-      || !Number.isSafeInteger(result.size) || result.size <= 0 || result.size > 512 * 1024
-      || new Blob([result.content]).size !== result.size || typeof result.truncated !== 'boolean') {
-      throw new Error('turn_diff_content_invalid');
-    }
-    return result;
-  }, [request, threadId]);
-
-  const cancelFileDownload = useCallback(() => {
-    fileDownloadCancelRef.current = true;
-    fileDownloadAbortRef.current?.abort();
-  }, []);
 
   const existingProjects = useMemo(() => {
     const seen = new Set<string>();

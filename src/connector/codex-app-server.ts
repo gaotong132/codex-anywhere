@@ -911,7 +911,15 @@ export class CodexAppServer extends EventEmitter {
   handleLine(line: string) {
     let message: JsonObject;
     try { message = JSON.parse(line); } catch { return; }
-    if (message.id != null && this.pending.has(message.id)) {
+    if (!message || typeof message !== 'object' || Array.isArray(message)) return;
+    // JSON-RPC requests and responses have independent ID spaces. An inbound
+    // approval request must never settle an outbound request with the same ID.
+    if (message.id != null && typeof message.method === 'string') {
+      this.handleServerRequest(message);
+      return;
+    }
+    if (message.id != null && (Object.hasOwn(message, 'result') || Object.hasOwn(message, 'error'))
+      && this.pending.has(message.id)) {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
@@ -920,11 +928,7 @@ export class CodexAppServer extends EventEmitter {
       else pending.resolve(Object.hasOwn(message, 'result') ? message.result : message);
       return;
     }
-    if (message.id != null && message.method) {
-      this.handleServerRequest(message);
-      return;
-    }
-    this.handleNotification(message.method || '', message.params || {});
+    if (typeof message.method === 'string') this.handleNotification(message.method, message.params || {});
   }
 
   handleServerRequest(message: JsonObject) {

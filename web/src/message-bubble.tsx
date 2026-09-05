@@ -1,28 +1,22 @@
 import {
-  isValidElement,
   memo,
-  type ReactNode,
   useEffect,
-  useMemo,
+  useCallback,
   useRef,
   useState,
 } from 'react';
-import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { formatDate } from './app-utils';
 import {
   localTextPreviewInfo,
   localFileName,
-  localFilePathFromHref,
-  localFilePathFromRelativeHref,
 } from './file-utils';
 import { CodePreview } from './code-preview';
-import { isSvgCodeClass, isSvgFilePath, LocalSvgImage, SvgPreview } from './svg-preview';
+import { isSvgFilePath, SvgPreview } from './svg-preview';
+import { MessageMarkdown } from './message-markdown';
 import { t } from './i18n';
 import { progressTypewriterKey, type TimelineItem } from './history-utils';
-import { isMermaidCodeClass, MermaidDiagram } from './mermaid-diagram';
 import { TypewriterText } from './ui-components';
-import type { TurnDiffDocument } from './app-types';
+import type { TextPreviewDocument, TurnDiffDocument } from './app-types';
 
 type MessageCopyState = 'idle' | 'copied' | 'failed';
 
@@ -31,13 +25,7 @@ export type MessageBubbleProps = {
   active?: boolean;
   imageSource?: string;
   onDownloadFile: (path: string) => void;
-  onReadTextFile?: (path: string) => Promise<{
-    name: string;
-    size: number;
-    content: string;
-    kind: 'markdown' | 'code' | 'text';
-    language: string;
-  }>;
+  onReadTextFile?: (path: string) => Promise<TextPreviewDocument>;
   onReadTurnDiff?: (turnId: string) => Promise<TurnDiffDocument>;
   onReadVisualization: (path: string) => Promise<string>;
 };
@@ -67,11 +55,6 @@ export function visualizationRequestIsCurrent(
   return requestVersion === currentVersion && requestedPath === currentPath;
 }
 
-const markdownPlugins = [remarkGfm];
-
-function messageUrlTransform(url: string) {
-  return localFilePathFromHref(url) ? url : defaultUrlTransform(url);
-}
 
 function dateTimeValue(value: TimelineItem['completedAt']) {
   if (!value) return '';
@@ -201,68 +184,6 @@ function MessageContexts({ item }: { item: TimelineItem }) {
   );
 }
 
-const MessageMarkdown = memo(function MessageMarkdown({
-  text,
-  attachmentPath,
-  basePath,
-  onDownloadFile,
-  onReadTextFile,
-}: {
-  text: string;
-  attachmentPath?: string;
-  basePath?: string;
-  onDownloadFile: (path: string) => void;
-  onReadTextFile?: MessageBubbleProps['onReadTextFile'];
-}) {
-  const components = useMemo<Components>(() => ({
-    pre: ({ node: _node, children, ...props }) => {
-      const code = isValidElement<{ className?: string; children?: ReactNode }>(children)
-        && children.type === 'code' ? children : null;
-      if (code && isMermaidCodeClass(code.props.className)) {
-        const source = String(code.props.children ?? '').replace(/\n$/, '');
-        return <MermaidDiagram source={source} />;
-      }
-      if (code && isSvgCodeClass(code.props.className)) {
-        return <SvgPreview source={String(code.props.children ?? '').replace(/\n$/, '')} />;
-      }
-      return <pre {...props}>{children}</pre>;
-    },
-    a: ({ node: _node, href, children, ...props }) => {
-      const localPath = localFilePathFromHref(href) || localFilePathFromRelativeHref(href, basePath);
-      return localPath
-        ? <a {...props} href={href} onClick={(event) => {
-            event.preventDefault();
-            onDownloadFile(localPath);
-          }}>{children}</a>
-        : <a {...props} href={href} target="_blank" rel="noreferrer noopener">{children}</a>;
-    },
-    img: ({ node: _node, src, alt, ...props }) => {
-      if (!src) return null;
-      const localPath = localFilePathFromHref(src) || localFilePathFromRelativeHref(src, basePath);
-      if (!localPath) return <img {...props} src={src} alt={alt || ''} loading="lazy" />;
-      if (attachmentPath === localPath) return null;
-      if (isSvgFilePath(localPath) && onReadTextFile) {
-        return <LocalSvgImage path={localPath} name={alt || localFileName(localPath)}
-          onRead={onReadTextFile} onOpen={onDownloadFile} />;
-      }
-      return (
-        <a href={src} onClick={(event) => {
-          event.preventDefault();
-          onDownloadFile(localPath);
-        }}>{alt || localFileName(localPath)}</a>
-      );
-    },
-  }), [attachmentPath, basePath, onDownloadFile, onReadTextFile]);
-  return (
-    <ReactMarkdown
-      remarkPlugins={markdownPlugins}
-      components={components}
-      urlTransform={messageUrlTransform}
-    >
-      {text}
-    </ReactMarkdown>
-  );
-});
 
 function contextUsagePercent(tokens: number | undefined, contextWindow: number | undefined) {
   if (tokens === undefined || !contextWindow) return null;
@@ -490,7 +411,7 @@ function MessageBubbleComponent({
     }
   }
 
-  async function openLocalFile(path: string) {
+  const openLocalFile = useCallback(async (path: string) => {
     const previewInfo = localTextPreviewInfo(path);
     if (!onReadTextFile || !previewInfo) {
       onDownloadFile(path);
@@ -517,7 +438,7 @@ function MessageBubbleComponent({
         path, name: localFileName(path), content: '', status: 'failed', ...previewInfo,
       });
     }
-  }
+  }, [onDownloadFile, onReadTextFile]);
 
   function closeFilePreview() {
     filePreviewRequestRef.current += 1;
@@ -573,7 +494,7 @@ function MessageBubbleComponent({
           text={item.text}
           attachmentPath={item.attachment?.path}
           onReadTextFile={onReadTextFile}
-          onDownloadFile={(path) => void openLocalFile(path)}
+          onDownloadFile={openLocalFile}
         />
         {item.attachment && (
           <figure className="message-image">
@@ -691,7 +612,7 @@ function MessageBubbleComponent({
               )}
               {filePreview.status === 'ready' && filePreview.kind === 'markdown' && (
                 <article className="message assistant markdown-preview-content">
-                  <MessageMarkdown text={filePreview.content} basePath={filePreview.path} onReadTextFile={onReadTextFile} onDownloadFile={(path) => void openLocalFile(path)} />
+                  <MessageMarkdown text={filePreview.content} basePath={filePreview.path} onReadTextFile={onReadTextFile} onDownloadFile={openLocalFile} />
                 </article>
               )}
               {filePreview.status === 'ready' && filePreview.kind !== 'markdown' && (

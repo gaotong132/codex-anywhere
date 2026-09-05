@@ -7,7 +7,7 @@ import {
   type TimelineItem,
 } from './history-utils';
 import { t } from './i18n';
-import type { TurnDiffDocument } from './app-types';
+import type { TextPreviewDocument, TurnDiffDocument } from './app-types';
 
 const MessageBubble = lazy(() => import('./message-bubble').then((module) => ({
   default: module.MessageBubble,
@@ -33,13 +33,7 @@ type ConversationTimelineProps = {
   onScroll: UIEventHandler<HTMLDivElement>;
   onLoadOlder: () => void;
   onDownloadFile: (path: string) => void;
-  onReadTextFile: (path: string) => Promise<{
-    name: string;
-    size: number;
-    content: string;
-    kind: 'markdown' | 'code' | 'text';
-    language: string;
-  }>;
+  onReadTextFile: (path: string) => Promise<TextPreviewDocument>;
   onReadTurnDiff: (turnId: string) => Promise<TurnDiffDocument>;
   onReadVisualization: (path: string) => Promise<string>;
 };

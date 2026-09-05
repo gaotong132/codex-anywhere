@@ -204,7 +204,7 @@ export class DownloadManager {
       }
       let content;
       try {
-        content = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+        content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
       } catch {
         throw new Error(`${errorPrefix}_encoding_invalid`);
       }

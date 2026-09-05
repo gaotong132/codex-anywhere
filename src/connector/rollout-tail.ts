@@ -116,7 +116,10 @@ const activityMarkers = [
   { needle: Buffer.from('"type":"turn_aborted"'), status: 'failed' },
   { needle: Buffer.from('"type":"turn_error"'), status: 'failed' },
 ] as const satisfies ReadonlyArray<{ needle: Buffer; status: RolloutStatus }>;
-const rolloutCache = new Map<string, RolloutSnapshot>();
+type CachedRollout = RolloutSnapshot & {
+  fileIdentity: string; mtimeMs: number; ctimeMs: number; tail: Buffer;
+};
+const rolloutCache = new Map<string, CachedRollout>();
 
 export async function readRolloutModelSettings(filePath: string): Promise<RolloutModelSettings> {
   const handle = await open(filePath, 'r');
@@ -150,15 +153,23 @@ export async function readRolloutTail(options: RolloutOptions) {
       return await readHistoryPage(handle, fileStat.size, threadId, options.cursor);
     }
     const cached = rolloutCache.get(filePath);
+    const fileIdentity = `${fileStat.dev}:${fileStat.ino}:${fileStat.birthtimeMs}`;
     const reusable = cached
+      && cached.fileIdentity === fileIdentity
       && cached.threadId === threadId
       && cached.maxBytes === maxBytes
       && cached.maxItems === maxItems
-      && fileStat.size >= cached.fileSize;
+      && fileStat.size >= cached.fileSize
+      && (fileStat.size === cached.fileSize
+        ? fileStat.mtimeMs === cached.mtimeMs && fileStat.ctimeMs === cached.ctimeMs
+        : cached.tail.equals(await readCacheTail(handle, cached.fileSize)));
     const snapshot = reusable
       ? await updateSnapshot(handle, fileStat.size, cached)
       : await initializeSnapshot(handle, fileStat.size, { threadId, maxBytes, maxItems });
-    rememberSnapshot(filePath, snapshot);
+    rememberSnapshot(filePath, {
+      ...snapshot, fileIdentity, mtimeMs: fileStat.mtimeMs, ctimeMs: fileStat.ctimeMs,
+      tail: reusable && cached.fileSize === fileStat.size ? cached.tail : await readCacheTail(handle, fileStat.size),
+    });
     return {
       threadId,
       turns: snapshot.items.length || snapshot.activity.status !== 'unknown' ? [{
@@ -603,7 +614,16 @@ function appendItems(current: RolloutItem[], appended: RolloutItem[], maxItems: 
   return result.slice(-maxItems);
 }
 
-function rememberSnapshot(filePath: string, snapshot: RolloutSnapshot) {
+// A small prefix-boundary sample preserves cheap incremental reads while
+// detecting file replacement and the common truncate-then-regrow case.
+async function readCacheTail(handle: FileHandle, size: number) {
+  const length = Math.min(size, 512);
+  const buffer = Buffer.alloc(length);
+  const { bytesRead } = await handle.read(buffer, 0, length, size - length);
+  return buffer.subarray(0, bytesRead);
+}
+
+function rememberSnapshot(filePath: string, snapshot: CachedRollout) {
   rolloutCache.delete(filePath);
   rolloutCache.set(filePath, snapshot);
   while (rolloutCache.size > MAX_CACHED_ROLLOUTS) {

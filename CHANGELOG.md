@@ -4,6 +4,11 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Separate Web download/preview and Markdown responsibilities and Relay HTTP handling. Fix empty/truncated downloads,
+  selection cancellation and wake-lock ownership; validate preview byte sizes and preserve UTF-8 BOMs. Isolate stale
+  extension callbacks, distinguish inbound JSON-RPC request IDs from responses, and invalidate rewritten rollout caches.
+  See [the architecture review](docs/refactoring-2026-09.md) for scope and validation.
+
 - Render linked SVG files, local SVG image references, and `svg` code blocks as isolated vector images, with
   source viewing and existing downloads preserved. Resolve Linux file links and Markdown-relative paths alongside Windows paths.
 

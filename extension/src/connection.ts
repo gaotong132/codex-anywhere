@@ -4,6 +4,8 @@ import { requireCurrentProtocol } from '../../src/shared/protocol-contract.js';
 import { BrowserSecureChannel } from '../../web/src/secure-channel-client.js';
 
 type Frame = Record<string, any>;
+const deviceIds = (value: unknown): string[] => Array.isArray(value)
+  ? [...new Set(value.filter((id): id is string => typeof id === 'string' && Boolean(id)))] : [];
 export function parseConnectionUrl(input: string) {
   const url = new URL(input.trim());
   // Keep plain WS hosts aligned with manifest CSP: IPv6 literal sources are invalid.
@@ -26,8 +28,8 @@ export class ExtensionConnection {
   constructor(private identity: DeviceIdentity, private event: (frame: Frame) => void, private changed: () => void) {}
 
   connect(input: string): Promise<string> {
-    this.close();
     const parsed = parseConnectionUrl(input);
+    this.close();
     const socket = new WebSocket(parsed.socketUrl);
     this.socket = socket;
     return new Promise((resolve, reject) => {
@@ -52,19 +54,25 @@ export class ExtensionConnection {
               ? { type: 'auth.enroll', role: 'client', pairingId: parsed.pairing.id, proof, device, protocol }
               : { type: 'auth.device', role: 'client', device, protocol }));
           } else if (frame.type === 'auth.ok') {
-            this.online = true; this.devices = Array.isArray(frame.devices) ? frame.devices.filter((id: unknown) => typeof id === 'string') : [];
+            if (this.online) return;
+            this.online = true; this.devices = deviceIds(frame.devices);
             this.heartbeat = setInterval(() => { if (socket.readyState === WebSocket.OPEN) socket.send('{"type":"ping"}'); }, 20_000);
             finish(); this.changed();
           } else if (frame.type === 'presence') {
-            this.devices = Array.isArray(frame.devices) ? frame.devices : [];
-            if (this.environmentId && !this.devices.includes(this.environmentId)) { this.channel?.clear(); this.rejectPending(); }
+            this.devices = deviceIds(frame.devices);
+            if (this.environmentId && !this.devices.includes(this.environmentId)) {
+              this.cancelSelect?.(); this.channel?.clear(); this.rejectPending();
+            }
             this.changed();
           } else if (frame.type === 'auth.error' || frame.type === 'error') {
             finish(new Error('browser_pairing_failed')); this.close();
           } else this.channel?.handle(frame);
         } catch { finish(new Error('browser_connection_failed')); this.close(); }
       };
-      socket.onerror = () => { finish(new Error('browser_connection_failed_check_extension_origin_and_proxy')); this.close(); };
+      socket.onerror = () => {
+        if (this.socket !== socket) return;
+        finish(new Error('browser_connection_failed_check_extension_origin_and_proxy')); this.close();
+      };
       socket.onclose = () => {
         if (this.socket !== socket) return;
         finish(new Error('browser_disconnected')); this.close();
@@ -76,13 +84,23 @@ export class ExtensionConnection {
     if (!this.online || !this.devices.includes(environmentId)) return Promise.reject(new Error('browser_environment_offline'));
     this.cancelSelect?.(); this.rejectPending(); this.channel?.clear(); this.environmentId = environmentId;
     return new Promise((resolve, reject) => {
+      let settled = false;
       const timer = setTimeout(() => { done(new Error('browser_channel_timeout')); channel.clear(); }, 10_000);
-      const done = (error?: Error) => { clearTimeout(timer); this.cancelSelect = undefined; if (error) reject(error); else resolve(); };
+      const done = (error?: Error) => {
+        if (settled) return;
+        settled = true; clearTimeout(timer); this.cancelSelect = undefined;
+        if (error) reject(error); else resolve();
+      };
       this.cancelSelect = () => done(new Error('browser_environment_changed'));
       const channel = new BrowserSecureChannel({ identity: this.identity, routeDeviceId: environmentId,
         send: (frame) => { if (this.socket?.readyState !== WebSocket.OPEN) return false; this.socket.send(JSON.stringify(frame)); return true; },
-        onReady: () => done(), onError: () => { done(new Error('browser_secure_channel_failed')); this.rejectPending(); this.changed(); },
+        onReady: () => { if (this.channel === channel) done(); },
+        onError: () => {
+          if (this.channel !== channel) return;
+          done(new Error('browser_secure_channel_failed')); this.rejectPending(); this.changed();
+        },
         onFrame: (frame) => {
+          if (this.channel !== channel) return;
           if (frame.type === 'response') {
             const pending = this.pending.get(frame.requestId);
             if (!pending) return;
@@ -91,7 +109,12 @@ export class ExtensionConnection {
           } else if (frame.type === 'event') this.event(frame);
         },
       });
-      this.channel = channel; channel.start();
+      this.channel = channel;
+      try {
+        if (!channel.start()) done(new Error('browser_secure_channel_failed'));
+      } catch {
+        channel.clear(); done(new Error('browser_secure_channel_failed'));
+      }
     });
   }
 
@@ -102,7 +125,11 @@ export class ExtensionConnection {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(requestId); reject(new Error('browser_request_timeout')); }, 15_000);
       this.pending.set(requestId, { resolve, reject, timer });
-      if (!this.channel!.sendFrame({ type: 'request', requestId, action, payload })) { clearTimeout(timer); this.pending.delete(requestId); reject(new Error('browser_connector_offline')); }
+      try {
+        if (!this.channel!.sendFrame({ type: 'request', requestId, action, payload })) throw new Error('browser_connector_offline');
+      } catch {
+        clearTimeout(timer); this.pending.delete(requestId); reject(new Error('browser_connector_offline'));
+      }
     });
   }
   close() {
@@ -110,6 +137,7 @@ export class ExtensionConnection {
     const socket = this.socket; this.socket = undefined; socket?.close();
     clearInterval(this.heartbeat); this.heartbeat = undefined;
     this.channel?.clear(); this.channel = undefined; this.online = false;
+    this.devices = []; this.environmentId = '';
     this.rejectPending(); this.changed();
   }
   private rejectPending() {

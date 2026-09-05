@@ -25,8 +25,10 @@ export function parseFrame(data: unknown): BridgeFrame {
 
 export function safeSend(socket: SendableSocket | null | undefined, payload: BridgeFrame) {
   if (!socket || socket.readyState !== socket.OPEN) return false;
-  socket.send(JSON.stringify({ ...payload, version: BRIDGE_PROTOCOL_VERSION }));
-  return true;
+  try {
+    socket.send(JSON.stringify({ ...payload, version: BRIDGE_PROTOCOL_VERSION }));
+    return true;
+  } catch { return false; }
 }
 
 export function secretMatches(actual: unknown, expected: unknown) {
