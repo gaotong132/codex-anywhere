@@ -4,10 +4,10 @@ import { readFile } from 'node:fs/promises';
 import { parseBrowserTarget } from '../src/browser-control/contracts.js';
 import { parseConnectionUrl } from '../extension/src/connection.js';
 
-test('extension keeps explicit activeTab grants, no broad host, debugger or content-script access', async () => {
+test('extension reads tab metadata but keeps site access optional, with no debugger or content-script access', async () => {
   const manifest = JSON.parse(await readFile('extension/manifest.json', 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ['activeTab', 'scripting', 'storage', 'sidePanel']);
+  assert.deepEqual(manifest.permissions, ['activeTab', 'tabs', 'scripting', 'storage', 'sidePanel']);
   assert.deepEqual(manifest.optional_host_permissions, ['http://*/*', 'https://*/*']);
   for (const field of ['host_permissions', 'externally_connectable', 'web_accessible_resources', 'content_scripts']) assert.equal(manifest[field], undefined);
   const connectSources = manifest.content_security_policy.extension_pages.split(';')
@@ -17,7 +17,7 @@ test('extension keeps explicit activeTab grants, no broad host, debugger or cont
   assert.doesNotMatch(manifest.content_security_policy.extension_pages, /unsafe-eval|https?:\/\/\*/);
   const popup = await readFile('extension/popup.html', 'utf8');
   assert.doesNotMatch(popup, /10 分钟|读取页面|停止并清除|只读预览/);
-  assert.match(popup, /继续哪个 Session/);
+  assert.doesNotMatch(popup, /<select|id="grant"/);
   const source = await readFile('extension/src/background.ts', 'utf8');
   assert.match(source, /sender\.url !== chrome\.runtime\.getURL\('popup.html'\)/);
   assert.match(source, /documentIds: \[target.documentId\]/);

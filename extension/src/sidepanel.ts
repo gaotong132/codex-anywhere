@@ -18,6 +18,7 @@ let activeTab: chrome.tabs.Tab | undefined;
 let state: Record<string, any> = {};
 let operationError = '';
 let refreshRevision = 0;
+let targetRevision = 0;
 
 function serverOrigin(input: string) {
   const url = new URL(input.trim());
@@ -34,7 +35,7 @@ function currentSelection() {
 
 function render() {
   const selected = currentSelection();
-  const connected = state.origin === relayOrigin && state.connected;
+  const connected = state.origin === relayOrigin && state.relayOnline;
   const pageAvailable = Boolean(activeTab?.url && /^https?:\/\//.test(activeTab.url));
   grant.disabled = busy || !selected || !pageAvailable;
   grant.textContent = connected ? '授权当前页' : '连接页面控制';
@@ -46,8 +47,9 @@ function render() {
   element<HTMLButtonElement>('revoke').disabled = busy;
   element('browser-status').textContent = operationError || (binding
     ? `已授权：${binding.environmentId || state.environmentId} · ${binding.title} · ${binding.origin}${state.connected ? '' : '（离线）'}`
-    : !pageAvailable ? '授权网页前，请在目标标签页再次点击工具栏中的插件图标。'
-      : '网页控制可选。点击授权后，当前会话才可读取和操作此页。');
+    : !activeTab?.url ? '正在读取当前标签页；请检查扩展是否已重新加载并启用。'
+      : !pageAvailable ? '此页面不支持控制，请切换到普通 HTTP/HTTPS 网页。'
+        : '点击授权并允许当前站点访问后，上方会话才可读取和操作此页。');
   element('frame-error').hidden = !channel || Date.now() - (lastSeen || loadedAt) < 15_000;
 }
 
@@ -89,6 +91,17 @@ async function refresh() {
   } catch { /* The next poll recovers a restarted worker. */ }
 }
 
+// A side panel stays open across tab switches. Invalidate the previous target
+// immediately, including same-URL reloads while a permission prompt is open.
+chrome.tabs.onActivated.addListener((info) => {
+  if (info.windowId !== windowId) return;
+  targetRevision++; activeTab = undefined; render(); void refresh();
+});
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (tabId !== activeTab?.id || (change.url === undefined && change.status !== 'loading')) return;
+  targetRevision++; activeTab = undefined; render(); void refresh();
+});
+
 function openControls() { dialog.showModal(); }
 element('browser-settings').onclick = openControls;
 element('close-controls').onclick = () => dialog.close();
@@ -121,12 +134,26 @@ element<HTMLFormElement>('open-form').onsubmit = (event) => {
 grant.onclick = () => {
   const selected = currentSelection();
   const tab = activeTab;
-  if (busy || !selected || !tab?.url || tab.id === undefined || windowId === undefined) return;
-  if (state.origin !== relayOrigin || !state.connected) { openControls(); return; }
+  if (busy || !selected || !tab?.url || !/^https?:\/\//.test(tab.url) || tab.id === undefined || windowId === undefined) return;
+  if (state.origin !== relayOrigin || !state.relayOnline) { openControls(); return; }
+  const expectedTarget = targetRevision;
+  const expectedChannel = channel;
+  // Unlike clicking the toolbar action, clicking inside a side panel does not
+  // acquire activeTab. Ask for this site's access in the explicit user gesture.
+  const site = new URL(tab.url);
+  const permission = chrome.permissions.request({ origins: [`${site.protocol}//${site.hostname}/*`] });
   busy = true; operationError = ''; render();
-  void chrome.runtime.sendMessage({ type: 'panel.grant', relayOrigin,
-    environmentId: selected.environmentId, threadId: selected.threadId,
-    tabId: tab.id, windowId, url: tab.url,
+  void permission.then(async (allowed) => {
+    if (!allowed) throw new Error('未允许当前站点访问，页面尚未授权。可再次点击「授权当前页」重试。');
+    const latest = currentSelection();
+    if (channel !== expectedChannel || targetRevision !== expectedTarget || activeTab?.id !== tab.id || activeTab?.url !== tab.url
+      || latest?.environmentId !== selected.environmentId || latest?.threadId !== selected.threadId) {
+      throw new Error('页面或当前会话已变化，请确认后重新点击「授权当前页」。');
+    }
+    return chrome.runtime.sendMessage({ type: 'panel.grant', relayOrigin,
+      environmentId: selected.environmentId, threadId: selected.threadId,
+      tabId: tab.id, windowId, url: tab.url,
+    });
   }).then((response) => {
     if (!response.ok) throw new Error(response.error);
     state = response.result;

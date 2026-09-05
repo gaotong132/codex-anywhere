@@ -253,7 +253,7 @@ async function authorize(threadId: string, requested?: PanelTarget) {
 }
 
 async function authorizeFromPanel(message: Frame) {
-  if (message.relayOrigin !== origin || connecting || !connection.ready()) throw new Error('browser_connector_offline');
+  if (message.relayOrigin !== origin || connecting || !connection.online) throw new Error('browser_connector_offline');
   if (!Number.isSafeInteger(message.tabId) || message.tabId < 0 || !Number.isSafeInteger(message.windowId)
     || message.windowId < 0 || typeof message.url !== 'string') throw new Error('browser_no_tab');
   const environmentId = requireBrowserId(message.environmentId);
@@ -268,7 +268,7 @@ async function authorizeFromPanel(message: Frame) {
   // Capture the exact document before any network wait. A reload to the same URL
   // must not transfer consent to the replacement document.
   const target: PanelTarget = { tabId: message.tabId, windowId: message.windowId, url: message.url, documentId: document.documentId };
-  if (connection.environmentId !== environmentId) {
+  if (connection.environmentId !== environmentId || !connection.ready()) {
     const revoking = revokeAll(); expectedRevision = revision;
     await revoking;
     if (revision !== expectedRevision) throw new Error('browser_authorization_changed');
@@ -289,6 +289,9 @@ function safeError(value: unknown) {
     browser_https_url_required: '请使用 HTTPS 地址；本机 HTTP 仅支持 localhost 或 127.0.0.1。',
     browser_control_not_enabled_on_connector: '这个环境尚未启用浏览器工具，请先按安装文档配置连接器和 MCP。',
     browser_origin_not_allowed: '请在普通 HTTP/HTTPS 网页上授权；浏览器设置页和扩展页面不支持。',
+    browser_document_changed: '页面已切换或刷新，请确认当前页后重新授权。',
+    browser_connector_offline: '页面控制尚未连接，请在设置中连接后重试。',
+    browser_select_existing_session: '当前会话暂不可用，请在聊天中选择已有会话后重试。',
     browser_grant_limit: '已达到 64 个页面的保护上限，请先撤销不再需要的页面。',
     browser_session_already_bound: '这个 Session 已有一个起始页，请先在原浏览器中撤销授权。',
     browser_authorization_changed: '页面或连接已变化，请在目标页面重新授权。',
@@ -340,7 +343,7 @@ chrome.runtime.onMessage.addListener((message: Frame, sender, respond) => {
     else if (message.type === 'revoke') await revokeAll();
     else if (message.type === 'disconnect') { reconnectEnabled = false; await revokeAll(); connection.close(); origin = ''; await chrome.storage.local.remove('origin'); }
     else throw new Error('browser_invalid_request');
-    return status();
+    return status(panel && Number.isSafeInteger(message.windowId) ? message.windowId : undefined);
   }).then((result) => respond({ ok: true, result })).catch((failure) => { error = safeError(failure); respond({ ok: false, error }); });
   return true;
 });

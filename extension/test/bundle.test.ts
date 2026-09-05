@@ -66,6 +66,7 @@ async function harness(t: test.TestContext) {
   let onRemoved!: (tabId: number) => void;
   let activeTab = 1;
   let sitePermission = false;
+  let activeTabPermission = true;
   let createdTabs = 0;
   let clicks = 0;
   let injections = 0;
@@ -107,6 +108,7 @@ async function harness(t: test.TestContext) {
       get: async (id: number) => ({ id, windowId: 1, active: id === activeTab, url: pages.get(id)!.url, status: 'complete' }),
       onUpdated: { addListener: (listener: typeof onUpdated) => { onUpdated = listener; } }, onRemoved: { addListener: (listener: typeof onRemoved) => { onRemoved = listener; } } },
     scripting: { executeScript: async (options: Frame) => {
+      if (!activeTabPermission && !sitePermission) throw new Error('Cannot access contents of the page. Extension manifest must request permission to access the respective host.');
       assert.equal(options.world, 'ISOLATED');
       const fixture = pages.get(options.target.tabId)!;
       assert.ok(fixture, 'only known fixture tabs may be injected');
@@ -147,6 +149,7 @@ async function harness(t: test.TestContext) {
     local, session, badges, document, clicks: () => clicks, injections: () => injections,
     dropConnection: () => { for (const client of relay.clients.values()) client.close(1001, 'test disconnect'); },
     allowChildren: () => { sitePermission = true; }, createdTabs: () => createdTabs,
+    loseActiveTab: () => { activeTabPermission = false; },
     manualTab: () => { const id = pages.size + 1; pages.set(id, makePage(id, 'https://example.com/manual')); activeTab = id; return id; },
     navigate: (id = 1) => onUpdated(id, { status: 'loading' }), close: (id = 1) => onRemoved(id), replace: () => { pages.get(1)!.documentId = 'doc-b'; } };
 }
@@ -180,6 +183,21 @@ test('side panel refuses a replacement document even at the same URL after a net
   assert.equal(result.ok, false);
   assert.equal(h.broker.status('task-a').authorized, false);
   assert.equal(h.clicks(), 0);
+});
+
+test('side panel controls a normal site after explicit host access even without a toolbar activeTab grant', async (t) => {
+  const h = await harness(t);
+  assert.equal((await h.sendPanel('connect', { url: h.pairUrl })).ok, true);
+  h.loseActiveTab();
+  const payload = { relayOrigin: h.origin, environmentId: 'pc', threadId: 'task-b',
+    tabId: 1, windowId: 1, url: 'https://example.com/private?secret=query' };
+  assert.equal((await h.sendPanel('panel.grant', payload)).ok, false);
+  assert.equal(h.broker.status('task-b').authorized, false);
+  h.allowChildren(); // Chrome's explicit current-site permission now permits injection.
+  assert.equal((await h.sendPanel('panel.grant', payload)).ok, true);
+  assert.equal(h.broker.status('task-a').authorized, false);
+  const snapshot: any = await h.broker.execute('task-b', 'turn-host-permission', { method: 'snapshot' });
+  assert.match(JSON.stringify(snapshot), /Fixture page/);
 });
 
 test('built extension pairs over real WS/E2E, selects original Session, reads/clicks/fills, and revokes', async (t) => {
