@@ -1,5 +1,5 @@
 import { browserOrigin, parseBrowserTarget, requireBrowserId, type BrowserTarget } from '../../src/browser-control/contracts.js';
-import { parseOperation } from '../../src/browser-control/operations.js';
+import { browserOperationErrorCode, parseOperation } from '../../src/browser-control/operations.js';
 import { createDeviceIdentity, type DeviceAuthProof } from '../../src/shared/device-auth.js';
 import type { BrowserLinkRequest } from '../../src/shared/browser-link.js';
 import { ExtensionConnection } from './connection.js';
@@ -89,6 +89,7 @@ async function page(target: BrowserTarget, grantId: string, operation: Parameter
   const [result] = await chrome.scripting.executeScript({ target: { tabId: target.tabId, documentIds: [target.documentId] }, world: 'ISOLATED',
     func: runPageAgent, args: [{ grantId, origin: target.origin, operation, deadline }] });
   if (!result || result.documentId !== target.documentId || !result.result) throw new Error('browser_document_changed');
+  if ('errorCode' in result.result) throw new Error(browserOperationErrorCode(result.result.errorCode));
   if ('denied' in result.result && result.result.denied === 'browser_child_origin_denied') throw new Error(result.result.denied);
   return result.result;
 }
@@ -166,7 +167,7 @@ async function handleOperation(frame: Frame) {
       busy.delete(captured);
       const code = failure instanceof Error ? failure.message : '';
       await connection.request('browser.result', { requestId: request.requestId, grantId: captured.grantId, ok: false,
-        errorCode: ['browser_child_permission_required', 'browser_child_origin_denied', 'browser_operation_timeout'].includes(code) ? code : undefined }).catch(() => {});
+        errorCode: browserOperationErrorCode(code) }).catch(() => {});
     }
   } finally { if (captured.sequence === request.sequence) busy.delete(captured); }
 }

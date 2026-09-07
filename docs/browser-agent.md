@@ -103,6 +103,12 @@ branch does not deploy production.
 
 ## Acceptance gates
 
+- 2026-09-07 console-controls increment: 340 root tests and 25 compiled-extension tests pass. Real Chrome for Testing
+  151 with a local Relay/E2E path validates numeric bounds without changing invalid input, native select labels and
+  selection, clipped panel scrolling, nested button labels, exact disabled/obscured errors, and navigation revocation.
+  Only loopback permission is pregranted in the isolated test copy. This does not claim production cloud console
+  acceptance or an updated everyday browser. See the [control workflow](../extension/README.md#console-controls-and-diagnostics).
+
 - 2026-09-04 branch increment, not deployed: 307 root tests, 10 extension tests, and Web/Node/extension builds pass.
   Chrome for Testing 151 loads the original manifest with no manifest/CSP/runtime errors. Child-tab tests use the same bundled
   JS in a separate temporary profile, with only `127.0.0.1` pregranted in a test-only manifest copy: real WS/E2E, child creation/read,

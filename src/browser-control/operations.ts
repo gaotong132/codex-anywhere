@@ -5,13 +5,26 @@ export type BrowserOperation =
   | { method: 'click'; ref: string }
   | { method: 'open_link'; ref: string }
   | { method: 'fill'; ref: string; text: string }
-  | { method: 'scroll'; deltaY: number };
+  | { method: 'scroll'; deltaY: number; ref?: string };
+
+// Only fixed codes cross the page/extension/connector boundary, never exception text.
+export function browserOperationErrorCode(value: unknown): string {
+  return typeof value === 'string' && [
+    'browser_child_permission_required', 'browser_child_origin_denied', 'browser_operation_timeout',
+    'browser_document_changed', 'browser_stale_element_read_again', 'browser_element_not_allowed',
+    'browser_element_obscured', 'browser_input_not_allowed', 'browser_number_value_invalid',
+    'browser_option_not_available', 'browser_select_multiple_not_supported', 'browser_scroll_target_not_scrollable',
+    'browser_link_required', 'browser_navigation_not_allowed',
+  ].includes(value) ? value : 'browser_operation_failed_or_authorization_changed';
+}
 
 export function parseOperation(value: unknown): BrowserOperation {
   const input = requireRecord(value, ['method', 'ref', 'text', 'deltaY']);
   if (input.method === 'snapshot' && Object.keys(input).length === 1) return { method: 'snapshot' };
-  if (input.method === 'scroll' && Object.keys(input).length === 2) {
-    return { method: 'scroll', deltaY: requireInteger(input.deltaY, -2000, 2000) };
+  if (input.method === 'scroll') {
+    requireRecord(input, ['method', 'deltaY', 'ref']);
+    return { method: 'scroll', deltaY: requireInteger(input.deltaY, -2000, 2000),
+      ...(input.ref === undefined ? {} : { ref: requireBrowserId(input.ref) }) };
   }
   if (input.method === 'click' && Object.keys(input).length === 2) return { method: 'click', ref: requireBrowserId(input.ref) };
   if (input.method === 'open_link' && Object.keys(input).length === 2) return { method: 'open_link', ref: requireBrowserId(input.ref) };

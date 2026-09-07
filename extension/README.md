@@ -152,7 +152,42 @@ page, then reopen the popup and check whether any new errors appear.
 - The Codex host supplies caller identity. Desktop retains its existing writer; the Connector does not take
   over or send messages to other tasks.
 
+## Console controls and diagnostics
+
+The same six tools support console forms. Snapshots attach nested button text and visible labels to actionable refs,
+and include `role`, `inputType`, `disabled`, `checked`, `expanded` and `scrollable` when applicable. Form values stay omitted.
+
+- `fill` accepts text and numeric inputs. Native number constraints (`min`, `max`, `step`, required) are checked before
+  changing the input. It emits input/change events but does not submit the form.
+- For a native single select, `click` returns up to 50 option labels and disabled states without changing selection
+  or returning option values. Take a fresh snapshot, then `fill` with one exact, unambiguous enabled label.
+  Multiple selects are unsupported. Custom dropdowns use visible combobox/option refs and ordinary clicks;
+  widgets without exposed controls remain a capability limit.
+- `scroll` accepts an optional `ref` for a visible `scrollable` panel. Omit it to scroll the page. The result says
+  whether it actually moved; read a fresh snapshot afterward. Content clipped outside a panel is omitted until scrolled into view.
+
+Start diagnosis with `list_pages`. Its `environmentId` identifies the Connector actually reached. `no_authorized_page`
+means this Session currently has no grant on that Connector, `authorized_pages_offline` means all its grants missed
+heartbeats, and `ready` means at least one is online. Counts cover this Session, not only the returned page of results.
+An empty successful response proves MCP reached the Connector; it does not establish that the extension is disconnected
+or that the user never authorized a page. Check the environment and Session shown in the side panel before asking for another grant.
+Other Sessions and ungranted tabs are never listed.
+
+Specific error codes survive the page agent → extension → Connector → MCP path. A stale ref requires a new snapshot;
+an obscured control requires inspecting the overlay; an invalid number or unavailable option leaves the field unchanged.
+These failures do not revoke page consent. MCP reports a recovery hint instead of treating every failure as an authorization
+problem. Unsupported iframe/shadow DOM/canvas controls, file uploads and native dialogs still require an explicit capability
+report; re-pairing does not add support. A timed-out write remains uncertain: inspect before retrying.
+
+Update Connector/MCP and reload the extension together. An already-running MCP process or loaded Chrome extension keeps
+its old code. Build output alone does not update either process.
+
 ## Verification status
+
+On 2026-09-07, `test/fixtures/console-controls.html` passed in real Chrome for Testing 151 through a local Relay/E2E channel:
+numeric bounds, exact native selection, input/change events, panel clipping/scrolling, nested button labels,
+disabled/obscured controls, error propagation and navigation revocation. The isolated test profile pregranted loopback
+permission only. This verifies browser behavior on a synthetic form, not a logged-in cloud console or its custom widgets.
 
 On 2026-09-07, a real Chrome side panel in an isolated profile, built Web/extension and a local Relay verified
 one-link pairing, separate identities, no implicit page grant and identity preservation after panel reload.

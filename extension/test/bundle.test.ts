@@ -86,7 +86,7 @@ async function harness(t: test.TestContext) {
   Object.defineProperty(document, 'elementFromPoint', { value: () => document.querySelector('#safe') });
   const pageContext = createContext({ document, location: new URL(url), crypto, URL,
     Node: { TEXT_NODE: 3 }, NodeFilter: { SHOW_ELEMENT: 1 }, innerHeight: 800, innerWidth: 1200,
-    HTMLInputElement: window.HTMLInputElement, HTMLTextAreaElement: window.HTMLTextAreaElement,
+    HTMLInputElement: window.HTMLInputElement, HTMLTextAreaElement: window.HTMLTextAreaElement, HTMLSelectElement: window.HTMLSelectElement,
     HTMLAnchorElement: window.HTMLAnchorElement, Event: window.Event,
     getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }), window: { scrollBy: () => {} },
   });
@@ -333,7 +333,7 @@ test('built extension pairs over real WS/E2E, selects original Session, reads/cl
   const button = snapshot.nodes.find((node: Frame) => node.tag === 'button');
   await assert.rejects(h.broker.execute('task-b', 'turn-2', { method: 'click', ref: button.ref }), /not_authorized/);
   await h.broker.execute('task-a', 'turn-1', { method: 'click', ref: button.ref }); assert.equal(h.clicks(), 1);
-  await assert.rejects(h.broker.execute('task-a', 'turn-1', { method: 'click', ref: button.ref }), /operation_failed/);
+  await assert.rejects(h.broker.execute('task-a', 'turn-1', { method: 'click', ref: button.ref }), /browser_stale_element_read_again/);
   const fresh: any = await h.broker.execute('task-a', 'turn-1', { method: 'snapshot' });
   await h.broker.execute('task-a', 'turn-1', { method: 'fill', ref: fresh.nodes.find((node: Frame) => node.tag === 'input').ref, text: 'test-query' });
   assert.equal((h.document.querySelector('#search') as HTMLInputElement).value, 'test-query');
@@ -354,6 +354,27 @@ test('built worker rejects website senders and revokes on document replacement/n
     h[action]();
     await assert.rejects(h.broker.execute('task-a', 'turn-1', { method: 'snapshot' }), /not_authorized|authorization_changed|operation_failed/);
   }
+});
+
+test('console controls expose nested labels and exact recoverable failures without losing page consent', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const button = h.document.querySelector('#safe')!;
+  button.innerHTML = '<span>Save configuration</span><span hidden>private-button-marker</span>';
+  for (const child of button.children) Object.defineProperty(child, 'getBoundingClientRect', { value: () => button.getBoundingClientRect() });
+  let snapshot: any = await h.broker.execute('task-a', 'turn-controls', { method: 'snapshot' });
+  assert.ok(snapshot.nodes.find((node: Frame) => node.tag === 'button' && node.text === 'Save configuration' && node.ref));
+  assert.doesNotMatch(JSON.stringify(snapshot), /private-button-marker|secret-password|secret-draft|secret-option/);
+  const obscured = snapshot.nodes.find((node: Frame) => node.tag === 'input');
+  await assert.rejects(h.broker.execute('task-a', 'turn-controls', { method: 'click', ref: obscured.ref }), { message: 'browser_element_obscured' });
+  assert.equal(h.broker.status('task-a').authorized, true);
+  button.setAttribute('disabled', '');
+  snapshot = await h.broker.execute('task-a', 'turn-controls', { method: 'snapshot' });
+  const disabled = snapshot.nodes.find((node: Frame) => node.tag === 'button');
+  assert.equal(disabled.disabled, true);
+  await assert.rejects(h.broker.execute('task-a', 'turn-controls', { method: 'click', ref: disabled.ref }), { message: 'browser_element_not_allowed' });
+  assert.equal(h.clicks(), 0); assert.equal(h.broker.status('task-a').online, true);
+  await assert.rejects(h.broker.execute('task-a', 'turn-controls', { method: 'scroll', ref: obscured.ref, deltaY: 100 }), { message: 'browser_stale_element_read_again' });
 });
 
 test('bad pairing exits pending state and can pair again; cancellation returns promptly', async (t) => {
@@ -404,7 +425,7 @@ test('one root adopts only AI-created same-origin child tabs, preserves them acr
   assert.equal((await h.send('status')).result.currentManaged, false);
   assert.ok(!h.session.values.bindings.some((binding: Frame) => binding.target.tabId === manualId));
   assert.match(JSON.stringify(await h.broker.execute('task-a', 'turn-1', { method: 'snapshot' }, opened.pageId)), /Fixture page 2/);
-  await assert.rejects(h.broker.execute('task-a', 'turn-1', { method: 'click', ref: fresh.nodes.find((node: Frame) => node.tag === 'button').ref }, opened.pageId), /operation_failed/);
+  await assert.rejects(h.broker.execute('task-a', 'turn-1', { method: 'click', ref: fresh.nodes.find((node: Frame) => node.tag === 'button').ref }, opened.pageId), /browser_stale_element_read_again/);
   await assert.rejects(h.broker.execute('task-a', 'turn-1', { method: 'snapshot' }), /selection_required/);
   const originalIds = h.session.values.bindings.map((binding: Frame) => binding.grantId);
   h.dropConnection();
@@ -467,7 +488,7 @@ test('link handoff rejects scripts, embedded credentials and downloads before cr
     link.setAttribute('href', href);
     if (href.endsWith('/download')) link.setAttribute('download', 'file');
     const snapshot: any = await h.broker.execute('task-a', 'turn-link', { method: 'snapshot' });
-    await assert.rejects(h.broker.execute('task-a', 'turn-link', { method: 'open_link', ref: snapshot.nodes.find((node: Frame) => node.text === 'Open child').ref }), /operation_failed/);
+    await assert.rejects(h.broker.execute('task-a', 'turn-link', { method: 'open_link', ref: snapshot.nodes.find((node: Frame) => node.text === 'Open child').ref }), /browser_link_required|browser_navigation_not_allowed/);
     assert.equal(h.createdTabs(), 0);
     assert.equal(h.broker.listPages('task-a', 'turn-link').total, 1);
   }

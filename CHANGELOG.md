@@ -4,6 +4,11 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Improve experimental browser control for console forms: nested button labels and control states, numeric inputs,
+  native select labels and selection, and scrolling an individual panel. Preserve specific recoverable errors through
+  the extension and MCP. Page inventory distinguishes no current-Session grant from offline pages and identifies the
+  Connector environment; neither means the user must pair again. Update Connector/MCP and reload the extension together.
+
 - Pair experimental extension chat once and automatically link/reconnect page control without a second pairing link.
   Keep private keys separate, bind association proofs to the connection, extension and device, and preserve explicit
   page consent, existing identities and revocation boundaries.

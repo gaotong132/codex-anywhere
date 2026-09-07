@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Cloud console controls fixture</title>
+<style>
+body { font: 16px system-ui; margin: 24px; }
+label { display:block; margin:12px 0 4px; }
+input, select, button { padding:8px; font:inherit; }
+#panel { height:180px; width:440px; overflow:auto; border:1px solid #aaa; margin-top:20px; }
+.spacer { height:360px; }
+</style>
+<h1>Cloud console controls fixture</h1><p>Synthetic configuration only. No accounts or network submissions.</p>
+<label for="port">Listener port</label><input id="port" type="number" min="1" max="65535" step="1" value="443">
+<label for="protocol">Protocol</label><select id="protocol"><option value="internal-http">HTTP</option><option value="internal-https">HTTPS</option><optgroup label="Unavailable" disabled><option>TCP disabled</option></optgroup><option value="private-option" hidden>Hidden option</option></select>
+<button id="save" type="button"><span>Save configuration</span><span hidden>hidden-button-marker</span></button>
+<div role="combobox" aria-label="Region" aria-expanded="false" tabindex="0">Region choices</div>
+<div role="option" tabindex="0"><span>Region A</span></div>
+<input type="password" value="password-fixture-marker"><textarea hidden>private-draft-marker</textarea><div data-anywhere-private>private-fixture-marker</div>
+<div id="panel" role="region" aria-label="Security group rules"><p>Rule list</p><div class="spacer"></div><button id="last-rule">Last rule</button></div>
+<p id="result">No changes saved</p>
+<script>
+window.fixtureEvents=[];
+for(const id of ['port','protocol']) for(const event of ['input','change']) document.getElementById(id).addEventListener(event,()=>window.fixtureEvents.push(id+':'+event));
+document.getElementById('save').addEventListener('click',()=>{document.getElementById('result').textContent='Saved '+document.getElementById('protocol').selectedOptions[0].label+':'+document.getElementById('port').value;});
+</script></html>

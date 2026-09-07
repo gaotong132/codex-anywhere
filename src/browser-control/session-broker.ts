@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { parseBrowserTarget, requireBrowserId, type BrowserTarget } from './contracts.js';
-import { parseOperation, type BrowserOperation } from './operations.js';
+import { browserOperationErrorCode, parseOperation, type BrowserOperation } from './operations.js';
 import { browserContext } from '../shared/browser-context.js';
 
 type Client = { clientId: string; clientDeviceId: string };
@@ -106,8 +106,11 @@ export class BrowserSessionBroker {
     requireBrowserId(threadId); requireBrowserId(turnId);
     if (!Number.isInteger(offset) || offset < 0 || offset > 64 || !Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('browser_invalid_request');
     const grants = this.forSession(threadId);
+    const onlinePageCount = grants.filter((grant) => this.isOnline(grant)).length;
     return { pages: grants.slice(offset, offset + limit).map((grant) => ({ pageId: grant.id,
       origin: grant.target.origin.slice(0, 512), kind: grant.rootGrantId ? 'ai-opened' : 'authorized-root', online: this.isOnline(grant) })), total: grants.length,
+      environmentId: this.environmentId, onlinePageCount,
+      state: grants.length === 0 ? 'no_authorized_page' : onlinePageCount === 0 ? 'authorized_pages_offline' : 'ready',
       nextOffset: offset + limit < grants.length ? offset + limit : null };
   }
 
@@ -153,8 +156,7 @@ export class BrowserSessionBroker {
     if (JSON.stringify(value.result ?? null).length > 24_000) throw new Error('browser_result_too_large');
     clearTimeout(pending.timer); this.pending.delete(String(value.requestId));
     if (value.ok === true) { pending.grant.lastToolSuccessAt = this.now(); pending.resolve(value.result); }
-    else pending.reject(new Error(typeof value.errorCode === 'string' && ['browser_child_permission_required', 'browser_child_origin_denied', 'browser_operation_timeout'].includes(value.errorCode)
-      ? value.errorCode : 'browser_operation_failed_or_authorization_changed'));
+    else pending.reject(new Error(browserOperationErrorCode(value.errorCode)));
     return {};
   }
 

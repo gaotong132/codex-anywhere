@@ -198,6 +198,7 @@ test('official MCP SDK → private loopback → exact Session broker round trip'
   assert.equal(wrong.isError, true);
   const spoof = await sdk.callTool({ name: 'anywhere_browser_snapshot', arguments: { threadId: 'other' }, _meta }); assert.equal(spoof.isError, true);
   const pages = await sdk.callTool({ name: 'anywhere_browser_list_pages', arguments: {}, _meta });
+  assert.equal(JSON.parse((pages.content as any[])[0].text).untrustedBrowserResult.state, 'ready');
   assert.match(JSON.stringify(pages), /authorized-root/);
   assert.match(JSON.stringify(pages), new RegExp(grant.grantId));
   const badPage = await sdk.callTool({ name: 'anywhere_browser_snapshot', arguments: { pageId: 'other' }, _meta });
@@ -205,6 +206,48 @@ test('official MCP SDK → private loopback → exact Session broker round trip'
   assert.match(JSON.stringify(badPage), /list_pages/);
   const listSpoof = await sdk.callTool({ name: 'anywhere_browser_list_pages', arguments: { threadId: 'thread-1' }, _meta });
   assert.equal(listSpoof.isError, true);
+  const unbound = await sdk.callTool({ name: 'anywhere_browser_list_pages', arguments: {},
+    _meta: { 'x-codex-turn-metadata': { thread_id: 'unbound', turn_id: 'turn-1' } } });
+  assert.notEqual(unbound.isError, true);
+  assert.match(JSON.stringify(unbound), /no_authorized_page/);
+  assert.doesNotMatch(JSON.stringify(unbound), new RegExp(grant.grantId));
+  assert.doesNotMatch(JSON.stringify(unbound), /example\.com/);
+  const panelScroll = await sdk.callTool({ name: 'anywhere_browser_scroll', arguments: { ref: 'panel-ref', deltaY: 200 }, _meta });
+  assert.notEqual(panelScroll.isError, true);
+  assert.match(JSON.stringify(panelScroll), /scroll/);
+});
+
+test('page inventory distinguishes missing consent, offline grants and empty pagination without crossing Sessions', () => {
+  const { broker, grant, advance } = setup();
+  assert.equal(broker.listPages('thread-1', 'turn-1').state, 'ready');
+  const emptyPage = broker.listPages('thread-1', 'turn-1', 10);
+  assert.equal(emptyPage.pages.length, 0);
+  assert.equal(emptyPage.state, 'ready'); assert.equal(emptyPage.total, 1);
+  const other = broker.listPages('unbound', 'turn-1');
+  assert.equal(other.state, 'no_authorized_page'); assert.equal(other.environmentId, 'pc');
+  assert.equal(other.onlinePageCount, 0); assert.doesNotMatch(JSON.stringify(other), /example\.com|browser-1|thread-1/);
+  advance(45_001);
+  assert.equal(broker.listPages('thread-1', 'turn-1').state, 'authorized_pages_offline');
+  broker.heartbeat(client, grant.grantId);
+  assert.equal(broker.listPages('thread-1', 'turn-1').onlinePageCount, 1);
+  broker.revoke(client, grant.grantId);
+  assert.equal(broker.listPages('thread-1', 'turn-1').state, 'no_authorized_page');
+});
+
+test('specific page failures survive routing but arbitrary exception messages never reach the model', async () => {
+  for (const code of ['browser_stale_element_read_again', 'browser_element_obscured', 'browser_number_value_invalid',
+    'browser_option_not_available', 'browser_scroll_target_not_scrollable', 'browser_private_value', 'secret fixture']) {
+    const { broker, grant, events } = setup();
+    const pending = broker.execute('thread-1', 'turn-1', { method: 'fill', ref: 'fixture', text: '443' });
+    const expected = ['browser_private_value', 'secret fixture'].includes(code) ? 'browser_operation_failed_or_authorization_changed' : code;
+    const rejected = assert.rejects(pending, { message: expected });
+    broker.result(client, { requestId: events[0].payload.requestId, grantId: grant.grantId, ok: false, errorCode: code });
+    await rejected; broker.clear();
+  }
+  assert.deepEqual(parseOperation({ method: 'scroll', ref: 'panel', deltaY: 100 }), { method: 'scroll', ref: 'panel', deltaY: 100 });
+  for (const patch of [{ ref: '' }, { deltaY: 2001 }, { text: 'wrong field' }, { ref: 'https://example.com' }]) {
+    assert.throws(() => parseOperation({ method: 'scroll', deltaY: 100, ...patch }));
+  }
 });
 
 test('only a live AI open operation can adopt same-origin children; root remains singular', async () => {
