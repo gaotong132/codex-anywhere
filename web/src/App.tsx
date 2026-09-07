@@ -1959,7 +1959,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
 
   useSidePanelSession({ environmentId, threadId: authenticated ? threadId : null,
     title: String(sessions.find((session) => session.id === threadId)?.title || '').slice(0, 160),
-    online: authenticated && online });
+    online: authenticated && online }, authenticated);
 
   if (initialBootstrapPending && !pairingDialogOpen) return <StartupScreen status={statusText} />;
 

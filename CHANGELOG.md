@@ -4,6 +4,10 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Pair experimental extension chat once and automatically link/reconnect page control without a second pairing link.
+  Keep private keys separate, bind association proofs to the connection, extension and device, and preserve explicit
+  page consent, existing identities and revocation boundaries.
+
 - Separate Web download/preview and Markdown responsibilities and Relay HTTP handling. Fix empty/truncated downloads,
   selection cancellation and wake-lock ownership; validate preview byte sizes and preserve UTF-8 BOMs. Isolate stale
   extension callbacks, distinguish inbound JSON-RPC request IDs from responses, and invalidate rewritten rollout caches.

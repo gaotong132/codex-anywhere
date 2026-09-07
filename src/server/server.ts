@@ -10,6 +10,7 @@ import sirv from 'sirv';
 import { WebSocket, WebSocketServer } from 'ws';
 import { createConnectorAuthProof, normalizeAuthDeviceId } from '../shared/auth.js';
 import { verifyDeviceAuthProof, type DeviceAuthProof } from '../shared/device-auth.js';
+import { browserLinkContext } from '../shared/browser-link.js';
 import {
   BROWSER_PAIRING_ID_PATTERN,
   DEVICE_KEY_AUTH_CONTEXT,
@@ -171,6 +172,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
             socket, message, connectorToken, authChallenge,
             connectors, clients, socketMeta, authTimer,
             authLimiter, clientAddress, deviceRegistry,
+            extensionOrigin: extensionOrigins.includes(String(request.headers.origin)) ? String(request.headers.origin) : '',
           });
           if (authenticated) {
             const identity = socketMeta.get(socket)!;
@@ -258,7 +260,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
 
 function authenticateSocket({
   socket, message, connectorToken, authChallenge,
-  connectors, clients, socketMeta, authTimer, authLimiter, clientAddress, deviceRegistry,
+  connectors, clients, socketMeta, authTimer, authLimiter, clientAddress, deviceRegistry, extensionOrigin,
 }: {
   socket: AliveWebSocket;
   message: JsonObject;
@@ -271,6 +273,7 @@ function authenticateSocket({
   authLimiter: AuthFailureLimiter;
   clientAddress: string;
   deviceRegistry: DeviceRegistry;
+  extensionOrigin: string;
 }) {
   const authType = String(message.type || '');
   const role = message.role === 'connector' ? 'connector' : message.role === 'client' ? 'client' : '';
@@ -291,7 +294,8 @@ function authenticateSocket({
   }
   let deviceAuthContext = '';
   let browserPairing: { id: string; verifier: string } | null = null;
-  let authMode: 'connector-token' | 'device' | 'pairing';
+  let authMode: 'connector-token' | 'device' | 'pairing' | 'linked';
+  let sponsor: DeviceAuthProof | null = null;
   if (authType === 'auth.connector' && role === 'connector') {
     let expectedProof = '';
     try {
@@ -314,6 +318,17 @@ function authenticateSocket({
   } else if (authType === 'auth.device' && role === 'client') {
     deviceAuthContext = DEVICE_KEY_AUTH_CONTEXT;
     authMode = 'device';
+  } else if (authType === 'auth.link' && role === 'client') {
+    sponsor = message.sponsor;
+    let valid = false;
+    try {
+      valid = Boolean(sponsor && extensionOrigin && deviceRegistry.isApproved('client', sponsor)
+        && verifyDeviceAuthProof(sponsor, { challenge: authChallenge, role: 'client',
+          authProof: browserLinkContext(extensionOrigin, device) }));
+    } catch { /* Invalid or differently scoped sponsor proof. */ }
+    if (!valid) return rejectAuthentication(socket, authLimiter, clientAddress);
+    deviceAuthContext = DEVICE_KEY_AUTH_CONTEXT;
+    authMode = 'linked';
   } else if (authType === 'auth.enroll' && role === 'client') {
     const pairingId = String(message.pairingId || '');
     if (!BROWSER_PAIRING_ID_PATTERN.test(pairingId)) {
@@ -358,7 +373,9 @@ function authenticateSocket({
     return rejectAuthentication(socket, authLimiter, clientAddress, 4407, 'device authentication failed');
   }
   authLimiter.recordSuccess(clientAddress);
-  if (browserPairing) {
+  if (sponsor) {
+    if (!deviceRegistry.approveLinkedBrowser(device, sponsor)) return rejectAuthentication(socket, authLimiter, clientAddress);
+  } else if (browserPairing) {
     const approved = deviceRegistry.approveBrowserPairing({
       pairingId: browserPairing.id,
       verifier: browserPairing.verifier,

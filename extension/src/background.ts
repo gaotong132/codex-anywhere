@@ -1,6 +1,7 @@
 import { browserOrigin, parseBrowserTarget, requireBrowserId, type BrowserTarget } from '../../src/browser-control/contracts.js';
 import { parseOperation } from '../../src/browser-control/operations.js';
-import { createDeviceIdentity } from '../../src/shared/device-auth.js';
+import { createDeviceIdentity, type DeviceAuthProof } from '../../src/shared/device-auth.js';
+import type { BrowserLinkRequest } from '../../src/shared/browser-link.js';
 import { ExtensionConnection } from './connection.js';
 import { runPageAgent } from './page-agent.js';
 import { openManagedTab } from './managed-tabs.js';
@@ -22,7 +23,26 @@ let error = '';
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let retries = 0;
 let reconnectEnabled = false;
+let autoConnectPaused = false;
 let grantReplacementSupported = false;
+let pendingLink: { request: BrowserLinkRequest; windowId: number; channel: string;
+  resolve: (proof: DeviceAuthProof) => void; reject: (error: Error) => void } | undefined;
+
+function cancelLink() {
+  const pending = pendingLink; pendingLink = undefined;
+  pending?.reject(new Error('browser_connection_cancelled'));
+}
+
+function requestLink(challenge: string, windowId: number, channel: string): Promise<DeviceAuthProof> {
+  cancelLink();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { cancelLink(); }, 8000);
+    pendingLink = { windowId, channel, request: { requestId: crypto.randomUUID(), challenge,
+      extensionOrigin: `chrome-extension://${chrome.runtime.id}`, device: { id: identity.id, publicKey: identity.publicKey } },
+      resolve: (proof) => { clearTimeout(timer); resolve(proof); },
+      reject: (failure) => { clearTimeout(timer); reject(failure); } };
+  });
+}
 const summary = (binding: Binding) => ({ grantId: binding.grantId, environmentId: binding.environmentId, title: binding.title, pageTitle: binding.pageTitle,
   threadId: binding.threadId, origin: binding.target.origin, sitePermissionPattern: sitePattern(binding.target.origin), tabId: binding.target.tabId, child: binding.rootTabId !== undefined });
 async function status(windowId?: number) {
@@ -30,10 +50,11 @@ async function status(windowId?: number) {
   const current = tab?.id === undefined ? undefined : bindings.get(tab.id);
   const root = [...bindings.values()].find((entry) => entry.rootTabId === undefined);
   return { connected: !connecting && (connection?.ready() ?? false), relayOnline: connection?.online ?? false,
-    connecting, busy: busy.size > 0, origin, error, devices: connection?.devices ?? [], environmentId: connection?.environmentId ?? '', sessions,
+    connecting, autoConnectPaused, busy: busy.size > 0, origin, error, devices: connection?.devices ?? [], environmentId: connection?.environmentId ?? '', sessions,
     binding: root ? summary(root) : null, currentManaged: Boolean(current), childCount: Math.max(0, bindings.size - (root ? 1 : 0)),
     childPermission: root ? await chrome.permissions.contains({ origins: [sitePattern(root.target.origin)] }) : false,
-    extensionOrigin: `chrome-extension://${chrome.runtime.id}` };
+    extensionOrigin: `chrome-extension://${chrome.runtime.id}`,
+    linkRequest: pendingLink && pendingLink.windowId === windowId ? { ...pendingLink.request, channel: pendingLink.channel } : null };
 }
 
 function persist() {
@@ -57,7 +78,10 @@ async function badge(tabId: number) {
 function changed() {
   for (const tabId of bindings.keys()) void badge(tabId).catch(() => {});
   if (!connecting && reconnectEnabled && !connection?.online && !reconnectTimer && retries < 5) {
-    reconnectTimer = setTimeout(() => { reconnectTimer = undefined; void connect(origin, true).catch(() => {}); }, Math.min(30_000, 1000 * 2 ** retries++));
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = undefined;
+      if (reconnectEnabled && !autoConnectPaused) void connect(origin, true).catch(() => {});
+    }, Math.min(30_000, 1000 * 2 ** retries++));
   }
 }
 
@@ -188,7 +212,8 @@ async function selectEnvironment(environmentId: string, expectedRevision = revis
   sessions = (response.sessions ?? []).slice(0, 200).map((session: Frame) => ({ id: session.id, title: String(session.name || session.title || session.preview || session.id).slice(0, 100) }));
 }
 
-async function connect(url: string, restoring = false) {
+async function connect(url: string, restoring = false, link?: (challenge: string) => Promise<DeviceAuthProof>) {
+  cancelLink();
   clearTimeout(reconnectTimer); reconnectTimer = undefined;
   let expectedRevision: number;
   if (!restoring) {
@@ -196,9 +221,10 @@ async function connect(url: string, restoring = false) {
     const revoking = revokeAll(); expectedRevision = revision;
     await revoking; if (revision !== expectedRevision) return;
   } else expectedRevision = ++revision;
+  if (restoring && origin && !link) reconnectEnabled = true;
   connecting = true; error = ''; sessions = [];
   try {
-    origin = await connection.connect(url);
+    origin = await connection.connect(url, link);
     if (revision !== expectedRevision) return;
     await chrome.storage.local.set({ origin });
     reconnectEnabled = true;
@@ -218,7 +244,10 @@ async function connect(url: string, restoring = false) {
     }
     retries = 0;
   } catch (failure) {
-    if (revision === expectedRevision) error = safeError(failure);
+    if (revision === expectedRevision) {
+      error = safeError(failure);
+      if (failure instanceof Error && failure.message === 'browser_device_not_approved') reconnectEnabled = false;
+    }
     throw failure;
   } finally { if (revision === expectedRevision) connecting = false; changed(); }
 }
@@ -309,7 +338,10 @@ function safeError(value: unknown) {
     browser_session_already_bound: '此会话仍被其他浏览器占用。请撤销其授权，或在旧浏览器离线 45 秒后重新授权当前页。',
     browser_authorization_changed: '页面或连接已变化，请在目标页面重新授权。',
     browser_connect_timeout: '连接超时。检查 Relay 的扩展 Origin 白名单、配对链接和代理。',
-    browser_pairing_failed: '配对失败。请生成新的单次配对链接后重试。',
+    browser_pairing_failed: '身份关联失败。请确认侧栏聊天已连接，并重新加载聊天后重试。',
+    browser_device_not_approved: '插件设备尚未获准或已被撤销。聊天已配对时会尝试自动关联；已撤销的设备需由管理员重新批准。',
+    browser_link_rejected: '自动关联未获允许。请确认聊天身份仍有效；已撤销的插件需由管理员重新批准。',
+    browser_link_update_required: '服务器尚不支持一次配对，请更新 Relay 后重试。',
   };
   return messages[code] || '连接或授权未完成。检查网络、扩展 Origin 白名单及页面权限后重试。';
 }
@@ -317,7 +349,8 @@ function safeError(value: unknown) {
 const ready = (async () => {
   await chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
   await chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
-  const saved = await chrome.storage.local.get(['privateKey', 'origin']);
+  const saved = await chrome.storage.local.get(['privateKey', 'origin', 'controlPaused']);
+  autoConnectPaused = saved.controlPaused === true;
   identity = createDeviceIdentity(typeof saved.privateKey === 'string' ? saved.privateKey : undefined);
   await chrome.storage.local.set({ privateKey: identity.privateKey });
   connection = new ExtensionConnection(identity, (frame) => { void handleOperation(frame); }, changed);
@@ -335,18 +368,37 @@ const ready = (async () => {
   }
   await persist();
   origin = typeof saved.origin === 'string' ? saved.origin : '';
-  if (origin) void connect(origin, true).catch(() => {});
+  if (origin && !autoConnectPaused) void connect(origin, true).catch(() => {});
 })();
 
 chrome.runtime.onMessage.addListener((message: Frame, sender, respond) => {
   const panel = sender.url === chrome.runtime.getURL('sidepanel.html');
   if (sender.id !== chrome.runtime.id || sender.tab || (!panel && sender.url !== chrome.runtime.getURL('popup.html'))) return false;
-  if (message.type === 'panel.grant' && !panel) return false;
+  if (String(message.type).startsWith('panel.') && !panel) return false;
   void ready.then(async () => {
     if (message.type === 'status') return status(panel && Number.isSafeInteger(message.windowId) ? message.windowId : undefined);
+    if (message.type === 'panel.connect') {
+      const input = new URL(String(message.origin));
+      if (input.origin !== message.origin || !Number.isSafeInteger(message.windowId)
+        || !/^[a-f0-9]{32}$/.test(message.channel)) throw new Error('browser_invalid_request');
+      if (autoConnectPaused && message.force !== true) return status(message.windowId);
+      autoConnectPaused = false; await chrome.storage.local.remove('controlPaused');
+      if (!connecting && !(connection.online && origin === input.origin)) {
+        void connect(input.origin, origin === input.origin,
+          (challenge) => requestLink(challenge, message.windowId, message.channel)).catch(() => {});
+      }
+      return status(message.windowId);
+    }
+    if (message.type === 'panel.link.complete') {
+      const pending = pendingLink;
+      if (!pending || pending.windowId !== message.windowId || pending.channel !== message.channel
+        || pending.request.requestId !== message.requestId) throw new Error('browser_authorization_changed');
+      pendingLink = undefined; pending.resolve(message.sponsor);
+      return status(message.windowId);
+    }
     error = '';
-    if (message.type === 'connect') await connect(String(message.url));
-    else if (message.type === 'cancel') { revision++; intents.clear(); reconnectEnabled = false; connecting = false; clearTimeout(reconnectTimer); reconnectTimer = undefined; connection.close(); }
+    if (message.type === 'connect') { autoConnectPaused = false; await chrome.storage.local.remove('controlPaused'); await connect(String(message.url)); }
+    else if (message.type === 'cancel') { autoConnectPaused = true; await chrome.storage.local.set({ controlPaused: true }); cancelLink(); revision++; intents.clear(); reconnectEnabled = false; connecting = false; clearTimeout(reconnectTimer); reconnectTimer = undefined; connection.close(); }
     else if (message.type === 'environment') {
       const revoking = revokeAll(); const expectedRevision = revision;
       await revoking; if (revision === expectedRevision) await selectEnvironment(String(message.environmentId), expectedRevision);
@@ -354,7 +406,7 @@ chrome.runtime.onMessage.addListener((message: Frame, sender, respond) => {
     else if (message.type === 'grant') await authorize(String(message.threadId));
     else if (message.type === 'panel.grant') await authorizeFromPanel(message);
     else if (message.type === 'revoke') await revokeAll();
-    else if (message.type === 'disconnect') { reconnectEnabled = false; await revokeAll(); connection.close(); origin = ''; await chrome.storage.local.remove('origin'); }
+    else if (message.type === 'disconnect') { autoConnectPaused = true; await chrome.storage.local.set({ controlPaused: true }); cancelLink(); reconnectEnabled = false; await revokeAll(); connection.close(); origin = ''; await chrome.storage.local.remove('origin'); }
     else throw new Error('browser_invalid_request');
     return status(panel && Number.isSafeInteger(message.windowId) ? message.windowId : undefined);
   }).then((result) => respond({ ok: true, result })).catch((failure) => { error = safeError(failure); respond({ ok: false, error }); });

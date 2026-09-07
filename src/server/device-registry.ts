@@ -34,6 +34,7 @@ export type PendingDevice = {
 
 export type ApprovedDevice = Omit<PendingDevice, 'requestId' | 'address' | 'requestedAt'> & {
   approvedAt: number;
+  linkedFrom?: Pick<DeviceAuthProof, 'id' | 'publicKey'>;
 };
 
 type BrowserPairing = {
@@ -48,6 +49,7 @@ type DeviceRegistryState = {
   approved: ApprovedDevice[];
   pending: PendingDevice[];
   browserPairings: BrowserPairing[];
+  revokedBrowserLinks?: string[];
 };
 
 function emptyState(): DeviceRegistryState {
@@ -70,6 +72,8 @@ function sanitizeState(value: unknown): DeviceRegistryState {
     version: 2,
     approved: raw.approved.filter((entry) => entry?.id && entry?.publicKey && entry?.role),
     pending: raw.pending.filter((entry) => entry?.requestId && entry?.id && entry?.publicKey && entry?.role),
+    revokedBrowserLinks: Array.isArray(raw.revokedBrowserLinks)
+      ? raw.revokedBrowserLinks.filter((id) => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id)) : [],
     browserPairings: Array.isArray(raw.browserPairings)
       ? raw.browserPairings.filter((entry) => (
         BROWSER_PAIRING_ID_PATTERN.test(String(entry?.id || ''))
@@ -107,7 +111,25 @@ export class DeviceRegistry {
     this.refresh();
     return this.state.approved.some((entry) => (
       entry.role === role && entry.id === device.id && entry.publicKey === device.publicKey
+      && (!entry.linkedFrom || this.state.approved.some((parent) => parent.role === 'client'
+        && !parent.linkedFrom && parent.id === entry.linkedFrom!.id && parent.publicKey === entry.linkedFrom!.publicKey))
     ));
+  }
+
+  approveLinkedBrowser(device: Pick<DeviceAuthProof, 'id' | 'publicKey'>, sponsor: Pick<DeviceAuthProof, 'id' | 'publicKey'>) {
+    this.refresh();
+    const parent = this.state.approved.find((entry) => entry.role === 'client' && !entry.linkedFrom
+      && entry.id === sponsor.id && entry.publicKey === sponsor.publicKey);
+    if (!parent || device.id === sponsor.id) return false;
+    if (this.state.revokedBrowserLinks?.includes(device.id)) return false;
+    const existing = this.state.approved.find((entry) => entry.role === 'client' && entry.id === device.id);
+    if (existing) return this.isApproved('client', device);
+    this.state.approved.push({ id: device.id, publicKey: device.publicKey, role: 'client',
+      label: 'Anywhere Browser Extension', approvedAt: Date.now(),
+      linkedFrom: { id: sponsor.id, publicKey: sponsor.publicKey } });
+    this.state.pending = this.state.pending.filter((entry) => entry.role !== 'client' || entry.id !== device.id);
+    this.persist();
+    return true;
   }
 
   requestPairing({
@@ -216,6 +238,7 @@ export class DeviceRegistry {
     this.state.pending = this.state.pending.filter((entry) => recordKey(entry.role, entry.id) !== key);
     this.state.approved = this.state.approved.filter((entry) => recordKey(entry.role, entry.id) !== key);
     this.state.approved.push(approved);
+    this.state.revokedBrowserLinks = this.state.revokedBrowserLinks?.filter((id) => id !== approved.id);
     this.persist();
     return approved;
   }
@@ -237,6 +260,7 @@ export class DeviceRegistry {
     const key = recordKey(approved.role, approved.id);
     this.state.approved = this.state.approved.filter((entry) => recordKey(entry.role, entry.id) !== key);
     this.state.approved.push(approved);
+    if (approved.role === 'client') this.state.revokedBrowserLinks = this.state.revokedBrowserLinks?.filter((id) => id !== approved.id);
     this.persist();
     return approved;
   }
@@ -254,8 +278,12 @@ export class DeviceRegistry {
     this.refresh();
     const key = recordKey(role, id);
     const before = this.state.approved.length;
-    this.state.approved = this.state.approved.filter((entry) => recordKey(entry.role, entry.id) !== key);
+    const removed = this.state.approved.filter((entry) => recordKey(entry.role, entry.id) === key
+      || (role === 'client' && entry.linkedFrom?.id === id));
+    this.state.approved = this.state.approved.filter((entry) => !removed.includes(entry));
     if (this.state.approved.length === before) return false;
+    this.state.revokedBrowserLinks = [...new Set([...(this.state.revokedBrowserLinks ?? []),
+      ...removed.filter((entry) => entry.role === 'client').map((entry) => entry.id)])];
     this.persist();
     return true;
   }

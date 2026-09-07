@@ -11,8 +11,8 @@ execution environment.
 ## Experience
 
 Click extension → open the live Web chat in the side panel → choose environment and Session → chat, optionally
-authorize the current page. Chat does not require browser control; page authorization still requires separate
-extension pairing through Page control settings and Connector/MCP setup. Settings only manage the connection;
+authorize the current page. Pair chat once; it automatically links the extension's page-control identity.
+Page control still requires Connector/MCP setup. Settings only manage the connection;
 the chat owns environment and Session selection, with authorization and revocation above it. The toolbar has a fixed icon and tab-specific status dot.
 
 Keep one manually authorized root, not arbitrary multi-tab binding. Site permission requested on authorization also enables same-origin
@@ -25,8 +25,12 @@ when more than one exists.
 
 The local `sidepanel.html` shell embeds the live Web app at `/extension/sidepanel`. Only this relay entry allows
 an exact `BRIDGE_EXTENSION_ORIGINS` member through `frame-ancestors`; normal pages retain embedding denial.
-Web publishes only versioned environment/Session selection and online state tied to a random frame channel.
-The shell validates the source window, site, sequence, and freshness. Messages cannot authorize a page, supply
+Web publishes versioned environment/Session selection, authentication and online state tied to a random frame channel.
+The shell validates the source window, site, sequence, and freshness. Authenticated Web can also sign the current parent
+extension's association request, bound to the Relay connection challenge, extension Origin and public key. Relay checks
+Web approval, the association signature and the plugin's own key proof. Proofs cannot be reused across connections,
+extensions or keys. Revoking Web cascades to linked plugins; revocation blocks automatic re-enrollment, and linked plugins
+cannot sponsor more clients. Messages cannot authorize a page, supply
 a browser target, or call extension APIs; device private keys never cross this interface. The `tabs` permission provides
 the current window's active tab address. An explicit authorization click requests optional access to that site within
 the user gesture; a target or Session change during the prompt cancels authorization. The worker records document identity before
@@ -37,7 +41,7 @@ of the chat frame. Closing chat does not revoke consent, and selecting another S
 
 | Module | Responsibility |
 | --- | --- |
-| Extension connection | Separate device pairing, WS, reused E2E client, bounded requests |
+| Extension connection | Automatic association of an independent identity, WS, reused E2E client, bounded requests |
 | Extension background | Session selection, document consent, reconnect, grant rotation and revocation |
 | Page agent | Fixed isolated scripts, bounded snapshots/references, click/fill/scroll |
 | Managed tabs | Create only the requested AI child; validate optional site permission, origin, exact document and deadline |

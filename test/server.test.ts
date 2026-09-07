@@ -94,7 +94,9 @@ test('live Relay activity counts only authenticated sockets and follows ping, cl
   t.after(() => rm(directory, { recursive: true, force: true }));
   let now = Date.now();
   const server = createBridgeServer({ connectorToken: TOKEN, deviceRegistryPath: join(directory, 'devices.json'),
-    clock: () => now, heartbeatIntervalMs: 50 });
+    // Leave room for real pong delivery while parallel suites perform crypto
+    // and synchronous registry writes; this test measures activity, not latency.
+    clock: () => now, heartbeatIntervalMs: 1000 });
   const address = await server.listen(0, '127.0.0.1');
   t.after(() => server.close());
   const url = `ws://127.0.0.1:${address.port}/ws`;

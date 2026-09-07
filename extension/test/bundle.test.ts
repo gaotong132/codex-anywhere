@@ -11,6 +11,7 @@ import { encodeBrowserPairingCredential } from '../../src/shared/pairing-auth.js
 import { requireCurrentProtocol } from '../../src/shared/protocol-contract.js';
 import { ConnectorSecureChannels } from '../../src/connector/secure-channels.js';
 import { BrowserSessionBroker } from '../../src/browser-control/session-broker.js';
+import { browserLinkContext } from '../../src/shared/browser-link.js';
 
 type Frame = Record<string, any>;
 const extensionId = 'a'.repeat(32);
@@ -154,7 +155,7 @@ async function harness(t: test.TestContext) {
     broker.clear(); channels.clear(); socket.terminate(); await relay.close();
   });
   const pairing = relay.deviceRegistry.createBrowserPairing();
-  return { broker, send, sender, receive: (...args: Parameters<typeof onMessage>) => onMessage(...args),
+  return { relay, broker, send, sender, receive: (...args: Parameters<typeof onMessage>) => onMessage(...args),
     sendPanel: (type: string, payload: Frame = {}) => send(type, payload, { id: extensionId, url: `chrome-extension://${extensionId}/sidepanel.html` }),
     onSessionList: (callback: () => void | Promise<void>) => { duringSessionsList = callback; },
     openPanel: (windowId: number) => onActionClicked({ id: activeTab, windowId }), openedPanels,
@@ -203,6 +204,49 @@ test('connection status stays pending until environment initialization finishes'
   assert.equal(result.ok, true);
   assert.equal(result.result.connecting, false);
   assert.equal(result.result.connected, true);
+});
+
+test('one Web pairing links the built worker; reconnection keeps identity and never grants a page', async (t) => {
+  const h = await harness(t);
+  const webIdentity = createDeviceIdentity();
+  const pending = h.relay.deviceRegistry.requestPairing({ role: 'client', address: 'fixture',
+    device: { id: webIdentity.id, publicKey: webIdentity.publicKey, signature: '0'.repeat(128) } });
+  h.relay.deviceRegistry.approve(pending.requestId);
+  const channel = 'd'.repeat(32);
+  await h.sendPanel('panel.connect', { origin: h.origin, windowId: 1, channel });
+  let request: Frame | undefined;
+  for (let i = 0; i < 100; i++) {
+    request = (await h.sendPanel('status', { windowId: 1 })).result.linkRequest;
+    if (request) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(request);
+  assert.equal((await h.sendPanel('status', { windowId: 2 })).result.linkRequest, null);
+  const sponsor = createDeviceAuthProof(webIdentity, { challenge: request.challenge, role: 'client',
+    authProof: browserLinkContext(request.extensionOrigin, request.device) });
+  assert.equal((await h.sendPanel('panel.link.complete', { windowId: 2, channel, requestId: request.requestId, sponsor })).ok, false);
+  assert.equal((await h.sendPanel('panel.link.complete', { windowId: 1, channel, requestId: request.requestId, sponsor })).ok, true);
+  for (let i = 0; i < 100 && !(await h.send('status')).result.connected; i++) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal((await h.send('status')).result.connected, true);
+  assert.equal(h.injections(), 0);
+  assert.equal(h.broker.status('task-a').authorized, false);
+  const key = h.local.values.privateKey;
+  assert.notEqual(key, webIdentity.privateKey);
+  assert.equal(JSON.stringify(h.local.values).includes(webIdentity.privateKey), false);
+  const registered = h.relay.deviceRegistry.listApproved().find((entry) => entry.id === request!.device.id);
+  assert.equal(registered?.linkedFrom?.id, webIdentity.id);
+  await h.reloadWithoutOldTab();
+  assert.equal(h.local.values.privateKey, key);
+  assert.equal((await h.send('status')).result.connected, true);
+  assert.equal(h.relay.deviceRegistry.listApproved().length, 3);
+  await h.send('disconnect');
+  const paused = await h.sendPanel('panel.connect', { origin: h.origin, windowId: 1, channel });
+  assert.equal(paused.result.autoConnectPaused, true);
+  assert.equal(paused.result.linkRequest, null);
+  assert.equal(paused.result.relayOnline, false);
+  assert.equal(h.local.values.controlPaused, true);
 });
 
 test('side panel grants only the explicitly selected original Session and keeps it when the panel reopens', async (t) => {

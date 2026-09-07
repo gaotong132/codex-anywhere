@@ -1,5 +1,6 @@
 import './sidepanel.css';
 import { SIDEPANEL_PATH, parseSidePanelSession, type SidePanelSession } from '../../src/shared/sidepanel.js';
+import { BROWSER_LINK_REQUEST, BROWSER_LINK_RESPONSE } from '../../src/shared/browser-link.js';
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const frame = element<HTMLIFrameElement>('chat');
@@ -19,6 +20,11 @@ let state: Record<string, any> = {};
 let operationError = '';
 let refreshRevision = 0;
 let targetRevision = 0;
+let chatAuthenticated = false;
+let linkSupported = false;
+let linkSent = '';
+let lastAutoAttempt = 0;
+let autoAttempts = 0;
 
 function serverOrigin(input: string) {
   const url = new URL(input.trim());
@@ -38,15 +44,19 @@ function render() {
   const connected = state.origin === relayOrigin && state.relayOnline;
   const pageAvailable = Boolean(activeTab?.url && /^https?:\/\//.test(activeTab.url));
   grant.disabled = busy || state.connecting === true || !selected || !pageAvailable;
-  grant.textContent = state.connecting ? '正在连接…' : connected ? '授权当前页' : '连接页面控制';
+  grant.textContent = state.connecting ? '正在连接…' : connected ? '授权当前页' : '重新连接';
   element('session-title').textContent = selected
     ? `${selected.environmentId} · ${selected.title || selected.threadId}`
     : selection ? '请在聊天页连接环境并选择会话' : '正在读取聊天会话…';
   const binding = state.binding;
   element('revoke').hidden = !binding;
   element<HTMLButtonElement>('revoke').disabled = busy;
-  element('browser-status').textContent = operationError || (binding
+  element('browser-status').textContent = operationError || (!connected && state.error ? state.error : '') || (binding
     ? `已授权：${binding.environmentId || state.environmentId} · ${binding.title} · ${binding.origin}${state.connected ? '' : '（离线）'}`
+    : !connected ? state.autoConnectPaused ? '页面控制已暂停，点击「重新连接」恢复。'
+      : state.connecting ? '正在通过侧栏聊天连接页面控制，无需再次配对。'
+      : chatAuthenticated ? linkSupported ? '正在连接页面控制，无需再次配对。' : '请重新加载聊天，获取一次配对支持。'
+        : '请先在下方聊天完成一次配对，页面控制将自动连接。'
     : !activeTab?.url ? '正在读取当前标签页；请检查扩展是否已重新加载并启用。'
       : !pageAvailable ? '此页面不支持控制，请切换到普通 HTTP/HTTPS 网页。'
         : '点击授权并允许当前站点访问后，上方会话才可读取和操作此页。');
@@ -57,6 +67,7 @@ function loadChat(origin: string) {
   relayOrigin = origin;
   channel = crypto.randomUUID().replaceAll('-', '');
   selection = null; sequence = 0; lastSeen = 0; loadedAt = Date.now(); operationError = '';
+  chatAuthenticated = false; linkSupported = false; linkSent = ''; autoAttempts = 0; lastAutoAttempt = 0;
   frame.src = `${origin}${SIDEPANEL_PATH}?extensionId=${chrome.runtime.id}&channel=${channel}`;
   element('setup').hidden = true;
   element('browser-bar').hidden = false;
@@ -65,17 +76,26 @@ function loadChat(origin: string) {
   render();
 }
 
-// Remote Web content can publish selection only. It cannot dispatch runtime
-// messages, supply a browser target, or perform privileged operations.
+// Web can publish selection and answer our outstanding association challenge.
+// It cannot choose a page, grant consent, or dispatch arbitrary runtime messages.
 window.addEventListener('message', (event) => {
   if (!channel || event.source !== frame.contentWindow || event.origin !== relayOrigin) return;
+  if (event.data?.type === BROWSER_LINK_RESPONSE) {
+    if (!chatAuthenticated || event.data.channel !== channel || !state.linkRequest
+      || event.data.requestId !== state.linkRequest.requestId || state.linkRequest.channel !== channel) return;
+    void chrome.runtime.sendMessage({ type: 'panel.link.complete', windowId, channel,
+      requestId: event.data.requestId, sponsor: event.data.sponsor }).then(() => refresh()).catch(() => {});
+    return;
+  }
   const next = parseSidePanelSession(event.data, channel);
   if (!next || next.sequence <= sequence) return;
   sequence = next.sequence; selection = next; lastSeen = Date.now();
-  render();
+  chatAuthenticated = event.data.authenticated === true;
+  linkSupported = event.data.linkSupported === true;
+  render(); ensureConnection();
 });
 frame.addEventListener('load', () => {
-  selection = null; sequence = 0; lastSeen = 0; loadedAt = Date.now(); render();
+  selection = null; sequence = 0; lastSeen = 0; chatAuthenticated = false; loadedAt = Date.now(); render();
 });
 
 async function refresh() {
@@ -87,8 +107,24 @@ async function refresh() {
     ]);
     if (revision !== refreshRevision) return;
     if (response.ok) state = response.result;
-    activeTab = tabs[0]; render();
+    activeTab = tabs[0]; render(); ensureConnection();
   } catch { /* The next poll recovers a restarted worker. */ }
+}
+
+function ensureConnection(force = false) {
+  if (state.autoConnectPaused && !force) return;
+  if (!chatAuthenticated || !linkSupported || Date.now() - lastSeen >= 5000 || windowId === undefined) return;
+  const request = state.linkRequest;
+  if (request?.channel === channel && request.requestId !== linkSent) {
+    linkSent = request.requestId;
+    frame.contentWindow?.postMessage({ type: BROWSER_LINK_REQUEST, channel, request }, relayOrigin);
+  }
+  if (state.origin === relayOrigin && state.relayOnline) { autoAttempts = 0; return; }
+  if (state.connecting) return;
+  if (!force && (autoAttempts >= 3 || Date.now() - lastAutoAttempt < 10_000)) return;
+  lastAutoAttempt = Date.now(); autoAttempts++;
+  void chrome.runtime.sendMessage({ type: 'panel.connect', origin: relayOrigin, windowId, channel, force })
+    .then(() => refresh()).catch(() => {});
 }
 
 // A side panel stays open across tab switches. Invalidate the previous target
@@ -135,7 +171,7 @@ grant.onclick = () => {
   const selected = currentSelection();
   const tab = activeTab;
   if (busy || !selected || !tab?.url || !/^https?:\/\//.test(tab.url) || tab.id === undefined || windowId === undefined) return;
-  if (state.origin !== relayOrigin || !state.relayOnline) { openControls(); return; }
+  if (state.origin !== relayOrigin || !state.relayOnline) { ensureConnection(true); return; }
   const expectedTarget = targetRevision;
   const expectedChannel = channel;
   // Unlike clicking the toolbar action, clicking inside a side panel does not

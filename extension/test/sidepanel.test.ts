@@ -11,7 +11,8 @@ const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 async function panelHarness() {
   const { document } = parseHTML(await readFile('extension/dist/sidepanel.html', 'utf8'));
   const frame = document.querySelector('#chat') as HTMLIFrameElement;
-  const frameWindow = {};
+  const posted: any[] = [];
+  const frameWindow = { postMessage: (data: unknown, target: string) => posted.push({ data, target }) };
   Object.defineProperty(frame, 'contentWindow', { value: frameWindow });
   const listeners = new Map<string, (event: any) => void>();
   const timers: Array<() => void> = [];
@@ -29,7 +30,7 @@ async function panelHarness() {
   const dialog = document.querySelector('#control-dialog') as HTMLDialogElement;
   dialog.showModal = () => { openedSettings++; };
   dialog.close = () => {};
-  const state = { connected: true, relayOnline: true, origin, environmentId: 'ecs', binding: null };
+  const state: Record<string, any> = { connected: true, relayOnline: true, origin, environmentId: 'ecs', binding: null };
   const context = createContext({ document, URL, URLSearchParams, Error,
     Date: class extends Date { static now() { return now; } },
     crypto: { randomUUID: () => String(++nonce).padStart(32, '0') },
@@ -51,7 +52,7 @@ async function panelHarness() {
     channel: new URL(frame.src).searchParams.get('channel'), sequence: 1,
     environmentId: 'ecs', threadId: 'session-a', title: 'Current task', online: true, ...patch });
   const message = (data: object, source: unknown = frameWindow, eventOrigin = origin) => listeners.get('message')!({ data, source, origin: eventOrigin });
-  return { document, frame, selection, message, sent, permissions, saved, state,
+  return { document, frame, selection, message, sent, posted, permissions, saved, state,
     switchTab: async (next: typeof tab) => { tab = next; onActivated({ windowId: tab.windowId }); await tick(); },
     reloadTab: async () => { onUpdated(tab.id, { status: 'loading' }); await tick(); },
     delayPermission: (value: Promise<boolean>) => { pendingPermission = value; },
@@ -83,6 +84,32 @@ test('side panel accepts only its own Web frame and fresh channel; a message nev
   assert.equal(grant.disabled, true);
   (h.document.querySelector('#reload') as HTMLButtonElement).onclick!(new Event('click') as any);
   assert.equal(grant.disabled, true);
+});
+
+test('paired chat automatically connects page control and forwards only its outstanding association proof', async () => {
+  const h = await panelHarness();
+  h.state.relayOnline = false;
+  h.message(h.selection({ authenticated: true, linkSupported: true }));
+  await tick();
+  assert.equal(h.sent.filter((v) => v.type === 'panel.connect').length, 1);
+  assert.equal(h.openedSettings(), 0);
+  assert.equal(h.permissions.length, 0);
+  h.state.connecting = true;
+  h.state.linkRequest = { channel: h.selection().channel, requestId: 'a'.repeat(32),
+    challenge: 'b'.repeat(64), extensionOrigin: `chrome-extension://${extensionId}`, device: { id: 'c'.repeat(64), publicKey: 'd'.repeat(64) } };
+  h.message(h.selection({ sequence: 2, authenticated: true, linkSupported: true }));
+  assert.equal(h.posted.length, 1);
+  assert.equal(h.posted[0].target, origin);
+  const reply = { type: 'anywhere.sidepanel.link.response', channel: h.selection().channel,
+    requestId: h.state.linkRequest.requestId, sponsor: { signature: 'fixture' } };
+  h.message(reply, {}, origin);
+  h.message(reply, undefined, 'https://attacker.example');
+  h.message({ ...reply, requestId: 'wrong' });
+  assert.equal(h.sent.some((v) => v.type === 'panel.link.complete'), false);
+  h.message(reply); await tick();
+  assert.equal(h.sent.filter((v) => v.type === 'panel.link.complete').length, 1);
+  assert.equal(h.sent.some((v) => v.type === 'panel.grant'), false);
+  assert.equal(h.permissions.length, 0);
 });
 
 test('an already-open panel authorizes a newly selected tab using only the current chat Session', async () => {

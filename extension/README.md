@@ -17,14 +17,15 @@ it does not publish a release or create a Tag.
 1. Update the relay and allow the actual extension ID in `BRIDGE_EXTENSION_ORIGINS` (see configuration below).
 2. Click the toolbar icon, enter the Anywhere server address, such as `https://your-anywhere/`, and choose
    **Open chat**, granting access to that site. Enter only the server address here; pairing links belong in
-   the chat page or **Page control settings**.
+   the chat page, once.
 3. The panel loads the live Web app. Select a PC/ECS environment and Session to chat, configure models, or
    handle approvals. The same browser profile and site can reuse existing Web pairing when host permission
    is granted; otherwise pair in the chat page.
-4. For page control, pair the extension separately through **Page control settings**, select the chat Session,
-   and click **Authorize current page**, allowing the current site's access when Chrome prompts. Settings do not
-   ask for another environment or Session: authorization uses the current chat selection. Web and extension identities
-   remain separate; one pairing link cannot be used twice. Reloading the existing extension preserves pairing.
+4. Once chat is paired, page control links and connects automatically without a second pairing link. An already paired
+   Web client can link a new extension too. Select the chat Session and click **Authorize current page**, allowing site
+   access when prompted. Web and extension retain separate private keys; only a connection-bound association signature
+   crosses the frame boundary. Reloading preserves identity. An explicit disconnect pauses automatic reconnection;
+   **Reconnect** resumes it. Update Relay/Web and the extension together, then reload chat for this feature.
 
 Changing the chat Session does not transfer existing page consent. The panel shows the environment and Session
 that actually own the grant. After switching tabs, authorize directly from the panel without another toolbar click.
@@ -112,10 +113,10 @@ page, then reopen the popup and check whether any new errors appear.
    Update/reload the Connector and MCP while idle as well; reloading the Chrome extension alone is insufficient for these changes.
    Host metadata `x-codex-turn-metadata.thread_id/turn_id` is required; missing context fails closed.
    See [Codex MCP configuration](https://developers.openai.com/codex/mcp/).
-4. Generate a fresh single-use browser pairing link using the [deployment instructions](../docs/deployment.md).
-   Paste it in the extension; a link already consumed by the Web client cannot be reused. This enrolls a separate
-   extension device. Only its private device key and server Origin persist, not the pairing secret. Public
-   connections require HTTPS/WSS; only `localhost` or `127.0.0.1` permits HTTP/WS.
+4. Generate one single-use pairing link using the [deployment instructions](../docs/deployment.md) and enter it in chat.
+   Already paired Web clients need no new link. Relay records the linked extension separately; revoking Web also revokes
+   its linked plugins, and explicit revocation blocks automatic re-enrollment. Existing independently paired plugins remain
+   valid. Public connections require HTTPS/WSS; only `localhost` or `127.0.0.1` permits HTTP/WS.
    Chrome CSP does not support IPv6 literal sources, so do not use `[::1]` for local HTTP. Corporate proxy WS blocking is not bypassed.
 
 ## Use and boundaries
@@ -152,6 +153,12 @@ page, then reopen the popup and check whether any new errors appear.
   over or send messages to other tasks.
 
 ## Verification status
+
+On 2026-09-07, a real Chrome side panel in an isolated profile, built Web/extension and a local Relay verified
+one-link pairing, separate identities, no implicit page grant and identity preservation after panel reload.
+Only loopback site access was pre-granted in the test copy; normal site prompts still require a user gesture.
+Regressions cover replay, wrong extension/key/window, unapproved sponsors, cascading revocation, explicit
+disconnect pausing reconnection, and legacy independent pairing.
 
 Tests exercise a real local Relay/WS/E2E channel, **compiled worker**, Chrome API/DOM doubles, pairing retry,
 Session isolation, snapshot/click/fill, stale references, and revocation. Official MCP SDK → private IPC →

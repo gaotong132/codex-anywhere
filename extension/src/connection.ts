@@ -2,6 +2,7 @@ import { createDeviceAuthProof, type DeviceIdentity } from '../../src/shared/dev
 import { browserPairingVerifier, createBrowserPairingProof, DEVICE_KEY_AUTH_CONTEXT, parseBrowserPairingCredential } from '../../src/shared/pairing-auth.js';
 import { requireCurrentProtocol } from '../../src/shared/protocol-contract.js';
 import { BrowserSecureChannel } from '../../web/src/secure-channel-client.js';
+import type { DeviceAuthProof } from '../../src/shared/device-auth.js';
 
 type Frame = Record<string, any>;
 const deviceIds = (value: unknown): string[] => Array.isArray(value)
@@ -27,7 +28,7 @@ export class ExtensionConnection {
   online = false;
   constructor(private identity: DeviceIdentity, private event: (frame: Frame) => void, private changed: () => void) {}
 
-  connect(input: string): Promise<string> {
+  connect(input: string, link?: (challenge: string) => Promise<DeviceAuthProof>): Promise<string> {
     const parsed = parseConnectionUrl(input);
     this.close();
     const socket = new WebSocket(parsed.socketUrl);
@@ -40,13 +41,20 @@ export class ExtensionConnection {
       };
       const timer = setTimeout(() => { finish(new Error('browser_connect_timeout')); this.close(); }, 15_000);
       this.cancelConnect = () => finish(new Error('browser_connection_cancelled'));
-      socket.onmessage = (incoming) => {
+      socket.onmessage = async (incoming) => {
         if (this.socket !== socket) return;
         try {
           const frame = JSON.parse(String(incoming.data));
           if (frame.type === 'auth.challenge') {
             const protocol = requireCurrentProtocol(frame.protocol);
             const challenge = String(frame.challenge);
+            if (link) {
+              const sponsor = await link(challenge);
+              if (this.socket !== socket || settled) return;
+              const device = createDeviceAuthProof(this.identity, { challenge, role: 'client', authProof: DEVICE_KEY_AUTH_CONTEXT });
+              socket.send(JSON.stringify({ type: 'auth.link', role: 'client', device, sponsor, protocol }));
+              return;
+            }
             const proof = parsed.pairing ? createBrowserPairingProof({ verifier: browserPairingVerifier(parsed.pairing.secret), challenge,
               pairingId: parsed.pairing.id, deviceId: this.identity.id, publicKey: this.identity.publicKey }) : DEVICE_KEY_AUTH_CONTEXT;
             const device = createDeviceAuthProof(this.identity, { challenge, role: 'client', authProof: proof }, 'Anywhere Browser Extension');
@@ -67,15 +75,17 @@ export class ExtensionConnection {
           } else if (frame.type === 'auth.error' || frame.type === 'error') {
             finish(new Error('browser_pairing_failed')); this.close();
           } else this.channel?.handle(frame);
-        } catch { finish(new Error('browser_connection_failed')); this.close(); }
+        } catch { if (this.socket === socket) { finish(new Error('browser_connection_failed')); this.close(); } }
       };
       socket.onerror = () => {
         if (this.socket !== socket) return;
         finish(new Error('browser_connection_failed_check_extension_origin_and_proxy')); this.close();
       };
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         if (this.socket !== socket) return;
-        finish(new Error('browser_disconnected')); this.close();
+        finish(new Error(event.code === 4403 ? 'browser_device_not_approved'
+          : link && event.code === 4003 ? 'browser_link_rejected'
+            : link && event.code === 4406 ? 'browser_link_update_required' : 'browser_disconnected')); this.close();
       };
     });
   }
