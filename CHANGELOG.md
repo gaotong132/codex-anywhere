@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Exclude decorative descendants that merely inherit a control's pointer cursor, including empty SVG icon nodes, from snapshot refs.
+
 - Keep HTML templates on LF line endings so extension build fingerprints agree across Windows and Linux checkouts.
 
 - Display `request_user_input_async` questions in live/history Web timelines, with choices, free-text replies, persisted answer state, and Desktop-compatible question IDs. Keep replies in the original task and preserve composer drafts.

@@ -104,7 +104,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         if (!actionable && !canScroll && !text) continue;
         // The parent ref already carries nested button/link text. Keep independent
         // controls and scroll regions, without spending the output budget twice.
-        if (!explicitControl && !canScroll && text) {
+        if (!explicitControl && !canScroll) {
           let owner = element.parentElement;
           while (owner && !representedLabels.has(owner)) owner = owner.parentElement;
           if (owner && representedLabels.get(owner)!.includes(text)) continue;

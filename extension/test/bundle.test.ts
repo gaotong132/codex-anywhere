@@ -455,6 +455,23 @@ test('deduplication preserves independently focusable children even when their l
   assert.ok(children.some((node: Frame) => node.tag === 'button'));
 });
 
+test('pointer cursor inheritance does not turn decorative icon descendants into controls', async (t) => {
+  const h = await harness(t);
+  const navigation = h.document.createElement('nav');
+  navigation.innerHTML = Array.from({ length: 40 }, (_, i) => `<div style="cursor:pointer" aria-label="Icon action ${i}"><span><svg><g><path></path><path></path></g></svg></span></div>`).join('');
+  h.document.body.prepend(navigation);
+  for (const element of navigation.querySelectorAll('*')) {
+    Object.defineProperty(element, 'getBoundingClientRect', { value: () => h.document.querySelector('#safe')!.getBoundingClientRect() });
+    (element as HTMLElement).style.cursor = 'pointer';
+  }
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const snapshot: any = await h.broker.execute('task-a', 'turn-icons', { method: 'snapshot' });
+  assert.equal(snapshot.truncated, false);
+  assert.equal(snapshot.nodes.filter((node: Frame) => node.ref && /^Icon action /.test(node.text)).length, 40);
+  assert.equal(snapshot.nodes.filter((node: Frame) => ['svg', 'g', 'path'].includes(node.tag)).length, 0);
+  assert.ok(snapshot.nodes.some((node: Frame) => node.text === 'Increment' && node.ref));
+});
+
 test('bad pairing exits pending state and can pair again; cancellation returns promptly', async (t) => {
   const h = await harness(t);
   const bad = h.pairUrl.slice(0, -1) + (h.pairUrl.endsWith('A') ? 'B' : 'A');
