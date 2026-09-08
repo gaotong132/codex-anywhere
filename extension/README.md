@@ -35,6 +35,10 @@ Changing the Session, tab, or document during the permission prompt requires a n
 Closing the panel does not revoke page control. Revocation removes
 the root and its children; navigation, tab closure, and document replacement retain the existing revocation rules.
 
+Links opened by the extension become the active tab in their original Chrome window while the side panel keeps
+the current chat Session. Same-origin children with site permission remain controllable; other destinations open
+visibly for authorization. Activating a tab does not grant control of its site.
+
 If a closed tab still occupies the Session, update the selected Connector and extension, then click **Authorize current
 page** again. This explicit grant can replace this extension's orphaned root, or another browser's root when every page
 in its tree has missed heartbeats for 45 seconds. Replacement revokes the old tree and cancels pending operations.

@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Follow links opened by the browser extension by activating the new tab in its original window, keeping the current side panel chat and existing site authorization boundaries.
+
 - Treat anchors without `href` as ordinary clickable controls; `open_link` returns a precise link-required error instead of a URL parsing failure.
 
 - Keep exact-document grants during SPA hash/history route changes; verify the original document ID and origin while retaining revocation on reload, replacement and cross-origin navigation.

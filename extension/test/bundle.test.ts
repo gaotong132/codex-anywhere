@@ -551,6 +551,9 @@ test('one root adopts only AI-created same-origin child tabs, preserves them acr
   const opened: any = await h.broker.execute('task-a', 'turn-1', { method: 'open_link', ref: fresh.nodes.find((node: Frame) => node.text === 'Open child').ref });
   assert.equal(h.createdTabs(), 1); assert.equal(opened.opened, true);
   assert.equal(h.broker.listPages('task-a', 'turn-1').total, 2);
+  const activeChild = h.session.values.bindings.find((binding: Frame) => binding.grantId === opened.pageId);
+  assert.equal(h.activeTab(), activeChild.target.tabId, 'Chrome follows the newly opened managed page');
+  assert.equal((await h.send('status')).result.currentManaged, true);
   const manualId = h.manualTab();
   assert.equal(h.broker.listPages('task-a', 'turn-1').total, 2);
   assert.equal((await h.send('status')).result.currentManaged, false);
@@ -573,6 +576,7 @@ test('one root adopts only AI-created same-origin child tabs, preserves them acr
   assert.equal(handoff.authorizationRequired, true);
   assert.equal(handoff.pageId, undefined);
   assert.equal(h.createdTabs(), 2);
+  assert.notEqual(h.activeTab(), activeChild.target.tabId, 'Chrome also follows destinations awaiting site consent');
   assert.equal(h.broker.listPages('task-a', 'turn-2').total, 2);
   assert.ok(!h.injectedTabs.includes(h.activeTab()), 'a foreign destination must not be injected');
   h.navigate();

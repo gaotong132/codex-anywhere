@@ -10,7 +10,9 @@ export async function openManagedTab(url: string, parent: BrowserTarget, deadlin
   const canManage = destinationOrigin === parent.origin && await chrome.permissions.contains({ origins: [sitePattern(parent.origin)] });
   const parentTab = await chrome.tabs.get(parent.tabId);
   if (!stillAuthorized() || Date.now() >= deadline) throw new Error('browser_authorization_changed');
-  const tab = await chrome.tabs.create({ url, active: !canManage, openerTabId: parent.tabId, windowId: parentTab.windowId });
+  // Follow the requested navigation in its existing window so the user can see
+  // the page being operated on; activation does not grant control of the site.
+  const tab = await chrome.tabs.create({ url, active: true, openerTabId: parent.tabId, windowId: parentTab.windowId });
   if (tab.id === undefined) throw new Error('browser_no_tab');
   if (!stillAuthorized()) throw new Error('browser_authorization_changed');
   // Opening a user-requested link does not grant access to its destination.
