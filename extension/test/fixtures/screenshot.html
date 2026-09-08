@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Screenshot fixture</title>
+<style>body{margin:0;background:#f1f5f9;font:24px sans-serif}header{height:360px;background:#cbd5e1;padding:24px;box-sizing:border-box}main{padding:24px}canvas{display:block;width:420px;height:100px}input,iframe,[data-anywhere-private]{display:block;margin-top:18px;width:400px;height:40px;border:0;background:#ff3d00;color:white}footer{height:800px}</style>
+<header>TOP OF PAGE — outside the scrolled viewport</header>
+<main><h1>SCREENSHOT FIXTURE</h1><p>Public chart stays visible. The three private fields below are masked.</p>
+<canvas width="420" height="100"></canvas><input value="FIXTURE PRIVATE INPUT"><iframe srcdoc="<body style='background:#ff3d00'>FIXTURE PRIVATE IFRAME</body>"></iframe>
+<div data-anywhere-private>FIXTURE PRIVATE REGION</div><footer></footer></main>
+<script>const c=document.querySelector('canvas').getContext('2d');c.fillStyle='#00bb66';c.fillRect(0,0,420,100);c.fillStyle='#ffffff';c.font='24px sans-serif';c.fillText('PUBLIC CANVAS',80,58)</script>
+</html>

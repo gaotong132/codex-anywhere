@@ -52,7 +52,8 @@ of the chat frame. Closing chat does not revoke consent, and selecting another S
 | Managed tabs / click navigation | Identify a newly created child from the current operation; validate optional site permission, source/destination documents, origin and deadline |
 | Session broker | Environment-local Session routing, one in-flight operation, strict results and cancellation |
 | Local endpoint | Loopback-only authenticated IPC and private state file |
-| MCP server | Official SDK stdio server, six narrow tools, fixed instructions and trusted host context |
+| MCP server | Official SDK stdio server, seven narrow tools, fixed instructions and trusted host context |
+| Screenshot driver / contract | Exact-tab viewport capture, private-region masking, compression and image-boundary validation |
 | Connector / Relay | Opt-in capability, existing encrypted requests/events, exact extension Origin allowlist |
 | Web status component | Status scoped to the selected environment and Session |
 
@@ -95,10 +96,20 @@ AI must open children again. Chrome site permission is separate from Session con
 Control clicks use a fixed browser mouse sequence with the manifest's `debugger` permission. Chrome does not
 support optional debugger permission; users accept its warning when enabling the updated extension.
 An exact-document ISOLATED script validates the latest ref and visible hit point before input;
-the worker can send only `Input.dispatchMouseEvent` to that already granted tab and always detaches afterward.
+the click driver sends fixed `Input.dispatchMouseEvent` commands to that already granted tab and detaches afterward.
 Hover/press changes trigger revalidation; interrupted presses are reported as uncertain, with no click replay.
 Links retain the managed-tab path and native selects retain bounded label reads. No tool accepts debugger commands,
 raw coordinates, cookie access or script evaluation; missing permission/policy conflicts never trigger a fallback.
+
+Screenshots have a separate extension opt-in, default off. `anywhere_browser_screenshot` uses the existing grant route
+and fixed `Page.captureScreenshot` command on the exact tab viewport, sharing the per-page busy guard with clicks.
+Document probes and change monitoring span capture, masking and encoding; revocation or opt-out discards pending results.
+Capture is bounded to 15 seconds and overall image transport to 60 seconds. Intermediate PNG data stays in extension memory;
+form/embedded/detected private regions are masked before JPEG encoding (1920 pixels per side, 1 MiB maximum).
+Broker and MCP validate image headers, dimensions, origin and byte limits; ordinary text responses retain the 24 KB cap.
+MCP returns standard image content with metadata-only text/structuredContent. Images remain untrusted page data;
+masking cannot identify all sensitive visible text or canvas content. The driver detaches on completion and Relay has no
+image cache; the host may retain tool history. See [page screenshots](../extension/README.md#page-screenshots-experimental).
 
 ## Model guidance and status
 

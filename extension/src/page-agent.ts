@@ -19,6 +19,8 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     const state = scope.__anywhereBrowser;
     if (!state || state.grantId !== input.grantId) throw new Error('browser_not_authorized');
     if (input.operation.method === 'revoke') { delete scope.__anywhereBrowser; return { authorized: false }; }
+    // Screenshots are handled by the scoped capture driver, never the DOM agent.
+    if (input.operation.method === 'screenshot') throw new Error('browser_operation_failed');
     const excluded = 'script,style,noscript,iframe,object,embed,[hidden],[inert],[aria-hidden="true"],[data-anywhere-private]';
     const controlSelector = 'a[href],button,input,textarea,select,summary,[role="button"],[role="link"],[role="combobox"],[role="option"],[role="tab"],[role="checkbox"],[role="radio"],[role="switch"],[role="menuitem"]';
     const focusControl = (element: HTMLElement) => {

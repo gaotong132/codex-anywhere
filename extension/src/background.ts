@@ -9,6 +9,8 @@ import { observeClickNavigation } from './click-navigation.js';
 import { pointerClick } from './pointer-click.js';
 import { sitePattern } from './site-permission.js';
 import { canRetireTab, RECENT_CHILD_TABS } from './tab-lifecycle.js';
+import { captureScreenshot } from './screenshot.js';
+import { SCREENSHOT_TIMEOUT_MS } from '../../src/browser-control/screenshot.js';
 
 type Binding = { grantId: string; environmentId: string; threadId: string; title: string; pageTitle?: string; target: BrowserTarget; sequence: number; rootTabId?: number; lastUsedAt?: number };
 type Frame = Record<string, any>;
@@ -30,6 +32,8 @@ let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let retries = 0;
 let reconnectEnabled = false;
 let autoConnectPaused = false;
+let screenshotEnabled = false;
+let screenshotRevision = 0;
 let grantReplacementSupported = false;
 let pendingLink: { request: BrowserLinkRequest; windowId: number; channel: string;
   resolve: (proof: DeviceAuthProof) => void; reject: (error: Error) => void } | undefined;
@@ -59,6 +63,7 @@ async function status(windowId?: number) {
     connecting, autoConnectPaused, busy: busy.size > 0, origin, error, devices: connection?.devices ?? [], environmentId: connection?.environmentId ?? '', sessions,
     binding: root ? summary(root) : null, currentManaged: Boolean(current), childCount: Math.max(0, bindings.size - (root ? 1 : 0)),
     childPermission: root ? await chrome.permissions.contains({ origins: [sitePattern(root.target.origin)] }) : false,
+    screenshotEnabled,
     extensionOrigin: `chrome-extension://${chrome.runtime.id}`,
     linkRequest: pendingLink && pendingLink.windowId === windowId ? { ...pendingLink.request, channel: pendingLink.channel } : null };
 }
@@ -220,7 +225,7 @@ async function handleOperation(frame: Frame) {
   if (!captured || !request || request.grantId !== captured.grantId || request.threadId !== captured.threadId
     || request.environmentId !== captured.environmentId || JSON.stringify(request.target) !== JSON.stringify(captured.target)
     || !Number.isSafeInteger(request.sequence) || request.sequence <= captured.sequence || !Number.isSafeInteger(request.deadline)
-    || request.deadline <= Date.now() || request.deadline > Date.now() + 20_000 || busy.has(captured)) return;
+    || request.deadline <= Date.now() || request.deadline > Date.now() + (request.operation?.method === 'screenshot' ? SCREENSHOT_TIMEOUT_MS + 5000 : 20_000) || busy.has(captured)) return;
   captured.sequence = request.sequence;
   captured.lastUsedAt = Date.now();
   busy.add(captured);
@@ -230,7 +235,13 @@ async function handleOperation(frame: Frame) {
     if (bindings.get(captured.target.tabId) !== captured || !connection.ready()) throw new Error('browser_not_authorized');
     const expectedRevision = revision;
     const current = () => revision === expectedRevision && bindings.get(captured.target.tabId) === captured && connection.ready();
-    const run = () => page(captured.target, captured.grantId, operation, request.deadline);
+    const screenshotVersion = screenshotRevision;
+    const run = () => {
+      if (operation.method !== 'screenshot') return page(captured.target, captured.grantId, operation, request.deadline);
+      if (!screenshotEnabled) throw new Error('browser_screenshot_permission_required');
+      return captureScreenshot(captured.target, captured.grantId, Math.min(request.deadline, Date.now() + 15_000),
+        () => current() && screenshotEnabled && screenshotRevision === screenshotVersion);
+    };
     const observed = operation.method === 'click'
       ? await observeClickNavigation(captured.target, request.deadline, current,
         () => pointerClick(captured.target, request.deadline, current,
@@ -279,11 +290,17 @@ async function handleOperation(frame: Frame) {
         }
       }
     }
+    if (operation.method === 'screenshot') {
+      const permitted = await chrome.permissions.contains({ permissions: ['debugger'] });
+      if (!current() || Date.now() >= request.deadline) throw new Error('browser_authorization_changed');
+      if (!permitted || !screenshotEnabled || screenshotRevision !== screenshotVersion) throw new Error('browser_screenshot_permission_required');
+    }
     if (bindings.get(captured.target.tabId) !== captured) return;
     // The broker can dispatch its next call before this response's acknowledgement.
     // Release the local execution slot before publishing completion.
     busy.delete(captured);
-    await connection.request('browser.result', { requestId: request.requestId, grantId: captured.grantId, ok: true, result });
+    await connection.request('browser.result', { requestId: request.requestId, grantId: captured.grantId, ok: true, result },
+      operation.method === 'screenshot' ? Math.max(1000, request.deadline - Date.now()) : 15_000);
     // The source operation must finish before its old child can be retired.
     void pruneChildTabs().catch(() => {});
   } catch (failure) {
@@ -453,6 +470,7 @@ function safeError(value: unknown) {
     return '当前环境的连接器需更新后才能清理旧页签授权。请更新该环境的 Connector，再授权当前页。';
   }
   const messages: Record<string, string> = {
+    browser_screenshot_permission_required: '请重新启用新版扩展并确认 Chrome 的权限提示，再点击「允许页面截图」。',
     browser_https_url_required: '请使用 HTTPS 地址；本机 HTTP 仅支持 localhost 或 127.0.0.1。',
     browser_control_not_enabled_on_connector: '这个环境尚未启用浏览器工具，请先按安装文档配置连接器和 MCP。',
     browser_origin_not_allowed: '请在普通 HTTP/HTTPS 网页上授权；浏览器设置页和扩展页面不支持。',
@@ -474,7 +492,8 @@ function safeError(value: unknown) {
 const ready = (async () => {
   await chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
   await chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
-  const saved = await chrome.storage.local.get(['privateKey', 'origin', 'controlPaused']);
+  const saved = await chrome.storage.local.get(['privateKey', 'origin', 'controlPaused', 'screenshotEnabled']);
+  screenshotEnabled = saved.screenshotEnabled === true;
   autoConnectPaused = saved.controlPaused === true;
   identity = createDeviceIdentity(typeof saved.privateKey === 'string' ? saved.privateKey : undefined);
   await chrome.storage.local.set({ privateKey: identity.privateKey });
@@ -503,6 +522,14 @@ chrome.runtime.onMessage.addListener((message: Frame, sender, respond) => {
   if (String(message.type).startsWith('panel.') && !panel) return false;
   void ready.then(async () => {
     if (message.type === 'status') return status(panel && Number.isSafeInteger(message.windowId) ? message.windowId : undefined);
+    if (message.type === 'set-screenshot-enabled') {
+      if (panel || typeof message.enabled !== 'boolean') throw new Error('browser_invalid_request');
+      if (message.enabled && !await chrome.permissions.contains({ permissions: ['debugger'] })) throw new Error('browser_screenshot_permission_required');
+      screenshotEnabled = message.enabled;
+      screenshotRevision++;
+      await chrome.storage.local.set({ screenshotEnabled });
+      return status();
+    }
     if (message.type === 'panel.connect') {
       const input = new URL(String(message.origin));
       if (input.origin !== message.origin || !Number.isSafeInteger(message.windowId)

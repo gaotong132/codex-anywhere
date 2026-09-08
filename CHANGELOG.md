@@ -6,6 +6,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 - Preserve distinct clickable menu options inside a pointer container whose combined label previously swallowed their refs, while still deduplicating decorative text and icons.
 
+- Add experimental page screenshots behind a separate extension opt-in. The model receives a viewport image of the current task's exact granted page, including background tabs and visible canvas. Form/embedded/detected private regions are masked before transport; JPEG output is limited to 1920 pixels per side and 1 MiB. Changes or revocation discard pending results, and native MCP image content uses a separate response budget. Update Connector/MCP and reload the extension/tool list; no new pairing is needed.
+
 - Use browser mouse events for control clicks so pointer handlers and script popups work without residual user activation. Add the required `debugger` permission (accept Chrome's extension update warning if prompted), revalidate the granted document and visible ref between events, detach after each click, and report interrupted input without replaying it. Ordinary managed links and select-label reads keep their existing paths.
 
 - Support horizontal and two-axis scrolling in the browser extension and MCP, expose panel axes/positions, and report actual movement at scroll boundaries. Click the visible fragment of partially clipped or wrapped controls while still refusing real overlays. Update Connector/MCP and reload the extension together.

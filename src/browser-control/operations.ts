@@ -2,6 +2,7 @@ import { requireBrowserId, requireInteger, requireRecord } from './contracts.js'
 
 export type BrowserOperation =
   | { method: 'snapshot' }
+  | { method: 'screenshot' }
   | { method: 'click'; ref: string }
   | { method: 'open_link'; ref: string }
   | { method: 'fill'; ref: string; text: string }
@@ -11,6 +12,8 @@ export type BrowserOperation =
 export function browserOperationErrorCode(value: unknown): string {
   return typeof value === 'string' && [
     'browser_child_permission_required', 'browser_child_origin_denied', 'browser_operation_timeout',
+    'browser_screenshot_permission_required', 'browser_screenshot_unavailable', 'browser_screenshot_changed',
+    'browser_screenshot_too_large', 'browser_screenshot_invalid',
     'browser_document_changed', 'browser_stale_element_read_again', 'browser_element_not_allowed',
     'browser_element_obscured', 'browser_input_not_allowed', 'browser_number_value_invalid',
     'browser_native_click_permission_required', 'browser_native_click_unavailable', 'browser_native_click_interrupted',
@@ -22,6 +25,7 @@ export function browserOperationErrorCode(value: unknown): string {
 export function parseOperation(value: unknown): BrowserOperation {
   const input = requireRecord(value, ['method', 'ref', 'text', 'deltaY', 'deltaX']);
   if (input.method === 'snapshot' && Object.keys(input).length === 1) return { method: 'snapshot' };
+  if (input.method === 'screenshot' && Object.keys(input).length === 1) return { method: 'screenshot' };
   if (input.method === 'scroll') {
     requireRecord(input, ['method', 'deltaY', 'deltaX', 'ref']);
     return { method: 'scroll', deltaY: requireInteger(input.deltaY, -2000, 2000),

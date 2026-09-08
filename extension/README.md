@@ -161,7 +161,7 @@ page, then reopen the popup and check whether any new errors appear.
 - Execute task-required navigation, search, clicks and ordinary input directly. Pause at actual login, passwords,
   verification, new site permissions or actions outside the requested scope. Checking ECS status includes opening its
   console and instance list, not starting/stopping instances. A Login link alone does not establish the login state.
-- No ten-minute consent limit; commands time out after 15 seconds. Heartbeats run every 20 seconds;
+- No ten-minute consent limit; ordinary commands time out after 15 seconds. Screenshot capture allows 15 seconds, with 60 seconds overall including image transport. Heartbeats run every 20 seconds;
   more than 45 seconds without a heartbeat means offline, not expired consent. The Relay only transports
   end-to-end encrypted operation/results frames.
 - Closing the popup does not revoke. Worker/network restart can restore only the same Session/document consent
@@ -175,13 +175,33 @@ page, then reopen the popup and check whether any new errors appear.
 - Page content is untrusted and may contain sensitive visible text. Snapshots omit form values, sensitive
   inputs, hidden/private regions; this is not automatic secret redaction. References are snapshot-scoped and
   invalidated after click/fill. No arbitrary scripts, password/cookie export, file upload, browser internal
-  pages, iframe/shadow DOM/canvas, native dialogs or desktop control. Website-changing actions need user authority.
+  pages, controls inside iframe/shadow DOM, canvas coordinate actions, native dialogs or desktop control. Screenshots can show visible canvas content. Website-changing actions need user authority.
 - The Codex host supplies caller identity. Desktop retains its existing writer; the Connector does not take
   over or send messages to other tasks.
 
+## Page screenshots (experimental)
+
+Update the extension, Connector and MCP, then choose **More → 页面控制设置 → 允许页面截图** in the side panel.
+This separate opt-in defaults off, is saved in this extension, applies to its existing page grants, and can be disabled
+at any time. No second pairing or Session selection is needed. Screenshots share the required `debugger` permission
+used by native clicks; accept Chrome's extension-update prompt if shown. No additional all-sites permission is requested.
+`anywhere_browser_screenshot({pageId})` targets the exact authorized tab for the current task, including background tabs.
+Omit `pageId` only with a single granted page. Taking a screenshot does not activate a tab or grant another page.
+
+The tool returns a viewport-only JPEG image to the model, at most 1920 pixels per side and 1 MiB. It does not scroll/stitch
+the full page or capture browser chrome, the chat sidebar or the desktop. Form controls, embedded documents, detectable
+open shadow hosts and private-marked regions are masked inside the extension before encrypted transport. Ordinary text,
+images and canvas may still contain sensitive information; masking is not comprehensive secret detection.
+Capture-time document/protected-region changes, navigation, revocation, opt-out, debugger conflicts or size limits return
+a specific error without an image. Unsupported zoom, protected content or continually changing pages may require a text snapshot instead.
+
+Use screenshots to understand charts or verify visible results; click/fill still require fresh text-snapshot refs.
+Reload Codex MCP to discover the new tool; Desktop may need an app restart when tasks are idle. Relay does not persist
+screenshots; Codex may retain tool images under its normal task-history behavior.
+
 ## Console controls and diagnostics
 
-The same six tools support console forms. Snapshots attach nested button text and visible labels to actionable refs,
+Existing tools support console forms, with screenshots providing visual context. Distinct inner menu options retain their own refs even when a pointer container has a combined label; decorative text and icons remain deduplicated. Snapshots attach nested button text and visible labels to actionable refs,
 and include `role`, `inputType`, `disabled`, `checked`, `expanded` and `scrollable` when applicable. Form values stay omitted.
 Hidden/private branches and select/textarea contents are skipped during traversal, so a collapsed menu does not consume
 the scan budget before visible controls. Snapshots report `scannedElements` and, when truncated, `truncationReason`

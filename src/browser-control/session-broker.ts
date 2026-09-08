@@ -3,6 +3,7 @@ import { parseBrowserTarget, requireBrowserId, type BrowserTarget } from './cont
 import { browserOperationErrorCode, parseOperation, type BrowserOperation } from './operations.js';
 import { browserContext } from '../shared/browser-context.js';
 import { parseQuestionReplies } from '../shared/async-questions.js';
+import { parseScreenshot, SCREENSHOT_TIMEOUT_MS, SCREENSHOT_MAX_RESULT_CHARS } from './screenshot.js';
 
 type Client = { clientId: string; clientDeviceId: string };
 type BindOptions = { replaceExisting?: boolean; recoverOnly?: boolean };
@@ -140,15 +141,16 @@ export class BrowserSessionBroker {
     if (!this.isOnline(grant)) throw new Error('browser_offline');
     if ([...this.pending.values()].some((request) => request.grant === grant)) throw new Error('browser_busy');
     const requestId = randomUUID();
+    const timeoutMs = op.method === 'screenshot' ? SCREENSHOT_TIMEOUT_MS : this.timeoutMs;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(requestId);
         reject(new Error('browser_operation_timeout_do_not_retry_writes_blindly'));
-      }, this.timeoutMs);
+      }, timeoutMs);
       this.pending.set(requestId, { grant, operation: op, resolve, reject, timer });
       if (!this.send({ type: 'event', clientId: grant.clientId, event: 'browser.operation', payload: {
         requestId, grantId: grant.id, threadId, turnId, environmentId: this.environmentId,
-        target: grant.target, sequence: ++grant.sequence, deadline: this.now() + this.timeoutMs, operation: op,
+        target: grant.target, sequence: ++grant.sequence, deadline: this.now() + timeoutMs, operation: op,
       } })) this.remove(grant);
     });
   }
@@ -157,9 +159,12 @@ export class BrowserSessionBroker {
     const pending = this.pending.get(String(value.requestId));
     if (!pending) throw new Error('browser_request_expired');
     if (this.owned(client, value.grantId) !== pending.grant) throw new Error('browser_grant_mismatch');
-    if (JSON.stringify(value.result ?? null).length > 24_000) throw new Error('browser_result_too_large');
+    const screenshot = pending.operation.method === 'screenshot';
+    if (JSON.stringify(value.result ?? null).length > (screenshot ? SCREENSHOT_MAX_RESULT_CHARS : 24_000)) throw new Error('browser_result_too_large');
+    const result = screenshot && value.ok === true ? parseScreenshot(value.result) : value.result;
+    if (screenshot && value.ok === true && (result as { origin: string }).origin !== pending.grant.target.origin) throw new Error('browser_screenshot_invalid');
     clearTimeout(pending.timer); this.pending.delete(String(value.requestId));
-    if (value.ok === true) { pending.grant.lastToolSuccessAt = this.now(); pending.resolve(value.result); }
+    if (value.ok === true) { pending.grant.lastToolSuccessAt = this.now(); pending.resolve(result); }
     else pending.reject(new Error(browserOperationErrorCode(value.errorCode)));
     return {};
   }

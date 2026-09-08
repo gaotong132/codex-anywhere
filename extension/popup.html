@@ -8,6 +8,7 @@
     <section id="setup"><p class="hint">在侧栏聊天完成一次配对后，页面控制会自动连接，无需第二条配对链接。已配对的插件也可用服务器地址重连。</p><label for="url">Anywhere 地址</label><input id="url" type="url" placeholder="https://your-anywhere/" autocomplete="off" spellcheck="false"><button id="connect" class="primary">重新连接</button><p class="hint">扩展 Origin：</p><code id="extension-origin"></code></section>
     <section id="ready" hidden><p class="hint">已连接。关闭此设置，点击侧栏上方的「授权当前页」即可使用聊天当前选中的会话，无需另外选择环境或会话。</p></section>
     <section id="authorized" hidden><div class="connected-icon">✓</div><h1>起始页已授权</h1><p id="task"></p><p id="page" class="hint"></p><p id="children-status" class="hint"></p><button id="enable-children" class="secondary">允许 AI 打开的同站子页</button><p class="fine">可选的站点权限，用于 AI 从起始页打开的新标签页；不自动纳管手动页签或网站弹窗。跨站需重新授权。</p><p class="fine">在 Anywhere 原会话中继续对话。页面在线不代表 MCP 工具已加载；工具调用成功后才有链路验证记录。起始页导航或撤销后，所有子页一并停止纳管。</p></section>
+    <section><button id="enable-screenshots" class="secondary" aria-pressed="false">允许页面截图</button><p class="fine">实验性功能，默认关闭。开启后，AI 可查看本插件已授权页面的可见区域，不截取桌面。输入框与嵌入页面会遮挡，其他可见内容可能包含隐私；可随时关闭。</p></section>
     <button id="cancel" class="secondary" hidden>取消连接</button>
     <p id="build-info" class="fine" aria-label="扩展构建版本"></p>
   </main>

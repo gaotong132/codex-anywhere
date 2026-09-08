@@ -44,7 +44,8 @@ Relay 同时校验 Web 批准状态、关联签名与插件持钥证明，并将
 | `extension/src/managed-tabs.ts` | 仅创建并识别本次 AI 操作产生的子页；同源、文档身份、权限、截止时间校验 |
 | `src/browser-control/session-broker.ts` | 每环境的 Session→浏览器授权路由；并发、超时、回包隔离 |
 | `src/browser-control/local-endpoint.ts` | 仅 loopback 的令牌保护 IPC；私有状态文件 |
-| `src/browser-control/mcp-server.ts` | 官方 SDK 的 stdio MCP，六个窄工具、固定 instructions、宿主身份校验 |
+| `src/browser-control/mcp-server.ts` | 官方 SDK 的 stdio MCP，七个窄工具、固定 instructions、宿主身份校验 |
+| `extension/src/screenshot.ts` / `src/browser-control/screenshot.ts` | 精确页签捕获、私密区域遮挡、压缩与图片边界校验 |
 | Connector / Relay | 显式能力开关、加密请求/事件、精确扩展 Origin 白名单 |
 | `web/src/browser-session-status.tsx` | 当前环境、当前 Session 的浏览器连接状态 |
 
@@ -86,6 +87,15 @@ Relay 同时校验 Web 批准状态、关联签名与插件持钥证明，并将
 `Input.dispatchMouseEvent`，结束后断开。移动、按下后重新检查；中断的按下按不确定结果报告，不重放点击。
 普通链接保留原受控开页流程，原生下拉框保留有界标签读取。工具不接受调试命令、任意坐标、Cookie 读取
 或脚本执行；权限缺失、策略拒绝、其他调试器占用均不触发替代操作。
+
+截图另有默认关闭的插件开关。`anywhere_browser_screenshot` 在原授权路由上发送截图操作，固定调用
+`Page.captureScreenshot` 捕获精确标签页视口；同页与点击共用并发限制。原文档探测及变化监听覆盖捕获、
+遮挡与编码过程；撤销或关闭开关后丢弃在途结果。捕获最多 15 秒，整体传输最多 60 秒。
+PNG 中间结果只在插件内存内处理，遮挡输入/嵌入/可检测私密区域后压缩为最大边长 1920、最多 1 MiB 的 JPEG。
+Broker 与 MCP 都校验文件头、尺寸、来源和字节数；普通文字回包的 24 KB 上限不变。
+MCP 返回标准 `image` content，文字/structuredContent 只含尺寸、来源和遮挡数量等元信息，不复制 Base64。
+页面内容及工具图片均为不可信数据；遮挡不保证识别正文或 canvas 中全部敏感内容。
+操作结束断开调试连接，不写入 Relay 图片缓存；宿主仍可能保存工具历史。安装步骤与限制见[页面截图](../extension/README.zh-CN.md#页面截图实验性)。
 
 ## 模型指引与状态
 

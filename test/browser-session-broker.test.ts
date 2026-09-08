@@ -190,7 +190,7 @@ test('official MCP SDK → private loopback → exact Session broker round trip'
   const [left, right] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(left), sdk.connect(right)]);
   t.after(async () => { await sdk.close(); await server.close(); });
-  const tools = await sdk.listTools(); assert.equal(tools.tools.length, 6);
+  const tools = await sdk.listTools(); assert.equal(tools.tools.length, 7);
   assert.match(sdk.getInstructions()!, /NOT Codex in-app CUA/);
   const _meta = { 'x-codex-turn-metadata': { thread_id: 'thread-1', turn_id: 'turn-1' } };
   const result = await sdk.callTool({ name: 'anywhere_browser_snapshot', arguments: {}, _meta });

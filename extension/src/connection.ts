@@ -129,11 +129,11 @@ export class ExtensionConnection {
   }
 
   ready() { return this.online && Boolean(this.channel?.isReady()); }
-  request(action: string, payload: Frame = {}): Promise<any> {
+  request(action: string, payload: Frame = {}, timeoutMs = 15_000): Promise<any> {
     if (!this.ready()) return Promise.reject(new Error('browser_connector_offline'));
     const requestId = crypto.randomUUID();
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(requestId); reject(new Error('browser_request_timeout')); }, 15_000);
+      const timer = setTimeout(() => { this.pending.delete(requestId); reject(new Error('browser_request_timeout')); }, timeoutMs);
       this.pending.set(requestId, { resolve, reject, timer });
       try {
         if (!this.channel!.sendFrame({ type: 'request', requestId, action, payload })) throw new Error('browser_connector_offline');
