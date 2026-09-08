@@ -20,7 +20,7 @@ function harness(t: test.TestContext) {
     },
   } } as any;
   t.after(async () => { await releaseAllDebuggers(); globalThis.chrome = original; });
-  return { calls, run: (prepare: (phase?: 'verify' | 'consume') => Promise<Record<string, unknown>>) => pointerClick(target, Date.now() + 5000, () => current, prepare),
+  return { calls, run: (prepare: Parameters<typeof pointerClick>[3]) => pointerClick(target, Date.now() + 5000, () => current, prepare),
     permission: (value: boolean) => { granted = value; }, attachFailure: () => { attachFails = true; }, revoke: () => { current = false; },
     input: (callback: typeof onInput) => { onInput = callback; } };
 }
@@ -29,12 +29,20 @@ const point = () => Promise.resolve({ clickPoint: { x: 30, y: 40 } });
 test('real input uses only the granted tab and consumes refs before one release, retaining its debugger', async (t) => {
   const h = harness(t), phases: (string | undefined)[] = [];
   assert.deepEqual(await h.run(async (phase) => { phases.push(phase); return point(); }), { clicked: true });
-  assert.deepEqual(phases, [undefined, 'verify', 'verify', 'consume']);
+  assert.deepEqual(phases, [undefined, 'arm', 'hover', 'consume', 'end']);
   assert.deepEqual(h.calls.map((c) => c.type ?? (c.attach ? 'attach' : 'detach')), ['attach', 'mouseMoved', 'mousePressed', 'mouseReleased']);
   assert.equal(h.calls[3].clickCount, 1);
   await h.run(point);
   assert.equal(h.calls.filter(c => c.attach).length, 1);
   await releaseAllDebuggers(); assert.deepEqual(h.calls.at(-1), { detach: { tabId: 17 } });
+});
+
+test('a native hover target mismatch stops before any press and releases the observer', async (t) => {
+  const h = harness(t), phases: (string | undefined)[] = [];
+  const result = await h.run(async (phase) => { phases.push(phase); return { ...await point(), pointerMismatch: phase === 'hover' }; });
+  assert.equal(result.clicked, false); assert.equal(result.reason, 'native_pointer_mismatch');
+  assert.deepEqual(h.calls.map(c => c.type ?? (c.attach ? 'attach' : 'detach')), ['attach', 'mouseMoved', 'detach']);
+  assert.equal(phases.at(-1), 'end');
 });
 
 test('permission denial and attach conflicts never click or detach someone else’s debugger', async (t) => {

@@ -109,14 +109,17 @@ async function harness(t: test.TestContext) {
   for (const node of document.querySelectorAll('*')) Object.defineProperty(node, 'getBoundingClientRect', { value: () => ({ x: 10, y: 10, width: 100, height: 20, top: 10, left: 10, bottom: 30, right: 110 }) });
   document.querySelector('#safe')!.addEventListener('click', () => { clicks++; });
   Object.defineProperty(document, 'elementFromPoint', { value: (x: number, y: number) => hitTest ? hitTest(x, y) : document.querySelector('#safe') });
-  const pageContext = createContext({ document, location: new URL(url), crypto, URL,
+  const pointerListeners = new Set<(event: Frame) => void>();
+  const pageContext = createContext({ document, location: new URL(url), crypto, URL, setTimeout, clearTimeout,
     Node: { TEXT_NODE: 3 }, NodeFilter: { SHOW_ELEMENT: 1 }, innerHeight: 800, innerWidth: 1200,
     HTMLInputElement: window.HTMLInputElement, HTMLTextAreaElement: window.HTMLTextAreaElement, HTMLSelectElement: window.HTMLSelectElement,
     HTMLAnchorElement: window.HTMLAnchorElement, Event: window.Event,
     getComputedStyle: (element: HTMLElement) => ({ display: element.style.display || 'block', visibility: element.style.visibility || 'visible', opacity: element.style.opacity || '1', cursor: element.style.cursor || element.parentElement?.style.cursor || 'auto',
-      overflowX: element.style.overflowX || 'visible', overflowY: element.style.overflowY || 'visible' }), window: { scrollBy: () => {}, devicePixelRatio: 1 },
+      overflowX: element.style.overflowX || 'visible', overflowY: element.style.overflowY || 'visible' }), window: { scrollBy: () => {}, devicePixelRatio: 1,
+        addEventListener: (_: string, fn: (event: Frame) => void) => pointerListeners.add(fn),
+        removeEventListener: (_: string, fn: (event: Frame) => void) => pointerListeners.delete(fn) },
   });
-  return { document, pageContext, documentId: id === 1 ? 'doc-a' : `doc-${id}`, url, loadingResources };
+  return { document, pageContext, pointerListeners, documentId: id === 1 ? 'doc-a' : `doc-${id}`, url, loadingResources };
   }
   const pages = new Map([[1, makePage(1, 'https://example.com/private?secret=query')]]);
   const zooms = new Map<number, number>();
@@ -150,6 +153,11 @@ async function harness(t: test.TestContext) {
       detach: async () => {},
       sendCommand: async (target: { tabId: number }, method: string, params: Frame) => {
         assert.equal(method, 'Input.dispatchMouseEvent');
+        if (params.type === 'mouseMoved') {
+          const page = pages.get(target.tabId)!;
+          for (const listener of page.pointerListeners) listener({ isTrusted: true, clientX: params.x, clientY: params.y,
+            composedPath: () => [page.document.elementFromPoint(params.x, params.y)] });
+        }
         if (params.type === 'mouseReleased' && params.x >= 0 && params.y >= 0) {
           const doc = pages.get(target.tabId)!.document;
           (doc.elementFromPoint(params.x, params.y) as HTMLElement)?.click();
@@ -159,7 +167,7 @@ async function harness(t: test.TestContext) {
     storage: { local, session },
     sidePanel: { open: async (options: Frame) => { openedPanels.push(options); } },
     action: { onClicked: { addListener: (callback: typeof onActionClicked) => { onActionClicked = callback; } }, setBadgeText: async (value: Frame) => { badges.push(value); }, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
-    runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } } },
+    runtime: { id: extensionId, getManifest: () => ({ version: '0.2.1', version_name: 'fixture-build' }), getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } } },
     tabs: { query: async () => [{ id: activeTab, windowId: 1, active: true, url: pages.get(activeTab)!.url }],
       getZoom: async (id: number) => zooms.get(id) ?? 1,
       getZoomSettings: async (id: number) => zoomSettings.get(id) ?? { mode: 'automatic', scope: 'per-origin' },

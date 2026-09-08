@@ -103,13 +103,13 @@ export async function captureScreenshot(target: BrowserTarget, grantId: string, 
         before = await inspect('begin'); quietSince = Date.now();
       }
     }
-    // Capture at the browser's native scale. CDP clip scaling can temporarily
-    // change device metrics and emit resize events. Resize only our local bitmap.
+    // Capture the actual viewport without a clip. Chrome applies page zoom to
+    // clipped capture differently from DOM CSS rectangles, padding the bitmap
+    // and misaligning masks. The default viewport capture preserves native pixels.
     if (!Number.isFinite(before.dpr) || before.dpr <= 0 || before.width * before.height * before.dpr ** 2 > 16_777_216) throw new Error('browser_screenshot_too_large');
     valid();
     const result = await bounded(chrome.debugger.sendCommand(attached, 'Page.captureScreenshot', {
       format: 'png', fromSurface: true, captureBeyondViewport: false,
-      clip: { x: before.x, y: before.y, width: before.width, height: before.height, scale: 1 },
     }), deadline) as { data?: unknown } | undefined;
     valid();
     const after = await inspect('check');

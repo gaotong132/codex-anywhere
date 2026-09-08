@@ -2,7 +2,7 @@ import type { BrowserOperation } from '../../src/browser-control/operations.js';
 
 // Serialized by Chrome: all runtime dependencies must remain INSIDE this function.
 // ISOLATED world state cannot be set/read by the website's JavaScript.
-export function runPageAgent(input: { grantId: string; origin: string; deadline: number; clickPhase?: 'verify' | 'consume'; operation: BrowserOperation | { method: 'authorize' } | { method: 'revoke' } }) {
+export function runPageAgent(input: { grantId: string; origin: string; deadline: number; clickPhase?: 'verify' | 'arm' | 'hover' | 'consume' | 'end'; operation: BrowserOperation | { method: 'authorize' } | { method: 'revoke' } }) {
   // Chrome may otherwise drop an injected function's exception and return no result.
   // Background and broker independently allowlist these codes before forwarding them.
   try { return perform(); }
@@ -12,13 +12,18 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
   }
 
   function perform() {
-    type State = { grantId: string; refs: Map<string, { element: Element; html?: string; clickSignature?: string; scrollOnly?: boolean }>; snapshot: string; pixelRatio?: number };
+    type PointerEvidence = { expected: { x: number; y: number }; observed?: { x: number; y: number }; sameTarget?: boolean };
+    type State = { grantId: string; refs: Map<string, { element: Element; html?: string; clickSignature?: string; scrollOnly?: boolean }>; snapshot: string; pixelRatio?: number;
+      pointer?: { evidence: PointerEvidence; cleanup(): void }; lastPointer?: PointerEvidence };
     const scope = globalThis as typeof globalThis & { __anywhereBrowser?: State };
     if (location.origin !== input.origin || Date.now() > input.deadline) throw new Error('browser_document_changed');
-    if (input.operation.method === 'authorize') { scope.__anywhereBrowser = { grantId: input.grantId, refs: new Map(), snapshot: '' }; return { authorized: true }; }
+    if (input.operation.method === 'authorize') { scope.__anywhereBrowser?.pointer?.cleanup(); scope.__anywhereBrowser = { grantId: input.grantId, refs: new Map(), snapshot: '' }; return { authorized: true }; }
     const state = scope.__anywhereBrowser;
     if (!state || state.grantId !== input.grantId) throw new Error('browser_not_authorized');
-    if (input.operation.method === 'revoke') { delete scope.__anywhereBrowser; return { authorized: false }; }
+    if (input.operation.method === 'revoke') { state.pointer?.cleanup(); delete scope.__anywhereBrowser; return { authorized: false }; }
+    if (input.operation.method === 'click' && input.clickPhase === 'end') {
+      state.pointer?.cleanup(); delete state.pointer; return { ended: true };
+    }
     // Native browser actions have their own scoped drivers.
     if (input.operation.method === 'screenshot' || input.operation.method === 'zoom') throw new Error('browser_operation_failed');
     // Native Ctrl+/- also changes DPR. A manual zoom cannot keep old element refs.
@@ -57,17 +62,19 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       const xs = [.5, .9, .1], ys = [.5, .2, .8];
       return ys.flatMap(y => xs.map(x => ({ x: box.left + (box.right - box.left) * x, y: box.top + (box.bottom - box.top) * y })));
     };
+    let visibilityReason: 'outside-viewport' | 'ancestor-depth' | 'hidden-style' | 'clipped' | undefined;
     const visibleBox = (element: Element, rect = element.getBoundingClientRect()) => {
+      visibilityReason = undefined;
       if (element.closest(excluded) || element.closest('[contenteditable]')) return null;
       let top = Math.max(0, rect.top), bottom = Math.min(innerHeight, rect.bottom);
       let left = Math.max(0, rect.left), right = Math.min(innerWidth, rect.right);
-      if (rect.width <= 0 || rect.height <= 0 || bottom <= top || right <= left) return null;
+      if (rect.width <= 0 || rect.height <= 0 || bottom <= top || right <= left) { visibilityReason = 'outside-viewport'; return null; }
       const viewportBox = { top, bottom, left, right };
       let depth = 0;
       for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
-        if (++depth > 64) return null;
+        if (++depth > 64) { visibilityReason = 'ancestor-depth'; return null; }
         const style = getComputedStyle(ancestor);
-        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return null;
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') { visibilityReason = 'hidden-style'; return null; }
         if (ancestor !== element && ancestor !== document.documentElement && style.display !== 'contents'
           && !(ancestor === document.body && bodyOverflowAtViewport)) {
           const bounds = ancestor.getBoundingClientRect();
@@ -79,6 +86,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         // Overflow on inline wrappers and ancestors outside a positioned child's
         // containing block need not clip it. Only the browser's real hit test may
         // recover such a visible fragment; never recover hidden/private branches.
+        visibilityReason = 'clipped';
         return typeof document.elementFromPoint === 'function' && boxPoints(viewportBox).some(point => {
           const hit = document.elementFromPoint(point.x, point.y);
           return hit === element || (hit !== null && element.contains(hit));
@@ -122,6 +130,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       // Explain visible branch omissions without returning labels, attributes or
       // values from an excluded subtree. This stays within the result budget.
       const excludedVisibleBranches: { tag: string; reason: string; beforeNode: number }[] = [];
+      const omitted = new Map<string, { reason: string; count: number; beforeNode: number }>();
       let next = skipSubtree(root) ? null : root.firstElementChild;
       while (next) {
         if (visited >= 5000 || nodes.length >= 200 || chars >= 8000) {
@@ -133,12 +142,20 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         if (skip && excludedVisibleBranches.length < 4) {
           const box = element.getBoundingClientRect(), style = getComputedStyle(element);
           if (box.width > 0 && box.height > 0 && box.right > 0 && box.left < innerWidth && box.bottom > 0 && box.top < innerHeight
-            && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+            && style.display !== 'none') {
             excludedVisibleBranches.push({ tag: element.tagName.toLowerCase().slice(0, 30),
-              reason: sensitive(element) ? 'sensitive-marker' : element.matches('[aria-hidden="true"]') ? 'aria-hidden' : 'excluded-marker', beforeNode: nodes.length });
+              reason: sensitive(element) ? 'sensitive-marker' : element.matches('[aria-hidden="true"]') ? 'aria-hidden'
+                : style.visibility === 'hidden' ? 'hidden-style' : style.opacity === '0' ? 'zero-opacity' : 'excluded-marker', beforeNode: nodes.length });
           }
         }
-        if (skip || !visible(element)) continue;
+        if (skip) continue;
+        if (!visible(element)) {
+          if (visibilityReason && visibilityReason !== 'outside-viewport') {
+            const reason = visibilityReason, item = omitted.get(reason);
+            if (item) item.count++; else omitted.set(reason, { reason, count: 1, beforeNode: nodes.length });
+          }
+          continue;
+        }
         const semanticControl = element.matches(controlSelector);
         const explicitControl = semanticControl || (element.hasAttribute('tabindex') && (element as HTMLElement).tabIndex >= 0)
           || element.hasAttribute('onclick');
@@ -184,6 +201,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         nodes.push(node);
       }
       return { origin: location.origin, viewport, nodes, truncated, scannedElements: visited,
+        ...(omitted.size ? { visibilityOmissions: [...omitted.values()] } : {}), ...(state.lastPointer ? { lastPointer: state.lastPointer } : {}),
         ...(excludedVisibleBranches.length ? { excludedVisibleBranches } : {}), ...(truncationReason ? { truncationReason } : {}) };
     }
     if (input.operation.method === 'scroll' && input.operation.ref === undefined) {
@@ -252,6 +270,27 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         clickPoint = point; return true;
       });
       if (!reachable) throw new Error('browser_element_obscured');
+      if (input.clickPhase === 'arm') {
+        state.pointer?.cleanup();
+        const expectedHit = document.elementFromPoint(clickPoint!.x, clickPoint!.y);
+        const evidence: PointerEvidence = { expected: clickPoint! };
+        // Observe only this operation's trusted hover, never labels or input values.
+        // A native coordinate mismatch must stop BEFORE a mouse press is sent.
+        const moved = (event: MouseEvent) => {
+          if (!event.isTrusted || Date.now() >= input.deadline) return;
+          evidence.observed = { x: event.clientX, y: event.clientY };
+          evidence.sameTarget = event.composedPath()[0] === expectedHit;
+        };
+        window.addEventListener('mousemove', moved, true);
+        const expiry = setTimeout(() => { cleanup(); }, Math.max(0, input.deadline - Date.now()));
+        const cleanup = () => { clearTimeout(expiry); window.removeEventListener('mousemove', moved, true); };
+        state.pointer = { evidence, cleanup }; state.lastPointer = evidence;
+      } else if (input.clickPhase === 'hover') {
+        const evidence = state.pointer?.evidence;
+        state.pointer?.cleanup(); delete state.pointer;
+        if (!evidence?.observed || !evidence.sameTarget || Math.abs(evidence.observed.x - clickPoint!.x) > 1
+          || Math.abs(evidence.observed.y - clickPoint!.y) > 1) return { clickPoint, pointerMismatch: true };
+      }
       if (element instanceof HTMLSelectElement) {
         focusControl(element);
         const options: { label: string; disabled: boolean }[] = [];

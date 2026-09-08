@@ -98,7 +98,7 @@ function changed() {
   }
 }
 
-async function page(target: BrowserTarget, grantId: string, operation: Parameters<typeof runPageAgent>[0]['operation'], deadline = Date.now() + 15_000, clickPhase?: 'verify' | 'consume') {
+async function page(target: BrowserTarget, grantId: string, operation: Parameters<typeof runPageAgent>[0]['operation'], deadline = Date.now() + 15_000, clickPhase?: Parameters<typeof runPageAgent>[0]['clickPhase']) {
   const [result] = await chrome.scripting.executeScript({ target: { tabId: target.tabId, documentIds: [target.documentId] }, world: 'ISOLATED', injectImmediately: true,
     func: runPageAgent, args: [{ grantId, origin: target.origin, operation, deadline, clickPhase }] });
   if (!result || result.documentId !== target.documentId || !result.result) throw new Error('browser_document_changed');
@@ -292,6 +292,8 @@ async function handleOperation(frame: Frame) {
       const zoom = await chrome.tabs.getZoom(captured.target.tabId);
       if (!current()) throw new Error('browser_document_changed');
       result.viewport = { ...Object(result.viewport), zoomPercent: Math.round(zoom * 100) };
+      result.extensionBuild = chrome.runtime.getManifest().version_name || chrome.runtime.getManifest().version;
+      result.browserEngine = globalThis.navigator?.userAgent?.match(/(?:Chrome|Edg)\/[\d.]+/g)?.slice(0, 2).join(' ');
     }
     let scriptTabId: number | undefined;
     if (result.clicked === true && observed.targets.length) {

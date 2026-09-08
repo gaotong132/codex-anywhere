@@ -4,7 +4,7 @@ import { acquireDebugger } from './debugger-session.js';
 // Only browser-derived points from the exact granted document reach this helper.
 // No debugger command, coordinate or target is accepted as a tool argument.
 export async function pointerClick(target: BrowserTarget, deadline: number, current: () => boolean,
-  prepare: (phase?: 'verify' | 'consume') => Promise<Record<string, unknown>>) {
+  prepare: (phase?: 'verify' | 'arm' | 'hover' | 'consume' | 'end') => Promise<Record<string, unknown>>) {
   const first = await prepare();
   if (!('clickPoint' in first)) return first; // Managed links and native select labels.
   if (!await chrome.permissions.contains({ permissions: ['debugger'] })) throw new Error('browser_native_click_permission_required');
@@ -17,9 +17,11 @@ export async function pointerClick(target: BrowserTarget, deadline: number, curr
   };
   const verify = async (consume = false) => {
     valid();
-    const next = (await prepare(consume ? 'consume' : 'verify')).clickPoint as typeof point | undefined;
+    const result = await prepare(consume ? 'consume' : 'hover');
+    const next = result.clickPoint as typeof point | undefined;
     if (!next || next.x !== point.x || next.y !== point.y) throw new Error('browser_stale_element_read_again');
     valid();
+    return result.pointerMismatch !== true;
   };
   valid();
   lease = await acquireDebugger(target, deadline, current);
@@ -28,12 +30,13 @@ export async function pointerClick(target: BrowserTarget, deadline: number, curr
     valid();
     // Chrome's debugging notice can resize the viewport. Re-read the same ref
     // after attachment before sending any input; never reuse old coordinates.
-    const attachedPoint = (await prepare('verify')).clickPoint as typeof point | undefined;
+    const attachedPoint = (await prepare('arm')).clickPoint as typeof point | undefined;
     if (!attachedPoint || !Number.isFinite(attachedPoint.x) || !Number.isFinite(attachedPoint.y)
       || attachedPoint.x < 0 || attachedPoint.y < 0) throw new Error('browser_stale_element_read_again');
     point = attachedPoint; valid();
     await chrome.debugger.sendCommand(attachedTarget, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...point, buttons: 0 });
-    await verify(); // Hover can open an overlay or replace the referenced control.
+    if (!await verify()) return { clicked: false, reason: 'native_pointer_mismatch',
+      nextStep: 'No mouse press was sent. Read a fresh snapshot for pointer evidence and fix the browser driver before retrying.' };
     pressed = true; started = true;
     await chrome.debugger.sendCommand(attachedTarget, 'Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', buttons: 1, clickCount: 1 });
     await verify(true); // Consume refs before the final event can navigate.
@@ -44,6 +47,7 @@ export async function pointerClick(target: BrowserTarget, deadline: number, curr
     if (started) throw new Error('browser_native_click_interrupted');
     throw failure;
   } finally {
+    await prepare('end').catch(() => {});
     // Cancel an unfinished press outside the page, without clicking a replacement.
     if (pressed) await chrome.debugger.sendCommand(attachedTarget, 'Input.dispatchMouseEvent',
       { type: 'mouseReleased', x: -1, y: -1, button: 'left', buttons: 0, clickCount: 0 }).catch(() => {});

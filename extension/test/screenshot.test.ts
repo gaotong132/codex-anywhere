@@ -100,7 +100,7 @@ test('capture targets the granted tab, masks its scrolled viewport and preserves
   assert.equal(result.data, jpeg.toString('base64'));
   const params = h.calls.find(item => typeof item === 'object');
   assert.equal(params.captureBeyondViewport, false);
-  assert.deepEqual(params.clip, { x: 0, y: 120, width: 800, height: 600, scale: 1 });
+  assert.equal(params.clip, undefined, 'viewport capture must not reinterpret CSS coordinates under browser zoom');
   assert.deepEqual(h.masks, [[20, 30, 100, 40]]); assert.equal(h.closed(), 1); assert.ok(!h.calls.includes('detach'));
   await h.run(); assert.equal(h.calls.filter(item => item === 'attach').length, 1);
   await releaseAllDebuggers(); assert.equal(h.calls.at(-1), 'detach');
@@ -124,7 +124,7 @@ test('delayed layout changes after attach settle before capturing the final view
   const h = capture(t);
   h.attaching(async () => { setTimeout(() => h.resize(), 100); });
   await h.run();
-  assert.equal(h.calls.find(item => typeof item === 'object').clip.x, 10);
+  assert.ok(h.calls.filter(item => item === 'begin').length >= 3, 'layout inspection restarts after the delayed resize');
   assert.equal(h.calls.filter(item => typeof item === 'object').length, 1, 'only one screenshot is taken');
 });
 

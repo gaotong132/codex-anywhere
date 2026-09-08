@@ -80,3 +80,10 @@ test('visible exclusion diagnostics are bounded and contain no excluded labels o
   assert.deepEqual(JSON.parse(JSON.stringify(snapshot.excludedVisibleBranches[0])), { tag: 'section', reason: 'aria-hidden', beforeNode: 0 });
   assert.doesNotMatch(JSON.stringify(snapshot), /private-/);
 });
+
+test('deep visible controls report the traversal limit without returning omitted content', () => {
+  const h = fixture('<div>'.repeat(70) + '<button>Omitted action</button>' + '</div>'.repeat(70));
+  const snapshot = h.read();
+  assert.ok(snapshot.visibilityOmissions.some((item: any) => item.reason === 'ancestor-depth' && item.count > 0));
+  assert.doesNotMatch(JSON.stringify(snapshot), /Omitted action/);
+});
