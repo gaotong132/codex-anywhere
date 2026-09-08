@@ -92,6 +92,8 @@ import {
   type BridgeRequestOptions as RequestOptions,
 } from './bridge-request-manager';
 import { BrowserSecureChannel } from './secure-channel-client';
+import { sendWebSocketFrame } from './websocket-send';
+import { ImageUploadProgress, type ImageUploadState } from './image-upload-progress';
 import {
   DEFAULT_ENVIRONMENT_ID,
   environmentDisplayName,
@@ -230,6 +232,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [knownAttachments, setKnownAttachments] = useState<Record<string, KnownAttachment>>(loadKnownAttachments);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<ImageUploadState | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
   const [followState, setFollowState] = useState<FollowState>('idle');
   const {
@@ -307,7 +310,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   if (!requestManagerRef.current) {
     requestManagerRef.current = new BridgeRequestManager({
       isConnected: () => socketRef.current?.readyState === WebSocket.OPEN,
-      send: (frame) => secureChannelRef.current?.sendFrame(frame) === true,
+      send: (frame, options) => secureChannelRef.current?.sendFrame(frame, options) === true,
     });
   }
 
@@ -633,10 +636,9 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     const channel = new BrowserSecureChannel({
       identity: loadOrCreateBrowserDeviceIdentity(),
       routeDeviceId,
-      send: (frame) => {
+      send: (frame, options) => {
         if (socketRef.current !== socket || socket.readyState !== WebSocket.OPEN) return false;
-        socket.send(JSON.stringify(frame));
-        return true;
+        return sendWebSocketFrame(socket, frame, options);
       },
       onFrame: (frame) => messageHandlerRef.current(frame as BridgeMessage),
       onReady: () => {
@@ -995,15 +997,15 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
               publicKey: identity.publicKey,
             });
             const device = createBrowserDeviceProof({ challenge, role: 'client', authProof: proof });
-            socket.send(JSON.stringify({
+            sendWebSocketFrame(socket, {
               type: 'auth.enroll', role: 'client', pairingId: pairing.id, proof, device, protocol,
-            }));
+            });
           } else if (approvedDeviceRef.current) {
             authAttemptModeRef.current = 'device';
             const device = createBrowserDeviceProof({
               challenge, role: 'client', authProof: DEVICE_KEY_AUTH_CONTEXT,
             });
-            socket.send(JSON.stringify({ type: 'auth.device', role: 'client', device, protocol }));
+            sendWebSocketFrame(socket, { type: 'auth.device', role: 'client', device, protocol });
           } else {
             socket.close(4406, 'pairing required');
           }
@@ -1159,7 +1161,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           socket.close(4000, 'stale connection');
           return;
         }
-        socket.send(JSON.stringify({ type: 'ping', at: Date.now() }));
+        sendWebSocketFrame(socket, { type: 'ping', at: Date.now() });
         return;
       }
       reconnectAttemptRef.current = 0;
@@ -1207,7 +1209,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         socket.close(4000, 'heartbeat timeout');
         return;
       }
-      socket.send(JSON.stringify({ type: 'ping', at: Date.now() }));
+      sendWebSocketFrame(socket, { type: 'ping', at: Date.now() });
     }, CLIENT_HEARTBEAT_MS);
     return () => clearInterval(heartbeat);
   }, []);
@@ -1667,7 +1669,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     let uploadedPreviewUrl = '';
     let optimisticItemId = '';
     let composerCleared = false;
-    if (image) setUploading(true);
+    if (image) {
+      setUploading(true);
+      setUploadProgress({ phase: 'preparing', percent: 0 });
+    }
     try {
       if (image) {
         const encoded = await fileToBase64(image.file);
@@ -1678,6 +1683,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           setUploading(false);
           return;
         }
+        setUploadProgress({ phase: 'sending', percent: 0 });
         const uploaded = await request<UploadedImage>('attachment.upload', {
           name: image.file.name,
           mimeType: image.file.type,
@@ -1688,7 +1694,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             size: image.transferPreview.size,
             data: previewEncoded,
           } : undefined,
-        });
+        }, { onUploadProgress: ({ sentBytes, totalBytes }) => {
+          if (!isCurrentSessionRequest(targetThreadId, threadIdRef.current, selectionVersion, selectedRequestRef.current)) return;
+          const percent = Math.min(100, Math.floor(sentBytes / totalBytes * 100));
+          setUploadProgress({ phase: sentBytes === totalBytes ? 'confirming' : 'sending', percent });
+        } });
         const imageMessage = buildImageMessage(text, uploaded);
         turnText = imageMessage.turnText;
         visibleText = imageMessage.visibleText;
@@ -1844,6 +1854,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       reportTimelineError(error);
     } finally {
       sendingRef.current = false;
+      if (image) setUploadProgress(null);
     }
   }, [
     addTimeline, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingImage,
@@ -2285,7 +2296,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           {pendingImage && (
             <div className="image-preview">
               <img src={pendingImage.previewUrl} alt={t('待发送图片预览', 'Image ready to send')} />
-              <span><strong>{pendingImage.file.name}</strong><small>{formatBytes(pendingImage.file.size)}</small></span>
+              <div className="image-preview-details">
+                <strong>{pendingImage.file.name}</strong><small>{formatBytes(pendingImage.file.size)}</small>
+                {uploading && uploadProgress && <ImageUploadProgress state={uploadProgress} />}
+              </div>
               <button
                 type="button"
                 onClick={() => setPendingImage(null)}

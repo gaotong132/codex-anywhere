@@ -27,7 +27,14 @@ export function friendlyError(error: unknown) {
   if (message === 'project_directory_required') return t('新会话必须选择或填写项目目录。', 'Choose or enter a project directory for the new session.');
   if (message === 'session_project_directory_unavailable') return t('该会话没有可用的项目目录，无法通过连接器继续。', 'This session has no project directory available to the connector.');
   if (message === 'workspace_outside_allowed_root') return t('该目录不在连接器允许访问的范围内。', 'This directory is outside the connector allowed roots.');
-  if (message === 'request_timeout') return t('请求超过 30 秒没有响应，请稍后重试。', 'The request timed out after 30 seconds. Try again shortly.');
+  if (message === 'request_timeout') {
+    const timeoutMs = error instanceof Error && 'timeoutMs' in error ? error.timeoutMs : undefined;
+    if (typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      const seconds = Math.ceil(timeoutMs / 1000);
+      return t(`请求超过 ${seconds} 秒没有响应，请稍后重试。`, `The request timed out after ${seconds} seconds. Try again shortly.`);
+    }
+    return t('请求超时，请稍后重试。', 'The request timed out. Try again shortly.');
+  }
   if (message === 'turn_start_timeout') return t('等待原会话可写超时，消息没有发送，已恢复到输入框。', 'Timed out waiting for the session to become writable. The message was not sent and has been restored.');
   if (message === 'desktop_app_unavailable') return t('桌面 Codex 当前不可用，请打开桌面应用后重试。', 'Codex Desktop is unavailable. Open it and try again.');
   if (message === 'desktop_thread_identity_mismatch') return t('已阻止操作：会话身份不一致。请更新 PC 连接器后重试，消息不会转发到其他会话。', 'Operation blocked: task identities do not match. Update the PC connector and retry; the message will not be forwarded to another task.');

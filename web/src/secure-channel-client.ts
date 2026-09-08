@@ -1,4 +1,5 @@
 import type { DeviceIdentity } from '../../src/shared/device-auth';
+import type { FrameSendOptions } from './websocket-send';
 import {
   SecureChannelCodec,
   createSecureChannelEphemeralKeyPair,
@@ -17,7 +18,7 @@ type JsonObject = Record<string, any>;
 export class BrowserSecureChannel {
   private readonly identity: DeviceIdentity;
   private readonly routeDeviceId: string;
-  private readonly send: (frame: JsonObject) => boolean;
+  private readonly send: (frame: JsonObject, options?: FrameSendOptions) => boolean;
   private readonly onFrame: (frame: JsonObject) => void;
   private readonly onReady: () => void;
   private readonly onError: () => void;
@@ -36,7 +37,7 @@ export class BrowserSecureChannel {
   }: {
     identity: DeviceIdentity;
     routeDeviceId: string;
-    send: (frame: JsonObject) => boolean;
+    send: (frame: JsonObject, options?: FrameSendOptions) => boolean;
     onFrame: (frame: JsonObject) => void;
     onReady?: () => void;
     onError?: () => void;
@@ -100,12 +101,12 @@ export class BrowserSecureChannel {
     return false;
   }
 
-  sendFrame(frame: JsonObject) {
+  sendFrame(frame: JsonObject, options?: FrameSendOptions) {
     if (!this.ready || !this.codec) return false;
     try {
       return this.send({
         type: 'secure', deviceId: this.routeDeviceId, envelope: this.codec.seal(frame),
-      });
+      }, options);
     } catch {
       this.fail();
       return false;

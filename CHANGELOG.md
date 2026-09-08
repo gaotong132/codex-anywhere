@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Show image preparation, byte-based sending progress and receipt confirmation in the Web composer. Allow 60 seconds for ordinary Web requests and 120 seconds for image uploads/reads, with timeout messages showing the actual limit. Existing turn-start waits and explicit request limits are preserved.
+
 - Correct scrolled-page visibility for viewport overflow and boxless wrappers, return viewport metrics, and make parsed child pages usable before optional resources finish. Track a single script-created child during a live click using browser navigation events, preserving origin/document/site checks and explicit handoff for ambiguous destinations. Reload the extension and accept its added `webNavigation` permission if prompted.
 
 - Reuse unchanged managed child tabs for repeated links and automatically retire older ordinary children beyond the 5 most recently used, preserving roots, manual/protected tabs, edits and in-flight operations.
