@@ -787,16 +787,16 @@ test('old ordinary children are closed and revoked while root, manual, pinned an
   const manual = h.manualTab();
   const ordinary: Frame[] = [];
   for (let i = 0; i < 7; i++) ordinary.push(await open(`ordinary-${i}`));
-  for (let i = 0; i < 100 && h.removedTabs.length < 4; i++) await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.equal(h.removedTabs.length, 4);
+  for (let i = 0; i < 100 && h.removedTabs.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(h.removedTabs.length, 2);
   // Closing Chrome tabs and acknowledging their encrypted revocation are separate.
   const removedGrants = ordinary.filter((binding) => h.removedTabs.includes(binding.target.tabId)).map((binding) => binding.grantId);
   for (let i = 0; i < 100 && h.broker.listPages('task-a', 'turn-cleanup').pages.some((page) => removedGrants.includes(page.pageId)); i++) await new Promise((resolve) => setTimeout(resolve, 20));
-  for (const binding of ordinary.slice(0, 4)) {
+  for (const binding of ordinary.slice(0, 2)) {
     assert.ok(!h.pages.has(binding.target.tabId));
     await assert.rejects(h.broker.execute('task-a', 'turn-cleanup', { method: 'snapshot' }, binding.grantId), /page_not_authorized/);
   }
-  for (const id of [1, manual, pinned.target.tabId, edited.target.tabId, ...ordinary.slice(-3).map(b => b.target.tabId)]) assert.ok(h.pages.has(id));
-  assert.equal(h.broker.listPages('task-a', 'turn-cleanup').total, 6);
+  for (const id of [1, manual, pinned.target.tabId, edited.target.tabId, ...ordinary.slice(-5).map(b => b.target.tabId)]) assert.ok(h.pages.has(id));
+  assert.equal(h.broker.listPages('task-a', 'turn-cleanup').total, 8);
   assert.equal(h.activeTab(), ordinary.at(-1)!.target.tabId);
 });

@@ -1,6 +1,6 @@
 import type { BrowserTarget } from '../../src/browser-control/contracts.js';
 
-export const RECENT_CHILD_TABS = 3;
+export const RECENT_CHILD_TABS = 5;
 
 // Runs only inside the exact, already-authorized document. No field values leave
 // the isolated world. Remember edits across grant rotation / worker reconnects.

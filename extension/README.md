@@ -40,7 +40,7 @@ the current chat Session. Same-origin children with site permission remain contr
 visibly for authorization. Activating a tab does not grant control of its site.
 
 Repeated links reuse an unedited, still-authorized child at the same URL in the same task/window.
-Keep the 3 most recently used ordinary children; after successful operations, close older idle children and
+Keep the 5 most recently used ordinary children; after successful operations, close older idle children and
 revoke their grants. Root/manual tabs, pinned or audible tabs, tabs moved to another window, and pages with
 detected input/changes are preserved and do not consume this allowance. Active or busy pages are also retained.
 Cleanup uses existing child provenance, never URL-based discovery of historical or unauthorized tabs.

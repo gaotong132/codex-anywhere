@@ -6,7 +6,7 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 - Correct scrolled-page visibility for viewport overflow and boxless wrappers, return viewport metrics, and make parsed child pages usable before optional resources finish. Track a single script-created child during a live click using browser navigation events, preserving origin/document/site checks and explicit handoff for ambiguous destinations. Reload the extension and accept its added `webNavigation` permission if prompted.
 
-- Reuse unchanged managed child tabs for repeated links and automatically retire older ordinary children beyond the 3 most recently used, preserving roots, manual/protected tabs, edits and in-flight operations.
+- Reuse unchanged managed child tabs for repeated links and automatically retire older ordinary children beyond the 5 most recently used, preserving roots, manual/protected tabs, edits and in-flight operations.
 
 - Focus controls during click/fill and read denser lists with up to 200 snapshot nodes, retaining scan/text caps and an explicit serialized-result budget.
 
