@@ -20,6 +20,7 @@ const TOKEN = 'browser-integration-test-connector-token-123456';
 
 async function harness(t: test.TestContext) {
   let duringSessionsList: (() => void | Promise<void>) | undefined;
+  let duringNavigation: (() => void | Promise<void>) | undefined;
   const relay = createBridgeServer({ connectorToken: TOKEN, extensionOrigins: [`chrome-extension://${extensionId}`] });
   const address = await relay.listen(0, '127.0.0.1');
   assert.ok(address && typeof address !== 'string');
@@ -44,6 +45,7 @@ async function harness(t: test.TestContext) {
         });
         else if (frame.action === 'browser.adopt') data = broker.adopt(client, p.operationRequestId, p.parentGrantId, p.target);
         else if (frame.action === 'browser.restore') data = broker.restore(client, p.grantId, p.target);
+        else if (frame.action === 'browser.navigate') { await duringNavigation?.(); data = broker.navigate(client, p.grantId, p.target); }
         else if (frame.action === 'browser.heartbeat') data = broker.heartbeat(client, p.grantId);
         else if (frame.action === 'browser.revoke') data = broker.revoke(client, p.grantId);
         else if (frame.action === 'browser.result') data = broker.result(client, p);
@@ -79,6 +81,8 @@ async function harness(t: test.TestContext) {
   let injections = 0;
   const injectedTabs: number[] = [];
   const navigationListeners = new Set<(event: Frame) => void>();
+  const beforeListeners = new Set<(event: Frame) => void>();
+  const commitListeners = new Set<(event: Frame) => void>();
   let nextRedirect: string | undefined;
   let nextPageLoading = false;
   let onActionClicked!: (tab: Frame) => void;
@@ -126,7 +130,14 @@ async function harness(t: test.TestContext) {
   let workerGeneration = 0;
   const badges: Frame[] = [];
   const chrome = {
-    webNavigation: { onCreatedNavigationTarget: {
+    webNavigation: {
+      getFrame: async ({ tabId }: { tabId: number }) => {
+        const fixture = pages.get(tabId);
+        return fixture ? { documentId: fixture.documentId, url: fixture.url, documentLifecycle: 'active', errorOccurred: false } : null;
+      },
+      onBeforeNavigate: { addListener: (listener: (event: Frame) => void) => beforeListeners.add(listener) },
+      onCommitted: { addListener: (listener: (event: Frame) => void) => commitListeners.add(listener) },
+      onCreatedNavigationTarget: {
       addListener: (listener: (event: Frame) => void) => navigationListeners.add(listener),
       removeListener: (listener: (event: Frame) => void) => navigationListeners.delete(listener),
     } },
@@ -196,6 +207,7 @@ async function harness(t: test.TestContext) {
   return { relay, broker, send, sender, receive: (...args: Parameters<typeof onMessage>) => onMessage(...args),
     sendPanel: (type: string, payload: Frame = {}) => send(type, payload, { id: extensionId, url: `chrome-extension://${extensionId}/sidepanel.html` }),
     onSessionList: (callback: () => void | Promise<void>) => { duringSessionsList = callback; },
+    onNavigation: (callback: () => void | Promise<void>) => { duringNavigation = callback; },
     openPanel: (windowId: number) => onActionClicked({ id: activeTab, windowId }), openedPanels,
     pairUrl: `${origin}/#pair=${encodeBrowserPairingCredential(pairing.credential)}`, origin,
     local, session, badges, document, clicks: () => clicks, injections: () => injections,
@@ -229,7 +241,14 @@ async function harness(t: test.TestContext) {
     },
     manualTab: () => { const id = nextTabId++; pages.set(id, makePage(id, 'https://example.com/manual')); activeTab = id; return id; },
     urlChanged: (url: string, id = 1) => { pages.get(id)!.url = url; onUpdated(id, { url }); },
-    navigate: (id = 1) => { pages.get(id)!.documentId += '-navigated'; onUpdated(id, { status: 'loading' }); },
+    navigate: (id = 1) => { const next = makePage(id, 'https://foreign.example/next'); next.documentId = crypto.randomUUID(); pages.set(id, next); onUpdated(id, { status: 'loading' }); },
+    sameOriginNavigation: (id = 1, path = '/next') => {
+      const url = `https://example.com${path}`;
+      for (const listener of beforeListeners) listener({ tabId: id, frameId: 0, url });
+      const next = makePage(id, url); next.documentId = crypto.randomUUID(); pages.set(id, next);
+      for (const listener of commitListeners) listener({ tabId: id, frameId: 0, url, documentId: next.documentId });
+      onUpdated(id, { url, status: 'loading' }); onUpdated(id, { status: 'complete' });
+    },
     close: (id = 1) => onRemoved(id), replace: () => { pages.get(1)!.documentId = 'doc-b'; } };
 }
 
@@ -441,6 +460,71 @@ test('SPA URL changes retain the exact document grant but replacement and cross-
   h.urlChanged('https://foreign.example/replaced');
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal((await h.send('status')).result.binding, null);
+});
+
+test('same-origin reload and page changes rotate document grants without another authorization click', async t => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' }); h.allowChildren();
+  const before: any = await h.broker.execute('task-a', 'turn-nav', { method: 'snapshot' });
+  const child: any = await h.broker.execute('task-a', 'turn-nav', { method: 'open_link', ref: before.nodes.find((n: Frame) => n.text === 'Open child').ref });
+  for (const [tabId, path] of [[1, '/next'], [1, '/next'], [2, '/child-next']] as const) {
+    const old = h.session.values.bindings.find((b: Frame) => b.target.tabId === tabId).grantId;
+    h.sameOriginNavigation(tabId, path);
+    for (let attempt = 0; attempt < 100; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+      const next = h.session.values.bindings.find((b: Frame) => b.target.tabId === tabId);
+      if (next?.grantId !== old && h.broker.listPages('task-a', 'turn-nav').onlinePageCount === 2) break;
+    }
+    const next = h.session.values.bindings.find((b: Frame) => b.target.tabId === tabId);
+    assert.ok(next); assert.notEqual(next.grantId, old);
+    assert.equal(h.broker.listPages('task-a', 'turn-nav').total, 2);
+    assert.equal(h.broker.listPages('task-b', 'turn-nav').total, 0);
+    await assert.rejects(h.broker.execute('task-a', 'turn-nav', { method: 'snapshot' }, old), /not_authorized/);
+    await assert.rejects(h.broker.execute('task-a', 'turn-nav', { method: 'click', ref: before.nodes.find((n: Frame) => n.tag === 'button').ref }, next.grantId), /stale_element/);
+    assert.match(JSON.stringify(await h.broker.execute('task-a', 'turn-nav', { method: 'snapshot' }, next.grantId)), /Fixture page/);
+  }
+  assert.equal(h.clicks(), 0, 'old references never execute on a replacement page');
+  assert.equal(h.createdTabs(), 1, 'navigation never creates a duplicate tab');
+  assert.ok(child.pageId);
+  await h.send('revoke');
+  assert.equal(h.broker.listPages('task-a', 'turn-nav').total, 0);
+});
+
+test('manual revoke and newer task consent win while same-origin navigation awaits the broker', async t => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' }); h.allowChildren();
+  let release!: () => void; let arrived!: () => void;
+  const entered = new Promise<void>(resolve => { arrived = resolve; });
+  h.onNavigation(() => { arrived(); return new Promise<void>(resolve => { release = resolve; }); });
+  h.sameOriginNavigation(); await entered;
+  await h.send('revoke');
+  await h.send('grant', { threadId: 'task-b' });
+  release(); await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(h.broker.listPages('task-a', 'turn-nav').total, 0);
+  assert.equal(h.broker.listPages('task-b', 'turn-nav').total, 1);
+  assert.match(JSON.stringify(await h.broker.execute('task-b', 'turn-nav', { method: 'snapshot' })), /Fixture page/);
+});
+
+test('rapid same-origin commits converge on the latest document and foreign hops stop the tree', async t => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' }); h.allowChildren();
+  let release!: () => void; let arrived!: () => void;
+  const entered = new Promise<void>(resolve => { arrived = resolve; });
+  h.onNavigation(() => { h.onNavigation(async () => {}); arrived(); return new Promise<void>(resolve => { release = resolve; }); });
+  h.sameOriginNavigation(1, '/first'); await entered;
+  h.sameOriginNavigation(1, '/second'); release();
+  for (let attempt = 0; attempt < 100; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+    if (h.session.values.bindings[0]?.target.documentId === h.pages.get(1)!.documentId && h.broker.status('task-a').online) break;
+  }
+  assert.equal(h.session.values.bindings[0]?.target.documentId, h.pages.get(1)!.documentId);
+  assert.match(JSON.stringify(await h.broker.execute('task-a', 'turn-nav', { method: 'snapshot' })), /Fixture page/);
+  const injected = h.injections();
+  h.urlChanged('https://foreign.example/redirect'); h.sameOriginNavigation(1, '/returned');
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(h.broker.status('task-a').authorized, false);
+  // Revoking the old exact document may inject only its fixed revoke script.
+  assert.ok(h.injections() <= injected + 1);
 });
 
 test('console controls expose nested labels and exact recoverable failures without losing page consent', async (t) => {

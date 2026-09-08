@@ -18,6 +18,8 @@ const bindings = new Map<number, Binding>();
 const intents = new Map<number, object>();
 const busy = new Set<Binding>();
 const retiring = new Set<Binding>();
+const documentChecks = new Map<number, { again: boolean }>();
+const changingDocuments = new Set<Binding>();
 let pruning = false;
 let pruneAgain = false;
 let saving = Promise.resolve();
@@ -105,6 +107,7 @@ async function page(target: BrowserTarget, grantId: string, operation: Parameter
 async function revokeBinding(old: Binding) {
   if (bindings.get(old.target.tabId) !== old) return;
   bindings.delete(old.target.tabId); busy.delete(old);
+  changingDocuments.delete(old); documentChecks.delete(old.target.tabId);
   const children = old.rootTabId === undefined ? [...bindings.values()].filter((entry) => entry.rootTabId === old.target.tabId) : [];
   const removedChildren = children.map(revokeBinding);
   const saved = persist();
@@ -120,20 +123,55 @@ async function revokeTab(tabId: number) {
 
 async function checkDocument(tabId: number, url?: string) {
   intents.delete(tabId);
-  const captured = bindings.get(tabId);
-  if (!captured) return;
+  const initial = bindings.get(tabId);
+  if (!initial) return;
+  // An observed foreign hop ends consent even if it later redirects back.
+  try { if (url !== undefined && browserOrigin(url) !== initial.target.origin) throw new Error('browser_document_changed'); }
+  catch { await revokeBinding(initial); return; }
+  const pending = documentChecks.get(tabId);
+  if (pending) { pending.again = true; return; }
+  const check = { again: true }; documentChecks.set(tabId, check);
+  const expectedRevision = revision;
   try {
-    const currentUrl = url ?? (await chrome.tabs.get(tabId)).url;
-    if (browserOrigin(currentUrl) !== captured.target.origin) throw new Error('browser_document_changed');
-    // SPA routes can change the URL without replacing the authorized document.
-    // Probe only that exact document; never inspect or adopt its replacement.
-    const [proof] = await chrome.scripting.executeScript({
-      target: { tabId, documentIds: [captured.target.documentId] }, world: 'ISOLATED', injectImmediately: true, func: () => location.origin,
-    });
-    if (!proof || proof.documentId !== captured.target.documentId || proof.result !== captured.target.origin) {
-      throw new Error('browser_document_changed');
+    while (check.again && documentChecks.get(tabId) === check && revision === expectedRevision) {
+      check.again = false;
+      let captured = bindings.get(tabId);
+      if (!captured || !connection.ready() || connecting) return;
+      const current = () => revision === expectedRevision && documentChecks.get(tabId) === check && bindings.get(tabId) === captured;
+      try {
+        // Browser metadata identifies the committed top document before any injection.
+        const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+        if (!current()) return;
+        if (!frame || frame.documentLifecycle !== 'active') return;
+        if (browserOrigin(frame.url) !== captured.target.origin || frame.errorOccurred) throw new Error('browser_document_changed');
+        if (frame.documentId === captured.target.documentId) continue;
+        if (!await chrome.permissions.contains({ origins: [sitePattern(captured.target.origin)] })) throw new Error('browser_document_changed');
+        if (!current()) return;
+        changingDocuments.add(captured);
+        const target = { ...captured.target, documentId: frame.documentId };
+        const fresh = await connection.request('browser.navigate', { grantId: captured.grantId, target });
+        if (!current()) { await connection.request('browser.revoke', { grantId: fresh.grantId }).catch(() => {}); return; }
+        const next: Binding = { ...captured, target, grantId: fresh.grantId, sequence: 0, pageTitle: undefined };
+        changingDocuments.delete(captured); busy.delete(captured);
+        bindings.set(tabId, next); captured = next; changingDocuments.add(next);
+        await persist();
+        const latest = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+        if (!current()) return;
+        if (!latest || browserOrigin(latest.url) !== target.origin) throw new Error('browser_document_changed');
+        if (latest.documentId !== target.documentId) { check.again = true; continue; }
+        await page(target, next.grantId, { method: 'authorize' });
+        if (!current()) return;
+        changingDocuments.delete(next);
+        await connection.request('browser.heartbeat', { grantId: next.grantId });
+        await badge(tabId);
+      } catch {
+        // A newer browser event will inspect the latest committed document.
+        if (current() && check.again) continue;
+        if (current()) await revokeBinding(captured);
+        return;
+      }
     }
-  } catch { await revokeBinding(captured); }
+  } finally { if (documentChecks.get(tabId) === check) documentChecks.delete(tabId); }
 }
 
 async function revokeAll() {
@@ -231,7 +269,8 @@ async function handleOperation(frame: Frame) {
     const operation = parseOperation(request.operation);
     if (bindings.get(captured.target.tabId) !== captured || !connection.ready()) throw new Error('browser_not_authorized');
     const expectedRevision = revision;
-    const current = () => revision === expectedRevision && bindings.get(captured.target.tabId) === captured && connection.ready();
+    const current = () => revision === expectedRevision && bindings.get(captured.target.tabId) === captured && !changingDocuments.has(captured) && connection.ready();
+    if (!current()) throw new Error('browser_document_changed');
     const run = () => {
       if (operation.method !== 'screenshot') return page(captured.target, captured.grantId, operation, request.deadline);
       return captureScreenshot(captured.target, captured.grantId, Math.min(request.deadline, Date.now() + 15_000), current);
@@ -289,7 +328,7 @@ async function handleOperation(frame: Frame) {
       if (!current() || Date.now() >= request.deadline) throw new Error('browser_authorization_changed');
       if (!permitted) throw new Error('browser_screenshot_permission_required');
     }
-    if (bindings.get(captured.target.tabId) !== captured) return;
+    if (!current()) return;
     // The broker can dispatch its next call before this response's acknowledgement.
     // Release the local execution slot before publishing completion.
     busy.delete(captured);
@@ -559,12 +598,16 @@ chrome.action.onClicked.addListener((tab) => {
 });
 chrome.tabs.onRemoved.addListener((tabId) => { void revokeTab(tabId).catch(() => {}); });
 chrome.tabs.onUpdated.addListener((tabId, change) => {
-  // Chrome also emits loading/complete for hash-only navigation. Every operation
-  // and this check targets the original document, even while a replacement loads.
   if (change.url !== undefined || change.status !== undefined) void checkDocument(tabId, change.url).catch(() => {});
 });
+chrome.webNavigation.onBeforeNavigate.addListener((event) => {
+  if (event.frameId === 0) void checkDocument(event.tabId, event.url).catch(() => {});
+});
+chrome.webNavigation.onCommitted.addListener((event) => {
+  if (event.frameId === 0) void checkDocument(event.tabId, event.url).catch(() => {});
+});
 setInterval(() => {
-  if (bindings.size && connection?.ready()) void Promise.all([...bindings.values()].map((binding) => connection.request('browser.heartbeat', { grantId: binding.grantId }))).catch(() => {
+  if (bindings.size && connection?.ready()) void Promise.all([...bindings.values()].filter((binding) => !changingDocuments.has(binding)).map((binding) => connection.request('browser.heartbeat', { grantId: binding.grantId }))).catch(() => {
     if (!connecting) void connect(origin, true).catch(() => {});
   });
   else if (reconnectEnabled && connection?.online && !connection.ready() && bindings.size && !connecting) void connect(origin, true).catch(() => {});

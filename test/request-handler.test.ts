@@ -121,8 +121,14 @@ test('browser authorization validates an existing Session without sending or cre
   assert.equal((await handle({ ...request('browser.bind', { ...payload, threadId: 'missing' }), clientDeviceId: 'browser-a' })).ok, false);
   assert.equal(browser.status('missing').authorized, false);
   assert.equal((await handle(request('browser.bind', payload))).ok, false);
+  const navigation = { grantId: (replacement as any).data.grantId, target: { ...nextPayload.target, documentId: 'next-document' } };
+  const navigated = await handle({ ...request('browser.navigate', navigation), clientDeviceId: 'browser-a' });
+  assert.equal(navigated.ok, true);
+  assert.equal(browser.status('original').pageCount, 1);
+  assert.equal((await handle({ ...request('browser.navigate', navigation), clientDeviceId: 'browser-a' })).ok, false, 'old grant cannot be reused');
   const disabled = createRequestHandler(dependencies);
   assert.equal((await disabled({ ...request('browser.bind', payload), clientDeviceId: 'browser-a' })).ok, false);
+  assert.equal((await disabled({ ...request('browser.navigate', navigation), clientDeviceId: 'browser-a' })).ok, false);
 });
 
 test('file downloads stay authorized to the stable browser identity across relay reconnects', async () => {

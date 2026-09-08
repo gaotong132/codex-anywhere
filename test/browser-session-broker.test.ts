@@ -48,6 +48,40 @@ test('browser consent survives ten minutes and heartbeat timeout only marks offl
   assert.equal(broker.status('thread-1').online, true);
 });
 
+test('same-origin navigation rotates only its document, cancels old results and retains child lineage', async () => {
+  const { broker, grant, events } = setup();
+  const opening = broker.execute('thread-1', 'turn-1', { method: 'open_link', ref: 'link' });
+  const child = broker.adopt(client, events[0].payload.requestId, grant.grantId, { ...target, tabId: 2, documentId: 'child' });
+  broker.result(client, { ...events[0].payload, ok: true }); await opening;
+  broker.heartbeat(client, child.grantId);
+  const pending = broker.execute('thread-1', 'turn-1', { method: 'screenshot' }, grant.grantId);
+  const rejected = assert.rejects(pending, /authorization_changed/);
+  const next = broker.navigate(client, grant.grantId, { ...target, documentId: 'next' });
+  await rejected;
+  assert.notEqual(next.grantId, grant.grantId);
+  assert.throws(() => broker.result(client, { ...events[1].payload, ok: true }), /request_expired/);
+  await assert.rejects(broker.execute('thread-1', 'turn-1', { method: 'snapshot' }, next.grantId), /offline/);
+  broker.heartbeat(client, next.grantId);
+  assert.equal(broker.listPages('thread-1', 'turn-1').total, 2);
+  assert.equal(broker.listPages('thread-2', 'turn-1').total, 0);
+  broker.revoke(client, next.grantId);
+  assert.equal(broker.listPages('thread-1', 'turn-1').total, 0);
+  assert.throws(() => broker.heartbeat(client, child.grantId), /not_authorized/);
+});
+
+test('navigation cannot recreate consent, change tab/origin/device or borrow another connection', () => {
+  const { broker, grant } = setup();
+  const next = { ...target, documentId: 'next' };
+  for (const invalid of [target, { ...next, tabId: 2 }, { ...next, origin: 'https://foreign.example' }, { ...next, browserDeviceId: 'other' }]) {
+    assert.throws(() => broker.navigate(client, grant.grantId, invalid), /navigation_not_allowed/);
+  }
+  assert.throws(() => broker.navigate({ ...client, clientId: 'other-connection' }, grant.grantId, next), /not_authorized/);
+  const ecs = new BrowserSessionBroker('ecs', () => false);
+  assert.throws(() => ecs.navigate(client, grant.grantId, next), /not_authorized/);
+  broker.revoke(client, grant.grantId);
+  assert.throws(() => broker.navigate(client, grant.grantId, next), /not_authorized/);
+});
+
 test('explicit replacement recovers the same browser orphan and revokes its children and pending operations', async () => {
   const { broker, grant, events } = setup();
   const opening = broker.execute('thread-1', 'turn-1', { method: 'open_link', ref: 'link' });

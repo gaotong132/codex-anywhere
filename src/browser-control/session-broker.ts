@@ -86,6 +86,19 @@ export class BrowserSessionBroker {
     return { grantId: grant.id, environmentId: this.environmentId, threadId: grant.threadId, target };
   }
 
+  // Browser-attested navigation of an existing tab, never model-supplied consent.
+  // Keep the Session and child lineage while retiring the previous document.
+  navigate(client: Client, grantId: unknown, targetValue: unknown) {
+    const old = this.owned(client, grantId);
+    const target = parseBrowserTarget(targetValue);
+    if (target.browserDeviceId !== old.target.browserDeviceId || target.tabId !== old.target.tabId
+      || target.origin !== old.target.origin || target.documentId === old.target.documentId) throw new Error('browser_navigation_not_allowed');
+    const grant: Grant = { ...old, id: randomUUID(), target, sequence: 0, active: false, seenAt: this.now(), lastToolSuccessAt: undefined };
+    for (const child of this.grants.values()) if (child.rootGrantId === old.id) child.rootGrantId = grant.id;
+    this.remove(old); this.grants.set(grant.id, grant);
+    return { grantId: grant.id, environmentId: this.environmentId, threadId: grant.threadId, target };
+  }
+
   heartbeat(client: Client, grantId: unknown) {
     const grant = this.owned(client, grantId);
     grant.active = true;

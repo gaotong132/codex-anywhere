@@ -128,6 +128,7 @@ async function dispatchAction({
     if (action === 'browser.status') return browser.status(payload.threadId);
     if (action === 'browser.adopt') return browser.adopt(client, payload.operationRequestId, payload.parentGrantId, payload.target);
     if (action === 'browser.restore') return browser.restore(client, payload.grantId, payload.target);
+    if (action === 'browser.navigate') return browser.navigate(client, payload.grantId, payload.target);
     if (action === 'browser.heartbeat') return browser.heartbeat(client, payload.grantId);
     if (action === 'browser.revoke') return browser.revoke(client, payload.grantId);
     if (action === 'browser.result') return browser.result(client, payload);

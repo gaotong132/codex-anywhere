@@ -82,14 +82,20 @@ pending calls; stale results cannot finish a new request. Desktop keeps its exis
 resumes or takes it over. No test messages are sent into business tasks.
 
 Consent has no TTL. A 45-second heartbeat gap means offline. Reconnection rotates grants and never replays
-writes. Browser session storage retains consent only within the current browser lifetime. Navigation, closure
+writes. Browser session storage retains consent only within the current browser lifetime. Cross-origin navigation, closure
 and manual revocation invalidate it. Fixed ISOLATED scripts target exact document IDs. Page text is untrusted
 data, not an instruction or authorization source; content is not logged or persistently cached.
 
-Same-document SPA URL changes keep the existing grant only after probing its exact document ID and origin. The probe
-never targets a replacement document; document replacement, a failed probe or an origin change still revokes consent.
+Same-document SPA routes retain the current grant. Same-origin navigation and reload in an already authorized tab
+renew the document grant using Chrome's committed top-frame document ID and the existing site permission.
+The authenticated extension uses `browser.navigate`, which cannot change the device, tab, origin or Session and
+cannot recreate a revoked grant. The old page ID, refs and pending results (including screenshots) are retired;
+existing children retain their lineage. Concurrent navigations are serialized per tab and converge on the latest
+committed document; manual revocation or newer consent wins. No click or other write is replayed.
+Cross-origin hops end consent, including an observed hop that redirects back. Other manual tabs are not adopted.
+This is a coordinated extension/Connector action; deploy both before using the updated extension.
 
-Root navigation/closure/revocation revokes all children. Child navigation revokes only that child. Network reconnection
+Root cross-origin navigation/closure/revocation revokes all children. A child leaving the origin revokes only that child. Network reconnection
 rotates known grants without replaying tab creation. If connector restart erased child provenance, only the root restores;
 AI must open children again. Chrome site permission is separate from Session consent and can be removed in extension settings.
 

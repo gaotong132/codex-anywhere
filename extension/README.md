@@ -33,7 +33,7 @@ appears only when the current page belongs to the selected Session. Changing the
 consent; a page owned by another Session names that owner. After switching tabs, authorize from the panel without another toolbar click.
 Changing the Session, tab, or document during the permission prompt requires a new authorization click.
 Closing the panel does not revoke page control. Revocation removes
-the root and its children; navigation, tab closure, and document replacement retain the existing revocation rules.
+the root and its children. Same-origin navigation and reload retain tab consent; leaving the origin or closing the tab revokes it.
 
 Links opened by the extension become the active tab in their original Chrome window while the side panel keeps
 the current chat Session. Same-origin children with site permission remain controllable; other destinations open
@@ -166,9 +166,9 @@ page, then reopen the popup and check whether any new errors appear.
   end-to-end encrypted operation/results frames.
 - Closing the popup does not revoke. Worker/network restart can restore only the same Session/document consent
   within the current browser lifetime, with a new grant ID. Same-document SPA routes retain consent only after an exact
-  documentId/origin check; document replacement, tab closure, revocation or browser restart requires new consent. Timed-out writes may have
+  documentId/origin check. With site permission, same-origin navigation/reload renews the document grant and retires old page IDs, refs and pending results. Cross-origin navigation, tab closure, revocation or browser restart requires new consent. Timed-out writes may have
   executed: inspect before retrying. Writes are never replayed automatically after disconnect.
-- Root navigation/closure/revocation stops all children; child navigation stops only that child. A connector restart
+- Root cross-origin navigation/closure/revocation stops all children; child cross-origin navigation stops only that child. A connector restart
   that loses child provenance restores only the root; ask AI to open children again. Revocation or lost provenance alone
   does not close tabs; ordinary managed children follow the retention policy above.
   Optional site permissions can be removed in Chrome extension settings.
