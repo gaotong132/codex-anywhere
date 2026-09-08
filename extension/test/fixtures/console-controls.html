@@ -17,6 +17,10 @@ input, select, button { padding:8px; font:inherit; }
 <div id="panel" role="region" aria-label="Security group rules"><p>Rule list</p><div class="spacer"></div><button id="last-rule">Last rule</button></div>
 <p id="result">No changes saved</p>
 <script>
+const collapsedMenu=document.createElement('nav');
+collapsedMenu.hidden=true;
+collapsedMenu.innerHTML='<span>Hidden console menu item</span>'.repeat(6000);
+document.body.prepend(collapsedMenu);
 window.fixtureEvents=[];
 for(const id of ['port','protocol']) for(const event of ['input','change']) document.getElementById(id).addEventListener(event,()=>window.fixtureEvents.push(id+':'+event));
 document.getElementById('save').addEventListener('click',()=>{document.getElementById('result').textContent='Saved '+document.getElementById('protocol').selectedOptions[0].label+':'+document.getElementById('port').value;});

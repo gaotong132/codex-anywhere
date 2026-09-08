@@ -156,6 +156,9 @@ page, then reopen the popup and check whether any new errors appear.
 
 The same six tools support console forms. Snapshots attach nested button text and visible labels to actionable refs,
 and include `role`, `inputType`, `disabled`, `checked`, `expanded` and `scrollable` when applicable. Form values stay omitted.
+Hidden/private branches and select/textarea contents are skipped during traversal, so a collapsed menu does not consume
+the scan budget before visible controls. Snapshots report `scannedElements` and, when truncated, `truncationReason`
+(`scan_limit`, `node_limit`, `text_limit`). The limits remain 5,000 inspected elements, 100 output nodes and 8,000 text characters.
 
 - `fill` accepts text and numeric inputs. Native number constraints (`min`, `max`, `step`, required) are checked before
   changing the input. It emits input/change events but does not submit the form.

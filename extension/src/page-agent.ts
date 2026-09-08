@@ -24,6 +24,20 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       const hint = ['type', 'name', 'id', 'autocomplete', 'aria-label'].map((key) => element.getAttribute(key) || '').join(' ');
       return /password|passwd|secret|token|credit|cc-|card.?number|one-time-code|otp|cvv|cvc|social.?security/i.test(hint);
     };
+    const skipSubtree = (element: Element) => {
+      if (element.matches(`${excluded},[contenteditable]`) || sensitive(element)) return true;
+      const style = getComputedStyle(element);
+      return style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
+    };
+    // Collapsed console menus can contain thousands of nodes. Skip their descendants,
+    // but retain zero-size/offscreen wrappers whose children may still be visible.
+    const nextElement = (element: Element, root: Element, skipChildren: boolean): Element | null => {
+      if (!skipChildren && element.firstElementChild) return element.firstElementChild;
+      for (let node: Element | null = element; node && node !== root; node = node.parentElement) {
+        if (node.nextElementSibling) return node.nextElementSibling;
+      }
+      return null;
+    };
     const visible = (element: Element) => {
       if (element.closest(excluded) || element.closest('[contenteditable]')) return false;
       const rect = element.getBoundingClientRect();
@@ -49,11 +63,13 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     const directText = (element: Element) => element.matches('input,textarea,select') ? '' : [...element.childNodes]
       .filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => (node.textContent || '').slice(0, 8001)).join(' ').slice(0, 8001);
     const labelText = (element: Element) => {
+      if (element.matches('input,textarea,select')) return '';
       let result = directText(element), visited = 0;
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_ELEMENT);
-      while (result.length < 500 && visited++ < 100 && walker.nextNode()) {
-        const child = walker.currentNode as Element;
-        if (visible(child) && !sensitive(child) && !child.closest('input,textarea,select')) result += ' ' + directText(child);
+      let next = element.firstElementChild;
+      while (result.length < 500 && visited++ < 100 && next) {
+        const child = next, skip = skipSubtree(child);
+        next = nextElement(child, element, skip || child.matches('input,textarea,select'));
+        if (!skip && visible(child) && !child.matches('input,textarea,select')) result += ' ' + directText(child);
       }
       return result.slice(0, 8001).replace(/\s+/g, ' ').trim();
     };
@@ -61,11 +77,17 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       state.refs.clear(); state.snapshot = crypto.randomUUID();
       const nodes: { ref?: string; tag: string; text: string; role?: string; inputType?: string; disabled?: boolean; checked?: boolean | 'mixed'; expanded?: boolean; scrollable?: boolean }[] = [];
       let chars = 0; let visited = 0; let truncated = false;
-      const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_ELEMENT);
-      while (walker.nextNode()) {
-        if (++visited > 5000 || nodes.length >= 100 || chars >= 8000) { truncated = true; break; }
-        const element = walker.currentNode as Element;
-        if (!visible(element) || sensitive(element) || element.parentElement?.closest('textarea,select')) continue;
+      let truncationReason: 'scan_limit' | 'node_limit' | 'text_limit' | undefined;
+      const root = document.body || document.documentElement;
+      let next = skipSubtree(root) ? null : root.firstElementChild;
+      while (next) {
+        if (visited >= 5000 || nodes.length >= 100 || chars >= 8000) {
+          truncated = true; truncationReason = visited >= 5000 ? 'scan_limit' : nodes.length >= 100 ? 'node_limit' : 'text_limit'; break;
+        }
+        visited++;
+        const element = next, skip = skipSubtree(element);
+        next = nextElement(element, root, skip || element.matches('input,textarea,select'));
+        if (skip || !visible(element)) continue;
         const actionable = element.matches('a[href],button,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="tab"],[role="checkbox"],[role="radio"],[role="switch"],[role="menuitem"]');
         const canScroll = scrollable(element);
         const labels = element.matches('input,textarea,select') ? [...((element as HTMLInputElement).labels ?? [])]
@@ -78,7 +100,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         // Scroll-only regions can contain large, frequently changing subtrees.
         if (ref) state.refs.set(ref, { element, ...(actionable ? { html: element.outerHTML } : { scrollOnly: true }) });
         const bounded = text.slice(0, Math.min(500, 8000 - chars)); chars += bounded.length;
-        if (bounded.length < text.length) truncated = true;
+        if (bounded.length < text.length) { truncated = true; truncationReason = 'text_limit'; }
         const role = element.getAttribute('role')?.slice(0, 40);
         const checked = element.getAttribute('aria-checked');
         const expanded = element.getAttribute('aria-expanded');
@@ -90,7 +112,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
           ...(['true', 'false'].includes(expanded ?? '') ? { expanded: expanded === 'true' } : {}),
           ...(canScroll ? { scrollable: true } : {}) });
       }
-      return { origin: location.origin, nodes, truncated };
+      return { origin: location.origin, nodes, truncated, scannedElements: visited, ...(truncationReason ? { truncationReason } : {}) };
     }
     if (input.operation.method === 'scroll' && input.operation.ref === undefined) {
       const before = window.scrollY;

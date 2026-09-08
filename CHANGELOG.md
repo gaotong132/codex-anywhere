@@ -4,6 +4,9 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Skip collapsed/private DOM branches when reading extension pages. Large hidden console menus no longer exhaust
+  the scan before visible controls; retain existing bounds and report the reason when a snapshot is truncated.
+
 - Recover visible messages across empty ranges after large compaction records or tool output, with bounded history/live scans.
   Keep pagination available for empty pages and show the loading indicator only while a request is running.
 

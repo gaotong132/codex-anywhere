@@ -155,6 +155,9 @@ Chrome 120+ 的 `chrome://extensions` 中开启开发者模式，加载已解压
 
 仍使用原有六个工具。快照把按钮内嵌文字和可见标签关联到可操作的 ref，并按需提供 `role`、`inputType`、
 `disabled`、`checked`、`expanded`、`scrollable`。默认不读取表单当前值。
+遍历时直接跳过隐藏/私有分支和 select/textarea 的内部内容，折叠菜单不会在可见控件之前耗尽扫描额度。
+快照返回 `scannedElements`；截断时附 `truncationReason`（`scan_limit`、`node_limit`、`text_limit`）。
+仍保留 5,000 个检查节点、100 个输出节点和 8,000 个文本字符的上限。
 
 - `fill` 支持文本和数字输入。数字先校验浏览器原生的 `min`、`max`、`step`、必填约束，通过后才改值。
   操作触发 input/change 事件，不提交表单。

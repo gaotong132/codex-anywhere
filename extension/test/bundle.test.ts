@@ -88,7 +88,7 @@ async function harness(t: test.TestContext) {
     Node: { TEXT_NODE: 3 }, NodeFilter: { SHOW_ELEMENT: 1 }, innerHeight: 800, innerWidth: 1200,
     HTMLInputElement: window.HTMLInputElement, HTMLTextAreaElement: window.HTMLTextAreaElement, HTMLSelectElement: window.HTMLSelectElement,
     HTMLAnchorElement: window.HTMLAnchorElement, Event: window.Event,
-    getComputedStyle: () => ({ display: 'block', visibility: 'visible', opacity: '1' }), window: { scrollBy: () => {} },
+    getComputedStyle: (element: HTMLElement) => ({ display: element.style.display || 'block', visibility: element.style.visibility || 'visible', opacity: element.style.opacity || '1' }), window: { scrollBy: () => {} },
   });
   return { document, pageContext, documentId: id === 1 ? 'doc-a' : `doc-${id}`, url };
   }
@@ -375,6 +375,36 @@ test('console controls expose nested labels and exact recoverable failures witho
   await assert.rejects(h.broker.execute('task-a', 'turn-controls', { method: 'click', ref: disabled.ref }), { message: 'browser_element_not_allowed' });
   assert.equal(h.clicks(), 0); assert.equal(h.broker.status('task-a').online, true);
   await assert.rejects(h.broker.execute('task-a', 'turn-controls', { method: 'scroll', ref: obscured.ref, deltaY: 100 }), { message: 'browser_stale_element_read_again' });
+});
+
+test('hidden console menus do not exhaust snapshots before visible controls', async (t) => {
+  const h = await harness(t);
+  for (const attributes of ['hidden', 'style="display:none"', 'style="opacity:0"', 'data-anywhere-private']) {
+    const menu = h.document.createElement('div');
+    menu.innerHTML = `<div ${attributes}>${'<span>private-menu-item</span>'.repeat(6000)}</div>`;
+    h.document.body.prepend(menu);
+  }
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const snapshot: any = await h.broker.execute('task-a', 'turn-menu', { method: 'snapshot' });
+  assert.equal(snapshot.truncated, false);
+  assert.ok(snapshot.scannedElements < 100, 'hidden descendants must not consume the scan budget');
+  assert.doesNotMatch(JSON.stringify(snapshot), /private-menu-item|secret-option|secret-draft/);
+  const button = snapshot.nodes.find((node: Frame) => node.tag === 'button' && node.text === 'Increment');
+  assert.ok(button?.ref, 'a visible control after collapsed menus must remain actionable');
+  await h.broker.execute('task-a', 'turn-menu', { method: 'click', ref: button.ref });
+  assert.equal(h.clicks(), 1);
+});
+
+test('snapshot still bounds a large visible tree and explains truncation', async (t) => {
+  const h = await harness(t);
+  const wrapper = h.document.createElement('div');
+  wrapper.innerHTML = '<div></div>'.repeat(6000);
+  h.document.body.prepend(wrapper);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const snapshot: any = await h.broker.execute('task-a', 'turn-limit', { method: 'snapshot' });
+  assert.equal(snapshot.truncated, true);
+  assert.equal(snapshot.truncationReason, 'scan_limit');
+  assert.equal(snapshot.scannedElements, 5000);
 });
 
 test('bad pairing exits pending state and can pair again; cancellation returns promptly', async (t) => {
