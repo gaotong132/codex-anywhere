@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Reuse unchanged managed child tabs for repeated links and automatically retire older ordinary children beyond the 3 most recently used, preserving roots, manual/protected tabs, edits and in-flight operations.
+
 - Focus controls during click/fill and read denser lists with up to 200 snapshot nodes, retaining scan/text caps and an explicit serialized-result budget.
 
 - Follow links opened by the browser extension by activating the new tab in its original window, keeping the current side panel chat and existing site authorization boundaries.

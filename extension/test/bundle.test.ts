@@ -71,6 +71,9 @@ async function harness(t: test.TestContext) {
   let sitePermission = false;
   let activeTabPermission = true;
   let createdTabs = 0;
+  let nextTabId = 2;
+  const removedTabs: number[] = [];
+  const tabFlags = new Map<number, Frame>();
   let clicks = 0;
   let injections = 0;
   const injectedTabs: number[] = [];
@@ -81,6 +84,19 @@ async function harness(t: test.TestContext) {
   const sockets: WebSocket[] = [];
   function makePage(id: number, url: string) {
   const { document, window } = parseHTML(`<html><body><h1>Fixture page ${id}</h1><button id="safe">Increment</button><a href="https://example.com/child" target="_blank">Open child</a><a href="https://foreign.example/child">Cross origin</a><input id="search" type="text" placeholder="Search"><input type="password" value="secret-password"><textarea>secret-draft</textarea><select><option>secret-option</option></select><div hidden>hidden-secret</div></body></html>`);
+  // LinkeDOM omits browser default-value properties used by the edit guard.
+  for (const input of document.querySelectorAll('input')) {
+    Object.defineProperty(input, 'defaultValue', { value: input.getAttribute('value') || '' });
+    Object.defineProperty(input, 'defaultChecked', { value: input.hasAttribute('checked') });
+    if (input.checked === undefined) input.checked = input.hasAttribute('checked');
+  }
+  for (const textarea of document.querySelectorAll('textarea')) Object.defineProperty(textarea, 'defaultValue', { value: textarea.textContent });
+  for (const select of document.querySelectorAll('select')) {
+    for (const [index, option] of Array.from(select.options).entries()) {
+      Object.defineProperty(option, 'defaultSelected', { value: option.hasAttribute('selected') });
+      option.selected = index === 0;
+    }
+  }
   for (const node of document.querySelectorAll('*')) Object.defineProperty(node, 'getBoundingClientRect', { value: () => ({ x: 10, y: 10, width: 100, height: 20, top: 10, left: 10, bottom: 30, right: 110 }) });
   document.querySelector('#safe')!.addEventListener('click', () => { clicks++; });
   Object.defineProperty(document, 'elementFromPoint', { value: () => document.querySelector('#safe') });
@@ -110,9 +126,10 @@ async function harness(t: test.TestContext) {
     action: { onClicked: { addListener: (callback: typeof onActionClicked) => { onActionClicked = callback; } }, setBadgeText: async (value: Frame) => { badges.push(value); }, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
     runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } } },
     tabs: { query: async () => [{ id: activeTab, windowId: 1, active: true, url: pages.get(activeTab)!.url }],
-      create: async (options: Frame) => { const id = pages.size + 1; createdTabs++; assert.ok(pages.has(options.openerTabId)); pages.set(id, makePage(id, nextRedirect ?? options.url)); nextRedirect = undefined; if (options.active) activeTab = id; return { id }; },
+      create: async (options: Frame) => { const id = nextTabId++; createdTabs++; assert.ok(pages.has(options.openerTabId)); pages.set(id, makePage(id, nextRedirect ?? options.url)); nextRedirect = undefined; if (options.active) activeTab = id; return { id }; },
+      remove: async (id: number) => { assert.notEqual(id, activeTab, 'cleanup never closes the active tab'); removedTabs.push(id); pages.delete(id); onRemoved(id); },
       update: async (id: number, options: Frame) => { assert.ok(pages.has(id)); if (options.active) activeTab = id; return { id }; },
-      get: async (id: number) => ({ id, windowId: 1, active: id === activeTab, url: pages.get(id)!.url, status: 'complete' }),
+      get: async (id: number) => ({ id, windowId: 1, active: id === activeTab, url: pages.get(id)!.url, status: 'complete', ...tabFlags.get(id) }),
       onUpdated: { addListener: (listener: typeof onUpdated) => { onUpdated = listener; } }, onRemoved: { addListener: (listener: typeof onRemoved) => { onRemoved = listener; } } },
     scripting: { executeScript: async (options: Frame) => {
       if (!activeTabPermission && !sitePermission) throw new Error('Cannot access contents of the page. Extension manifest must request permission to access the respective host.');
@@ -163,6 +180,7 @@ async function harness(t: test.TestContext) {
     local, session, badges, document, clicks: () => clicks, injections: () => injections,
     dropConnection: () => { for (const client of relay.clients.values()) client.close(1001, 'test disconnect'); },
     allowChildren: () => { sitePermission = true; }, createdTabs: () => createdTabs,
+    removedTabs, pages, setTabFlags: (id: number, flags: Frame) => tabFlags.set(id, flags),
     injectedTabs, redirectNext: (url: string) => { nextRedirect = url; }, activeTab: () => activeTab,
     loseActiveTab: () => { activeTabPermission = false; },
     reloadWithoutOldTab: async () => {
@@ -172,7 +190,7 @@ async function harness(t: test.TestContext) {
       intervals.clear();
       for (const connection of sockets) { connection.onmessage = null; connection.onclose = null; connection.terminate(); }
       for (const key of Object.keys(session.values)) delete session.values[key];
-      pages.delete(1); activeTab = 10;
+      pages.delete(1); activeTab = 10; nextTabId = 11;
       pages.set(10, makePage(10, 'https://example.com/reopened'));
       startWorker();
       for (let attempt = 0; attempt < 100; attempt++) {
@@ -181,7 +199,7 @@ async function harness(t: test.TestContext) {
       }
       throw new Error('reloaded_worker_did_not_reconnect');
     },
-    manualTab: () => { const id = pages.size + 1; pages.set(id, makePage(id, 'https://example.com/manual')); activeTab = id; return id; },
+    manualTab: () => { const id = nextTabId++; pages.set(id, makePage(id, 'https://example.com/manual')); activeTab = id; return id; },
     urlChanged: (url: string, id = 1) => { pages.get(id)!.url = url; onUpdated(id, { url }); },
     navigate: (id = 1) => { pages.get(id)!.documentId += '-navigated'; onUpdated(id, { status: 'loading' }); },
     close: (id = 1) => onRemoved(id), replace: () => { pages.get(1)!.documentId = 'doc-b'; } };
@@ -644,4 +662,51 @@ test('link handoff rejects scripts, embedded credentials and downloads before cr
     assert.equal(h.createdTabs(), 0);
     assert.equal(h.broker.listPages('task-a', 'turn-link').total, 1);
   }
+});
+
+test('repeated links reuse the same managed child without adopting a manual tab', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' }); h.allowChildren();
+  const rootId = h.session.values.bindings[0].grantId;
+  const open = async () => {
+    const snapshot: any = await h.broker.execute('task-a', 'turn-reuse', { method: 'snapshot' }, rootId);
+    return h.broker.execute('task-a', 'turn-reuse', { method: 'open_link', ref: snapshot.nodes.find((node: Frame) => node.text === 'Open child').ref }, rootId) as Promise<any>;
+  };
+  const first = await open();
+  h.manualTab();
+  const reused = await open();
+  assert.equal(reused.reused, true);
+  assert.equal(reused.pageId, first.pageId);
+  assert.equal(h.createdTabs(), 1);
+  assert.equal(h.broker.listPages('task-a', 'turn-reuse').total, 2);
+  assert.equal((await h.send('status')).result.currentManaged, true);
+});
+
+test('old ordinary children are closed and revoked while root, manual, pinned and edited pages survive', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' }); h.allowChildren();
+  const rootId = h.session.values.bindings[0].grantId;
+  const open = async (suffix: string) => {
+    h.document.querySelector('a[target="_blank"]')!.setAttribute('href', `https://example.com/${suffix}`);
+    const snapshot: any = await h.broker.execute('task-a', 'turn-cleanup', { method: 'snapshot' }, rootId);
+    const result: any = await h.broker.execute('task-a', 'turn-cleanup', { method: 'open_link', ref: snapshot.nodes.find((node: Frame) => node.text === 'Open child').ref }, rootId);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    return h.session.values.bindings.find((binding: Frame) => binding.grantId === result.pageId);
+  };
+  const pinned = await open('pinned'); h.setTabFlags(pinned.target.tabId, { pinned: true });
+  const edited = await open('edited');
+  const doc = h.pages.get(edited.target.tabId)!.document;
+  doc.querySelector('input')!.dispatchEvent(new doc.defaultView!.Event('input', { bubbles: true }));
+  const manual = h.manualTab();
+  const ordinary: Frame[] = [];
+  for (let i = 0; i < 7; i++) ordinary.push(await open(`ordinary-${i}`));
+  for (let i = 0; i < 100 && h.removedTabs.length < 4; i++) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(h.removedTabs.length, 4);
+  for (const binding of ordinary.slice(0, 4)) {
+    assert.ok(!h.pages.has(binding.target.tabId));
+    await assert.rejects(h.broker.execute('task-a', 'turn-cleanup', { method: 'snapshot' }, binding.grantId), /page_not_authorized/);
+  }
+  for (const id of [1, manual, pinned.target.tabId, edited.target.tabId, ...ordinary.slice(-3).map(b => b.target.tabId)]) assert.ok(h.pages.has(id));
+  assert.equal(h.broker.listPages('task-a', 'turn-cleanup').total, 6);
+  assert.equal(h.activeTab(), ordinary.at(-1)!.target.tabId);
 });

@@ -39,6 +39,12 @@ Links opened by the extension become the active tab in their original Chrome win
 the current chat Session. Same-origin children with site permission remain controllable; other destinations open
 visibly for authorization. Activating a tab does not grant control of its site.
 
+Repeated links reuse an unedited, still-authorized child at the same URL in the same task/window.
+Keep the 3 most recently used ordinary children; after successful operations, close older idle children and
+revoke their grants. Root/manual tabs, pinned or audible tabs, tabs moved to another window, and pages with
+detected input/changes are preserved and do not consume this allowance. Active or busy pages are also retained.
+Cleanup uses existing child provenance, never URL-based discovery of historical or unauthorized tabs.
+
 If a closed tab still occupies the Session, update the selected Connector and extension, then click **Authorize current
 page** again. This explicit grant can replace this extension's orphaned root, or another browser's root when every page
 in its tree has missed heartbeats for 45 seconds. Replacement revokes the old tree and cancels pending operations.
@@ -149,7 +155,8 @@ page, then reopen the popup and check whether any new errors appear.
   documentId/origin check; document replacement, tab closure, revocation or browser restart requires new consent. Timed-out writes may have
   executed: inspect before retrying. Writes are never replayed automatically after disconnect.
 - Root navigation/closure/revocation stops all children; child navigation stops only that child. A connector restart
-  that loses child provenance restores only the root; ask AI to open children again. Tabs are not automatically closed.
+  that loses child provenance restores only the root; ask AI to open children again. Revocation or lost provenance alone
+  does not close tabs; ordinary managed children follow the retention policy above.
   Optional site permissions can be removed in Chrome extension settings.
 - Page content is untrusted and may contain sensitive visible text. Snapshots omit form values, sensitive
   inputs, hidden/private regions; this is not automatic secret redaction. References are snapshot-scoped and

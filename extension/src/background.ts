@@ -6,12 +6,16 @@ import { ExtensionConnection } from './connection.js';
 import { runPageAgent } from './page-agent.js';
 import { openManagedTab } from './managed-tabs.js';
 import { sitePattern } from './site-permission.js';
+import { canRetireTab, RECENT_CHILD_TABS } from './tab-lifecycle.js';
 
-type Binding = { grantId: string; environmentId: string; threadId: string; title: string; pageTitle?: string; target: BrowserTarget; sequence: number; rootTabId?: number };
+type Binding = { grantId: string; environmentId: string; threadId: string; title: string; pageTitle?: string; target: BrowserTarget; sequence: number; rootTabId?: number; lastUsedAt?: number };
 type Frame = Record<string, any>;
 const bindings = new Map<number, Binding>();
 const intents = new Map<number, object>();
 const busy = new Set<Binding>();
+const retiring = new Set<Binding>();
+let pruning = false;
+let pruneAgain = false;
 let saving = Promise.resolve();
 let origin = '';
 let connection: ExtensionConnection;
@@ -133,6 +137,80 @@ async function revokeAll() {
   await Promise.all([...bindings.values()].map(revokeBinding));
 }
 
+function sameTree(a: Binding, b: Binding) {
+  return a.environmentId === b.environmentId && a.threadId === b.threadId
+    && (a.rootTabId ?? a.target.tabId) === (b.rootTabId ?? b.target.tabId);
+}
+
+async function reuseChild(url: string, parent: Binding, current: () => boolean, deadline: number) {
+  for (const candidate of [...bindings.values()].reverse()) {
+    if (Date.now() >= deadline) throw new Error('browser_operation_timeout');
+    if (candidate.rootTabId === undefined || !sameTree(candidate, parent)
+      || retiring.has(candidate) || (candidate !== parent && busy.has(candidate))) continue;
+    try {
+      const tab = await chrome.tabs.get(candidate.target.tabId);
+      const parentTab = await chrome.tabs.get(parent.target.tabId);
+      if (tab.url !== url || tab.pendingUrl || tab.windowId !== parentTab.windowId
+        || !await canRetireTab(candidate.target, candidate.grantId)) continue;
+      const latest = await chrome.tabs.get(candidate.target.tabId);
+      if (latest.url !== url || latest.pendingUrl || latest.windowId !== parentTab.windowId) continue;
+      if (!current()) throw new Error('browser_authorization_changed');
+      if (bindings.get(candidate.target.tabId) !== candidate || retiring.has(candidate)
+        || (candidate !== parent && busy.has(candidate))) continue;
+      await chrome.tabs.update(candidate.target.tabId, { active: true });
+      if (!current() || bindings.get(candidate.target.tabId) !== candidate) throw new Error('browser_authorization_changed');
+      candidate.lastUsedAt = Date.now();
+      void persist().catch(() => {});
+      return { opened: true, reused: true, pageId: candidate.grantId, origin: candidate.target.origin };
+    } catch (failure) { if (!current()) throw failure; }
+  }
+  return null;
+}
+
+async function pruneChildTabs() {
+  if (pruning) { pruneAgain = true; return; }
+  if (connecting || !connection?.ready()) return;
+  pruning = true;
+  const expectedRevision = revision;
+  try {
+    const root = [...bindings.values()].find((binding) => binding.rootTabId === undefined);
+    if (!root) return;
+    const children = [...bindings.values()].filter((binding) => binding.rootTabId !== undefined && sameTree(binding, root));
+    if (children.length <= RECENT_CHILD_TABS) return;
+    const rootTab = await chrome.tabs.get(root.target.tabId);
+    const ordinary: { binding: Binding; usedAt: number; sequence: number }[] = [];
+    for (const child of children) {
+      if (revision !== expectedRevision || !connection.ready()) return;
+      try {
+        const tab = await chrome.tabs.get(child.target.tabId);
+        if (tab.windowId === rootTab.windowId && !tab.pendingUrl && !tab.pinned && !tab.audible && await canRetireTab(child.target, child.grantId)) {
+          ordinary.push({ binding: child, usedAt: child.lastUsedAt || 0, sequence: child.sequence });
+        }
+      } catch { /* A closed or replaced tab is handled by its lifecycle event. */ }
+    }
+    ordinary.sort((a, b) => b.usedAt - a.usedAt);
+    for (const candidate of ordinary.slice(RECENT_CHILD_TABS)) {
+      const old = candidate.binding;
+      if (revision !== expectedRevision || !connection.ready()) return;
+      if (bindings.get(old.target.tabId) !== old || busy.has(old)) continue;
+      retiring.add(old);
+      try {
+        if (!await canRetireTab(old.target, old.grantId)) continue;
+        const tab = await chrome.tabs.get(old.target.tabId);
+        if (tab.active || tab.pendingUrl || tab.pinned || tab.audible || tab.windowId !== rootTab.windowId
+          || busy.has(old) || old.sequence !== candidate.sequence || (old.lastUsedAt || 0) !== candidate.usedAt || revision !== expectedRevision
+          || bindings.get(old.target.tabId) !== old) continue;
+        await chrome.tabs.remove(old.target.tabId);
+        await revokeBinding(old);
+      } catch { /* Failed cleanup must never fail or replay a browser operation. */ }
+      finally { retiring.delete(old); }
+    }
+  } finally {
+    pruning = false;
+    if (pruneAgain) { pruneAgain = false; void pruneChildTabs().catch(() => {}); }
+  }
+}
+
 async function handleOperation(frame: Frame) {
   if (frame.event !== 'browser.operation') return;
   const request = frame.payload;
@@ -142,36 +220,43 @@ async function handleOperation(frame: Frame) {
     || !Number.isSafeInteger(request.sequence) || request.sequence <= captured.sequence || !Number.isSafeInteger(request.deadline)
     || request.deadline <= Date.now() || request.deadline > Date.now() + 20_000 || busy.has(captured)) return;
   captured.sequence = request.sequence;
+  captured.lastUsedAt = Date.now();
   busy.add(captured);
   try {
+    if (retiring.has(captured)) throw new Error('browser_authorization_changed');
     const operation = parseOperation(request.operation);
     if (bindings.get(captured.target.tabId) !== captured || !connection.ready()) throw new Error('browser_not_authorized');
     let result: Record<string, unknown> = await page(captured.target, captured.grantId, operation, request.deadline);
     if ('openInNewTab' in result && typeof result.openInNewTab === 'string') {
-      if (bindings.size >= 64) throw new Error('browser_grant_limit');
       const expectedRevision = revision;
       const current = () => revision === expectedRevision && bindings.get(captured.target.tabId) === captured && connection.ready();
-      const opened = await openManagedTab(result.openInNewTab, captured.target, request.deadline, current);
-      if (!current()) throw new Error('browser_authorization_changed');
-      if ('authorizationRequired' in opened) {
-        result = { opened: true, authorizationRequired: true, origin: opened.origin };
-      } else {
-        const target = opened.target;
-        const adopted = await connection.request('browser.adopt', { operationRequestId: request.requestId, parentGrantId: captured.grantId, target });
-        const child: Binding = { ...captured, target, grantId: adopted.grantId, sequence: 0, pageTitle: undefined, rootTabId: captured.rootTabId ?? captured.target.tabId };
-        try {
-          if (!current()) throw new Error('browser_authorization_changed');
-          await page(target, child.grantId, { method: 'authorize' }, request.deadline);
-          if (!current()) throw new Error('browser_authorization_changed');
-          bindings.set(target.tabId, child); await persist();
-          await connection.request('browser.heartbeat', { grantId: child.grantId });
-          await badge(target.tabId);
-          result = { opened: true, pageId: child.grantId, origin: target.origin };
-        } catch (failure) {
-          await revokeBinding(child);
-          await page(target, child.grantId, { method: 'revoke' }).catch(() => {});
-          await connection.request('browser.revoke', { grantId: child.grantId }).catch(() => {});
-          throw failure;
+      const reused = await reuseChild(result.openInNewTab, captured, current, request.deadline);
+      if (reused) result = reused;
+      else {
+        if (bindings.size >= 64) throw new Error('browser_grant_limit');
+        const opened = await openManagedTab(result.openInNewTab, captured.target, request.deadline, current);
+        if (!current()) throw new Error('browser_authorization_changed');
+        if ('authorizationRequired' in opened) {
+          result = { opened: true, authorizationRequired: true, origin: opened.origin };
+        } else {
+          const target = opened.target;
+          const adopted = await connection.request('browser.adopt', { operationRequestId: request.requestId, parentGrantId: captured.grantId, target });
+          const child: Binding = { ...captured, target, grantId: adopted.grantId, sequence: 0, lastUsedAt: Date.now(), pageTitle: undefined, rootTabId: captured.rootTabId ?? captured.target.tabId };
+          try {
+            if (!current()) throw new Error('browser_authorization_changed');
+            await page(target, child.grantId, { method: 'authorize' }, request.deadline);
+            if (!current()) throw new Error('browser_authorization_changed');
+            bindings.set(target.tabId, child); await persist();
+            await canRetireTab(target, child.grantId);
+            await connection.request('browser.heartbeat', { grantId: child.grantId });
+            await badge(target.tabId);
+            result = { opened: true, pageId: child.grantId, origin: target.origin };
+          } catch (failure) {
+            await revokeBinding(child);
+            await page(target, child.grantId, { method: 'revoke' }).catch(() => {});
+            await connection.request('browser.revoke', { grantId: child.grantId }).catch(() => {});
+            throw failure;
+          }
         }
       }
     }
@@ -180,6 +265,8 @@ async function handleOperation(frame: Frame) {
     // Release the local execution slot before publishing completion.
     busy.delete(captured);
     await connection.request('browser.result', { requestId: request.requestId, grantId: captured.grantId, ok: true, result });
+    // The source operation must finish before its old child can be retired.
+    void pruneChildTabs().catch(() => {});
   } catch (failure) {
     if (bindings.get(captured.target.tabId) === captured && captured.sequence === request.sequence) {
       busy.delete(captured);
@@ -382,6 +469,7 @@ const ready = (async () => {
       bindings.set(target.tabId, { grantId: requireBrowserId(saved.grantId), environmentId: requireBrowserId(saved.environmentId),
         threadId: requireBrowserId(saved.threadId), target, title: String(saved.title || '').slice(0, 100),
         pageTitle: String(saved.pageTitle || '').slice(0, 100), sequence: 0,
+        ...(Number.isSafeInteger(saved.lastUsedAt) && saved.lastUsedAt >= 0 ? { lastUsedAt: saved.lastUsedAt } : {}),
         ...(Number.isSafeInteger(saved.rootTabId) && saved.rootTabId >= 0 ? { rootTabId: saved.rootTabId } : {}) });
     } catch { /* Discard invalid saved consent; never broaden it. */ }
   }
