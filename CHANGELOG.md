@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Simplify the extension side panel: keep one authorization action, move secondary controls into a More menu, and show a compact authorized state only for the selected Session and page.
+
 - Exclude decorative descendants that merely inherit a control's pointer cursor, including empty SVG icon nodes, from snapshot refs.
 
 - Keep HTML templates on LF line endings so extension build fingerprints agree across Windows and Linux checkouts.

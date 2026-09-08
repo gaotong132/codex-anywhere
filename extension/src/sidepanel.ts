@@ -7,6 +7,7 @@ const frame = element<HTMLIFrameElement>('chat');
 const address = element<HTMLInputElement>('relay-url');
 const grant = element<HTMLButtonElement>('grant');
 const dialog = element<HTMLDialogElement>('control-dialog');
+const menu = element<HTMLDetailsElement>('panel-menu');
 let relayOrigin = '';
 let channel = '';
 let selection: SidePanelSession | null = null;
@@ -43,23 +44,35 @@ function render() {
   const selected = currentSelection();
   const connected = state.origin === relayOrigin && state.relayOnline;
   const pageAvailable = Boolean(activeTab?.url && /^https?:\/\//.test(activeTab.url));
-  grant.disabled = busy || state.connecting === true || !selected || !pageAvailable;
-  grant.textContent = state.connecting ? '正在连接…' : connected ? '授权当前页' : '重新连接';
+  const binding = state.binding;
+  const sameSession = binding && selected && binding.environmentId === selected.environmentId && binding.threadId === selected.threadId;
+  const authorized = Boolean(connected && state.connected && sameSession && state.currentManaged && pageAvailable);
+  grant.hidden = !channel || !element('setup').hidden;
+  grant.disabled = busy || state.connecting === true || !selected || !pageAvailable || authorized;
+  grant.textContent = state.connecting ? '正在连接…' : !connected ? '重新连接' : authorized ? '已授权' : '授权当前页';
+  grant.classList.toggle('authorized', authorized);
+  grant.title = authorized ? `当前页已授权给 ${selected!.title || selected!.threadId}：${new URL(activeTab!.url!).origin}`
+    : '允许聊天中当前选中的会话读取和操作此页';
   element('session-title').textContent = selected
     ? `${selected.environmentId} · ${selected.title || selected.threadId}`
     : selection ? '请在聊天页连接环境并选择会话' : '正在读取聊天会话…';
-  const binding = state.binding;
+  element('session-title').title = element('session-title').textContent || '';
   element('revoke').hidden = !binding;
   element<HTMLButtonElement>('revoke').disabled = busy;
-  element('browser-status').textContent = operationError || (!connected && state.error ? state.error : '') || (binding
-    ? `已授权：${binding.environmentId || state.environmentId} · ${binding.title} · ${binding.origin}${state.connected ? '' : '（离线）'}`
-    : !connected ? state.autoConnectPaused ? '页面控制已暂停，点击「重新连接」恢复。'
+  element('authorization-details').hidden = !binding;
+  element('authorization-details').textContent = binding
+    ? `已授权：${binding.environmentId || state.environmentId} · ${binding.title}\n${binding.origin}${state.connected ? '' : '（离线）'}` : '';
+  const status = operationError || (!connected && state.error ? state.error : '') || (!connected
+    ? state.autoConnectPaused ? '页面控制已暂停，点击「重新连接」恢复。'
       : state.connecting ? '正在通过侧栏聊天连接页面控制，无需再次配对。'
       : chatAuthenticated ? linkSupported ? '正在连接页面控制，无需再次配对。' : '请重新加载聊天，获取一次配对支持。'
         : '请先在下方聊天完成一次配对，页面控制将自动连接。'
     : !activeTab?.url ? '正在读取当前标签页；请检查扩展是否已重新加载并启用。'
       : !pageAvailable ? '此页面不支持控制，请切换到普通 HTTP/HTTPS 网页。'
-        : '点击授权并允许当前站点访问后，上方会话才可读取和操作此页。');
+        : binding && state.currentManaged && selected && !sameSession ? `此页已授权给「${binding.title}」；再次授权将切换到当前会话。`
+          : binding && sameSession && !state.connected ? '页面控制离线，请稍候重试。' : '');
+  element('browser-status').textContent = status;
+  element('browser-status').hidden = !status;
   element('frame-error').hidden = !channel || Date.now() - (lastSeen || loadedAt) < 15_000;
 }
 
@@ -72,7 +85,9 @@ function loadChat(origin: string) {
   element('setup').hidden = true;
   element('browser-bar').hidden = false;
   element('frame-wrap').hidden = false;
-  element('settings').textContent = '设置';
+  element('settings').textContent = '服务器地址';
+  element('browser-settings').hidden = false;
+  element('reload').hidden = false;
   render();
 }
 
@@ -138,17 +153,31 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
   targetRevision++; activeTab = undefined; render(); void refresh();
 });
 
-function openControls() { dialog.showModal(); }
+function closeMenu(restoreFocus = false) {
+  menu.open = false;
+  if (restoreFocus) menu.querySelector('summary')!.focus();
+}
+document.addEventListener('click', (event) => {
+  if (!event.composedPath().includes(menu)) closeMenu();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && menu.open) { event.preventDefault(); closeMenu(true); }
+});
+window.addEventListener('blur', () => closeMenu());
+function openControls() { closeMenu(true); dialog.showModal(); }
 element('browser-settings').onclick = openControls;
 element('close-controls').onclick = () => dialog.close();
 element('settings').onclick = () => {
-  const opening = element('setup').hidden;
+  closeMenu();
+  const opening = !channel || element('setup').hidden;
   element('setup').hidden = !opening;
   element('frame-wrap').hidden = opening || !channel;
   element('browser-bar').hidden = opening || !channel;
-  element('settings').textContent = opening && channel ? '返回聊天' : '设置';
+  element('settings').textContent = opening && channel ? '返回聊天' : '服务器地址';
+  render();
+  if (opening) address.focus();
 };
-element('reload').onclick = () => { if (relayOrigin) loadChat(relayOrigin); };
+element('reload').onclick = () => { closeMenu(true); if (relayOrigin) loadChat(relayOrigin); };
 element<HTMLFormElement>('open-form').onsubmit = (event) => {
   event.preventDefault();
   if (busy) return;
@@ -198,6 +227,7 @@ grant.onclick = () => {
 };
 element('revoke').onclick = () => {
   if (busy) return;
+  closeMenu(true);
   busy = true; operationError = ''; render();
   void chrome.runtime.sendMessage({ type: 'revoke' }).then((response) => {
     if (!response.ok) throw new Error(response.error);

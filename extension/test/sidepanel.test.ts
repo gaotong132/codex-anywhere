@@ -138,6 +138,32 @@ test('denied site access never grants a page or reports a normal website as rest
   assert.equal((h.document.querySelector('#grant') as HTMLButtonElement).disabled, true);
 });
 
+test('compact authorization state follows both the current page and selected Session', async () => {
+  const h = await panelHarness();
+  h.state.binding = { environmentId: 'ecs', threadId: 'session-a', title: 'Current task', origin: 'https://page.example' };
+  h.state.currentManaged = true;
+  h.message(h.selection());
+  const grant = h.document.querySelector('#grant') as HTMLButtonElement;
+  const status = h.document.querySelector('#browser-status') as HTMLElement;
+  assert.equal(grant.textContent, '已授权');
+  assert.equal(grant.disabled, true);
+  assert.equal(status.hidden, true);
+  assert.match(h.document.querySelector('#authorization-details')!.textContent!, /Current task\nhttps:\/\/page.example/);
+  h.message(h.selection({ sequence: 2, threadId: 'session-b', title: 'Another task' }));
+  assert.equal(grant.textContent, '授权当前页');
+  assert.equal(grant.disabled, false);
+  assert.equal(status.hidden, false);
+  assert.match(status.textContent!, /此页已授权给「Current task」/);
+  assert.equal(h.sent.some((message) => message.type === 'panel.grant'), false);
+  h.state.currentManaged = false;
+  h.message(h.selection({ sequence: 3 }));
+  assert.equal(grant.textContent, '授权当前页');
+  assert.equal(grant.disabled, false);
+  h.state.relayOnline = false;
+  h.message(h.selection({ sequence: 4 }));
+  assert.equal(grant.textContent, '重新连接');
+});
+
 test('permission prompts cannot transfer consent after the chat Session or document changes', async () => {
   for (const change of ['session', 'document', 'tab', 'stale', 'chat-reload']) {
     const h = await panelHarness(); h.message(h.selection());

@@ -27,8 +27,10 @@ it does not publish a release or create a Tag.
    crosses the frame boundary. Reloading preserves identity. An explicit disconnect pauses automatic reconnection;
    **Reconnect** resumes it. Update Relay/Web and the extension together, then reload chat for this feature.
 
-Changing the chat Session does not transfer existing page consent. The panel shows the environment and Session
-that actually own the grant. After switching tabs, authorize directly from the panel without another toolbar click.
+The compact header keeps the authorization state and a **⋯** menu. Server address, page control settings,
+reload chat, and revoke page access live in that menu, alongside the full grant owner and site. **Authorized**
+appears only when the current page belongs to the selected Session. Changing the chat Session does not transfer
+consent; a page owned by another Session names that owner. After switching tabs, authorize from the panel without another toolbar click.
 Changing the Session, tab, or document during the permission prompt requires a new authorization click.
 Closing the panel does not revoke page control. Revocation removes
 the root and its children; navigation, tab closure, and document replacement retain the existing revocation rules.
@@ -139,8 +141,8 @@ page, then reopen the popup and check whether any new errors appear.
   more than 45 seconds without a heartbeat means offline, not expired consent. The Relay only transports
   end-to-end encrypted operation/results frames.
 - Closing the popup does not revoke. Worker/network restart can restore only the same Session/document consent
-  within the current browser lifetime, with a new grant ID. Revocation, tab closure, navigation (including
-  conservative same-origin URL changes), or browser restart requires new consent. Timed-out writes may have
+  within the current browser lifetime, with a new grant ID. Same-document SPA routes retain consent only after an exact
+  documentId/origin check; loading a new document, tab closure, revocation or browser restart requires new consent. Timed-out writes may have
   executed: inspect before retrying. Writes are never replayed automatically after disconnect.
 - Root navigation/closure/revocation stops all children; child navigation stops only that child. A connector restart
   that loses child provenance restores only the root; ask AI to open children again. Tabs are not automatically closed.
