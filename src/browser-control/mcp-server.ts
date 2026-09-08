@@ -16,7 +16,7 @@ export const BROWSER_INSTRUCTIONS = 'Anywhere browser tools control explicitly a
 function recovery(code: string) {
   if (code === 'browser_stale_element_read_again') return 'The referenced element changed. Take a fresh snapshot of the same page and locate the intended control again; page reauthorization is not implied.';
   if (code === 'browser_element_obscured') return 'Another element covers this control. Inspect the same page for a dialog or overlay before retrying; do not click through it.';
-  if (code === 'browser_scroll_target_not_scrollable') return 'Take a fresh snapshot and use the ref of a visible scrollable container, or omit ref to scroll the page.';
+  if (code === 'browser_scroll_target_not_scrollable') return 'The target cannot scroll on a requested axis. Take a fresh snapshot and choose a visible container with matching scrollAxes, or omit ref to scroll the page. Set the unused delta to zero.';
   if (code === 'browser_number_value_invalid') return 'Use a valid number within the input constraints. The input was not changed.';
   if (code === 'browser_option_not_available') return 'Click the native select to list available option labels, then take a fresh snapshot and fill its ref with one exact, unambiguous label. No selection was changed.';
   if (code === 'browser_select_multiple_not_supported') return 'Multiple-selection inputs are not supported by this tool. Report this plugin capability limit; do not substitute a different control.';
@@ -68,7 +68,7 @@ export function createBrowserMcpServer(stateFile: string) {
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }, ({ offset, limit }, extra) => call({ method: 'list_pages', offset, limit }, extra._meta));
   server.registerTool('anywhere_browser_snapshot', {
-    title: 'Read Anywhere page', description: common + 'Returns visible nodes [{ref?, tag, text, role?, inputType?, disabled?, checked?, expanded?, scrollable?}], origin and truncated. Form values are omitted. Read before clicking or filling; use a scrollable node ref to scroll a panel. Refs cannot be reused across pages or snapshots.', inputSchema: z.object({ pageId }).strict(),
+    title: 'Read Anywhere page', description: common + 'Returns visible nodes [{ref?, tag, text, role?, inputType?, disabled?, checked?, expanded?, scrollable?, scrollAxes?, scrollPosition?}], viewport, origin and truncated. scrollAxes lists x/y; scrollPosition is {x,y} in native scroll coordinates (x can be negative for RTL). Form values are omitted. Read before clicking or filling; use a scrollable node ref to scroll a panel. For clipped table columns, scroll the same table horizontally and read again. Refs cannot be reused across pages or snapshots.', inputSchema: z.object({ pageId }).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
   }, ({ pageId }, extra) => call({ operation: { method: 'snapshot' }, pageId }, extra._meta));
   server.registerTool('anywhere_browser_click', {
@@ -87,9 +87,9 @@ export function createBrowserMcpServer(stateFile: string) {
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
   }, ({ ref, pageId }, extra) => call({ operation: { method: 'open_link', ref }, pageId }, extra._meta));
   server.registerTool('anywhere_browser_scroll', {
-    title: 'Scroll Anywhere page', description: common + 'Scroll vertically by at most 2000 pixels. Set ref to a visible scrollable panel from the latest snapshot; omit ref for the page. Returns whether scrolling actually moved. Take a fresh snapshot afterward.', inputSchema: z.object({ pageId, ref: z.string().min(1).max(128).optional(), deltaY: z.number().int().min(-2000).max(2000) }).strict(),
+    title: 'Scroll Anywhere page', description: common + 'Scroll horizontally and/or vertically by at most 2000 pixels per axis. deltaX is optional (default 0); set deltaY to 0 for horizontal-only scrolling. Positive deltas move right/down; negative deltas move left/up, including native negative scrollLeft in RTL panels. Set ref to a visible panel with matching scrollAxes from the latest snapshot; omit ref for the page. Returns scrolled, target and actual deltaX/deltaY; zero movement may mean the edge was reached. Take a fresh snapshot afterward.', inputSchema: z.object({ pageId, ref: z.string().min(1).max(128).optional(), deltaY: z.number().int().min(-2000).max(2000), deltaX: z.number().int().min(-2000).max(2000).optional() }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
-  }, ({ deltaY, pageId, ref }, extra) => call({ operation: { method: 'scroll', deltaY, ...(ref === undefined ? {} : { ref }) }, pageId }, extra._meta));
+  }, ({ deltaY, deltaX, pageId, ref }, extra) => call({ operation: { method: 'scroll', deltaY, ...(deltaX === undefined ? {} : { deltaX }), ...(ref === undefined ? {} : { ref }) }, pageId }, extra._meta));
   return server;
 }
 

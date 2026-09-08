@@ -5,7 +5,7 @@ export type BrowserOperation =
   | { method: 'click'; ref: string }
   | { method: 'open_link'; ref: string }
   | { method: 'fill'; ref: string; text: string }
-  | { method: 'scroll'; deltaY: number; ref?: string };
+  | { method: 'scroll'; deltaY: number; deltaX?: number; ref?: string };
 
 // Only fixed codes cross the page/extension/connector boundary, never exception text.
 export function browserOperationErrorCode(value: unknown): string {
@@ -19,11 +19,12 @@ export function browserOperationErrorCode(value: unknown): string {
 }
 
 export function parseOperation(value: unknown): BrowserOperation {
-  const input = requireRecord(value, ['method', 'ref', 'text', 'deltaY']);
+  const input = requireRecord(value, ['method', 'ref', 'text', 'deltaY', 'deltaX']);
   if (input.method === 'snapshot' && Object.keys(input).length === 1) return { method: 'snapshot' };
   if (input.method === 'scroll') {
-    requireRecord(input, ['method', 'deltaY', 'ref']);
+    requireRecord(input, ['method', 'deltaY', 'deltaX', 'ref']);
     return { method: 'scroll', deltaY: requireInteger(input.deltaY, -2000, 2000),
+      ...(input.deltaX === undefined ? {} : { deltaX: requireInteger(input.deltaX, -2000, 2000) }),
       ...(input.ref === undefined ? {} : { ref: requireBrowserId(input.ref) }) };
   }
   if (input.method === 'click' && Object.keys(input).length === 2) return { method: 'click', ref: requireBrowserId(input.ref) };

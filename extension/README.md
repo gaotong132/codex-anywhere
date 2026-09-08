@@ -200,8 +200,13 @@ This does not assert that an application's asynchronous content has finished; ve
   or returning option values. Take a fresh snapshot, then `fill` with one exact, unambiguous enabled label.
   Multiple selects are unsupported. Custom dropdowns use visible combobox/option refs and ordinary clicks;
   widgets without exposed controls remain a capability limit.
-- `scroll` accepts an optional `ref` for a visible `scrollable` panel. Omit it to scroll the page. The result says
-  whether it actually moved; read a fresh snapshot afterward. Content clipped outside a panel is omitted until scrolled into view.
+- `scroll` accepts an optional `ref` for a visible `scrollable` panel; omit it for the page. Snapshots include
+  `scrollAxes` (`x`/`y`) and `scrollPosition` (`x`, `y`) for panels. Each delta is an integer within ±2000 pixels:
+  vertical `{deltaY: 500}`, horizontal `{deltaY: 0, deltaX: 500}`, or both `{deltaY: 200, deltaX: -300}`.
+  Positive deltas move right/down and negative deltas left/up; RTL panels retain native negative scroll coordinates.
+  Unsupported panel axes fail before either axis moves. Results report actual `deltaX`/`deltaY` and `scrolled`;
+  zero movement can mean an edge was reached. Read a fresh snapshot afterward. For clipped table columns,
+  scroll that same table horizontally; offscreen contents become available only after entering the visible area.
 
 Start diagnosis with `list_pages`. Its `environmentId` identifies the Connector actually reached. `no_authorized_page`
 means this Session currently has no grant on that Connector, `authorized_pages_offline` means all its grants missed

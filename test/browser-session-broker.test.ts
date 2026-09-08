@@ -175,7 +175,9 @@ test('official MCP SDK → private loopback → exact Session broker round trip'
   const dir = await mkdtemp(join(tmpdir(), 'anywhere-browser-test-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   let broker: BrowserSessionBroker;
+  const receivedOperations: unknown[] = [];
   broker = new BrowserSessionBroker('pc', (event: any) => {
+    receivedOperations.push(event.payload.operation);
     queueMicrotask(() => broker.result(client, { ...event.payload, ok: true, result: { text: 'fixture-only', method: event.payload.operation.method } })); return true;
   });
   const grant = broker.bind(client, 'thread-1', target);
@@ -215,6 +217,16 @@ test('official MCP SDK → private loopback → exact Session broker round trip'
   const panelScroll = await sdk.callTool({ name: 'anywhere_browser_scroll', arguments: { ref: 'panel-ref', deltaY: 200 }, _meta });
   assert.notEqual(panelScroll.isError, true);
   assert.match(JSON.stringify(panelScroll), /scroll/);
+  const horizontal = await sdk.callTool({ name: 'anywhere_browser_scroll', arguments: { pageId: grant.grantId, ref: 'table-ref', deltaX: -450, deltaY: 0 }, _meta });
+  assert.notEqual(horizontal.isError, true);
+  assert.deepEqual(receivedOperations.at(-1), { method: 'scroll', ref: 'table-ref', deltaX: -450, deltaY: 0 });
+  const beforeInvalid = receivedOperations.length;
+  for (const args of [{ deltaX: 2001, deltaY: 0 }, { deltaX: 1.5, deltaY: 0 }, { deltaX: 10 }, { deltaX: 10, deltaY: 0, threadId: 'other' }]) {
+    assert.equal((await sdk.callTool({ name: 'anywhere_browser_scroll', arguments: args, _meta })).isError, true);
+  }
+  assert.equal(receivedOperations.length, beforeInvalid, 'invalid MCP arguments never reach the browser');
+  assert.equal((await sdk.callTool({ name: 'anywhere_browser_scroll', arguments: { deltaX: 100, deltaY: 0 },
+    _meta: { 'x-codex-turn-metadata': { thread_id: 'other', turn_id: 'turn-1' } } })).isError, true);
 });
 
 test('page inventory distinguishes missing consent, offline grants and empty pagination without crossing Sessions', () => {
@@ -245,7 +257,8 @@ test('specific page failures survive routing but arbitrary exception messages ne
     await rejected; broker.clear();
   }
   assert.deepEqual(parseOperation({ method: 'scroll', ref: 'panel', deltaY: 100 }), { method: 'scroll', ref: 'panel', deltaY: 100 });
-  for (const patch of [{ ref: '' }, { deltaY: 2001 }, { text: 'wrong field' }, { ref: 'https://example.com' }]) {
+  assert.deepEqual(parseOperation({ method: 'scroll', ref: 'panel', deltaY: 0, deltaX: -2000 }), { method: 'scroll', ref: 'panel', deltaY: 0, deltaX: -2000 });
+  for (const patch of [{ ref: '' }, { deltaY: 2001 }, { deltaX: 2001 }, { deltaX: -2001 }, { deltaX: 0.5 }, { deltaX: '100' }, { deltaX: NaN }, { deltaX: null }, { text: 'wrong field' }, { ref: 'https://example.com' }]) {
     assert.throws(() => parseOperation({ method: 'scroll', deltaY: 100, ...patch }));
   }
 });

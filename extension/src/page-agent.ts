@@ -70,8 +70,13 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       return { top, bottom, left, right };
     };
     const visible = (element: Element) => visibleBox(element) !== null;
-    const scrollable = (element: Element) => element !== document.body && element !== document.documentElement
-      && element.scrollHeight > element.clientHeight && /auto|scroll|overlay/.test(getComputedStyle(element).overflowY);
+    const scrollAxes = (element: Element): ('x' | 'y')[] => {
+      if (element === document.body || element === document.documentElement) return [];
+      const style = getComputedStyle(element), axes: ('x' | 'y')[] = [];
+      if (element.scrollWidth > element.clientWidth && /auto|scroll|overlay/.test(style.overflowX)) axes.push('x');
+      if (element.scrollHeight > element.clientHeight && /auto|scroll|overlay/.test(style.overflowY)) axes.push('y');
+      return axes;
+    };
     const directText = (element: Element) => element.matches('input,textarea,select') ? '' : [...element.childNodes]
       .filter((node) => node.nodeType === Node.TEXT_NODE).map((node) => (node.textContent || '').slice(0, 8001)).join(' ').slice(0, 8001);
     const labelText = (element: Element) => {
@@ -89,7 +94,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       state.refs.clear(); state.snapshot = crypto.randomUUID();
       const viewport = { width: innerWidth, height: innerHeight, scrollX: window.scrollX, scrollY: window.scrollY,
         pageWidth: document.documentElement.scrollWidth, pageHeight: document.documentElement.scrollHeight };
-      const nodes: { ref?: string; tag: string; text: string; role?: string; inputType?: string; disabled?: boolean; checked?: boolean | 'mixed'; expanded?: boolean; scrollable?: boolean }[] = [];
+      const nodes: { ref?: string; tag: string; text: string; role?: string; inputType?: string; disabled?: boolean; checked?: boolean | 'mixed'; expanded?: boolean; scrollable?: boolean; scrollAxes?: ('x' | 'y')[]; scrollPosition?: { x: number; y: number } }[] = [];
       let chars = 0; let visited = 0; let truncated = false;
       let truncationReason: 'scan_limit' | 'node_limit' | 'text_limit' | 'result_limit' | undefined;
       let resultSize = JSON.stringify({ origin: location.origin, viewport, nodes: [], truncated: true, scannedElements: 5000, truncationReason: 'result_limit' }).length;
@@ -109,7 +114,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
           || element.hasAttribute('onclick');
         const actionable = semanticControl || (!element.closest(controlSelector)
           && (explicitControl || getComputedStyle(element).cursor === 'pointer'));
-        const canScroll = scrollable(element);
+        const axes = scrollAxes(element), canScroll = axes.length > 0;
         const labels = element.matches('input,textarea,select') ? [...((element as HTMLInputElement).labels ?? [])]
           .filter((label) => visible(label) && !sensitive(label)).map(labelText).join(' ') : '';
         // Never read form values; actionable descendants supply button/option labels.
@@ -138,7 +143,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
           ...(element instanceof HTMLInputElement && ['checkbox', 'radio'].includes(element.type) ? { checked: element.checked }
             : ['true', 'false', 'mixed'].includes(checked ?? '') ? { checked: checked === 'mixed' ? 'mixed' : checked === 'true' } : {}),
           ...(['true', 'false'].includes(expanded ?? '') ? { expanded: expanded === 'true' } : {}),
-          ...(canScroll ? { scrollable: true } : {}) };
+          ...(canScroll ? { scrollable: true, scrollAxes: axes, scrollPosition: { x: element.scrollLeft, y: element.scrollTop } } : {}) };
         resultSize += JSON.stringify(node).length + 1;
         if (resultSize > 23_000) {
           if (ref) state.refs.delete(ref);
@@ -149,19 +154,24 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       return { origin: location.origin, viewport, nodes, truncated, scannedElements: visited, ...(truncationReason ? { truncationReason } : {}) };
     }
     if (input.operation.method === 'scroll' && input.operation.ref === undefined) {
-      const before = window.scrollY;
-      window.scrollBy({ top: input.operation.deltaY, behavior: 'instant' }); state.refs.clear();
-      return { scrolled: window.scrollY !== before, target: 'page' };
+      const beforeX = window.scrollX, beforeY = window.scrollY;
+      window.scrollBy({ left: input.operation.deltaX ?? 0, top: input.operation.deltaY, behavior: 'instant' }); state.refs.clear();
+      const deltaX = window.scrollX - beforeX, deltaY = window.scrollY - beforeY;
+      return { scrolled: deltaX !== 0 || deltaY !== 0, target: 'page', deltaX, deltaY };
     }
     const entry = state.refs.get(input.operation.ref!);
     if (!entry || !entry.element.isConnected || !visible(entry.element)
       || (entry.html !== undefined && entry.html !== entry.element.outerHTML) || sensitive(entry.element)) throw new Error('browser_stale_element_read_again');
     const element = entry.element as HTMLElement;
     if (input.operation.method === 'scroll') {
-      if (!scrollable(element)) throw new Error('browser_scroll_target_not_scrollable');
-      const before = element.scrollTop;
-      element.scrollTop += input.operation.deltaY; state.refs.clear();
-      return { scrolled: element.scrollTop !== before, target: 'element' };
+      const axes = scrollAxes(element), requestedX = input.operation.deltaX ?? 0;
+      if (!axes.length || (requestedX !== 0 && !axes.includes('x'))
+        || (input.operation.deltaY !== 0 && !axes.includes('y'))) throw new Error('browser_scroll_target_not_scrollable');
+      const beforeX = element.scrollLeft, beforeY = element.scrollTop;
+      // Keep native coordinates and clamping, including negative scrollLeft in RTL.
+      element.scrollBy({ left: requestedX, top: input.operation.deltaY, behavior: 'instant' }); state.refs.clear();
+      const deltaX = element.scrollLeft - beforeX, deltaY = element.scrollTop - beforeY;
+      return { scrolled: deltaX !== 0 || deltaY !== 0, target: 'element', deltaX, deltaY };
     }
     if (entry.scrollOnly || element.matches(':disabled,[aria-disabled="true"],input[type="file"],input[type="password"],input[type="hidden"]')) throw new Error('browser_element_not_allowed');
     if (input.operation.method === 'open_link' || (input.operation.method === 'click' && element instanceof HTMLAnchorElement && element.hasAttribute('href'))) {

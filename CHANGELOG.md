@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Support horizontal and two-axis scrolling in the browser extension and MCP, expose panel axes/positions, and report actual movement at scroll boundaries. Click the visible fragment of partially clipped or wrapped controls while still refusing real overlays. Update Connector/MCP and reload the extension together.
+
 - Show image preparation, byte-based sending progress and receipt confirmation in the Web composer. Allow 60 seconds for ordinary Web requests and 120 seconds for image uploads/reads, with timeout messages showing the actual limit. Existing turn-start waits and explicit request limits are preserved.
 
 - Correct scrolled-page visibility for viewport overflow and boxless wrappers, return viewport metrics, and make parsed child pages usable before optional resources finish. Track a single script-created child during a live click using browser navigation events, preserving origin/document/site checks and explicit handoff for ambiguous destinations. Reload the extension and accept its added `webNavigation` permission if prompted.

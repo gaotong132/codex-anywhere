@@ -434,6 +434,43 @@ test('console controls expose nested labels and exact recoverable failures witho
   await assert.rejects(h.broker.execute('task-a', 'turn-controls', { method: 'scroll', ref: obscured.ref, deltaY: 100 }), { message: 'browser_stale_element_read_again' });
 });
 
+test('two-axis panel scroll uses exact refs, reports clamping and rejects unsupported axes before moving', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const panel = h.document.querySelector('#safe')! as HTMLElement;
+  panel.style.overflowX = 'auto';
+  Object.defineProperties(panel, { scrollWidth: { value: 500 }, clientWidth: { value: 100 },
+    scrollHeight: { value: 200 }, clientHeight: { value: 20 },
+    scrollLeft: { value: 0, writable: true }, scrollTop: { value: 0, writable: true },
+    scrollBy: { value: ({ left, top }: { left: number; top: number }) => {
+      panel.scrollLeft = Math.max(0, Math.min(400, panel.scrollLeft + left));
+      panel.scrollTop = Math.max(0, Math.min(180, panel.scrollTop + top));
+    } } });
+  const read = () => h.broker.execute('task-a', 'turn-scroll', { method: 'snapshot' }) as Promise<any>;
+  const refFrom = (snapshot: any) => snapshot.nodes.find((n: Frame) => n.text === 'Increment');
+  let node = refFrom(await read());
+  assert.deepEqual(node.scrollAxes, ['x']); assert.deepEqual(node.scrollPosition, { x: 0, y: 0 });
+  await assert.rejects(h.broker.execute('task-a', 'turn-scroll', { method: 'scroll', ref: node.ref, deltaX: 100, deltaY: 10 }), /scroll_target_not_scrollable/);
+  assert.equal(panel.scrollLeft, 0); assert.equal(panel.scrollTop, 0);
+  assert.deepEqual(await h.broker.execute('task-a', 'turn-scroll', { method: 'scroll', ref: node.ref, deltaX: 600, deltaY: 0 }),
+    { scrolled: true, target: 'element', deltaX: 400, deltaY: 0 });
+  await assert.rejects(h.broker.execute('task-a', 'turn-scroll', { method: 'scroll', ref: node.ref, deltaX: -100, deltaY: 0 }), /stale_element/);
+  node = refFrom(await read());
+  assert.deepEqual(node.scrollPosition, { x: 400, y: 0 });
+  assert.deepEqual(await h.broker.execute('task-a', 'turn-scroll', { method: 'scroll', ref: node.ref, deltaX: 100, deltaY: 0 }),
+    { scrolled: false, target: 'element', deltaX: 0, deltaY: 0 });
+  panel.style.overflowY = 'auto'; node = refFrom(await read());
+  assert.deepEqual(node.scrollAxes, ['x', 'y']);
+  assert.deepEqual(await h.broker.execute('task-a', 'turn-scroll', { method: 'scroll', ref: node.ref, deltaX: -100, deltaY: 60 }),
+    { scrolled: true, target: 'element', deltaX: -100, deltaY: 60 });
+  node = refFrom(await read());
+  assert.deepEqual(await h.broker.execute('task-a', 'turn-scroll', { method: 'scroll', ref: node.ref, deltaY: 20 }),
+    { scrolled: true, target: 'element', deltaX: 0, deltaY: 20 });
+  panel.style.overflowX = 'hidden'; panel.style.overflowY = 'clip'; node = refFrom(await read());
+  assert.equal(node.scrollable, undefined);
+  await assert.rejects(h.broker.execute('task-a', 'turn-scroll', { method: 'scroll', ref: node.ref, deltaX: -100, deltaY: 0 }), /scroll_target_not_scrollable/);
+});
+
 test('partially clipped controls use their visible area and still refuse real overlays', async (t) => {
   const h = await harness(t);
   await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
