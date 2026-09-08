@@ -13,6 +13,7 @@ input, select, button { padding:8px; font:inherit; }
 <button id="save" type="button"><span>Save configuration</span><span hidden>hidden-button-marker</span></button>
 <div role="combobox" aria-label="Region" aria-expanded="false" tabindex="0">Region choices</div>
 <div role="option" tabindex="0"><span>Region A</span></div>
+<div id="custom-tab" style="cursor:pointer"><span>Basic information</span></div><p id="tab-result">Tab not selected</p>
 <input type="password" value="password-fixture-marker"><textarea hidden>private-draft-marker</textarea><div data-anywhere-private>private-fixture-marker</div>
 <div id="panel" role="region" aria-label="Security group rules"><p>Rule list</p><div class="spacer"></div><button id="last-rule">Last rule</button></div>
 <p id="result">No changes saved</p>
@@ -22,6 +23,7 @@ collapsedMenu.hidden=true;
 collapsedMenu.innerHTML='<span>Hidden console menu item</span>'.repeat(6000);
 document.body.prepend(collapsedMenu);
 window.fixtureEvents=[];
+document.getElementById('custom-tab').addEventListener('click',()=>{document.getElementById('tab-result').textContent='Information tab selected';});
 for(const id of ['port','protocol']) for(const event of ['input','change']) document.getElementById(id).addEventListener(event,()=>window.fixtureEvents.push(id+':'+event));
 document.getElementById('save').addEventListener('click',()=>{document.getElementById('result').textContent='Saved '+document.getElementById('protocol').selectedOptions[0].label+':'+document.getElementById('port').value;});
 </script></html>

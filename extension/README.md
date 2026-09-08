@@ -159,6 +159,9 @@ and include `role`, `inputType`, `disabled`, `checked`, `expanded` and `scrollab
 Hidden/private branches and select/textarea contents are skipped during traversal, so a collapsed menu does not consume
 the scan budget before visible controls. Snapshots report `scannedElements` and, when truncated, `truncationReason`
 (`scan_limit`, `node_limit`, `text_limit`). The limits remain 5,000 inspected elements, 100 output nodes and 8,000 text characters.
+Nested control labels are returned once. Custom controls with focusability, an inline click handler or a pointer cursor
+can also receive refs; these are interaction hints, not proof of a successful action. Verify the result after clicking.
+Disabled/obscured checks and the managed-link flow still apply; independent nested controls remain available.
 
 - `fill` accepts text and numeric inputs. Native number constraints (`min`, `max`, `step`, required) are checked before
   changing the input. It emits input/change events but does not submit the form.

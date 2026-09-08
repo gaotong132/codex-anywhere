@@ -20,6 +20,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     if (!state || state.grantId !== input.grantId) throw new Error('browser_not_authorized');
     if (input.operation.method === 'revoke') { delete scope.__anywhereBrowser; return { authorized: false }; }
     const excluded = 'script,style,noscript,iframe,object,embed,[hidden],[inert],[aria-hidden="true"],[data-anywhere-private]';
+    const controlSelector = 'a[href],button,input,textarea,select,summary,[role="button"],[role="link"],[role="combobox"],[role="option"],[role="tab"],[role="checkbox"],[role="radio"],[role="switch"],[role="menuitem"]';
     const sensitive = (element: Element) => {
       const hint = ['type', 'name', 'id', 'autocomplete', 'aria-label'].map((key) => element.getAttribute(key) || '').join(' ');
       return /password|passwd|secret|token|credit|cc-|card.?number|one-time-code|otp|cvv|cvc|social.?security/i.test(hint);
@@ -79,6 +80,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       let chars = 0; let visited = 0; let truncated = false;
       let truncationReason: 'scan_limit' | 'node_limit' | 'text_limit' | undefined;
       const root = document.body || document.documentElement;
+      const representedLabels = new Map<Element, string>();
       let next = skipSubtree(root) ? null : root.firstElementChild;
       while (next) {
         if (visited >= 5000 || nodes.length >= 100 || chars >= 8000) {
@@ -88,7 +90,11 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         const element = next, skip = skipSubtree(element);
         next = nextElement(element, root, skip || element.matches('input,textarea,select'));
         if (skip || !visible(element)) continue;
-        const actionable = element.matches('a[href],button,input,textarea,select,[role="button"],[role="combobox"],[role="option"],[role="tab"],[role="checkbox"],[role="radio"],[role="switch"],[role="menuitem"]');
+        const semanticControl = element.matches(controlSelector);
+        const explicitControl = semanticControl || (element.hasAttribute('tabindex') && (element as HTMLElement).tabIndex >= 0)
+          || element.hasAttribute('onclick');
+        const actionable = semanticControl || (!element.closest(controlSelector)
+          && (explicitControl || getComputedStyle(element).cursor === 'pointer'));
         const canScroll = scrollable(element);
         const labels = element.matches('input,textarea,select') ? [...((element as HTMLInputElement).labels ?? [])]
           .filter((label) => visible(label) && !sensitive(label)).map(labelText).join(' ') : '';
@@ -96,10 +102,18 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         const text = (element.getAttribute('aria-label') || labels || (actionable ? element.getAttribute('placeholder') : '')
           || (actionable ? labelText(element) : directText(element))).slice(0, 8001).replace(/\s+/g, ' ').trim();
         if (!actionable && !canScroll && !text) continue;
+        // The parent ref already carries nested button/link text. Keep independent
+        // controls and scroll regions, without spending the output budget twice.
+        if (!explicitControl && !canScroll && text) {
+          let owner = element.parentElement;
+          while (owner && !representedLabels.has(owner)) owner = owner.parentElement;
+          if (owner && representedLabels.get(owner)!.includes(text)) continue;
+        }
         const ref = actionable || canScroll ? `${state.snapshot}:${nodes.length}` : undefined;
         // Scroll-only regions can contain large, frequently changing subtrees.
         if (ref) state.refs.set(ref, { element, ...(actionable ? { html: element.outerHTML } : { scrollOnly: true }) });
         const bounded = text.slice(0, Math.min(500, 8000 - chars)); chars += bounded.length;
+        if (actionable) representedLabels.set(element, bounded);
         if (bounded.length < text.length) { truncated = true; truncationReason = 'text_limit'; }
         const role = element.getAttribute('role')?.slice(0, 40);
         const checked = element.getAttribute('aria-checked');
@@ -139,6 +153,9 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       return { openInNewTab: url.href };
     }
     if (input.operation.method === 'click') {
+      // A newly inserted anchor must not turn a generic control ref into an
+      // unmanaged link click after the snapshot.
+      if (element.closest('a[href]')) throw new Error('browser_stale_element_read_again');
       const rect = element.getBoundingClientRect();
       const hit = document.elementFromPoint(Math.max(0, Math.min(innerWidth - 1, rect.x + rect.width / 2)), Math.max(0, Math.min(innerHeight - 1, rect.y + rect.height / 2)));
       if (!hit || (hit !== element && !element.contains(hit))) throw new Error('browser_element_obscured');

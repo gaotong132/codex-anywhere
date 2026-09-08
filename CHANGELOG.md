@@ -6,6 +6,9 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 - Display `request_user_input_async` questions in live/history Web timelines, with choices, free-text replies, persisted answer state, and Desktop-compatible question IDs. Keep replies in the original task and preserve composer drafts.
 
+- Keep visible console content within snapshot bounds by deduplicating nested control labels, and recognize focusable
+  or pointer-cursor custom tabs without losing managed-link routing or disabled/obscured checks.
+
 - Paste clipboard screenshots with Ctrl/⌘+V in chat and new-task messages. Preview before sending, reuse image validation/compression, and preserve plain text paste.
 
 - Skip collapsed/private DOM branches when reading extension pages. Large hidden console menus no longer exhaust

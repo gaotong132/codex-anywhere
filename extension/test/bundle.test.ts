@@ -88,7 +88,7 @@ async function harness(t: test.TestContext) {
     Node: { TEXT_NODE: 3 }, NodeFilter: { SHOW_ELEMENT: 1 }, innerHeight: 800, innerWidth: 1200,
     HTMLInputElement: window.HTMLInputElement, HTMLTextAreaElement: window.HTMLTextAreaElement, HTMLSelectElement: window.HTMLSelectElement,
     HTMLAnchorElement: window.HTMLAnchorElement, Event: window.Event,
-    getComputedStyle: (element: HTMLElement) => ({ display: element.style.display || 'block', visibility: element.style.visibility || 'visible', opacity: element.style.opacity || '1' }), window: { scrollBy: () => {} },
+    getComputedStyle: (element: HTMLElement) => ({ display: element.style.display || 'block', visibility: element.style.visibility || 'visible', opacity: element.style.opacity || '1', cursor: element.style.cursor || element.parentElement?.style.cursor || 'auto' }), window: { scrollBy: () => {} },
   });
   return { document, pageContext, documentId: id === 1 ? 'doc-a' : `doc-${id}`, url };
   }
@@ -405,6 +405,54 @@ test('snapshot still bounds a large visible tree and explains truncation', async
   assert.equal(snapshot.truncated, true);
   assert.equal(snapshot.truncationReason, 'scan_limit');
   assert.equal(snapshot.scannedElements, 5000);
+});
+
+test('nested navigation labels leave room for content and custom pointer tabs remain clickable', async (t) => {
+  const h = await harness(t);
+  const nav = h.document.createElement('nav');
+  nav.innerHTML = Array.from({ length: 60 }, (_, i) => `<a href="https://example.com/item-${i}"><span>Navigation ${i}</span></a>`).join('');
+  h.document.body.prepend(nav);
+  const old = h.document.querySelector('#safe')!;
+  const bounds = old.getBoundingClientRect();
+  const tab = h.document.createElement('div'); tab.id = 'safe'; tab.style.cursor = 'pointer';
+  tab.innerHTML = '<span>Basic information</span>';
+  let clicked = 0; tab.addEventListener('click', () => { clicked++; }); old.replaceWith(tab);
+  for (const element of [...nav.querySelectorAll('*'), tab, ...tab.children]) {
+    Object.defineProperty(element, 'getBoundingClientRect', { value: () => bounds });
+  }
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const snapshot: any = await h.broker.execute('task-a', 'turn-tab', { method: 'snapshot' });
+  assert.equal(snapshot.truncated, false);
+  assert.equal(snapshot.nodes.filter((node: Frame) => node.text === 'Navigation 0').length, 1);
+  assert.equal(snapshot.nodes.find((node: Frame) => node.text === 'Navigation 0').tag, 'a');
+  const tabs = snapshot.nodes.filter((node: Frame) => node.text === 'Basic information');
+  assert.equal(tabs.length, 1); assert.ok(tabs[0].ref);
+  assert.equal(snapshot.nodes.find((node: Frame) => node.tag === 'h1').ref, undefined);
+  await h.broker.execute('task-a', 'turn-tab', { method: 'click', ref: tabs[0].ref });
+  assert.equal(clicked, 1);
+  const fresh: any = await h.broker.execute('task-a', 'turn-tab', { method: 'snapshot' });
+  const wrapper = h.document.createElement('a'); wrapper.href = 'https://example.com/changed';
+  tab.replaceWith(wrapper); wrapper.append(tab);
+  await assert.rejects(h.broker.execute('task-a', 'turn-tab', { method: 'click', ref: fresh.nodes.find((node: Frame) => node.text === 'Basic information').ref }), /browser_stale_element_read_again/);
+  assert.equal(clicked, 1);
+});
+
+test('deduplication preserves independently focusable children even when their label repeats', async (t) => {
+  const h = await harness(t);
+  const card = h.document.createElement('div'); card.style.cursor = 'pointer';
+  card.innerHTML = '<div tabindex="0">Edit item</div><button>Edit item</button>';
+  // LinkeDOM reports -1 for tabindex="0"; mirror the browser property in this fixture.
+  Object.defineProperty(card.firstElementChild!, 'tabIndex', { value: 0 });
+  h.document.body.prepend(card);
+  for (const element of [card, ...card.children]) {
+    Object.defineProperty(element, 'getBoundingClientRect', { value: () => h.document.querySelector('#safe')!.getBoundingClientRect() });
+  }
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const snapshot: any = await h.broker.execute('task-a', 'turn-nested', { method: 'snapshot' });
+  const children = snapshot.nodes.filter((node: Frame) => node.text === 'Edit item' && node.ref);
+  assert.equal(children.length, 2, 'both focusable div and native button retain independent refs');
+  assert.ok(children.some((node: Frame) => node.tag === 'div'));
+  assert.ok(children.some((node: Frame) => node.tag === 'button'));
 });
 
 test('bad pairing exits pending state and can pair again; cancellation returns promptly', async (t) => {
