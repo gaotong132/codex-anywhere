@@ -73,6 +73,13 @@ The `tabs` permission provides the active tab's address in the panel's window. S
 requested only on an authorization click. Chrome may remember that site permission; actual control still requires
 the selected Session, exact tab, and document grant. Other manually opened tabs are never automatically adopted.
 
+Real mouse input requires the manifest's `debugger` permission; Chrome does not support it as an optional permission.
+Reload/re-enable the updated extension and accept Chrome's new permission warning if prompted.
+Chrome may show a debugging notice during an operation. The extension attaches only to
+the already granted tab, sends a fixed move/press/release sequence, then detaches. It does not expose debugger
+commands or coordinates to the model, grant other tabs, disable popup protection, or take over another debugger.
+Browser policy denial or a debugger conflict is reported without a DOM-click fallback.
+
 `webNavigation` identifies newly created navigation targets during an AI click. Only one new target from the
 authorized top-level document can join the same task, after its source document, destination origin and site access
 are verified. The listener ends 100 ms after the click result; delayed popups, existing tabs and other frames are
@@ -184,10 +191,14 @@ Nested control labels are returned once. Custom controls with focusability, an i
 can also receive refs; these are interaction hints, not proof of a successful action. Verify the result after clicking.
 Disabled/obscured checks and the managed-link flow still apply; independent nested controls remain available.
 Anchors without `href` can be clicked as controls; only anchors with actual HTTP(S) destinations can be opened as links.
-Click/fill focuses eligible controls without scrolling; filling still does not submit forms.
+Real mouse clicks perform the browser's normal pointer and focus behavior; filling focuses without scrolling and does not submit forms.
 Click checks a point inside a visible line fragment after viewport/panel clipping. A partly visible control or
 wrapped inline link can be operated without mistaking its offscreen center or whitespace for an overlay;
 controls actually covered by another element still return `browser_element_obscured`.
+Before pressing and releasing, the extension rechecks the exact document, ref, visible point and current grant.
+Its own hover/focus styling may change; replacement nodes, changed labels/actions and overlays still stop the click.
+If a press has started but completion cannot be confirmed, it returns `browser_native_click_interrupted`:
+inspect the page before any retry. A dispatched click is not proof of the application's intended result.
 
 Snapshots include `viewport` dimensions, scroll position and document size. Document overflow propagated to the
 viewport and `display: contents` wrappers do not hide visible descendants; ordinary clipped panels still do.

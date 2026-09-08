@@ -19,6 +19,8 @@ test('built extension identifies the project version and fingerprints every emit
   await walk(root);
   assert.equal(built.version, project.version);
   assert.ok(built.permissions.includes('sidePanel'));
+  assert.equal(built.optional_permissions, undefined, 'Chrome does not support optional debugger permission');
+  assert.ok(built.permissions.includes('debugger'), 'Chrome confirms this required permission on extension enable/update');
   assert.equal(built.side_panel.default_path, 'sidepanel.html');
   assert.equal(built.action.default_popup, undefined);
   assert.match(built.version_name, /^\d+\.\d+\.\d+ dev \(build [0-9a-f]{8}\)$/);

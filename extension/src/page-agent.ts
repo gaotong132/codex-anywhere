@@ -2,7 +2,7 @@ import type { BrowserOperation } from '../../src/browser-control/operations.js';
 
 // Serialized by Chrome: all runtime dependencies must remain INSIDE this function.
 // ISOLATED world state cannot be set/read by the website's JavaScript.
-export function runPageAgent(input: { grantId: string; origin: string; deadline: number; operation: BrowserOperation | { method: 'authorize' } | { method: 'revoke' } }) {
+export function runPageAgent(input: { grantId: string; origin: string; deadline: number; clickPhase?: 'verify' | 'consume'; operation: BrowserOperation | { method: 'authorize' } | { method: 'revoke' } }) {
   // Chrome may otherwise drop an injected function's exception and return no result.
   // Background and broker independently allowlist these codes before forwarding them.
   try { return perform(); }
@@ -12,7 +12,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
   }
 
   function perform() {
-    type State = { grantId: string; refs: Map<string, { element: Element; html?: string; scrollOnly?: boolean }>; snapshot: string };
+    type State = { grantId: string; refs: Map<string, { element: Element; html?: string; clickSignature?: string; scrollOnly?: boolean }>; snapshot: string };
     const scope = globalThis as typeof globalThis & { __anywhereBrowser?: State };
     if (location.origin !== input.origin || Date.now() > input.deadline) throw new Error('browser_document_changed');
     if (input.operation.method === 'authorize') { scope.__anywhereBrowser = { grantId: input.grantId, refs: new Map(), snapshot: '' }; return { authorized: true }; }
@@ -159,9 +159,18 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       const deltaX = window.scrollX - beforeX, deltaY = window.scrollY - beforeY;
       return { scrolled: deltaX !== 0 || deltaY !== 0, target: 'page', deltaX, deltaY };
     }
+    // The initial action still requires the unchanged snapshot. During its own
+    // pointer sequence, permit hover/focus/pressed styling but preserve the same
+    // node, visible label and action attributes; visibility/hit tests run again.
+    const clickSignature = (element: Element) => JSON.stringify([labelText(element), ...[
+      'role', 'aria-label', 'type', 'name', 'form', 'formaction', 'formmethod', 'formtarget', 'onclick', 'href', 'target', 'download',
+    ].map((key) => element.getAttribute(key))]);
     const entry = state.refs.get(input.operation.ref!);
+    const recheckClick = input.operation.method === 'click' && input.clickPhase !== undefined;
     if (!entry || !entry.element.isConnected || !visible(entry.element)
-      || (entry.html !== undefined && entry.html !== entry.element.outerHTML) || sensitive(entry.element)) throw new Error('browser_stale_element_read_again');
+      || (recheckClick ? entry.clickSignature !== clickSignature(entry.element)
+        : entry.html !== undefined && entry.html !== entry.element.outerHTML)
+      || sensitive(entry.element)) throw new Error('browser_stale_element_read_again');
     const element = entry.element as HTMLElement;
     if (input.operation.method === 'scroll') {
       const axes = scrollAxes(element), requestedX = input.operation.deltaX ?? 0;
@@ -189,15 +198,18 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       // Test a point inside a visible fragment, not the unclipped bounding box's
       // center (which can sit outside its panel or in a wrapped link's whitespace).
       const fragments = element.getClientRects ? [...element.getClientRects()].slice(0, 20) : [element.getBoundingClientRect()];
+      let clickPoint: { x: number; y: number } | undefined;
       const reachable = fragments.some((fragment) => {
         const box = visibleBox(element, fragment);
         if (!box) return false;
-        const hit = document.elementFromPoint((box.left + box.right) / 2, (box.top + box.bottom) / 2);
-        return hit !== null && (hit === element || element.contains(hit));
+        const point = { x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 };
+        const hit = document.elementFromPoint(point.x, point.y);
+        if (hit === null || (hit !== element && !element.contains(hit))) return false;
+        clickPoint = point; return true;
       });
       if (!reachable) throw new Error('browser_element_obscured');
-      focusControl(element);
       if (element instanceof HTMLSelectElement) {
+        focusControl(element);
         const options: { label: string; disabled: boolean }[] = [];
         let chars = 0; let truncated = false;
         for (const option of element.options) {
@@ -210,7 +222,9 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         }
         state.refs.clear(); return { options, truncated };
       }
-      element.click(); state.refs.clear(); return { clicked: true };
+      if (input.clickPhase === 'consume') state.refs.clear();
+      else if (!input.clickPhase) entry.clickSignature = clickSignature(element);
+      return { clickPoint };
     }
     const fillText = input.operation.text;
     if (element instanceof HTMLSelectElement) {

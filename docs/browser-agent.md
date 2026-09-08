@@ -92,6 +92,14 @@ Root navigation/closure/revocation revokes all children. Child navigation revoke
 rotates known grants without replaying tab creation. If connector restart erased child provenance, only the root restores;
 AI must open children again. Chrome site permission is separate from Session consent and can be removed in extension settings.
 
+Control clicks use a fixed browser mouse sequence with the manifest's `debugger` permission. Chrome does not
+support optional debugger permission; users accept its warning when enabling the updated extension.
+An exact-document ISOLATED script validates the latest ref and visible hit point before input;
+the worker can send only `Input.dispatchMouseEvent` to that already granted tab and always detaches afterward.
+Hover/press changes trigger revalidation; interrupted presses are reported as uncertain, with no click replay.
+Links retain the managed-tab path and native selects retain bounded label reads. No tool accepts debugger commands,
+raw coordinates, cookie access or script evaluation; missing permission/policy conflicts never trigger a fallback.
+
 ## Model guidance and status
 
 MCP initialization instructions distinguish the extension from in-app CUA. Start with `anywhere_browser_list_pages`, then

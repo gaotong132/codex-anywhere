@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Use browser mouse events for control clicks so pointer handlers and script popups work without residual user activation. Add the required `debugger` permission (accept Chrome's extension update warning if prompted), revalidate the granted document and visible ref between events, detach after each click, and report interrupted input without replaying it. Ordinary managed links and select-label reads keep their existing paths.
+
 - Support horizontal and two-axis scrolling in the browser extension and MCP, expose panel axes/positions, and report actual movement at scroll boundaries. Click the visible fragment of partially clipped or wrapped controls while still refusing real overlays. Update Connector/MCP and reload the extension together.
 
 - Show image preparation, byte-based sending progress and receipt confirmation in the Web composer. Allow 60 seconds for ordinary Web requests and 120 seconds for image uploads/reads, with timeout messages showing the actual limit. Existing turn-start waits and explicit request limits are preserved.

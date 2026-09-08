@@ -13,6 +13,7 @@ export function browserOperationErrorCode(value: unknown): string {
     'browser_child_permission_required', 'browser_child_origin_denied', 'browser_operation_timeout',
     'browser_document_changed', 'browser_stale_element_read_again', 'browser_element_not_allowed',
     'browser_element_obscured', 'browser_input_not_allowed', 'browser_number_value_invalid',
+    'browser_native_click_permission_required', 'browser_native_click_unavailable', 'browser_native_click_interrupted',
     'browser_option_not_available', 'browser_select_multiple_not_supported', 'browser_scroll_target_not_scrollable',
     'browser_link_required', 'browser_navigation_not_allowed',
   ].includes(value) ? value : 'browser_operation_failed_or_authorization_changed';

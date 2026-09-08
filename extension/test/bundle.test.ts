@@ -130,7 +130,18 @@ async function harness(t: test.TestContext) {
       addListener: (listener: (event: Frame) => void) => navigationListeners.add(listener),
       removeListener: (listener: (event: Frame) => void) => navigationListeners.delete(listener),
     } },
-    permissions: { contains: async () => sitePermission },
+    permissions: { contains: async (options: Frame) => options.permissions?.includes('debugger') ? true : sitePermission },
+    debugger: {
+      attach: async (target: { tabId: number }) => { assert.ok(pages.has(target.tabId)); },
+      detach: async () => {},
+      sendCommand: async (target: { tabId: number }, method: string, params: Frame) => {
+        assert.equal(method, 'Input.dispatchMouseEvent');
+        if (params.type === 'mouseReleased' && params.x >= 0 && params.y >= 0) {
+          const doc = pages.get(target.tabId)!.document;
+          (doc.elementFromPoint(params.x, params.y) as HTMLElement)?.click();
+        }
+      },
+    },
     storage: { local, session },
     sidePanel: { open: async (options: Frame) => { openedPanels.push(options); } },
     action: { onClicked: { addListener: (callback: typeof onActionClicked) => { onActionClicked = callback; } }, setBadgeText: async (value: Frame) => { badges.push(value); }, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },

@@ -6,6 +6,7 @@ import { ExtensionConnection } from './connection.js';
 import { runPageAgent } from './page-agent.js';
 import { inspectCreatedTab, openManagedTab } from './managed-tabs.js';
 import { observeClickNavigation } from './click-navigation.js';
+import { pointerClick } from './pointer-click.js';
 import { sitePattern } from './site-permission.js';
 import { canRetireTab, RECENT_CHILD_TABS } from './tab-lifecycle.js';
 
@@ -90,9 +91,9 @@ function changed() {
   }
 }
 
-async function page(target: BrowserTarget, grantId: string, operation: Parameters<typeof runPageAgent>[0]['operation'], deadline = Date.now() + 15_000) {
+async function page(target: BrowserTarget, grantId: string, operation: Parameters<typeof runPageAgent>[0]['operation'], deadline = Date.now() + 15_000, clickPhase?: 'verify' | 'consume') {
   const [result] = await chrome.scripting.executeScript({ target: { tabId: target.tabId, documentIds: [target.documentId] }, world: 'ISOLATED', injectImmediately: true,
-    func: runPageAgent, args: [{ grantId, origin: target.origin, operation, deadline }] });
+    func: runPageAgent, args: [{ grantId, origin: target.origin, operation, deadline, clickPhase }] });
   if (!result || result.documentId !== target.documentId || !result.result) throw new Error('browser_document_changed');
   if ('errorCode' in result.result) throw new Error(browserOperationErrorCode(result.result.errorCode));
   if ('denied' in result.result && result.result.denied === 'browser_child_origin_denied') throw new Error(result.result.denied);
@@ -231,7 +232,9 @@ async function handleOperation(frame: Frame) {
     const current = () => revision === expectedRevision && bindings.get(captured.target.tabId) === captured && connection.ready();
     const run = () => page(captured.target, captured.grantId, operation, request.deadline);
     const observed = operation.method === 'click'
-      ? await observeClickNavigation(captured.target, request.deadline, current, run)
+      ? await observeClickNavigation(captured.target, request.deadline, current,
+        () => pointerClick(captured.target, request.deadline, current,
+          (phase) => page(captured.target, captured.grantId, operation, request.deadline, phase)))
       : { result: await run(), targets: [] };
     let result: Record<string, unknown> = observed.result;
     let scriptTabId: number | undefined;

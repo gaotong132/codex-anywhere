@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Native click fixture</title>
+<style>body{font:16px system-ui;padding:24px}a,button{cursor:pointer;margin:12px;padding:10px}pre{white-space:pre-wrap}</style>
+<h1>Native click fixture</h1>
+<p>Serve this fixture on localhost in a separate browser profile with normal popup blocking enabled.
+Authorize it in Anywhere, then wait at least six seconds before asking the original task to click “Open script child”.
+The result should show trusted pointer events, one new managed child, and no automatic click retries.</p>
+<a id="script">Open script child</a><button id="plain">Ordinary control</button>
+<p id="activation"></p><pre id="result"></pre>
+<script>
+const result = document.querySelector('#result');
+const lines = [];
+for (const type of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+  document.querySelector('#script').addEventListener(type, (event) => {
+    lines.push(`${type}: trusted=${event.isTrusted}, active=${navigator.userActivation.isActive}`);
+    if (type === 'click') {
+      const child = window.open('?child=1', '_blank');
+      lines.push(child ? 'Child opened' : 'Popup blocked');
+    }
+    result.textContent = lines.join('\n');
+  });
+}
+document.querySelector('#plain').onclick = (event) => { result.textContent = `Ordinary click: trusted=${event.isTrusted}`; };
+for (const control of document.querySelectorAll('a,button')) {
+  control.addEventListener('mouseenter', () => control.classList.add('hovered'));
+  control.addEventListener('mousedown', () => control.classList.add('pressed'));
+  control.addEventListener('mouseup', () => control.classList.remove('pressed'));
+}
+setInterval(() => { document.querySelector('#activation').textContent = `Current user activation: ${navigator.userActivation.isActive}`; }, 250);
+if (new URLSearchParams(location.search).has('child')) document.querySelector('h1').textContent = 'Managed child fixture';
+</script></html>

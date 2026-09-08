@@ -4,10 +4,11 @@ import { readFile } from 'node:fs/promises';
 import { parseBrowserTarget } from '../src/browser-control/contracts.js';
 import { parseConnectionUrl } from '../extension/src/connection.js';
 
-test('extension reads tab metadata but keeps site access optional, with no debugger or content-script access', async () => {
+test('extension declares its input driver but keeps site access optional and has no automatic content scripts', async () => {
   const manifest = JSON.parse(await readFile('extension/manifest.json', 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ['activeTab', 'tabs', 'scripting', 'storage', 'sidePanel', 'webNavigation']);
+  assert.deepEqual(manifest.permissions, ['activeTab', 'tabs', 'scripting', 'storage', 'sidePanel', 'webNavigation', 'debugger']);
+  assert.equal(manifest.optional_permissions, undefined, 'debugger cannot be an optional Chrome permission');
   assert.deepEqual(manifest.optional_host_permissions, ['http://*/*', 'https://*/*']);
   for (const field of ['host_permissions', 'externally_connectable', 'web_accessible_resources', 'content_scripts']) assert.equal(manifest[field], undefined);
   const connectSources = manifest.content_security_policy.extension_pages.split(';')
