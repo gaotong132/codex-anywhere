@@ -121,12 +121,14 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         const text = (element.getAttribute('aria-label') || labels || (actionable ? element.getAttribute('placeholder') : '')
           || (actionable ? labelText(element) : directText(element))).slice(0, 8001).replace(/\s+/g, ' ').trim();
         if (!actionable && !canScroll && !text) continue;
-        // The parent ref already carries nested button/link text. Keep independent
-        // controls and scroll regions, without spending the output budget twice.
+        // A parent's aggregate label must not swallow distinct custom menu items.
+        // Still deduplicate its text fragments, decorative icons and same-label wrappers.
         if (!explicitControl && !canScroll) {
           let owner = element.parentElement;
           while (owner && !representedLabels.has(owner)) owner = owner.parentElement;
-          if (owner && representedLabels.get(owner)!.includes(text)) continue;
+          const represented = owner ? representedLabels.get(owner) : undefined;
+          if (represented !== undefined && represented.includes(text)
+            && (!actionable || !text || represented === text)) continue;
         }
         const ref = actionable || canScroll ? `${state.snapshot}:${nodes.length}` : undefined;
         // Scroll-only regions can contain large, frequently changing subtrees.

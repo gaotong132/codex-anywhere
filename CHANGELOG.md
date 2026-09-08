@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Preserve distinct clickable menu options inside a pointer container whose combined label previously swallowed their refs, while still deduplicating decorative text and icons.
+
 - Use browser mouse events for control clicks so pointer handlers and script popups work without residual user activation. Add the required `debugger` permission (accept Chrome's extension update warning if prompted), revalidate the granted document and visible ref between events, detach after each click, and report interrupted input without replaying it. Ordinary managed links and select-label reads keep their existing paths.
 
 - Support horizontal and two-axis scrolling in the browser extension and MCP, expose panel axes/positions, and report actual movement at scroll boundaries. Click the visible fragment of partially clipped or wrapped controls while still refusing real overlays. Update Connector/MCP and reload the extension together.

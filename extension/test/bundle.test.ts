@@ -609,6 +609,30 @@ test('deduplication preserves independently focusable children even when their l
   assert.ok(children.some((node: Frame) => node.tag === 'button'));
 });
 
+test('custom menu options retain distinct pointer refs inside a parent that aggregates their labels', async (t) => {
+  const h = await harness(t);
+  const menu = h.document.createElement('div');
+  menu.innerHTML = '<div>Regions</div><section><div id="west"><span>Region West</span></div><div id="east"><span>Region East</span></div><div hidden>Private choice</div></section>';
+  h.document.body.prepend(menu);
+  for (const element of [menu, ...menu.querySelectorAll('*')]) {
+    (element as HTMLElement).style.cursor = 'pointer';
+    Object.defineProperty(element, 'getBoundingClientRect', { value: () => h.document.querySelector('#safe')!.getBoundingClientRect() });
+  }
+  let selected = '';
+  for (const id of ['west', 'east']) menu.querySelector('#' + id)!.addEventListener('click', () => { selected = id; });
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  for (const [id, text] of [['west', 'Region West'], ['east', 'Region East']]) {
+    const snapshot: any = await h.broker.execute('task-a', 'turn-menu', { method: 'snapshot' });
+    const choices = snapshot.nodes.filter((node: Frame) => node.text === text && node.ref);
+    assert.equal(choices.length, 1, 'one ref per option; its nested text span is not a second control');
+    assert.equal(choices[0].tag, 'div');
+    assert.doesNotMatch(JSON.stringify(snapshot.nodes), /Private choice/);
+    h.setHitTest(() => menu.querySelector('#' + id));
+    await h.broker.execute('task-a', 'turn-menu', { method: 'click', ref: choices[0].ref });
+    assert.equal(selected, id);
+  }
+});
+
 test('anchors without href act as controls and cannot be opened as links', async (t) => {
   const h = await harness(t);
   const old = h.document.querySelector('#safe')!;
