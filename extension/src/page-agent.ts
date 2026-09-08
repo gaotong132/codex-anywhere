@@ -53,11 +53,16 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     const bodyStyle = document.body ? getComputedStyle(document.body) : undefined;
     const bodyOverflowAtViewport = rootStyle.overflowX === 'visible' && rootStyle.overflowY === 'visible'
       && (!rootStyle.contain || rootStyle.contain === 'none') && (!bodyStyle?.contain || bodyStyle.contain === 'none');
+    const boxPoints = (box: { left: number; right: number; top: number; bottom: number }) => {
+      const xs = [.5, .9, .1], ys = [.5, .2, .8];
+      return ys.flatMap(y => xs.map(x => ({ x: box.left + (box.right - box.left) * x, y: box.top + (box.bottom - box.top) * y })));
+    };
     const visibleBox = (element: Element, rect = element.getBoundingClientRect()) => {
       if (element.closest(excluded) || element.closest('[contenteditable]')) return null;
       let top = Math.max(0, rect.top), bottom = Math.min(innerHeight, rect.bottom);
       let left = Math.max(0, rect.left), right = Math.min(innerWidth, rect.right);
       if (rect.width <= 0 || rect.height <= 0 || bottom <= top || right <= left) return null;
+      const viewportBox = { top, bottom, left, right };
       let depth = 0;
       for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
         if (++depth > 64) return null;
@@ -68,8 +73,16 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
           const bounds = ancestor.getBoundingClientRect();
           if (/auto|scroll|hidden|clip|overlay/.test(style.overflowY)) { top = Math.max(top, bounds.top); bottom = Math.min(bottom, bounds.bottom); }
           if (/auto|scroll|hidden|clip|overlay/.test(style.overflowX)) { left = Math.max(left, bounds.left); right = Math.min(right, bounds.right); }
-          if (bottom <= top || right <= left) return null;
         }
+      }
+      if (bottom <= top || right <= left) {
+        // Overflow on inline wrappers and ancestors outside a positioned child's
+        // containing block need not clip it. Only the browser's real hit test may
+        // recover such a visible fragment; never recover hidden/private branches.
+        return typeof document.elementFromPoint === 'function' && boxPoints(viewportBox).some(point => {
+          const hit = document.elementFromPoint(point.x, point.y);
+          return hit === element || (hit !== null && element.contains(hit));
+        }) ? viewportBox : null;
       }
       return { top, bottom, left, right };
     };
@@ -207,12 +220,23 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       // center (which can sit outside its panel or in a wrapped link's whitespace).
       const fragments = element.getClientRects ? [...element.getClientRects()].slice(0, 20) : [element.getBoundingClientRect()];
       let clickPoint: { x: number; y: number } | undefined;
-      const reachable = fragments.some((fragment) => {
+      const candidates = fragments.flatMap((fragment) => {
         const box = visibleBox(element, fragment);
-        if (!box) return false;
-        const point = { x: (box.left + box.right) / 2, y: (box.top + box.bottom) / 2 };
+        return box ? boxPoints(box) : [];
+      });
+      const reachable = candidates.some((point) => {
         const hit = document.elementFromPoint(point.x, point.y);
         if (hit === null || (hit !== element && !element.contains(hit))) return false;
+        // A parent's center can land on a tag's remove button or a nested action.
+        // Native controls own their decorative descendants; custom containers
+        // require a matching label and reject unlabeled pointer targets as well.
+        for (let child: Element | null = hit; child && child !== element; child = child.parentElement) {
+          if (child.matches(controlSelector) || child.hasAttribute('onclick')
+            || (child.hasAttribute('tabindex') && (child as HTMLElement).tabIndex >= 0)) return false;
+          if (!element.matches('button,a[href],input,textarea,select,summary,[role="button"],[role="link"],[role="option"],[role="tab"],[role="menuitem"]')
+            && getComputedStyle(child).cursor === 'pointer'
+            && (!labelText(child) || labelText(child) !== labelText(element))) return false;
+        }
         clickPoint = point; return true;
       });
       if (!reachable) throw new Error('browser_element_obscured');

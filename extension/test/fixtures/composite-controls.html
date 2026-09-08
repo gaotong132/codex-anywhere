@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Composite controls fixture</title>
+<style>
+body { margin: 24px; font: 16px system-ui; }
+#picker { cursor: pointer; position: relative; width: 320px; height: 42px; border: 1px solid; margin: 20px; }
+#remove { position:absolute; left:145px; width:30px; top:4px; height:30px; cursor:pointer; }
+#options[hidden] { display:none; }
+.clip { overflow:hidden; width:30px; height:1px; margin-top:100px; }
+.floating { position:fixed; left:440px; top:100px; }
+.inside { display:block; margin-top:80px; }
+#save { position:fixed; bottom:10px; left:30px; }
+#overlay { display:none; position:fixed; inset:0; z-index:10; background:white; }
+</style>
+<h1>Composite controls fixture</h1>
+<div id="picker">West East<section id="remove"></section></div>
+<div id="options" hidden><button>North</button><button>South</button></div>
+<div class="clip"><button class="floating">Fixed plan</button><button class="inside">Actually clipped</button></div>
+<div class="clip"><button id="save"><span>Save draft</span></button></div>
+<div id="overlay"></div>
+<script>
+window.fixtureState={opened:0,removed:0,selected:0,saved:0};
+picker.onclick=()=>{fixtureState.opened++;options.hidden=false;};
+remove.onclick=(event)=>{event.stopPropagation();fixtureState.removed++;};
+document.querySelector('.floating').onclick=()=>{fixtureState.selected++;};
+save.onclick=()=>{fixtureState.saved++;};
+</script></html>
