@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Treat anchors without `href` as ordinary clickable controls; `open_link` returns a precise link-required error instead of a URL parsing failure.
+
 - Keep exact-document grants during SPA hash/history route changes; verify the original document ID and origin while retaining revocation on reload, replacement and cross-origin navigation.
 
 - Simplify the extension side panel: keep one authorization action, move secondary controls into a More menu, and show a compact authorized state only for the selected Session and page.

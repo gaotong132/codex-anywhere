@@ -477,6 +477,20 @@ test('deduplication preserves independently focusable children even when their l
   assert.ok(children.some((node: Frame) => node.tag === 'button'));
 });
 
+test('anchors without href act as controls and cannot be opened as links', async (t) => {
+  const h = await harness(t);
+  const old = h.document.querySelector('#safe')!;
+  const button = h.document.createElement('a'); button.id = 'safe'; button.setAttribute('role', 'button'); button.textContent = 'Show details';
+  const bounds = old.getBoundingClientRect(); Object.defineProperty(button, 'getBoundingClientRect', { value: () => bounds });
+  let clicks = 0; button.addEventListener('click', () => { clicks++; }); old.replaceWith(button);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  let snapshot: any = await h.broker.execute('task-a', 'turn-anchor', { method: 'snapshot' });
+  await assert.rejects(h.broker.execute('task-a', 'turn-anchor', { method: 'open_link', ref: snapshot.nodes.find((node: Frame) => node.text === 'Show details').ref }), /browser_link_required/);
+  snapshot = await h.broker.execute('task-a', 'turn-anchor', { method: 'snapshot' });
+  await h.broker.execute('task-a', 'turn-anchor', { method: 'click', ref: snapshot.nodes.find((node: Frame) => node.text === 'Show details').ref });
+  assert.equal(clicks, 1); assert.equal(h.createdTabs(), 0);
+});
+
 test('pointer cursor inheritance does not turn decorative icon descendants into controls', async (t) => {
   const h = await harness(t);
   const navigation = h.document.createElement('nav');

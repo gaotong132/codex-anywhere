@@ -164,6 +164,7 @@ the scan budget before visible controls. Snapshots report `scannedElements` and,
 Nested control labels are returned once. Custom controls with focusability, an inline click handler or a pointer cursor
 can also receive refs; these are interaction hints, not proof of a successful action. Verify the result after clicking.
 Disabled/obscured checks and the managed-link flow still apply; independent nested controls remain available.
+Anchors without `href` can be clicked as controls; only anchors with actual HTTP(S) destinations can be opened as links.
 
 - `fill` accepts text and numeric inputs. Native number constraints (`min`, `max`, `step`, required) are checked before
   changing the input. It emits input/change events but does not submit the form.

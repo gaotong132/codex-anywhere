@@ -144,8 +144,8 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       return { scrolled: element.scrollTop !== before, target: 'element' };
     }
     if (entry.scrollOnly || element.matches(':disabled,[aria-disabled="true"],input[type="file"],input[type="password"],input[type="hidden"]')) throw new Error('browser_element_not_allowed');
-    if (input.operation.method === 'open_link' || (input.operation.method === 'click' && element instanceof HTMLAnchorElement)) {
-      if (!(element instanceof HTMLAnchorElement) || element.hasAttribute('download')) throw new Error('browser_link_required');
+    if (input.operation.method === 'open_link' || (input.operation.method === 'click' && element instanceof HTMLAnchorElement && element.hasAttribute('href'))) {
+      if (!(element instanceof HTMLAnchorElement) || !element.hasAttribute('href') || element.hasAttribute('download')) throw new Error('browser_link_required');
       const url = new URL(element.href);
       if (!/^https?:$/.test(url.protocol) || url.username || url.password) throw new Error('browser_navigation_not_allowed');
       state.refs.clear();
