@@ -67,6 +67,13 @@ Review the preview, optionally add text, then click Send or press Ctrl/⌘+Enter
 PNG, JPEG, and WebP are supported, with one image per message; pasting again replaces the pending image.
 Plain text paste and the “＋” file picker still work. The browser extension side panel uses the same feature.
 
+### Answer questions from a task
+
+When a task calls `request_user_input_async`, Web shows question cards in the timeline. Choose a suggested
+answer or enter your own, then click Send answer to reply to the original task while it continues working.
+Answers retain their question IDs and appear after refresh, including answers submitted from Desktop.
+Answering leaves any separate text/image draft in the chat composer intact.
+
 ### Linked local files
 
 Clicking a supported local file link opens a read-only preview without leaving the conversation:

@@ -42,6 +42,9 @@ import { useFileTransfer } from './file-transfer';
 import { useFilePreviews } from './file-preview-client';
 import { t } from './i18n';
 import {
+  buildQuestionReply, normalizeAsyncQuestions, questionReplyText, type QuestionReply,
+} from '../../src/shared/async-questions';
+import {
   friendlyError,
   canSendToActiveDesktopTurn,
   canSteerOwnedTurn,
@@ -812,6 +815,18 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       setLiveActivity('checking');
       const detail = normalizeToolPurpose(payload.detail);
       if (detail) setActivityDetail(`✓ ${detail}`);
+    } else if (message.event === 'turn.questions') {
+      const questions = normalizeAsyncQuestions(payload.questions);
+      if (!questions) return;
+      streamItemRef.current = null;
+      if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
+      setTimeline((current) => current.some((item) => item.questions?.[0]?.id === questions[0].id)
+        ? current : [...current, {
+          id: `questions:${questions[0].id}`, kind: 'assistant', questions,
+          text: questions.map((question) => question.title).join('\n\n'),
+          historyTurnId: String(payload.turnId || activeTurnIdRef.current || ''),
+          completedAt: Date.now(), transient: true,
+        }]);
     } else if (message.event === 'turn.final') {
       setLiveActivity('responding');
       const text = String(payload.text || '');
@@ -1616,9 +1631,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     newSessionAutoSendRef.current = true;
   }, [newSessionCwd, newSessionImage, newSessionPrompt, selectSession]);
 
-  const sendTurn = useCallback(async () => {
-    const text = prompt.trim();
-    const image = pendingImage;
+  const sendTurn = useCallback(async (questionReplies?: QuestionReply[]) => {
+    // A question response is independent of the message/image draft.
+    if (questionReplies && (!threadId || threadId !== threadIdRef.current)) return;
+    const text = questionReplies ? buildQuestionReply(questionReplies) : prompt.trim();
+    const image = questionReplies ? null : pendingImage;
     const targetThreadId = threadIdRef.current;
     const steering = canSteerOwnedTurn(
       running, executionState, ownedTurnThreadId, targetThreadId,
@@ -1645,7 +1662,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     }
     sendingRef.current = true;
     let turnText = text;
-    let visibleText = text;
+    let visibleText = questionReplies ? questionReplyText(questionReplies) : text;
     let timelineAttachment: ImageAttachment | undefined;
     let uploadedPreviewUrl = '';
     let optimisticItemId = '';
@@ -1694,10 +1711,14 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         }));
       }
       setUploading(false);
-      setPrompt('');
-      setPendingImage(null);
-      composerCleared = true;
+      if (!questionReplies) {
+        setPrompt('');
+        setPendingImage(null);
+        composerCleared = true;
+      }
       optimisticItemId = addTimeline('user', visibleText, true, true, timelineAttachment);
+      if (questionReplies) setTimeline((current) => current.map((item) => item.id === optimisticItemId
+        ? { ...item, questionReplies } : item));
       streamItemRef.current = null;
       if (!steering) activeTurnIdRef.current = '';
       if (!steering) {
@@ -1786,6 +1807,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         setExecutionState('running');
         setFollowState('following');
       }
+      return true;
     } catch (error) {
       setUploading(false);
       const selectionStillCurrent = isCurrentSessionRequest(
@@ -1825,10 +1847,14 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     }
   }, [
     addTimeline, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingImage,
-    permissionConfig, prompt,
+    permissionConfig, prompt, threadId,
     refreshSessions, rememberAttachment, reportTimelineError, request, resetExecution, running,
     updateExecution, updateSessionAttention, uploading,
   ]);
+
+  const answerQuestions = useCallback(async (replies: QuestionReply[]) => (
+    Boolean(await sendTurn(replies))
+  ), [sendTurn]);
 
   useEffect(() => {
     if (!creatingNewSession || !newSessionAutoSendRef.current || running || uploading) return;
@@ -2204,6 +2230,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           olderHistoryError={olderHistoryError}
           olderHistoryAutoLoadEnabled={olderHistoryAutoLoadEnabled}
           timeline={timeline}
+          questionReplyDisabled={!online || uploading || (running && !steeringAvailable)}
+          onQuestionReply={answerQuestions}
           knownAttachments={knownAttachments}
           attachmentUrls={attachmentUrls}
           executionActive={executionActive}

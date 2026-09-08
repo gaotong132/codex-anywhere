@@ -9,6 +9,7 @@ import type { ContextCompaction, ContextUsage } from '../shared/context-compacti
 import type { TimelineNotice, ToolSummaryNotice } from '../shared/timeline-notice.js';
 import type { PermissionMode } from '../shared/permission-mode.js';
 import { publicError } from '../shared/protocol.js';
+import { asyncQuestionsFromCall, type AsyncQuestion, type QuestionReply } from '../shared/async-questions.js';
 import {
   extractPlanProgressFromToolInput,
   summarizePatchChanges,
@@ -50,6 +51,8 @@ type FileProgressEvent =
 type RolloutRow = Record<string, any>;
 type RolloutItem = {
   type: string;
+  questions?: AsyncQuestion[];
+  questionReplies?: QuestionReply[];
   turnId?: string;
   phase?: string;
   text: string;
@@ -906,7 +909,7 @@ function addToolCall(summary: ToolSummaryState, row: RolloutRow) {
     && !/commandExecution|toolCall|webSearch|fileChange|mcpTool/i.test(itemType))) return;
   const detail = summarizeToolActivity(item);
   const label = detail.split(' · ')[0]?.trim().toLowerCase() || '';
-  if (!label || /^(?:update_plan|wait|request_user_input)$/.test(label)) return;
+  if (!label || /^(?:update_plan|wait|request_user_input|request_user_input_async)$/.test(label)) return;
   const fallbackId = `${row?.timestamp || ''}:${itemType}:${item?.name || ''}:${summary.total}`;
   const callId = String(item.call_id || item.callId || item.id || fallbackId);
   if (summary.callIds.has(callId)) return;
@@ -1013,8 +1016,11 @@ function mapRolloutRowsWithState(
       }
     }
     const toolOutputMessage = toolOutputUserMessage(row);
+    const questions = row?.type === 'response_item' ? asyncQuestionsFromCall(payload) : undefined;
     if (toolOutputMessage) {
       pushText(items, { type: 'userMessage', ...toolOutputMessage, ...turn, ...timing });
+    } else if (questions) {
+      pushText(items, { type: 'agentMessage', text: '', questions, ...turn, ...timing });
     } else if (row?.type === 'compacted') {
       const compaction = contextCompactionFromRows(rows, rowIndex);
       if (compaction) {
@@ -1143,7 +1149,7 @@ function finalFileChanges(phase: unknown, progress: RolloutProgress) {
 
 function pushText(items: RolloutItem[], item: RolloutItem) {
   const text = item.phase === 'final_answer' ? fullText(item.text) : capText(item.text);
-  if (!text && !item.attachment && !item.compaction && !item.notice) return;
+  if (!text && !item.attachment && !item.compaction && !item.notice && !item.questions) return;
   const previous = items.at(-1);
   if (previous?.type === item.type
     && previous.turnId === item.turnId
@@ -1152,6 +1158,8 @@ function pushText(items: RolloutItem[], item: RolloutItem) {
     && previous.attachment?.path === item.attachment?.path
     && JSON.stringify(previous.compaction) === JSON.stringify(item.compaction)
     && JSON.stringify(previous.notice) === JSON.stringify(item.notice)
+    && JSON.stringify(previous.questions) === JSON.stringify(item.questions)
+    && JSON.stringify(previous.questionReplies) === JSON.stringify(item.questionReplies)
     && JSON.stringify(previous.contexts || []) === JSON.stringify(item.contexts || [])) {
     if (item.fileChanges) previous.fileChanges = item.fileChanges;
     return;

@@ -16,6 +16,10 @@ import {
 } from '../../src/shared/timeline-notice';
 import { normalizeTurnProgress, type TurnFileProgress } from '../../src/shared/turn-progress';
 import { localFileName, localFilePathFromHref } from './file-utils';
+import {
+  normalizeAsyncQuestions, normalizeQuestionReplies, questionReplyText,
+  type AsyncQuestion, type QuestionReply,
+} from '../../src/shared/async-questions';
 
 export { parseAssistantMessage } from '../../src/shared/message-content';
 
@@ -24,6 +28,8 @@ const LOCAL_MARKDOWN_IMAGE_PATTERN = /!\[([^\]\r\n]*)\]\(\s*(?:<([^>\r\n]+)>|((?
 const VISUALIZATION_MARKER_PATTERN = /(?:^|\r?\n)[ \t]*(?:visualize[ \t]+|\uE200visualize\uE202)\{[^\r\n{}]*"path"\s*:\s*("(?:\\.|[^"\\])*")[^\r\n{}]*\}[ \t]*(?:\uE201)?[ \t]*(?=\r?\n|$)/i;
 
 type TurnItem = {
+  questions?: AsyncQuestion[];
+  questionReplies?: QuestionReply[];
   type?: string;
   turnId?: string;
   phase?: string;
@@ -55,6 +61,8 @@ export type TimelineKind = 'user' | 'assistant' | 'progress' | 'system' | 'error
 export type ImageAttachment = { path: string; name: string; source?: 'generated' | 'local' };
 export type VisualizationArtifact = { path: string; name: string; source: 'visualize' };
 export type TimelineItem = {
+  questions?: AsyncQuestion[];
+  questionReplies?: QuestionReply[];
   id: string;
   kind: TimelineKind;
   text: string;
@@ -146,7 +154,9 @@ export function historyItems(turns: Turn[]) {
       const content = userItem
         ? parseUserMessage(rawText || '')
         : parseAssistantMessage(presentationText);
-      const text = content.text;
+      const questions = normalizeAsyncQuestions(item.questions);
+      const questionReplies = normalizeQuestionReplies(item.questionReplies) || content.questionReplies;
+      const text = questionReplies ? questionReplyText(questionReplies) : content.text;
       const historyTurnId = item.turnId?.trim() || turn.id;
       const compaction = type === 'contextCompaction'
         ? normalizeContextCompaction(item.compaction)
@@ -155,8 +165,9 @@ export function historyItems(turns: Turn[]) {
         ? normalizeTimelineNotice(item.notice)
         : undefined;
       let kind: TimelineKind | null = null;
-      const displayText = text || '';
-      if (compaction || notice) kind = 'system';
+      const displayText = questions ? questions.map((question) => question.title).join('\n\n') : text || '';
+      if (questions) kind = 'assistant';
+      else if (compaction || notice) kind = 'system';
       else if (/user/i.test(type) && (text || attachment)) kind = 'user';
       else if (/agent|assistant|message/i.test(type) && (text || attachment || visualization)) {
         kind = !item.phase || item.phase === 'final_answer' ? 'assistant' : 'progress';
@@ -182,6 +193,8 @@ export function historyItems(turns: Turn[]) {
         ...(visualization ? { visualization } : {}),
         ...(compaction ? { compaction } : {}),
         ...(notice ? { notice } : {}),
+        ...(questions ? { questions } : {}),
+        ...(questionReplies ? { questionReplies } : {}),
         contexts: mergeMessageContexts(item.contexts, content.contexts),
         ...(completedAt ? { completedAt } : {}),
         ...(fileChanges ? { fileChanges } : {}),
@@ -264,6 +277,8 @@ export function historyFingerprint(turns: Turn[], progress?: unknown) {
         fileChanges: item.fileChanges,
         compaction: item.compaction,
         notice: item.notice,
+        questions: item.questions,
+        questionReplies: item.questionReplies,
         createdAt: item.createdAt,
         updatedAt: item.updatedAt,
         completedAt: item.completedAt,
@@ -438,6 +453,8 @@ function messageContentIdentity(item: TimelineItem) {
     canonicalMessageText(item.text),
     JSON.stringify(item.compaction || null),
     JSON.stringify(item.notice || null),
+    JSON.stringify(item.questions || null),
+    JSON.stringify(item.questionReplies || null),
   ].join('\0');
 }
 

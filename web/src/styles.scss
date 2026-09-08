@@ -1,6 +1,7 @@
 @use './styles/tokens' as *;
 @use './styles/responsive';
 @use './styles/interaction';
+@use './async-question-card.css';
 
 :root {
   color: #e8edf7;

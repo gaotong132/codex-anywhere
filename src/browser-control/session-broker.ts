@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { parseBrowserTarget, requireBrowserId, type BrowserTarget } from './contracts.js';
 import { browserOperationErrorCode, parseOperation, type BrowserOperation } from './operations.js';
 import { browserContext } from '../shared/browser-context.js';
+import { parseQuestionReplies } from '../shared/async-questions.js';
 
 type Client = { clientId: string; clientDeviceId: string };
 type BindOptions = { replaceExisting?: boolean; recoverOnly?: boolean };
@@ -117,6 +118,9 @@ export class BrowserSessionBroker {
   // Added to this exact turn, never a second message or global Codex configuration.
   // No page content, credentials, URLs or model-supplied routing IDs in the prompt.
   withContext(threadId: string, text: unknown) {
+    // Desktop recognizes question answers by an exact envelope. A context
+    // suffix would turn it into ordinary text and leave its question unanswered.
+    if (parseQuestionReplies(text)) return text;
     const grants = this.forSession(threadId);
     if (!grants.length && !this.contextualized.has(threadId)) return text;
     this.contextualized.delete(threadId); this.contextualized.add(threadId);

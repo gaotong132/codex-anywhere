@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { stripBrowserContext } from './browser-context.js';
+import { parseQuestionReplies, questionReplyText, type QuestionReply } from './async-questions.js';
 
 const USER_REQUEST_SECTION = /(?:^|\r?\n)##\s+My request:\s*(?:\r?\n|$)([\s\S]*)/i;
 const IMAGE_ATTACHMENT = /<image\b[^>]*?(?:\/\s*>|>\s*<\/image\s*>)/gi;
@@ -24,6 +25,7 @@ export type MessageContext = {
 export type ParsedMessageContent = {
   text: string;
   contexts: MessageContext[];
+  questionReplies?: QuestionReply[];
 };
 
 const envelopeParser = new XMLParser({
@@ -106,6 +108,8 @@ function parseMessageContent(value: unknown, role: 'user' | 'assistant'): Parsed
   }
 
   if (role === 'user') text = stripBrowserContext(text);
+  const questionReplies = role === 'user' ? parseQuestionReplies(text) : undefined;
+  if (questionReplies) return { text: questionReplyText(questionReplies), contexts, questionReplies };
   const request = USER_REQUEST_SECTION.exec(text);
   if (request) text = request[1];
   else if (

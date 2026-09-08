@@ -23,6 +23,7 @@ import {
 } from '../shared/permission-mode.js';
 import { normalizeSessionName } from '../shared/session-name.js';
 import { parseInjectedUserMessage } from '../shared/message-content.js';
+import { asyncQuestionsFromItem } from '../shared/async-questions.js';
 import {
   extractText,
   isReasoningMethod,
@@ -1012,6 +1013,13 @@ export class CodexAppServer extends EventEmitter {
       const item = params.item || {};
       if (['commandExecution', 'toolCall', 'webSearch'].includes(item.type)) {
         this.emitTurn('tool.completed', summarizeItem(item));
+        return;
+      }
+      const questions = asyncQuestionsFromItem(item);
+      if (questions) {
+        if (params.threadId === this.activeTurn?.threadId && params.turnId === this.activeTurn?.turnId) {
+          this.emitTurn('turn.questions', { questions, itemId: item.id });
+        }
         return;
       }
       const text = extractText(item);

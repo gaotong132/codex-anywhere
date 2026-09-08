@@ -8,12 +8,16 @@ import {
 } from './history-utils';
 import { t } from './i18n';
 import type { TextPreviewDocument, TurnDiffDocument } from './app-types';
+import type { QuestionReply } from '../../src/shared/async-questions';
+import { AsyncQuestionCard } from './async-question-card';
 
 const MessageBubble = lazy(() => import('./message-bubble').then((module) => ({
   default: module.MessageBubble,
 })));
 
 type ConversationTimelineProps = {
+  questionReplyDisabled?: boolean;
+  onQuestionReply?: (replies: QuestionReply[]) => Promise<boolean>;
   messageListRef: RefObject<HTMLDivElement | null>;
   messageContentRef: RefObject<HTMLDivElement | null>;
   threadId: string | null;
@@ -39,6 +43,8 @@ type ConversationTimelineProps = {
 };
 
 export const ConversationTimeline = memo(function ConversationTimeline({
+  questionReplyDisabled = true,
+  onQuestionReply,
   messageListRef,
   messageContentRef,
   threadId,
@@ -63,6 +69,10 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   onReadVisualization,
 }: ConversationTimelineProps) {
   const olderHistorySentinelRef = useRef<HTMLButtonElement | null>(null);
+  const questionAnswers = useMemo(() => new Map(timeline.flatMap((item) => (
+    item.kind === 'user' && (!item.transient || item.completedAt)
+      ? (item.questionReplies || []).map((reply) => [reply.questionItemId, reply.answer] as const) : []
+  ))), [timeline]);
   const resolvedItems = useMemo(() => timeline.map((item) => {
     const attachment = resolveTimelineAttachment(item, threadId, knownAttachments, environmentId);
     return {
@@ -134,7 +144,13 @@ export const ConversationTimeline = memo(function ConversationTimeline({
           </div>
         )}
         <Suspense fallback={<div className="conversation-render-placeholder" aria-hidden="true" />}>
-          {resolvedItems.map(({ item, attachment }) => (
+          {resolvedItems.map(({ item, attachment }) => item.questions ? (
+            <AsyncQuestionCard
+              key={`${environmentId}:${threadId}:${item.questions.map((question) => question.id).join(':')}`}
+              questions={item.questions} answers={questionAnswers}
+              disabled={questionReplyDisabled} onReply={onQuestionReply}
+            />
+          ) : (
             <MessageBubble
               key={item.id}
               item={item}

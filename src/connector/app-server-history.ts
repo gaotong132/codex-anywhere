@@ -3,6 +3,7 @@ import {
   parseAssistantMessage, parseInjectedUserMessage, parseUserMessage,
 } from '../shared/message-content.js';
 import { publicError } from '../shared/protocol.js';
+import { asyncQuestionsFromItem } from '../shared/async-questions.js';
 import { extractGeneratedImageAttachment } from './generated-images.js';
 
 type JsonObject = Record<string, any>;
@@ -60,15 +61,17 @@ export function mapTurns(turns: unknown) {
         }
         const content = injectedUserMessage || (userMessage
           ? parseUserMessage(extractText(item)) : parseAssistantMessage(extractText(item)));
+        const questions = asyncQuestionsFromItem(item);
         return {
           type: injectedUserMessage ? 'userMessage' : item.type,
           phase: item.phase || '',
           status: item.status || '',
           ...content,
+          ...(questions ? { questions } : {}),
           ...timing,
         };
       })
-      .filter((item: JsonObject) => item.text || item.attachment);
+      .filter((item: JsonObject) => item.text || item.attachment || item.questions);
     const toolSummary = summarizeTurnTools(rawItems);
     if (toolSummary) {
       const finalIndex = items.findIndex((item: JsonObject) => item.phase === 'final_answer');
