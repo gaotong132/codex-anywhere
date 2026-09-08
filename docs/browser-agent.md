@@ -52,7 +52,7 @@ of the chat frame. Closing chat does not revoke consent, and selecting another S
 | Managed tabs / click navigation | Identify a newly created child from the current operation; validate optional site permission, source/destination documents, origin and deadline |
 | Session broker | Environment-local Session routing, one in-flight operation, strict results and cancellation |
 | Local endpoint | Loopback-only authenticated IPC and private state file |
-| MCP server | Official SDK stdio server, seven narrow tools, fixed instructions and trusted host context |
+| MCP server | Official SDK stdio server, eight narrow tools, fixed instructions and trusted host context |
 | Screenshot driver / contract | Exact-tab viewport capture, private-region masking, compression and image-boundary validation |
 | Connector / Relay | Opt-in capability, existing encrypted requests/events, exact extension Origin allowlist |
 | Web status component | Status scoped to the selected environment and Session |
@@ -117,6 +117,12 @@ MCP returns standard image content with metadata-only text/structuredContent. Im
 masking cannot identify all sensitive visible text or canvas content. The driver detaches on completion and Relay has no
 image cache; the host may retain tool history. See [page screenshots](../extension/README.md#page-screenshots-experimental).
 
+The `anywhere_browser_zoom` tool uses the same exact Session/tab grant for native 50%–200% zoom (100 resets).
+Fixed document probes surround the change; Chrome `automatic/per-tab` isolation precedes setting the factor. Other tabs
+and site preferences stay unchanged; Chrome resets this mode on navigation. Snapshots report zoom and horizontal overflow.
+For clipped columns, guidance prefers 80%, then 67%, with fresh snapshots; old refs expire, including after manual zoom.
+Remaining clipped panels can scroll horizontally. Interrupted changes are never retried. See [page zoom](../extension/README.md#page-zoom-experimental).
+
 ## Model guidance and status
 
 MCP initialization instructions distinguish the extension from in-app CUA. Start with `anywhere_browser_list_pages`, then
@@ -126,7 +132,7 @@ Messages entered directly in Desktop do not pass through the Connector; they rel
 
 Guidance tells the model to execute task-required navigation, search, ordinary clicks and input directly, verifying the
 result and pausing for actual login, verification, new permissions or out-of-scope actions. Host MCP approval rejection,
-browser connectivity and website login are diagnosed separately. Follow the extension setup to preapprove the four specific
+browser connectivity and website login are diagnosed separately. Follow the extension setup to preapprove the five specific
 write tools with `approval_mode="approve"` under Codex `never`; retain truthful annotations and other approval settings.
 Both current and older generated guidance suffixes remain hidden by history parsing.
 

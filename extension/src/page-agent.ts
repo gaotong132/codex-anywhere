@@ -12,15 +12,17 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
   }
 
   function perform() {
-    type State = { grantId: string; refs: Map<string, { element: Element; html?: string; clickSignature?: string; scrollOnly?: boolean }>; snapshot: string };
+    type State = { grantId: string; refs: Map<string, { element: Element; html?: string; clickSignature?: string; scrollOnly?: boolean }>; snapshot: string; pixelRatio?: number };
     const scope = globalThis as typeof globalThis & { __anywhereBrowser?: State };
     if (location.origin !== input.origin || Date.now() > input.deadline) throw new Error('browser_document_changed');
     if (input.operation.method === 'authorize') { scope.__anywhereBrowser = { grantId: input.grantId, refs: new Map(), snapshot: '' }; return { authorized: true }; }
     const state = scope.__anywhereBrowser;
     if (!state || state.grantId !== input.grantId) throw new Error('browser_not_authorized');
     if (input.operation.method === 'revoke') { delete scope.__anywhereBrowser; return { authorized: false }; }
-    // Screenshots are handled by the scoped capture driver, never the DOM agent.
-    if (input.operation.method === 'screenshot') throw new Error('browser_operation_failed');
+    // Native browser actions have their own scoped drivers.
+    if (input.operation.method === 'screenshot' || input.operation.method === 'zoom') throw new Error('browser_operation_failed');
+    // Native Ctrl+/- also changes DPR. A manual zoom cannot keep old element refs.
+    if (state.pixelRatio !== window.devicePixelRatio) { state.refs.clear(); state.snapshot = ''; }
     const excluded = 'script,style,noscript,iframe,object,embed,[hidden],[inert],[aria-hidden="true"],[data-anywhere-private]';
     const controlSelector = 'a[href],button,input,textarea,select,summary,[role="button"],[role="link"],[role="combobox"],[role="option"],[role="tab"],[role="checkbox"],[role="radio"],[role="switch"],[role="menuitem"]';
     const focusControl = (element: HTMLElement) => {
@@ -94,8 +96,10 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     };
     if (input.operation.method === 'snapshot') {
       state.refs.clear(); state.snapshot = crypto.randomUUID();
+      state.pixelRatio = window.devicePixelRatio;
       const viewport = { width: innerWidth, height: innerHeight, scrollX: window.scrollX, scrollY: window.scrollY,
-        pageWidth: document.documentElement.scrollWidth, pageHeight: document.documentElement.scrollHeight };
+        pageWidth: document.documentElement.scrollWidth, pageHeight: document.documentElement.scrollHeight,
+        horizontalOverflow: document.documentElement.scrollWidth > innerWidth + 1 };
       const nodes: { ref?: string; tag: string; text: string; role?: string; inputType?: string; disabled?: boolean; checked?: boolean | 'mixed'; expanded?: boolean; scrollable?: boolean; scrollAxes?: ('x' | 'y')[]; scrollPosition?: { x: number; y: number } }[] = [];
       let chars = 0; let visited = 0; let truncated = false;
       let truncationReason: 'scan_limit' | 'node_limit' | 'text_limit' | 'result_limit' | undefined;

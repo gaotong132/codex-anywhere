@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Add experimental native zoom for an authorized browser tab (50%–200%, 100% reset). Snapshots report the current ratio and horizontal overflow; guidance prefers 80%, then 67% before horizontal scrolling. Changes invalidate element refs and retain tab isolation, page consent and snapshot limits. Update Connector/MCP and the extension and preapprove the new zoom tool.
+
 - Preserve distinct clickable menu options inside a pointer container whose combined label previously swallowed their refs, while still deduplicating decorative text and icons.
 
 - Add experimental page screenshots, enabled by default for the current task's granted pages without a separate setting; upgrades remove the obsolete screenshot toggle. The model receives a viewport image of the exact granted page, including background tabs and visible canvas. Form/embedded/detected private regions are masked before transport; JPEG output is limited to 1920 pixels per side and 1 MiB. Changes or revocation discard pending results, and native MCP image content uses a separate response budget. Update Connector/MCP and reload the extension/tool list; no new pairing is needed.

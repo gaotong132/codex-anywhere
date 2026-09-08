@@ -10,6 +10,7 @@ import { pointerClick } from './pointer-click.js';
 import { sitePattern } from './site-permission.js';
 import { canRetireTab, RECENT_CHILD_TABS } from './tab-lifecycle.js';
 import { captureScreenshot } from './screenshot.js';
+import { zoomPage } from './page-zoom.js';
 import { SCREENSHOT_TIMEOUT_MS } from '../../src/browser-control/screenshot.js';
 
 type Binding = { grantId: string; environmentId: string; threadId: string; title: string; pageTitle?: string; target: BrowserTarget; sequence: number; rootTabId?: number; lastUsedAt?: number };
@@ -272,6 +273,7 @@ async function handleOperation(frame: Frame) {
     const current = () => revision === expectedRevision && bindings.get(captured.target.tabId) === captured && !changingDocuments.has(captured) && connection.ready();
     if (!current()) throw new Error('browser_document_changed');
     const run = () => {
+      if (operation.method === 'zoom') return zoomPage(captured.target, captured.grantId, operation.percent, request.deadline, current);
       if (operation.method !== 'screenshot') return page(captured.target, captured.grantId, operation, request.deadline);
       return captureScreenshot(captured.target, captured.grantId, Math.min(request.deadline, Date.now() + 15_000), current);
     };
@@ -281,6 +283,11 @@ async function handleOperation(frame: Frame) {
           (phase) => page(captured.target, captured.grantId, operation, request.deadline, phase)))
       : { result: await run(), targets: [] };
     let result: Record<string, unknown> = observed.result;
+    if (operation.method === 'snapshot') {
+      const zoom = await chrome.tabs.getZoom(captured.target.tabId);
+      if (!current()) throw new Error('browser_document_changed');
+      result.viewport = { ...Object(result.viewport), zoomPercent: Math.round(zoom * 100) };
+    }
     let scriptTabId: number | undefined;
     if (result.clicked === true && observed.targets.length) {
       if (observed.targets.length === 1) {

@@ -115,9 +115,9 @@ page, then reopen the popup and check whether any new errors appear.
 
    On Windows quote paths and use an absolute Node executable if Desktop cannot resolve `node`. Check
    `codex mcp list`, then reload MCP configuration; Desktop may need a restart when tasks are idle.
-   The **original Session** must expose `anywhere_browser_list_pages/snapshot/click/fill/scroll/open_link`. Never start a substitute.
+   The **original Session** must expose `anywhere_browser_list_pages/snapshot/screenshot/zoom/click/fill/scroll/open_link`. Never start a substitute.
 
-   For direct execution in an authorized Session, preapprove these four specific tools in that host's Codex `config.toml`:
+   For direct execution in an authorized Session, preapprove these five specific tools in that host's Codex `config.toml`:
 
    ```toml
    [mcp_servers.anywhere_browser.tools.anywhere_browser_click]
@@ -125,6 +125,8 @@ page, then reopen the popup and check whether any new errors appear.
    [mcp_servers.anywhere_browser.tools.anywhere_browser_fill]
    approval_mode = "approve"
    [mcp_servers.anywhere_browser.tools.anywhere_browser_scroll]
+   approval_mode = "approve"
+   [mcp_servers.anywhere_browser.tools.anywhere_browser_zoom]
    approval_mode = "approve"
    [mcp_servers.anywhere_browser.tools.anywhere_browser_open_link]
    approval_mode = "approve"
@@ -178,6 +180,21 @@ page, then reopen the popup and check whether any new errors appear.
   pages, controls inside iframe/shadow DOM, canvas coordinate actions, native dialogs or desktop control. Screenshots can show visible canvas content. Website-changing actions need user authority.
 - The Codex host supplies caller identity. Desktop retains its existing writer; the Connector does not take
   over or send messages to other tasks.
+
+## Page zoom (experimental)
+
+`anywhere_browser_zoom({pageId, percent: 80})` changes native page zoom on an authorized tab. The integer range is
+50–200; `percent: 100` restores 100%, while 125 or 150 enlarges the page. Snapshots include `viewport.zoomPercent`
+and `viewport.horizontalOverflow`; clipped inner panels still expose `scrollAxes`. For horizontal overflow or clipped
+columns, the model prefers 80%, then 67% if needed, without enlarging an already smaller page. Each change invalidates
+all old refs: read a fresh snapshot, including after manual browser zoom. Scroll the intended panel horizontally if it
+remains clipped. Zoom does not replace pagination/lazy loading or increase snapshot node/text limits.
+
+Chrome's `automatic/per-tab` mode changes only the specified tab, without activating it or changing other same-site
+tabs or persistent site preferences. [Chrome resets this mode on navigation](https://developer.chrome.com/docs/extensions/reference/api/tabs#type-ZoomSettings).
+Existing manual/disabled modes are not overridden. Interrupted zoom may have changed the ratio; inspect the current
+page again before proceeding. Existing `tabs` permission and page consent apply, with no pairing or additional switch.
+Update Connector/MCP and the extension together, preapprove the new tool as above, and reload the MCP tool list.
 
 ## Page screenshots (experimental)
 
@@ -256,6 +273,11 @@ Update Connector/MCP and reload the extension together. An already-running MCP p
 its old code. Build output alone does not update either process.
 
 ## Verification status
+
+On 2026-09-08, native zoom passed in isolated Chrome for Testing 151 through the official MCP SDK and local Relay/E2E:
+a clipped right-hand column became readable at 80% (CSS viewport 1188 → 1485 pixels); 67%, 125% and 100% worked,
+with stale-ref rejection, real pointer clicks and aligned screenshot masking after zoom. An unrelated same-site tab
+kept 100% and focus. Reload reset the zoom while renewing the same-origin document grant. These are synthetic fixtures.
 
 On 2026-09-08, isolated Chrome for Testing 151 with a local Relay/E2E channel verified scrolled HTML/body overflow,
 boxless wrappers, child reads while an image never finishes, script-created child reads without a duplicate tab,

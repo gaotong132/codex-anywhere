@@ -110,12 +110,12 @@ Chrome 可能在操作期间显示调试提示。扩展只连接已授权的标�
    ```
 
    确认 `codex mcp list` 中存在此工具；重新加载 Codex 的 MCP 配置。Desktop 可能需要在任务空闲时重启应用。
-   **不新建替代 Session**：原会话必须实际提供 `anywhere_browser_list_pages/snapshot/click/fill/scroll/open_link`。
+   **不新建替代 Session**：原会话必须实际提供 `anywhere_browser_list_pages/snapshot/screenshot/zoom/click/fill/scroll/open_link`。
    更新这轮代码后，Connector 与 MCP 也需更新并在空闲时重新加载；只重新加载 Chrome 扩展不够。
    兼容性依赖宿主提供 `x-codex-turn-metadata.thread_id/turn_id`；缺失时安全拒绝，不接受模型填 ID。
    参考 [Codex MCP 配置](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)。
 
-   要让已经授权的会话直接执行浏览器任务，在同一主机的 Codex `config.toml` 中为这四个具体工具预授权：
+   要让已经授权的会话直接执行浏览器任务，在同一主机的 Codex `config.toml` 中为这五个具体工具预授权：
 
    ```toml
    [mcp_servers.anywhere_browser.tools.anywhere_browser_click]
@@ -124,11 +124,13 @@ Chrome 可能在操作期间显示调试提示。扩展只连接已授权的标�
    approval_mode = "approve"
    [mcp_servers.anywhere_browser.tools.anywhere_browser_scroll]
    approval_mode = "approve"
+   [mcp_servers.anywhere_browser.tools.anywhere_browser_zoom]
+   approval_mode = "approve"
    [mcp_servers.anywhere_browser.tools.anywhere_browser_open_link]
    approval_mode = "approve"
    ```
 
-   修改后重新加载 Codex MCP。此配置只免除这四个工具的逐次宿主审批；插件的页面授权、会话隔离、站点权限
+   修改后重新加载 Codex MCP。此配置只免除这五个工具的逐次宿主审批；插件的页面授权、会话隔离、站点权限
    和用户任务范围仍生效，不修改全局审批策略或其他 MCP。工具保持真实的读写标注。如果出现
    `MCP tool call requires approval, but approval policy is never`，说明调用被 Codex 在执行前拦截，
    不能据此认定浏览器离线、未登录或跨域失败。可用 `npx tsx scripts/probe-browser-mcp.ts --write`
@@ -167,6 +169,26 @@ Chrome 可能在操作期间显示调试提示。扩展只连接已授权的标�
   这不是自动脱敏系统。密码/敏感输入、表单值、隐藏和 `data-anywhere-private` 区域不会进入快照。
 - 工具调用使用 Codex 宿主给出的 Session/轮次身份，而非模型参数。PC Desktop 会话仍由 Desktop 持有，
   Connector 不接管写入端，也不对其他任务发送报告。
+
+## 页面缩放（实验性）
+
+`anywhere_browser_zoom({pageId, percent: 80})` 调整已授权页签的原生页面比例，接受 50–200 的整数；
+`percent: 100` 恢复 100%，也可传入 125 或 150 放大。快照的 `viewport.zoomPercent` 返回当前比例，
+`viewport.horizontalOverflow` 表示页面横向溢出，内部滚动面板仍通过 `scrollAxes` 标识。
+出现横向滚动条或表格列被裁剪时，模型优先尝试 80%，必要时再用 67%；已经更小时不反向放大。
+每次缩放都使旧元素引用失效，必须重新读取快照；手动改变浏览器比例后也需重读。
+仍然裁剪的内部表格可继续横向滚动。缩放不能代替分页、懒加载，也不提高快照的节点或文字上限。
+
+缩放使用 Chrome 的 `automatic/per-tab` 模式，仅影响指定页签，不激活它、不修改其他同站点页签或持久站点比例；
+[Chrome 在页面导航时重置此模式](https://developer.chrome.com/docs/extensions/reference/api/tabs#type-ZoomSettings)。
+不覆盖浏览器的 manual/disabled 模式。中断结果可能已经改变比例，应读取当前页重新确认，不重放旧引用。
+沿用现有 `tabs` 权限与页面授权，不增加配对或独立开关。升级 Connector/MCP 与扩展，并按上方配置预授权新工具；
+重新加载 MCP 工具列表后即可使用。
+
+2026-09-08 已通过隔离的 Chrome for Testing 151、官方 MCP SDK 与本地 Relay/E2E 实测：
+80% 时视口由 1188 扩大到 1485 CSS 像素，原先不可见的右侧列可读取；67%、125%、100%、旧引用拒绝、
+缩放后原生点击和截图遮挡对齐均通过。同站点其他页签保持 100% 与焦点，刷新后比例重置且同源授权续接。
+此结果来自合成页面，不代表生产云控制台已完成实测。
 
 ## 页面截图（实验性）
 
@@ -211,7 +233,7 @@ MCP 配置；如 Desktop 尚未发现它，请在任务空闲时重启应用。R
   纵向 `{deltaY: 500}`、横向 `{deltaY: 0, deltaX: 500}`、双向 `{deltaY: 200, deltaX: -300}`。
   正数向右/下，负数向左/上；从右向左排版的面板保留浏览器原生负滚动坐标。面板不支持请求的方向时，
   两个方向均不移动并返回错误。结果包含实际 `deltaX`/`deltaY` 和 `scrolled`，未移动可能表示已到边界。
-  操作后重新读取快照；表格列被裁剪时，横向滚动同一张表格，内容进入可见范围后才会出现在快照中。
+  操作后重新读取快照；表格列被裁剪时先尝试缩小页面，仍有裁剪则横向滚动同一张表格，内容进入可见范围后才会出现在快照中。
 
 排查先调用 `list_pages`。`environmentId` 表示实际连接到的环境；`no_authorized_page` 表示当前任务在该连接器上
 没有授权，`authorized_pages_offline` 表示已有授权但全部心跳离线，`ready` 表示至少一个页面在线。

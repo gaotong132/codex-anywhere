@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Wide zoom fixture</title>
+<style>
+body { margin: 0; min-width: 1450px; font: 20px sans-serif; }
+header { padding: 24px; background: #e4efff; }
+#far { position: absolute; left: 1320px; top: 140px; width: 100px; height: 60px; }
+input, iframe, [data-anywhere-private] { display: block; width: 250px; height: 45px; margin: 20px; border: 0; }
+</style>
+<header>Wide console fixture</header>
+<button id="far">Right column</button>
+<input value="fixture private input"><iframe srcdoc="<p>embedded fixture</p>"></iframe>
+<div data-anywhere-private>Private fixture</div>
+<script>window.clicks=0; document.querySelector('#far').addEventListener('click',()=>{window.clicks++;});</script>
+</html>

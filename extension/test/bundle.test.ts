@@ -114,11 +114,14 @@ async function harness(t: test.TestContext) {
     HTMLInputElement: window.HTMLInputElement, HTMLTextAreaElement: window.HTMLTextAreaElement, HTMLSelectElement: window.HTMLSelectElement,
     HTMLAnchorElement: window.HTMLAnchorElement, Event: window.Event,
     getComputedStyle: (element: HTMLElement) => ({ display: element.style.display || 'block', visibility: element.style.visibility || 'visible', opacity: element.style.opacity || '1', cursor: element.style.cursor || element.parentElement?.style.cursor || 'auto',
-      overflowX: element.style.overflowX || 'visible', overflowY: element.style.overflowY || 'visible' }), window: { scrollBy: () => {} },
+      overflowX: element.style.overflowX || 'visible', overflowY: element.style.overflowY || 'visible' }), window: { scrollBy: () => {}, devicePixelRatio: 1 },
   });
   return { document, pageContext, documentId: id === 1 ? 'doc-a' : `doc-${id}`, url, loadingResources };
   }
   const pages = new Map([[1, makePage(1, 'https://example.com/private?secret=query')]]);
+  const zooms = new Map<number, number>();
+  const zoomSettings = new Map<number, Frame>();
+  const zoomCalls: Frame[] = [];
   const document = pages.get(1)!.document;
   const storage = () => {
     const values: Frame = {};
@@ -158,6 +161,13 @@ async function harness(t: test.TestContext) {
     action: { onClicked: { addListener: (callback: typeof onActionClicked) => { onActionClicked = callback; } }, setBadgeText: async (value: Frame) => { badges.push(value); }, setBadgeBackgroundColor: async () => {}, setTitle: async () => {} },
     runtime: { id: extensionId, getURL: (path: string) => `chrome-extension://${extensionId}/${path}`, onMessage: { addListener: (listener: typeof onMessage) => { onMessage = listener; } } },
     tabs: { query: async () => [{ id: activeTab, windowId: 1, active: true, url: pages.get(activeTab)!.url }],
+      getZoom: async (id: number) => zooms.get(id) ?? 1,
+      getZoomSettings: async (id: number) => zoomSettings.get(id) ?? { mode: 'automatic', scope: 'per-origin' },
+      setZoomSettings: async (id: number, settings: Frame) => { zoomCalls.push({ id, settings }); zoomSettings.set(id, settings); },
+      setZoom: async (id: number, factor: number) => {
+        assert.equal(zoomSettings.get(id)?.scope, 'per-tab'); zoomCalls.push({ id, factor }); zooms.set(id, factor);
+        const context = pages.get(id)!.pageContext; context.innerWidth = Math.round(1200 / factor); context.innerHeight = Math.round(800 / factor); context.window.devicePixelRatio = factor;
+      },
       create: async (options: Frame) => { const id = nextTabId++; createdTabs++; assert.ok(pages.has(options.openerTabId)); pages.set(id, makePage(id, nextRedirect ?? options.url)); nextRedirect = undefined; if (options.active) activeTab = id; return { id }; },
       remove: async (id: number) => { assert.notEqual(id, activeTab, 'cleanup never closes the active tab'); removedTabs.push(id); pages.delete(id); onRemoved(id); },
       update: async (id: number, options: Frame) => { assert.ok(pages.has(id)); if (options.active) activeTab = id; return { id }; },
@@ -214,7 +224,7 @@ async function harness(t: test.TestContext) {
     setHitTest: (callback: typeof hitTest) => { hitTest = callback; },
     dropConnection: () => { for (const client of relay.clients.values()) client.close(1001, 'test disconnect'); },
     allowChildren: () => { sitePermission = true; }, denyChildren: () => { sitePermission = false; }, createdTabs: () => createdTabs,
-    removedTabs, pages, setTabFlags: (id: number, flags: Frame) => tabFlags.set(id, flags),
+    removedTabs, pages, zooms, zoomCalls, setTabFlags: (id: number, flags: Frame) => tabFlags.set(id, flags),
     injectedTabs, redirectNext: (url: string) => { nextRedirect = url; }, activeTab: () => activeTab,
     delayNextResources: () => { nextPageLoading = true; },
     scriptPopup: (url = 'https://example.com/script-child', sourceTabId = 1, sourceFrameId = 0) => {
@@ -427,6 +437,29 @@ test('built extension pairs over real WS/E2E, selects original Session, reads/cl
   await h.send('revoke');
   await assert.rejects(h.broker.execute('task-a', 'turn-1', { method: 'snapshot' }), /not_authorized/);
   assert.equal(h.session.values.binding, undefined);
+});
+
+test('compiled zoom routes only to the authorized tab and requires fresh refs after native or manual zoom', async t => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const pageId = h.broker.listPages('task-a', 'turn-zoom').pages[0].pageId;
+  const read = () => h.broker.execute('task-a', 'turn-zoom', { method: 'snapshot' }, pageId) as Promise<any>;
+  const first = await read(); assert.equal(first.viewport.zoomPercent, 100);
+  const other = h.manualTab();
+  await assert.rejects(h.broker.execute('task-b', 'turn-zoom', { method: 'zoom', percent: 80 }, pageId), /not_authorized/);
+  assert.equal(h.zoomCalls.length, 0);
+  const zoom: any = await h.broker.execute('task-a', 'turn-zoom', { method: 'zoom', percent: 67 }, pageId);
+  assert.equal(zoom.zoomPercent, 67); assert.equal(zoom.previousZoomPercent, 100); assert.equal(zoom.requiresSnapshot, true);
+  assert.equal(h.activeTab(), other); assert.equal(h.zooms.get(other), undefined);
+  assert.ok(h.zoomCalls.every(call => call.id === 1));
+  await assert.rejects(h.broker.execute('task-a', 'turn-zoom', { method: 'click', ref: first.nodes.find((node: Frame) => node.tag === 'button').ref }, pageId), /stale_element/);
+  const fresh = await read(); assert.equal(fresh.viewport.zoomPercent, 67); assert.ok(fresh.viewport.width > first.viewport.width);
+  await h.broker.execute('task-a', 'turn-zoom', { method: 'click', ref: fresh.nodes.find((node: Frame) => node.tag === 'button').ref }, pageId);
+  assert.equal(h.clicks(), 1);
+  const manual = await read(); h.pages.get(1)!.pageContext.window.devicePixelRatio = 1.25;
+  await assert.rejects(h.broker.execute('task-a', 'turn-zoom', { method: 'fill', ref: manual.nodes.find((node: Frame) => node.tag === 'input').ref, text: 'stale' }, pageId), /stale_element/);
+  await h.broker.execute('task-a', 'turn-zoom', { method: 'zoom', percent: 100 }, pageId);
+  assert.equal((await read()).viewport.zoomPercent, 100);
 });
 
 test('built worker rejects website senders and revokes on document replacement/navigation/close', async (t) => {

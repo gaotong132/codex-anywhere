@@ -224,7 +224,10 @@ test('official MCP SDK → private loopback → exact Session broker round trip'
   const [left, right] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(left), sdk.connect(right)]);
   t.after(async () => { await sdk.close(); await server.close(); });
-  const tools = await sdk.listTools(); assert.equal(tools.tools.length, 7);
+  const tools = await sdk.listTools(); assert.equal(tools.tools.length, 8);
+  const zoomTool = tools.tools.find(tool => tool.name === 'anywhere_browser_zoom')!;
+  assert.equal(zoomTool.annotations?.readOnlyHint, false); assert.equal(zoomTool.annotations?.idempotentHint, true);
+  assert.match(sdk.getInstructions()!, /prefer anywhere_browser_zoom/);
   assert.match(sdk.getInstructions()!, /NOT Codex in-app CUA/);
   const _meta = { 'x-codex-turn-metadata': { thread_id: 'thread-1', turn_id: 'turn-1' } };
   const result = await sdk.callTool({ name: 'anywhere_browser_snapshot', arguments: {}, _meta });
@@ -254,7 +257,18 @@ test('official MCP SDK → private loopback → exact Session broker round trip'
   const horizontal = await sdk.callTool({ name: 'anywhere_browser_scroll', arguments: { pageId: grant.grantId, ref: 'table-ref', deltaX: -450, deltaY: 0 }, _meta });
   assert.notEqual(horizontal.isError, true);
   assert.deepEqual(receivedOperations.at(-1), { method: 'scroll', ref: 'table-ref', deltaX: -450, deltaY: 0 });
+  for (const percent of [50, 67, 80, 100, 125, 200]) {
+    assert.deepEqual(parseOperation({ method: 'zoom', percent }), { method: 'zoom', percent });
+    assert.notEqual((await sdk.callTool({ name: 'anywhere_browser_zoom', arguments: { pageId: grant.grantId, percent }, _meta })).isError, true);
+    assert.deepEqual(receivedOperations.at(-1), { method: 'zoom', percent });
+  }
   const beforeInvalid = receivedOperations.length;
+  for (const args of [{}, { percent: 0 }, { percent: 49 }, { percent: 201 }, { percent: 80.5 }, { percent: '80' }, { percent: 80, tabId: 1 }, { percent: 80, threadId: 'other' }]) {
+    assert.throws(() => parseOperation({ method: 'zoom', ...args }));
+    assert.equal((await sdk.callTool({ name: 'anywhere_browser_zoom', arguments: args, _meta })).isError, true);
+  }
+  assert.equal((await sdk.callTool({ name: 'anywhere_browser_zoom', arguments: { percent: 80, pageId: 'wrong' }, _meta })).isError, true);
+  assert.equal((await sdk.callTool({ name: 'anywhere_browser_zoom', arguments: { percent: 80 }, _meta: { 'x-codex-turn-metadata': { thread_id: 'other', turn_id: 'turn-1' } } })).isError, true);
   for (const args of [{ deltaX: 2001, deltaY: 0 }, { deltaX: 1.5, deltaY: 0 }, { deltaX: 10 }, { deltaX: 10, deltaY: 0, threadId: 'other' }]) {
     assert.equal((await sdk.callTool({ name: 'anywhere_browser_scroll', arguments: args, _meta })).isError, true);
   }
@@ -282,7 +296,7 @@ test('page inventory distinguishes missing consent, offline grants and empty pag
 
 test('specific page failures survive routing but arbitrary exception messages never reach the model', async () => {
   for (const code of ['browser_stale_element_read_again', 'browser_element_obscured', 'browser_number_value_invalid',
-    'browser_option_not_available', 'browser_scroll_target_not_scrollable', 'browser_private_value', 'secret fixture']) {
+    'browser_option_not_available', 'browser_scroll_target_not_scrollable', 'browser_zoom_unavailable', 'browser_zoom_interrupted', 'browser_private_value', 'secret fixture']) {
     const { broker, grant, events } = setup();
     const pending = broker.execute('thread-1', 'turn-1', { method: 'fill', ref: 'fixture', text: '443' });
     const expected = ['browser_private_value', 'secret fixture'].includes(code) ? 'browser_operation_failed_or_authorization_changed' : code;

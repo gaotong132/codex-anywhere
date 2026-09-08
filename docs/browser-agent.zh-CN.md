@@ -44,7 +44,7 @@ Relay 同时校验 Web 批准状态、关联签名与插件持钥证明，并将
 | `extension/src/managed-tabs.ts` | 仅创建并识别本次 AI 操作产生的子页；同源、文档身份、权限、截止时间校验 |
 | `src/browser-control/session-broker.ts` | 每环境的 Session→浏览器授权路由；并发、超时、回包隔离 |
 | `src/browser-control/local-endpoint.ts` | 仅 loopback 的令牌保护 IPC；私有状态文件 |
-| `src/browser-control/mcp-server.ts` | 官方 SDK 的 stdio MCP，七个窄工具、固定 instructions、宿主身份校验 |
+| `src/browser-control/mcp-server.ts` | 官方 SDK 的 stdio MCP，八个窄工具、固定 instructions、宿主身份校验 |
 | `extension/src/screenshot.ts` / `src/browser-control/screenshot.ts` | 精确页签捕获、私密区域遮挡、压缩与图片边界校验 |
 | Connector / Relay | 显式能力开关、加密请求/事件、精确扩展 Origin 白名单 |
 | `web/src/browser-session-status.tsx` | 当前环境、当前 Session 的浏览器连接状态 |
@@ -102,6 +102,12 @@ MCP 返回标准 `image` content，文字/structuredContent 只含尺寸、来�
 页面内容及工具图片均为不可信数据；遮挡不保证识别正文或 canvas 中全部敏感内容。
 操作结束断开调试连接，不写入 Relay 图片缓存；宿主仍可能保存工具历史。安装步骤与限制见[页面截图](../extension/README.zh-CN.md#页面截图实验性)。
 
+页面缩放 `anywhere_browser_zoom` 复用原会话/精确页签授权，原生比例为 50%–200%，100% 恢复。
+固定文档探测覆盖比例修改，先设置 Chrome `automatic/per-tab` 再设置比例，不影响其他页签或站点偏好；导航时由浏览器重置。
+快照补充当前比例和横向溢出标记。模型优先以 80%、67% 缩小横向溢出的页面，每次重读快照；
+旧 ref 失效，仍裁剪的内部面板再横向滚动。手动缩放也触发旧 ref 检查；中断不重试。
+见[页面缩放](../extension/README.zh-CN.md#页面缩放实验性)。
+
 ## 模型指引与状态
 
 MCP 初始化 instructions 明确区分 Anywhere 扩展和 Codex 内置 CUA 浏览器。模型先调用 `anywhere_browser_list_pages`，
@@ -111,7 +117,7 @@ Desktop 直接输入的消息不经过 Connector，只能依靠已加载的 MCP 
 
 指引要求模型直接完成用户任务所需的导航、搜索、普通点击/输入，并验证结果；遇到实际登录、验证码、新权限
 或超出任务范围的操作才暂停。宿主 MCP 审批拒绝与浏览器离线、页面授权、网站登录分别诊断，不凭“登录”链接猜测登录态。
-Codex `approval_policy=never` 会拒绝需要提示的写工具；按扩展说明为四个具体写工具配置 `approval_mode="approve"`，
+Codex `approval_policy=never` 会拒绝需要提示的写工具；按扩展说明为五个具体写工具配置 `approval_mode="approve"`，
 不伪造只读标注、不改变其他 MCP 或全局审批策略。旧版消息后缀仍能被历史解析器识别并隐藏。
 
 Web 标记「浏览器已授权」，提示区区分页面心跳与最近实际工具调用成功时间；没有工具调用证据时显示尚未验证，

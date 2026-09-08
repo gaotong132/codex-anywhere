@@ -53,6 +53,8 @@ test('browser context examples, incomplete or modified suffixes and assistant te
 });
 
 test('older delivered browser guidance stays hidden after the execution guidance update', () => {
+  assert.equal(parseUserMessage(`查看宽表格\n\n${browserContext(1, 1, false)}`).text, '查看宽表格');
+  assert.match(browserContext(1, 1), /horizontalOverflow.*prefer anywhere_browser_zoom.*80%.*67%/);
   const legacy = '[Anywhere browser context at message delivery]\n' +
     'This Session has 1 explicitly authorized browser page(s); 1 currently online. ' +
     'These are one authorized Chrome/Edge extension root page and its AI-opened same-origin tabs, not Codex in-app CUA tabs. For browser tasks, use anywhere_browser_list_pages, then anywhere_browser_snapshot with the selected pageId before acting. Use anywhere_browser_open_link for a same-origin link in a new managed tab. ' +
