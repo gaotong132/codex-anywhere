@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Paste clipboard screenshots with Ctrl/⌘+V in chat and new-task messages. Preview before sending, reuse image validation/compression, and preserve plain text paste.
+
 - Skip collapsed/private DOM branches when reading extension pages. Large hidden console menus no longer exhaust
   the scan before visible controls; retain existing bounds and report the reason when a snapshot is truncated.
 

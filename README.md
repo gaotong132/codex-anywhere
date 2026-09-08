@@ -59,6 +59,14 @@ the selected connector node; a small relay you control provides the remote meeti
 Codex Anywhere deliberately stays small: it is not a multi-user gateway, a general remote shell, an
 automatic session forker, or hosted conversation storage.
 
+### Paste screenshots
+
+After taking a screenshot on your PC, focus the chat input and press **Ctrl+V** (**⌘+V** on macOS)
+to attach the clipboard image. The first message in the new-task dialog also supports pasting.
+Review the preview, optionally add text, then click Send or press Ctrl/⌘+Enter to upload and send.
+PNG, JPEG, and WebP are supported, with one image per message; pasting again replaces the pending image.
+Plain text paste and the “＋” file picker still work. The browser extension side panel uses the same feature.
+
 ### Linked local files
 
 Clicking a supported local file link opens a read-only preview without leaving the conversation:

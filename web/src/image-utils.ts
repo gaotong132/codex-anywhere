@@ -12,6 +12,16 @@ export type UploadedImage = {
   hasPreview?: boolean;
 };
 
+export function getClipboardImage(clipboard: DataTransfer): File | undefined {
+  // Read the user-triggered paste event; no clipboard permission is needed.
+  for (const item of Array.from(clipboard.items)) {
+    if (item.kind !== 'file' || !item.type.startsWith('image/')) continue;
+    const file = item.getAsFile();
+    if (file) return file;
+  }
+  return Array.from(clipboard.files).find((file) => file.type.startsWith('image/'));
+}
+
 export function isValidImagePayload(mimeType: string, data: string) {
   return ACCEPTED_IMAGE_TYPES.has(mimeType)
     && data.length <= Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 4

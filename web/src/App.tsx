@@ -33,6 +33,7 @@ import {
   buildImageMessage,
   fileToBase64,
   formatBytes,
+  getClipboardImage,
   isValidImagePayload,
   prepareImageFile,
   type UploadedImage,
@@ -2070,6 +2071,12 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                   autoFocus
                   rows={4}
                   value={newSessionPrompt}
+                  onPaste={(event) => {
+                    const file = getClipboardImage(event.clipboardData);
+                    if (!file) return;
+                    event.preventDefault();
+                    void chooseNewSessionImage(file);
+                  }}
                   onChange={(event) => {
                     setNewSessionPrompt(event.target.value);
                     setNewSessionError('');
@@ -2091,7 +2098,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                 ref={newSessionImageInputRef}
                 className="image-input"
                 type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
+                accept="image/jpeg,image/png,image/webp"
                 onChange={(event) => {
                   void chooseNewSessionImage(event.target.files?.[0]);
                   event.target.value = '';
@@ -2283,6 +2290,13 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             <textarea
               rows={1}
               value={prompt}
+              onPaste={(event) => {
+                if (!online || running || uploading) return;
+                const file = getClipboardImage(event.clipboardData);
+                if (!file) return;
+                event.preventDefault();
+                void chooseImage(file);
+              }}
               onChange={(event) => setPrompt(event.target.value)}
               onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
                 if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void sendTurn();
@@ -2319,7 +2333,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           </div>
           <small>{steeringAvailable
             ? t('运行中可继续追加文字指令', 'You can steer this run with another text instruction')
-            : t('Ctrl / ⌘ + Enter 发送 · 历史记录按页加载', 'Ctrl / ⌘ + Enter to send · History loads by page')}</small>
+            : t('Ctrl/⌘+V 粘贴图片 · Ctrl/⌘+Enter 发送', 'Ctrl/⌘+V to paste an image · Ctrl/⌘+Enter to send')}</small>
         </footer>}
       </section>
     </main>
