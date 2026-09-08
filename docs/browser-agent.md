@@ -18,7 +18,12 @@ the chat owns environment and Session selection, with authorization and revocati
 Keep one manually authorized root, not arbitrary multi-tab binding. Site permission requested on authorization also enables same-origin
 tabs created by AI `open_link` calls or ordinary link clicks. Cross-origin destinations/redirects and missing site permissions
 open a visible tab and return `authorizationRequired`, without injecting or granting access. The user can log in and authorize
-that destination. Manually opened tabs and unsolicited website popups are not adopted. List managed pages and specify `pageId`
+that destination. Existing/manual tabs and popups outside the current click are not adopted. A scoped `webNavigation`
+listener can follow a single new target from the authorized top-level page during an AI click, including `window.open`.
+It closes 100 ms after the renderer result and rechecks the exact source document before inspecting the destination.
+Multiple/unsupported targets require user authorization; delayed popups and subframes are not adopted. This attribution
+uses the browser event's source and a bounded operation window; do not concurrently navigate the source page manually.
+List managed pages and specify `pageId`
 when more than one exists.
 
 ## Side panel embedding boundary
@@ -44,7 +49,7 @@ of the chat frame. Closing chat does not revoke consent, and selecting another S
 | Extension connection | Automatic association of an independent identity, WS, reused E2E client, bounded requests |
 | Extension background | Session selection, document consent, reconnect, grant rotation and revocation |
 | Page agent | Fixed isolated scripts, bounded snapshots/references, click/fill/scroll |
-| Managed tabs | Create only the requested AI child; validate optional site permission, origin, exact document and deadline |
+| Managed tabs / click navigation | Identify a newly created child from the current operation; validate optional site permission, source/destination documents, origin and deadline |
 | Session broker | Environment-local Session routing, one in-flight operation, strict results and cancellation |
 | Local endpoint | Loopback-only authenticated IPC and private state file |
 | MCP server | Official SDK stdio server, six narrow tools, fixed instructions and trusted host context |

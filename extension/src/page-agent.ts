@@ -43,6 +43,12 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       }
       return null;
     };
+    // HTML/body overflow can belong to the viewport rather than their own box.
+    // Their DOM rectangles move above the screen during document scrolling.
+    const rootStyle = getComputedStyle(document.documentElement);
+    const bodyStyle = document.body ? getComputedStyle(document.body) : undefined;
+    const bodyOverflowAtViewport = rootStyle.overflowX === 'visible' && rootStyle.overflowY === 'visible'
+      && (!rootStyle.contain || rootStyle.contain === 'none') && (!bodyStyle?.contain || bodyStyle.contain === 'none');
     const visible = (element: Element) => {
       if (element.closest(excluded) || element.closest('[contenteditable]')) return false;
       const rect = element.getBoundingClientRect();
@@ -54,7 +60,8 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         if (++depth > 64) return false;
         const style = getComputedStyle(ancestor);
         if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-        if (ancestor !== element) {
+        if (ancestor !== element && ancestor !== document.documentElement && style.display !== 'contents'
+          && !(ancestor === document.body && bodyOverflowAtViewport)) {
           const bounds = ancestor.getBoundingClientRect();
           if (/auto|scroll|hidden|clip|overlay/.test(style.overflowY)) { top = Math.max(top, bounds.top); bottom = Math.min(bottom, bounds.bottom); }
           if (/auto|scroll|hidden|clip|overlay/.test(style.overflowX)) { left = Math.max(left, bounds.left); right = Math.min(right, bounds.right); }
@@ -80,10 +87,12 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     };
     if (input.operation.method === 'snapshot') {
       state.refs.clear(); state.snapshot = crypto.randomUUID();
+      const viewport = { width: innerWidth, height: innerHeight, scrollX: window.scrollX, scrollY: window.scrollY,
+        pageWidth: document.documentElement.scrollWidth, pageHeight: document.documentElement.scrollHeight };
       const nodes: { ref?: string; tag: string; text: string; role?: string; inputType?: string; disabled?: boolean; checked?: boolean | 'mixed'; expanded?: boolean; scrollable?: boolean }[] = [];
       let chars = 0; let visited = 0; let truncated = false;
       let truncationReason: 'scan_limit' | 'node_limit' | 'text_limit' | 'result_limit' | undefined;
-      let resultSize = JSON.stringify({ origin: location.origin, nodes: [], truncated: true, scannedElements: 5000, truncationReason: 'result_limit' }).length;
+      let resultSize = JSON.stringify({ origin: location.origin, viewport, nodes: [], truncated: true, scannedElements: 5000, truncationReason: 'result_limit' }).length;
       const root = document.body || document.documentElement;
       const representedLabels = new Map<Element, string>();
       let next = skipSubtree(root) ? null : root.firstElementChild;
@@ -137,7 +146,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         }
         nodes.push(node);
       }
-      return { origin: location.origin, nodes, truncated, scannedElements: visited, ...(truncationReason ? { truncationReason } : {}) };
+      return { origin: location.origin, viewport, nodes, truncated, scannedElements: visited, ...(truncationReason ? { truncationReason } : {}) };
     }
     if (input.operation.method === 'scroll' && input.operation.ref === undefined) {
       const before = window.scrollY;

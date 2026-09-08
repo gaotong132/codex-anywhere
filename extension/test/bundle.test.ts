@@ -77,13 +77,17 @@ async function harness(t: test.TestContext) {
   let clicks = 0;
   let injections = 0;
   const injectedTabs: number[] = [];
+  const navigationListeners = new Set<(event: Frame) => void>();
   let nextRedirect: string | undefined;
+  let nextPageLoading = false;
   let onActionClicked!: (tab: Frame) => void;
   const openedPanels: Frame[] = [];
   const intervals = new Set<ReturnType<typeof setInterval>>();
   const sockets: WebSocket[] = [];
   function makePage(id: number, url: string) {
   const { document, window } = parseHTML(`<html><body><h1>Fixture page ${id}</h1><button id="safe">Increment</button><a href="https://example.com/child" target="_blank">Open child</a><a href="https://foreign.example/child">Cross origin</a><input id="search" type="text" placeholder="Search"><input type="password" value="secret-password"><textarea>secret-draft</textarea><select><option>secret-option</option></select><div hidden>hidden-secret</div></body></html>`);
+  const loadingResources = nextPageLoading; nextPageLoading = false;
+  Object.defineProperty(document, 'readyState', { value: loadingResources ? 'interactive' : 'complete' });
   // LinkeDOM omits browser default-value properties used by the edit guard.
   for (const input of document.querySelectorAll('input')) {
     Object.defineProperty(input, 'defaultValue', { value: input.getAttribute('value') || '' });
@@ -106,7 +110,7 @@ async function harness(t: test.TestContext) {
     HTMLAnchorElement: window.HTMLAnchorElement, Event: window.Event,
     getComputedStyle: (element: HTMLElement) => ({ display: element.style.display || 'block', visibility: element.style.visibility || 'visible', opacity: element.style.opacity || '1', cursor: element.style.cursor || element.parentElement?.style.cursor || 'auto' }), window: { scrollBy: () => {} },
   });
-  return { document, pageContext, documentId: id === 1 ? 'doc-a' : `doc-${id}`, url };
+  return { document, pageContext, documentId: id === 1 ? 'doc-a' : `doc-${id}`, url, loadingResources };
   }
   const pages = new Map([[1, makePage(1, 'https://example.com/private?secret=query')]]);
   const document = pages.get(1)!.document;
@@ -120,6 +124,10 @@ async function harness(t: test.TestContext) {
   let workerGeneration = 0;
   const badges: Frame[] = [];
   const chrome = {
+    webNavigation: { onCreatedNavigationTarget: {
+      addListener: (listener: (event: Frame) => void) => navigationListeners.add(listener),
+      removeListener: (listener: (event: Frame) => void) => navigationListeners.delete(listener),
+    } },
     permissions: { contains: async () => sitePermission },
     storage: { local, session },
     sidePanel: { open: async (options: Frame) => { openedPanels.push(options); } },
@@ -129,7 +137,7 @@ async function harness(t: test.TestContext) {
       create: async (options: Frame) => { const id = nextTabId++; createdTabs++; assert.ok(pages.has(options.openerTabId)); pages.set(id, makePage(id, nextRedirect ?? options.url)); nextRedirect = undefined; if (options.active) activeTab = id; return { id }; },
       remove: async (id: number) => { assert.notEqual(id, activeTab, 'cleanup never closes the active tab'); removedTabs.push(id); pages.delete(id); onRemoved(id); },
       update: async (id: number, options: Frame) => { assert.ok(pages.has(id)); if (options.active) activeTab = id; return { id }; },
-      get: async (id: number) => ({ id, windowId: 1, active: id === activeTab, url: pages.get(id)!.url, status: 'complete', ...tabFlags.get(id) }),
+      get: async (id: number) => ({ id, windowId: 1, active: id === activeTab, url: pages.get(id)!.url, status: pages.get(id)!.loadingResources ? 'loading' : 'complete', ...tabFlags.get(id) }),
       onUpdated: { addListener: (listener: typeof onUpdated) => { onUpdated = listener; } }, onRemoved: { addListener: (listener: typeof onRemoved) => { onRemoved = listener; } } },
     scripting: { executeScript: async (options: Frame) => {
       if (!activeTabPermission && !sitePermission) throw new Error('Cannot access contents of the page. Extension manifest must request permission to access the respective host.');
@@ -179,9 +187,15 @@ async function harness(t: test.TestContext) {
     pairUrl: `${origin}/#pair=${encodeBrowserPairingCredential(pairing.credential)}`, origin,
     local, session, badges, document, clicks: () => clicks, injections: () => injections,
     dropConnection: () => { for (const client of relay.clients.values()) client.close(1001, 'test disconnect'); },
-    allowChildren: () => { sitePermission = true; }, createdTabs: () => createdTabs,
+    allowChildren: () => { sitePermission = true; }, denyChildren: () => { sitePermission = false; }, createdTabs: () => createdTabs,
     removedTabs, pages, setTabFlags: (id: number, flags: Frame) => tabFlags.set(id, flags),
     injectedTabs, redirectNext: (url: string) => { nextRedirect = url; }, activeTab: () => activeTab,
+    delayNextResources: () => { nextPageLoading = true; },
+    scriptPopup: (url = 'https://example.com/script-child', sourceTabId = 1, sourceFrameId = 0) => {
+      const id = nextTabId++; pages.set(id, makePage(id, url)); activeTab = id;
+      for (const listener of navigationListeners) listener({ tabId: id, url, sourceTabId, sourceFrameId });
+      return id;
+    },
     loseActiveTab: () => { activeTabPermission = false; },
     reloadWithoutOldTab: async () => {
       // Reload clears session storage but preserves the extension's paired key.
@@ -578,6 +592,79 @@ test('transport reconnect rotates the grant for the same Session and document, n
   assert.equal(h.broker.status('task-a').authorized, false);
 });
 
+test('script-created child from the live click is read without replaying or creating a duplicate', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' }); h.allowChildren();
+  const manual = h.manualTab();
+  h.scriptPopup('https://example.com/unsolicited');
+  const rootId = h.session.values.bindings[0].grantId;
+  let childId = 0;
+  h.document.querySelector('#safe')!.addEventListener('click', () => { childId = h.scriptPopup(); });
+  const snapshot: any = await h.broker.execute('task-a', 'turn-script', { method: 'snapshot' }, rootId);
+  const result: any = await h.broker.execute('task-a', 'turn-script', { method: 'click', ref: snapshot.nodes.find((n: Frame) => n.text === 'Increment').ref }, rootId);
+  assert.equal(result.opened, true); assert.ok(result.pageId);
+  assert.equal(h.clicks(), 1); assert.equal(h.createdTabs(), 0);
+  assert.equal(h.broker.listPages('task-a', 'turn-script').total, 2);
+  assert.ok(!h.injectedTabs.includes(manual));
+  const child: any = await h.broker.execute('task-a', 'turn-script', { method: 'snapshot' }, result.pageId);
+  assert.match(JSON.stringify(child), new RegExp(`Fixture page ${childId}`));
+  h.scriptPopup('https://example.com/late');
+  assert.equal(h.broker.listPages('task-a', 'turn-script').total, 2);
+  h.navigate();
+  await assert.rejects(h.broker.execute('task-a', 'turn-script', { method: 'snapshot' }, result.pageId), /not_authorized|authorization_changed|operation_failed/);
+});
+
+test('script navigation ignores other sources and does not inject ambiguous or foreign destinations', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' }); h.allowChildren();
+  const rootId = h.session.values.bindings[0].grantId;
+  const button = h.document.querySelector('#safe')!;
+  for (const scenario of ['other-tab', 'subframe', 'multiple', 'foreign', 'no-permission']) {
+    if (scenario === 'no-permission') h.denyChildren();
+    const childIds: number[] = [];
+    const handler = () => {
+      if (scenario === 'other-tab') childIds.push(h.scriptPopup(undefined, 999));
+      else if (scenario === 'subframe') childIds.push(h.scriptPopup(undefined, 1, 7));
+      else if (scenario === 'multiple') childIds.push(h.scriptPopup(), h.scriptPopup());
+      else childIds.push(h.scriptPopup(scenario === 'foreign' ? 'https://foreign.example/child' : undefined));
+    };
+    button.addEventListener('click', handler);
+    const snapshot: any = await h.broker.execute('task-a', 'turn-source', { method: 'snapshot' }, rootId);
+    const result: any = await h.broker.execute('task-a', 'turn-source', { method: 'click', ref: snapshot.nodes.find((n: Frame) => n.text === 'Increment').ref }, rootId);
+    button.removeEventListener('click', handler);
+    assert.equal(result.pageId, undefined);
+    if (['multiple', 'foreign', 'no-permission'].includes(scenario)) assert.equal(result.authorizationRequired, true);
+    else assert.equal(result.opened, undefined);
+    assert.equal(h.broker.listPages('task-a', 'turn-source').total, 1);
+    assert.ok(childIds.every((id) => !h.injectedTabs.includes(id)));
+  }
+});
+
+test('a script popup cannot inherit a replaced source document grant', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' }); h.allowChildren();
+  let childId = 0;
+  h.document.querySelector('#safe')!.addEventListener('click', () => { childId = h.scriptPopup(); h.replace(); });
+  const snapshot: any = await h.broker.execute('task-a', 'turn-replaced', { method: 'snapshot' });
+  await assert.rejects(h.broker.execute('task-a', 'turn-replaced', { method: 'click', ref: snapshot.nodes.find((n: Frame) => n.text === 'Increment').ref }), /document_changed|operation_failed/);
+  assert.ok(childId); assert.ok(!h.injectedTabs.includes(childId));
+  assert.equal(h.broker.listPages('task-a', 'turn-replaced').total, 1);
+});
+
+test('interactive children remain usable while optional resources are still loading', { timeout: 5000 }, async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' }); h.allowChildren();
+  h.delayNextResources();
+  const snapshot: any = await h.broker.execute('task-a', 'turn-slow', { method: 'snapshot' });
+  const opened: any = await h.broker.execute('task-a', 'turn-slow', { method: 'open_link', ref: snapshot.nodes.find((node: Frame) => node.text === 'Open child').ref });
+  assert.equal(opened.opened, true); assert.equal(h.createdTabs(), 1);
+  const child: any = await h.broker.execute('task-a', 'turn-slow', { method: 'snapshot' }, opened.pageId);
+  assert.ok(child.nodes.some((node: Frame) => node.text === 'Fixture page 2'));
+  assert.deepEqual({ width: child.viewport.width, height: child.viewport.height }, { width: 1200, height: 800 });
+  h.navigate(2);
+  await assert.rejects(h.broker.execute('task-a', 'turn-slow', { method: 'snapshot' }, opened.pageId), /not_authorized|authorization_changed|operation_failed/);
+});
+
 test('one root adopts only AI-created same-origin child tabs, preserves them across reconnect and revokes the tree', async (t) => {
   const h = await harness(t);
   await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
@@ -702,6 +789,9 @@ test('old ordinary children are closed and revoked while root, manual, pinned an
   for (let i = 0; i < 7; i++) ordinary.push(await open(`ordinary-${i}`));
   for (let i = 0; i < 100 && h.removedTabs.length < 4; i++) await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(h.removedTabs.length, 4);
+  // Closing Chrome tabs and acknowledging their encrypted revocation are separate.
+  const removedGrants = ordinary.filter((binding) => h.removedTabs.includes(binding.target.tabId)).map((binding) => binding.grantId);
+  for (let i = 0; i < 100 && h.broker.listPages('task-a', 'turn-cleanup').pages.some((page) => removedGrants.includes(page.pageId)); i++) await new Promise((resolve) => setTimeout(resolve, 20));
   for (const binding of ordinary.slice(0, 4)) {
     assert.ok(!h.pages.has(binding.target.tabId));
     await assert.rejects(h.broker.execute('task-a', 'turn-cleanup', { method: 'snapshot' }, binding.grantId), /page_not_authorized/);

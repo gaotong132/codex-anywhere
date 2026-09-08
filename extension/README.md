@@ -73,6 +73,13 @@ The `tabs` permission provides the active tab's address in the panel's window. S
 requested only on an authorization click. Chrome may remember that site permission; actual control still requires
 the selected Session, exact tab, and document grant. Other manually opened tabs are never automatically adopted.
 
+`webNavigation` identifies newly created navigation targets during an AI click. Only one new target from the
+authorized top-level document can join the same task, after its source document, destination origin and site access
+are verified. The listener ends 100 ms after the click result; delayed popups, existing tabs and other frames are
+not followed. Multiple or unsupported destinations return `authorizationRequired`, without choosing one or replaying
+the click. Avoid simultaneous manual navigation in the page being operated on. Chrome may ask to re-enable the
+updated extension because of this additional permission.
+
 Click the **reload arrow on the extension card**, not the browser's page refresh button. Confirm the version
 and fingerprint on the card or popup footer match `version_name` in `extension/dist/manifest.json`.
 If it still shows `0.0.1`, the new build has not loaded. Clear historical entries on the extension's Errors
@@ -179,6 +186,11 @@ Disabled/obscured checks and the managed-link flow still apply; independent nest
 Anchors without `href` can be clicked as controls; only anchors with actual HTTP(S) destinations can be opened as links.
 Click/fill focuses eligible controls without scrolling; filling still does not submit forms.
 
+Snapshots include `viewport` dimensions, scroll position and document size. Document overflow propagated to the
+viewport and `display: contents` wrappers do not hide visible descendants; ordinary clipped panels still do.
+New children become usable when the document is interactive, even while images or other optional resources load.
+This does not assert that an application's asynchronous content has finished; verify its visible result normally.
+
 - `fill` accepts text and numeric inputs. Native number constraints (`min`, `max`, `step`, required) are checked before
   changing the input. It emits input/change events but does not submit the form.
 - For a native single select, `click` returns up to 50 option labels and disabled states without changing selection
@@ -205,6 +217,11 @@ Update Connector/MCP and reload the extension together. An already-running MCP p
 its old code. Build output alone does not update either process.
 
 ## Verification status
+
+On 2026-09-08, isolated Chrome for Testing 151 with a local Relay/E2E channel verified scrolled HTML/body overflow,
+boxless wrappers, child reads while an image never finishes, script-created child reads without a duplicate tab,
+late-popup exclusion and source-reload revocation. These are generic fixtures; the production console still needs
+verification after reloading the extension.
 
 On 2026-09-07, `test/fixtures/console-controls.html` passed in real Chrome for Testing 151 through a local Relay/E2E channel:
 numeric bounds, exact native selection, input/change events, panel clipping/scrolling, nested button labels,

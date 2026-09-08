@@ -4,7 +4,8 @@ import { createDeviceIdentity, type DeviceAuthProof } from '../../src/shared/dev
 import type { BrowserLinkRequest } from '../../src/shared/browser-link.js';
 import { ExtensionConnection } from './connection.js';
 import { runPageAgent } from './page-agent.js';
-import { openManagedTab } from './managed-tabs.js';
+import { inspectCreatedTab, openManagedTab } from './managed-tabs.js';
+import { observeClickNavigation } from './click-navigation.js';
 import { sitePattern } from './site-permission.js';
 import { canRetireTab, RECENT_CHILD_TABS } from './tab-lifecycle.js';
 
@@ -90,7 +91,7 @@ function changed() {
 }
 
 async function page(target: BrowserTarget, grantId: string, operation: Parameters<typeof runPageAgent>[0]['operation'], deadline = Date.now() + 15_000) {
-  const [result] = await chrome.scripting.executeScript({ target: { tabId: target.tabId, documentIds: [target.documentId] }, world: 'ISOLATED',
+  const [result] = await chrome.scripting.executeScript({ target: { tabId: target.tabId, documentIds: [target.documentId] }, world: 'ISOLATED', injectImmediately: true,
     func: runPageAgent, args: [{ grantId, origin: target.origin, operation, deadline }] });
   if (!result || result.documentId !== target.documentId || !result.result) throw new Error('browser_document_changed');
   if ('errorCode' in result.result) throw new Error(browserOperationErrorCode(result.result.errorCode));
@@ -124,7 +125,7 @@ async function checkDocument(tabId: number, url?: string) {
     // SPA routes can change the URL without replacing the authorized document.
     // Probe only that exact document; never inspect or adopt its replacement.
     const [proof] = await chrome.scripting.executeScript({
-      target: { tabId, documentIds: [captured.target.documentId] }, world: 'ISOLATED', func: () => location.origin,
+      target: { tabId, documentIds: [captured.target.documentId] }, world: 'ISOLATED', injectImmediately: true, func: () => location.origin,
     });
     if (!proof || proof.documentId !== captured.target.documentId || proof.result !== captured.target.origin) {
       throw new Error('browser_document_changed');
@@ -226,15 +227,30 @@ async function handleOperation(frame: Frame) {
     if (retiring.has(captured)) throw new Error('browser_authorization_changed');
     const operation = parseOperation(request.operation);
     if (bindings.get(captured.target.tabId) !== captured || !connection.ready()) throw new Error('browser_not_authorized');
-    let result: Record<string, unknown> = await page(captured.target, captured.grantId, operation, request.deadline);
-    if ('openInNewTab' in result && typeof result.openInNewTab === 'string') {
-      const expectedRevision = revision;
-      const current = () => revision === expectedRevision && bindings.get(captured.target.tabId) === captured && connection.ready();
-      const reused = await reuseChild(result.openInNewTab, captured, current, request.deadline);
+    const expectedRevision = revision;
+    const current = () => revision === expectedRevision && bindings.get(captured.target.tabId) === captured && connection.ready();
+    const run = () => page(captured.target, captured.grantId, operation, request.deadline);
+    const observed = operation.method === 'click'
+      ? await observeClickNavigation(captured.target, request.deadline, current, run)
+      : { result: await run(), targets: [] };
+    let result: Record<string, unknown> = observed.result;
+    let scriptTabId: number | undefined;
+    if (result.clicked === true && observed.targets.length) {
+      if (observed.targets.length === 1) {
+        try { browserOrigin(observed.targets[0].url); scriptTabId = observed.targets[0].tabId; }
+        catch { /* Non-HTTP destinations require explicit user handling, without injection. */ }
+      }
+      if (scriptTabId === undefined) result = { clicked: true, opened: true, authorizationRequired: true, newPageCount: observed.targets.length };
+    }
+    const linkUrl = typeof result.openInNewTab === 'string' ? result.openInNewTab : undefined;
+    if (linkUrl !== undefined || scriptTabId !== undefined) {
+      const reused = linkUrl === undefined ? null : await reuseChild(linkUrl, captured, current, request.deadline);
       if (reused) result = reused;
       else {
         if (bindings.size >= 64) throw new Error('browser_grant_limit');
-        const opened = await openManagedTab(result.openInNewTab, captured.target, request.deadline, current);
+        const opened = scriptTabId === undefined
+          ? await openManagedTab(linkUrl!, captured.target, request.deadline, current)
+          : await inspectCreatedTab(scriptTabId, captured.target, request.deadline, current);
         if (!current()) throw new Error('browser_authorization_changed');
         if ('authorizationRequired' in opened) {
           result = { opened: true, authorizationRequired: true, origin: opened.origin };
