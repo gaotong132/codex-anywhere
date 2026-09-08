@@ -4,6 +4,9 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Recover visible messages across empty ranges after large compaction records or tool output, with bounded history/live scans.
+  Keep pagination available for empty pages and show the loading indicator only while a request is running.
+
 - Improve experimental browser control for console forms: nested button labels and control states, numeric inputs,
   native select labels and selection, and scrolling an individual panel. Preserve specific recoverable errors through
   the extension and MCP. Page inventory distinguishes no current-Session grant from offline pages and identifies the

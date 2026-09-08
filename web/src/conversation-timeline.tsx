@@ -71,7 +71,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
     };
   }), [environmentId, knownAttachments, threadId, timeline]);
   const awaitingVisibleHistory = Boolean(
-    threadId && !timeline.length && (historyLoading || nextCursor),
+    threadId && !timeline.length && historyLoading,
   );
   useEffect(() => {
     const root = messageListRef.current;
@@ -125,7 +125,9 @@ export const ConversationTimeline = memo(function ConversationTimeline({
                 ? t('创建一个新会话', 'Create a new session')
                 : t('选择已有会话', 'Choose an existing session')}</h2>
             <p>{threadId
-              ? t('历史记录按页加载，不再一次拉取整个会话。', 'History loads page by page instead of fetching the entire session.')
+              ? nextCursor
+                ? t('这段记录没有可展示的消息，可点击上方按钮继续加载更早记录。', 'This range has no displayable messages. Use the button above to load earlier records.')
+                : t('当前会话尚无可展示的消息。', 'This session has no displayable messages yet.')
               : creatingNewSession
                 ? t('选择本机项目目录后，第一条消息将在该目录中运行。', 'Choose a local project directory; the first message will run there.')
                 : t('打开左上角菜单选择会话；新会话入口也已移入菜单。', 'Open the top-left menu to choose a session or start a new one.')}</p>

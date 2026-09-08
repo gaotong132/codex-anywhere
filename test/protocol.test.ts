@@ -677,8 +677,8 @@ test('empty intermediate history pages keep a visible pagination control', () =>
     onReadVisualization: async () => '',
   }));
 
-  assert.match(markup, /class="history-skeleton"/);
-  assert.doesNotMatch(markup, /class="empty-conversation"/);
+  assert.doesNotMatch(markup, /class="history-skeleton"|正在加载最近记录/);
+  assert.match(markup, /class="empty-conversation"/);
   assert.match(markup, /class="load-older"/);
 });
 

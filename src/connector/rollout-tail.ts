@@ -25,6 +25,7 @@ import {
 const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_ITEMS = 80;
 const HISTORY_PAGE_BYTES = 512 * 1024;
+const MAX_VISIBLE_HISTORY_SCAN_BYTES = 16 * 1024 * 1024;
 const ROLLOUT_CURSOR_PREFIX = 'rollout:v1:';
 const MAX_TEXT_LENGTH = 4_000;
 const ACTIVITY_SCAN_CHUNK_BYTES = 4 * 1024 * 1024;
@@ -201,14 +202,11 @@ async function readHistoryPage(
   handle: FileHandle, fileSize: number, threadId: string, encodedCursor?: string | null,
 ) {
   const endOffset = decodeRolloutCursor(encodedCursor, fileSize);
-  const startOffset = Math.max(0, endOffset - HISTORY_PAGE_BYTES);
-  const window = await readCompleteRows(handle, startOffset, endOffset, startOffset > 0);
+  const window = await readVisibleRows(handle, endOffset, HISTORY_PAGE_BYTES);
   const activity = encodedCursor
     ? { status: 'completed' as const, id: '', startedAt: null }
     : await activityForHistoryPage(handle, window.rows, window.firstCompleteOffset);
-  const nextOffset = window.firstCompleteOffset < endOffset
-    ? window.firstCompleteOffset
-    : startOffset;
+  const nextOffset = window.nextOffset;
   const nextCursor = nextOffset > 0 ? encodeRolloutCursor(nextOffset) : null;
   const needsPriorProgress = window.firstCompleteOffset > 0
     && (encodedCursor
@@ -302,8 +300,7 @@ function decodeRolloutCursor(cursor: string | null | undefined, fileSize: number
 }
 
 async function initializeSnapshot(handle: FileHandle, fileSize: number, options: SnapshotOptions): Promise<RolloutSnapshot> {
-  const windowStart = Math.max(0, fileSize - options.maxBytes);
-  const window = await readCompleteRows(handle, windowStart, fileSize, windowStart > 0);
+  const window = await readVisibleRows(handle, fileSize, options.maxBytes);
   let activity = inferRolloutActivity(window.rows);
   if (activity.status === 'unknown' && window.firstCompleteOffset > 0) {
     activity = await findLatestActivityBefore(handle, window.firstCompleteOffset);
@@ -367,6 +364,31 @@ async function updateSnapshot(handle: FileHandle, fileSize: number, cached: Roll
     mapping: mapped.state,
     contextUsage: latestContextUsage(appended.rows) || cached.contextUsage,
   };
+}
+
+// Compaction snapshots can span several megabytes in one JSONL row. Keep the
+// normal page small, but cross empty byte ranges to reach actual conversation.
+// Each read remains bounded; a cursor is returned if the scan budget runs out.
+async function readVisibleRows(handle: FileHandle, end: number, chunkBytes: number) {
+  const floor = Math.max(0, end - Math.max(chunkBytes, MAX_VISIBLE_HISTORY_SCAN_BYTES));
+  let cursor = end;
+  let newestParsedOffset: number | undefined;
+  let rows: RolloutRow[] = [];
+  let firstCompleteOffset = end;
+  do {
+    const start = Math.max(floor, cursor - chunkBytes);
+    const window = await readCompleteRows(handle, start, cursor, start > 0);
+    newestParsedOffset ??= window.parsedOffset;
+    rows = window.rows.concat(rows);
+    firstCompleteOffset = window.firstCompleteOffset;
+    const next = firstCompleteOffset < cursor ? firstCompleteOffset : start;
+    if (next >= cursor) break;
+    cursor = next;
+    // Map only this chunk when deciding whether to stop; tool output and
+    // reasoning are not visible, while messages and timeline notices are.
+    if (mapRolloutRows(window.rows).length) break;
+  } while (cursor > floor);
+  return { rows, firstCompleteOffset, parsedOffset: newestParsedOffset ?? end, nextOffset: cursor };
 }
 
 async function readCompleteRows(
