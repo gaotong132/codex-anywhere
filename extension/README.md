@@ -229,6 +229,12 @@ can also receive refs; these are interaction hints, not proof of a successful ac
 Disabled/obscured checks and the managed-link flow still apply; independent nested controls remain available.
 Anchors without `href` can be clicked as controls; only anchors with actual HTTP(S) destinations can be opened as links.
 Real mouse clicks perform the browser's normal pointer and focus behavior; filling focuses without scrolling and does not submit forms.
+Successful clicks and screenshots reuse the debugger on the same authorized document for up to 60 seconds of inactivity.
+This keeps Chrome's debugging notice from repeatedly resizing the viewport and closing dropdowns. Navigation, revocation,
+disconnect, user cancellation or operation failure releases it; a debugger owned by another client is never taken over.
+Cancelling Chrome's debugging notice also revokes that page's authorization, so a later call cannot silently reattach.
+Snapshots may report up to four `excludedVisibleBranches` with only a tag, exclusion reason and node position, without
+returning any excluded labels, attributes or form values. This helps distinguish an unreadable component from a private region.
 Click checks a point inside a visible line fragment after viewport/panel clipping. A partly visible control or
 wrapped inline link can be operated without mistaking its offscreen center or whitespace for an overlay;
 controls actually covered by another element still return `browser_element_obscured`.

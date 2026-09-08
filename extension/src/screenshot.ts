@@ -1,4 +1,5 @@
 import type { BrowserTarget } from '../../src/browser-control/contracts.js';
+import { acquireDebugger } from './debugger-session.js';
 import { parseScreenshot, SCREENSHOT_MAX_BYTES, SCREENSHOT_MAX_EDGE, type BrowserScreenshot } from '../../src/browser-control/screenshot.js';
 
 type Region = { x: number; y: number; width: number; height: number };
@@ -67,7 +68,8 @@ export async function captureScreenshot(target: BrowserTarget, grantId: string, 
   if (!await bounded(chrome.permissions.contains({ permissions: ['debugger'] }), deadline)) throw new Error('browser_screenshot_permission_required');
   const token = crypto.randomUUID();
   const attached = { tabId: target.tabId };
-  const valid = () => { if (!current() || Date.now() >= deadline) throw new Error('browser_document_changed'); };
+  let lease: Awaited<ReturnType<typeof acquireDebugger>> | undefined;
+  const valid = () => { if (!current() || (lease && !lease.current()) || Date.now() >= deadline) throw new Error('browser_document_changed'); };
   const inspect = async (phase: 'begin' | 'check' | 'end') => {
     const [proof] = await bounded(chrome.scripting.executeScript({ target: { tabId: target.tabId, documentIds: [target.documentId] },
       world: 'ISOLATED', injectImmediately: true, func: inspectScreenshot, args: [{ grantId, origin: target.origin, token, deadline, phase }] }),
@@ -80,8 +82,9 @@ export async function captureScreenshot(target: BrowserTarget, grantId: string, 
   // Prove the grant before attaching even though attachment itself takes no image.
   try { await inspect('begin'); } finally { await inspect('end').catch(() => {}); }
   valid();
-  try { await bounded(chrome.debugger.attach(attached, '1.3'), deadline, () => { void chrome.debugger.detach(attached).catch(() => {}); }); }
+  try { lease = await bounded(acquireDebugger(target, deadline, current), deadline, late => late.release()); }
   catch { throw new Error('browser_screenshot_unavailable'); }
+  let completed = false;
   try {
     valid();
     // Chrome's debugging banner can resize the viewport asynchronously after
@@ -138,13 +141,14 @@ export async function captureScreenshot(target: BrowserTarget, grantId: string, 
         valid();
         if (JSON.stringify(await inspect('check')) !== JSON.stringify(before)) throw new Error('browser_screenshot_changed');
         valid();
-        return parseScreenshot({ kind: 'screenshot', mimeType: 'image/jpeg', data: btoa(encoded), width: canvas.width,
+        const screenshot = parseScreenshot({ kind: 'screenshot', mimeType: 'image/jpeg', data: btoa(encoded), width: canvas.width,
           height: canvas.height, origin: target.origin, redactedRegions: before.regions.length });
+        completed = true; return screenshot;
       }
       throw new Error('browser_screenshot_too_large');
     } finally { bitmap.close(); }
   } finally {
     await inspect('end').catch(() => {});
-    await bounded(chrome.debugger.detach(attached), Date.now() + 1000).catch(() => {});
+    if (completed) lease.release(); else await lease.close();
   }
 }

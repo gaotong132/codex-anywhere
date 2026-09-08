@@ -1,4 +1,5 @@
 import type { BrowserTarget } from '../../src/browser-control/contracts.js';
+import { acquireDebugger } from './debugger-session.js';
 
 // Only browser-derived points from the exact granted document reach this helper.
 // No debugger command, coordinate or target is accepted as a tool argument.
@@ -10,8 +11,9 @@ export async function pointerClick(target: BrowserTarget, deadline: number, curr
   let point = first.clickPoint as { x: number; y: number };
   if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.y < 0) throw new Error('browser_stale_element_read_again');
   const attachedTarget = { tabId: target.tabId };
+  let lease: Awaited<ReturnType<typeof acquireDebugger>> | undefined;
   const valid = () => {
-    if (!current() || Date.now() >= deadline) throw new Error('browser_document_changed');
+    if (!current() || (lease && !lease.current()) || Date.now() >= deadline) throw new Error('browser_document_changed');
   };
   const verify = async (consume = false) => {
     valid();
@@ -20,9 +22,8 @@ export async function pointerClick(target: BrowserTarget, deadline: number, curr
     valid();
   };
   valid();
-  try { await chrome.debugger.attach(attachedTarget, '1.3'); }
-  catch { throw new Error('browser_native_click_unavailable'); }
-  let pressed = false, started = false;
+  lease = await acquireDebugger(target, deadline, current);
+  let pressed = false, started = false, completed = false;
   try {
     valid();
     // Chrome's debugging notice can resize the viewport. Re-read the same ref
@@ -38,7 +39,7 @@ export async function pointerClick(target: BrowserTarget, deadline: number, curr
     await verify(true); // Consume refs before the final event can navigate.
     pressed = false; // An uncertain release must never be replayed.
     await chrome.debugger.sendCommand(attachedTarget, 'Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', buttons: 0, clickCount: 1 });
-    return { clicked: true };
+    completed = true; return { clicked: true };
   } catch (failure) {
     if (started) throw new Error('browser_native_click_interrupted');
     throw failure;
@@ -46,6 +47,6 @@ export async function pointerClick(target: BrowserTarget, deadline: number, curr
     // Cancel an unfinished press outside the page, without clicking a replacement.
     if (pressed) await chrome.debugger.sendCommand(attachedTarget, 'Input.dispatchMouseEvent',
       { type: 'mouseReleased', x: -1, y: -1, button: 'left', buttons: 0, clickCount: 0 }).catch(() => {});
-    await chrome.debugger.detach(attachedTarget).catch(() => {});
+    if (completed) lease.release(); else await lease.close();
   }
 }

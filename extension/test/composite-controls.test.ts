@@ -72,3 +72,11 @@ test('browser hit testing recovers visible overflow descendants but never hidden
     assert.ok(!h.read().nodes.some((n: any) => n.text === 'Visible action'));
   }
 });
+
+test('visible exclusion diagnostics are bounded and contain no excluded labels or attributes', () => {
+  const h = fixture(Array.from({ length: 8 }, (_, i) => `<section aria-hidden="true" data-label="private-${i}"><button>private-label-${i}</button></section>`).join(''));
+  const snapshot = h.read();
+  assert.equal(snapshot.excludedVisibleBranches.length, 4);
+  assert.deepEqual(JSON.parse(JSON.stringify(snapshot.excludedVisibleBranches[0])), { tag: 'section', reason: 'aria-hidden', beforeNode: 0 });
+  assert.doesNotMatch(JSON.stringify(snapshot), /private-/);
+});

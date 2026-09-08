@@ -7,6 +7,7 @@ import { runPageAgent } from './page-agent.js';
 import { inspectCreatedTab, openManagedTab } from './managed-tabs.js';
 import { observeClickNavigation } from './click-navigation.js';
 import { pointerClick } from './pointer-click.js';
+import { releaseDebugger, releaseAllDebuggers, onDebuggerCancellation } from './debugger-session.js';
 import { sitePattern } from './site-permission.js';
 import { canRetireTab, RECENT_CHILD_TABS } from './tab-lifecycle.js';
 import { captureScreenshot } from './screenshot.js';
@@ -87,6 +88,7 @@ async function badge(tabId: number) {
 }
 
 function changed() {
+  if (!connection?.ready()) void releaseAllDebuggers();
   for (const tabId of bindings.keys()) void badge(tabId).catch(() => {});
   if (!connecting && reconnectEnabled && !connection?.online && !reconnectTimer && retries < 5) {
     reconnectTimer = setTimeout(() => {
@@ -108,11 +110,12 @@ async function page(target: BrowserTarget, grantId: string, operation: Parameter
 async function revokeBinding(old: Binding) {
   if (bindings.get(old.target.tabId) !== old) return;
   bindings.delete(old.target.tabId); busy.delete(old);
+  const debuggerReleased = releaseDebugger(old.target.tabId);
   changingDocuments.delete(old); documentChecks.delete(old.target.tabId);
   const children = old.rootTabId === undefined ? [...bindings.values()].filter((entry) => entry.rootTabId === old.target.tabId) : [];
   const removedChildren = children.map(revokeBinding);
   const saved = persist();
-  await Promise.all([saved, ...removedChildren, Promise.allSettled([page(old.target, old.grantId, { method: 'revoke' }),
+  await Promise.all([saved, debuggerReleased, ...removedChildren, Promise.allSettled([page(old.target, old.grantId, { method: 'revoke' }),
     connection.request('browser.revoke', { grantId: old.grantId }), badge(old.target.tabId)])]);
 }
 
@@ -146,6 +149,8 @@ async function checkDocument(tabId: number, url?: string) {
         if (!frame || frame.documentLifecycle !== 'active') return;
         if (browserOrigin(frame.url) !== captured.target.origin || frame.errorOccurred) throw new Error('browser_document_changed');
         if (frame.documentId === captured.target.documentId) continue;
+        await releaseDebugger(tabId);
+        if (!current()) return;
         if (!await chrome.permissions.contains({ origins: [sitePattern(captured.target.origin)] })) throw new Error('browser_document_changed');
         if (!current()) return;
         changingDocuments.add(captured);
@@ -604,6 +609,7 @@ chrome.action.onClicked.addListener((tab) => {
   if (tab.windowId !== undefined) void chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
 });
 chrome.tabs.onRemoved.addListener((tabId) => { void revokeTab(tabId).catch(() => {}); });
+onDebuggerCancellation(tabId => { void revokeTab(tabId).catch(() => {}); });
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.url !== undefined || change.status !== undefined) void checkDocument(tabId, change.url).catch(() => {});
 });

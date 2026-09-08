@@ -119,6 +119,9 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       let resultSize = JSON.stringify({ origin: location.origin, viewport, nodes: [], truncated: true, scannedElements: 5000, truncationReason: 'result_limit' }).length;
       const root = document.body || document.documentElement;
       const representedLabels = new Map<Element, string>();
+      // Explain visible branch omissions without returning labels, attributes or
+      // values from an excluded subtree. This stays within the result budget.
+      const excludedVisibleBranches: { tag: string; reason: string; beforeNode: number }[] = [];
       let next = skipSubtree(root) ? null : root.firstElementChild;
       while (next) {
         if (visited >= 5000 || nodes.length >= 200 || chars >= 8000) {
@@ -127,6 +130,14 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         visited++;
         const element = next, skip = skipSubtree(element);
         next = nextElement(element, root, skip || element.matches('input,textarea,select'));
+        if (skip && excludedVisibleBranches.length < 4) {
+          const box = element.getBoundingClientRect(), style = getComputedStyle(element);
+          if (box.width > 0 && box.height > 0 && box.right > 0 && box.left < innerWidth && box.bottom > 0 && box.top < innerHeight
+            && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+            excludedVisibleBranches.push({ tag: element.tagName.toLowerCase().slice(0, 30),
+              reason: sensitive(element) ? 'sensitive-marker' : element.matches('[aria-hidden="true"]') ? 'aria-hidden' : 'excluded-marker', beforeNode: nodes.length });
+          }
+        }
         if (skip || !visible(element)) continue;
         const semanticControl = element.matches(controlSelector);
         const explicitControl = semanticControl || (element.hasAttribute('tabindex') && (element as HTMLElement).tabIndex >= 0)
@@ -172,7 +183,8 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         }
         nodes.push(node);
       }
-      return { origin: location.origin, viewport, nodes, truncated, scannedElements: visited, ...(truncationReason ? { truncationReason } : {}) };
+      return { origin: location.origin, viewport, nodes, truncated, scannedElements: visited,
+        ...(excludedVisibleBranches.length ? { excludedVisibleBranches } : {}), ...(truncationReason ? { truncationReason } : {}) };
     }
     if (input.operation.method === 'scroll' && input.operation.ref === undefined) {
       const beforeX = window.scrollX, beforeY = window.scrollY;

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { pointerClick } from '../src/pointer-click.js';
+import { releaseAllDebuggers } from '../src/debugger-session.js';
 
 const target = { tabId: 17, documentId: 'exact-document', origin: 'https://example.com', browserDeviceId: 'fixture' };
 function harness(t: test.TestContext) {
@@ -18,19 +19,22 @@ function harness(t: test.TestContext) {
       calls.push(params); onInput(params.type);
     },
   } } as any;
-  t.after(() => { globalThis.chrome = original; });
+  t.after(async () => { await releaseAllDebuggers(); globalThis.chrome = original; });
   return { calls, run: (prepare: (phase?: 'verify' | 'consume') => Promise<Record<string, unknown>>) => pointerClick(target, Date.now() + 5000, () => current, prepare),
     permission: (value: boolean) => { granted = value; }, attachFailure: () => { attachFails = true; }, revoke: () => { current = false; },
     input: (callback: typeof onInput) => { onInput = callback; } };
 }
 const point = () => Promise.resolve({ clickPoint: { x: 30, y: 40 } });
 
-test('real input uses only the granted tab and consumes refs before one release, then detaches', async (t) => {
+test('real input uses only the granted tab and consumes refs before one release, retaining its debugger', async (t) => {
   const h = harness(t), phases: (string | undefined)[] = [];
   assert.deepEqual(await h.run(async (phase) => { phases.push(phase); return point(); }), { clicked: true });
   assert.deepEqual(phases, [undefined, 'verify', 'verify', 'consume']);
-  assert.deepEqual(h.calls.map((c) => c.type ?? (c.attach ? 'attach' : 'detach')), ['attach', 'mouseMoved', 'mousePressed', 'mouseReleased', 'detach']);
-  assert.equal(h.calls[3].clickCount, 1); assert.deepEqual(h.calls.at(-1), { detach: { tabId: 17 } });
+  assert.deepEqual(h.calls.map((c) => c.type ?? (c.attach ? 'attach' : 'detach')), ['attach', 'mouseMoved', 'mousePressed', 'mouseReleased']);
+  assert.equal(h.calls[3].clickCount, 1);
+  await h.run(point);
+  assert.equal(h.calls.filter(c => c.attach).length, 1);
+  await releaseAllDebuggers(); assert.deepEqual(h.calls.at(-1), { detach: { tabId: 17 } });
 });
 
 test('permission denial and attach conflicts never click or detach someone else’s debugger', async (t) => {

@@ -23,4 +23,5 @@ picker.onclick=()=>{fixtureState.opened++;options.hidden=false;};
 remove.onclick=(event)=>{event.stopPropagation();fixtureState.removed++;};
 document.querySelector('.floating').onclick=()=>{fixtureState.selected++;};
 save.onclick=()=>{fixtureState.saved++;};
+window.addEventListener('resize',()=>{options.hidden=true;});
 </script></html>

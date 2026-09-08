@@ -4,6 +4,7 @@ import { createContext, runInContext } from 'node:vm';
 import { parseHTML } from 'linkedom';
 import sharp from 'sharp';
 import { captureScreenshot, inspectScreenshot } from '../src/screenshot.js';
+import { releaseAllDebuggers } from '../src/debugger-session.js';
 
 const target = { tabId: 17, documentId: 'exact-document', origin: 'https://example.com', browserDeviceId: 'fixture' };
 const jpeg = await sharp({ create: { width: 800, height: 600, channels: 3, background: '#fff' } }).jpeg().toBuffer();
@@ -86,21 +87,23 @@ function capture(t: test.TestContext) {
     getContext() { return { drawImage() {}, fillRect: (...args: number[]) => masks.push(args), fillStyle: '' }; }
     async convertToBlob() { return new Blob([oversized ? Buffer.alloc(1024 * 1024 + 1) : jpeg], { type: 'image/jpeg' }); }
   } as any;
-  t.after(() => Object.assign(globalThis, saved));
+  t.after(async () => { await releaseAllDebuggers(); Object.assign(globalThis, saved); });
   return { calls, masks, run: (budget = 5000) => captureScreenshot(target, 'grant', Date.now() + budget, () => current),
     permission: (value: boolean) => { permitted = value; }, attachFailure: () => { attachFails = true; }, revoke: () => { current = false; },
     change: () => { changed = true; }, resize: () => { changed = true; view.x = 10; }, tooLarge: () => { oversized = true; }, commandFailure: () => { failCommand = true; },
     captured: (fn: () => void) => { onCapture = fn; }, attaching: (fn: () => Promise<void>) => { onAttach = fn; }, closed: () => closed };
 }
 
-test('capture targets the granted tab, clips its scrolled viewport, masks before JPEG output and detaches', async t => {
+test('capture targets the granted tab, masks its scrolled viewport and preserves a reusable debugger', async t => {
   const h = capture(t), result = await h.run();
   assert.equal(result.width, 800); assert.equal(result.height, 600); assert.equal(result.redactedRegions, 1);
   assert.equal(result.data, jpeg.toString('base64'));
   const params = h.calls.find(item => typeof item === 'object');
   assert.equal(params.captureBeyondViewport, false);
   assert.deepEqual(params.clip, { x: 0, y: 120, width: 800, height: 600, scale: 1 });
-  assert.deepEqual(h.masks, [[20, 30, 100, 40]]); assert.equal(h.closed(), 1); assert.equal(h.calls.at(-1), 'detach');
+  assert.deepEqual(h.masks, [[20, 30, 100, 40]]); assert.equal(h.closed(), 1); assert.ok(!h.calls.includes('detach'));
+  await h.run(); assert.equal(h.calls.filter(item => item === 'attach').length, 1);
+  await releaseAllDebuggers(); assert.equal(h.calls.at(-1), 'detach');
 });
 
 test('permission denial or an attach conflict takes no image and leaves other debugger sessions alone', async t => {
