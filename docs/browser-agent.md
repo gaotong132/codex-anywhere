@@ -101,9 +101,9 @@ Hover/press changes trigger revalidation; interrupted presses are reported as un
 Links retain the managed-tab path and native selects retain bounded label reads. No tool accepts debugger commands,
 raw coordinates, cookie access or script evaluation; missing permission/policy conflicts never trigger a fallback.
 
-Screenshots have a separate extension opt-in, default off. `anywhere_browser_screenshot` uses the existing grant route
+Page authorization includes screenshots by default, with no separate setting. `anywhere_browser_screenshot` uses the existing grant route
 and fixed `Page.captureScreenshot` command on the exact tab viewport, sharing the per-page busy guard with clicks.
-Document probes and change monitoring span capture, masking and encoding; revocation or opt-out discards pending results.
+Document probes and change monitoring span capture, masking and encoding; revocation discards pending results.
 Capture is bounded to 15 seconds and overall image transport to 60 seconds. Intermediate PNG data stays in extension memory;
 form/embedded/detected private regions are masked before JPEG encoding (1920 pixels per side, 1 MiB maximum).
 Broker and MCP validate image headers, dimensions, origin and byte limits; ordinary text responses retain the 24 KB cap.

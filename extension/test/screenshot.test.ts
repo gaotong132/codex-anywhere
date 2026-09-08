@@ -111,7 +111,7 @@ test('permission denial or an attach conflict takes no image and leaves other de
   assert.ok(!h.calls.includes('detach')); assert.ok(!h.calls.some(item => typeof item === 'object'));
 });
 
-test('in-flight changes or opt-out discard the image and detach without encoding', async t => {
+test('in-flight document changes discard the image and detach without encoding', async t => {
   const h = capture(t); h.captured(() => h.change());
   await assert.rejects(h.run(), /screenshot_changed/);
   assert.equal(h.masks.length, 0); assert.equal(h.calls.at(-1), 'detach');

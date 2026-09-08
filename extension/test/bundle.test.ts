@@ -233,20 +233,23 @@ async function harness(t: test.TestContext) {
     close: (id = 1) => onRemoved(id), replace: () => { pages.get(1)!.documentId = 'doc-b'; } };
 }
 
-test('built worker keeps screenshot opt-in separate from page grants and rejects page or sidepanel messages', async t => {
+test('built worker removes the legacy screenshot switch without granting pages or accepting old setting commands', async t => {
   const h = await harness(t);
-  assert.equal((await h.send('status')).result.screenshotEnabled, false);
+  assert.equal((await h.send('status')).result.screenshotEnabled, undefined);
   for (const sender of [{ ...h.sender, tab: { id: 1 } }, { ...h.sender, id: 'other-extension' }, { ...h.sender, url: 'https://example.com' }]) {
     assert.equal(h.receive({ type: 'set-screenshot-enabled', enabled: true }, sender, () => assert.fail('untrusted sender reached settings')), false);
   }
   assert.equal((await h.sendPanel('set-screenshot-enabled', { enabled: true })).ok, false);
-  assert.equal((await h.send('set-screenshot-enabled', { enabled: 'true' })).ok, false);
-  assert.equal((await h.send('set-screenshot-enabled', { enabled: true })).result.screenshotEnabled, true);
-  assert.equal(h.local.values.screenshotEnabled, true);
-  assert.equal(h.broker.status('task-a').authorized, false, 'the opt-in cannot create a page grant');
+  for (const enabled of [true, false, 'true']) assert.equal((await h.send('set-screenshot-enabled', { enabled })).ok, false);
+  assert.equal(h.broker.status('task-a').authorized, false, 'default screenshot support cannot create a page grant');
   assert.equal(h.injections(), 0);
-  assert.equal((await h.send('set-screenshot-enabled', { enabled: false })).result.screenshotEnabled, false);
-  assert.equal(h.local.values.screenshotEnabled, false);
+  assert.equal((await h.send('connect', { url: h.pairUrl })).ok, true);
+  h.local.values.screenshotEnabled = false;
+  const previousKey = h.local.values.privateKey;
+  await h.reloadWithoutOldTab();
+  assert.equal(h.local.values.screenshotEnabled, undefined);
+  assert.equal(h.local.values.privateKey, previousKey);
+  assert.equal((await h.send('status')).result.screenshotEnabled, undefined);
 });
 
 test('connection status stays pending until environment initialization finishes', async (t) => {

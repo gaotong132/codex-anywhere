@@ -21,6 +21,7 @@ test('page control settings retain pairing but never select an environment, Sess
   assert.equal(document.querySelector('#build-info')!.textContent, manifest.version_name);
   assert.equal(document.querySelector('select'), null);
   assert.equal(document.querySelector('#grant'), null);
+  assert.equal(document.querySelector('#enable-screenshots'), null);
   assert.equal((document.querySelector('#ready') as HTMLElement).hidden, false);
   assert.match(document.querySelector('#ready')!.textContent!, /聊天当前选中的会话/);
   assert.equal((document.querySelector('#connect') as HTMLButtonElement).disabled, false);
@@ -47,28 +48,4 @@ test('child permission is requested only on its explicit button, for the exact r
   assert.equal(button.disabled, false);
   allow = true; button.onclick!(new Event('click') as any); await tick();
   assert.equal(button.disabled, true); assert.equal(button.textContent, '已允许同站子页');
-});
-
-test('screenshot opt-in is explicit, requests no optional debugger permission, and can be disabled without a grant', async () => {
-  const { document } = parseHTML(await readFile('extension/dist/popup.html', 'utf8'));
-  const state: any = { relayOnline: true, connected: true, screenshotEnabled: false, binding: { origin: 'https://example.com', title: 'Root' } };
-  const commands: any[] = [];
-  const context = createContext({ document, setInterval: () => 0, MutationObserver: class { observe() {} },
-    chrome: { runtime: { getManifest: () => ({ version: 'test' }), sendMessage: async (message: any) => {
-      if (message.type === 'set-screenshot-enabled') { commands.push(message); state.screenshotEnabled = message.enabled; }
-      return { ok: true, result: state };
-    } }, permissions: { request: () => assert.fail('debugger is a required extension permission') } } });
-  runInContext(await readFile('extension/dist/popup.js', 'utf8'), context);
-  const tick = () => new Promise<void>(resolve => setImmediate(resolve));
-  await tick();
-  const button = document.querySelector('#enable-screenshots') as HTMLButtonElement;
-  assert.equal(button.getAttribute('aria-pressed'), 'false'); assert.equal(commands.length, 0);
-  button.onclick!(new Event('click') as any); await tick();
-  assert.equal(button.textContent, '关闭页面截图'); assert.equal(button.getAttribute('aria-pressed'), 'true');
-  state.binding = null;
-  button.onclick!(new Event('click') as any); await tick();
-  assert.deepEqual(JSON.parse(JSON.stringify(commands)), [
-    { type: 'set-screenshot-enabled', enabled: true }, { type: 'set-screenshot-enabled', enabled: false },
-  ]);
-  assert.equal(button.getAttribute('aria-pressed'), 'false'); assert.equal(button.disabled, true);
 });

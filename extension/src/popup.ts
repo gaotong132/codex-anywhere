@@ -7,14 +7,11 @@ let pending = 0;
 let acting = false;
 let lastState: any;
 function controls() {
-  element<HTMLButtonElement>('enable-screenshots').disabled = acting || (!lastState?.binding && !lastState?.screenshotEnabled);
   element<HTMLButtonElement>('connect').disabled = acting;
   element<HTMLButtonElement>('enable-children').disabled = acting || !lastState?.binding || lastState?.childPermission;
 }
 function render(state: any) {
   lastState = state;
-  element('enable-screenshots').textContent = state.screenshotEnabled ? '关闭页面截图' : '允许页面截图';
-  element('enable-screenshots').setAttribute('aria-pressed', String(state.screenshotEnabled === true));
   element('status').textContent = state.error || (state.connecting ? '正在连接…' : state.relayOnline ? '页面控制已连接' : '尚未连接');
   element('setup').hidden = state.relayOnline || state.connecting;
   element('ready').hidden = !state.relayOnline || Boolean(state.binding) || state.connecting;
@@ -35,14 +32,6 @@ async function command(type: string, payload: object = {}) {
   const revision = ++pending; acting = true;
   controls();
   try {
-    if (type === 'enable-screenshots') {
-      const enabled = !lastState.screenshotEnabled;
-      const response = await chrome.runtime.sendMessage({ type: 'set-screenshot-enabled', enabled });
-      if (revision !== pending) return;
-      if (!response.ok) throw new Error(response.error);
-      render(response.result);
-      return;
-    }
     if (type === 'enable-children') {
       // Called synchronously from the button handler: Chrome requires a user gesture.
       const granted = await chrome.permissions.request({ origins: [lastState.binding.sitePermissionPattern] });
@@ -65,7 +54,6 @@ element('cancel').onclick = () => void command('cancel');
 element('revoke').onclick = () => void command('revoke');
 element('enable-children').onclick = () => void command('enable-children');
 element('disconnect').onclick = () => void command('disconnect');
-element('enable-screenshots').onclick = () => void command('enable-screenshots');
 void command('status');
 setInterval(() => {
   if (acting) return;

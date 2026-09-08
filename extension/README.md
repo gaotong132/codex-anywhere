@@ -181,9 +181,9 @@ page, then reopen the popup and check whether any new errors appear.
 
 ## Page screenshots (experimental)
 
-Update the extension, Connector and MCP, then choose **More → 页面控制设置 → 允许页面截图** in the side panel.
-This separate opt-in defaults off, is saved in this extension, applies to its existing page grants, and can be disabled
-at any time. No second pairing or Session selection is needed. Screenshots share the required `debugger` permission
+Update the extension, Connector and MCP. Authorized pages support screenshots by default, with no additional setting,
+pairing or Session selection. Page consent covers both text snapshots and screenshots; revoke it to stop access.
+Screenshots share the required `debugger` permission
 used by native clicks; accept Chrome's extension-update prompt if shown. No additional all-sites permission is requested.
 `anywhere_browser_screenshot({pageId})` targets the exact authorized tab for the current task, including background tabs.
 Omit `pageId` only with a single granted page. Taking a screenshot does not activate a tab or grant another page.
@@ -192,7 +192,7 @@ The tool returns a viewport-only JPEG image to the model, at most 1920 pixels pe
 the full page or capture browser chrome, the chat sidebar or the desktop. Form controls, embedded documents, detectable
 open shadow hosts and private-marked regions are masked inside the extension before encrypted transport. Ordinary text,
 images and canvas may still contain sensitive information; masking is not comprehensive secret detection.
-Capture-time document/protected-region changes, navigation, revocation, opt-out, debugger conflicts or size limits return
+Capture-time document/protected-region changes, navigation, revocation, debugger conflicts or size limits return
 a specific error without an image. Unsupported zoom, protected content or continually changing pages may require a text snapshot instead.
 
 Use screenshots to understand charts or verify visible results; click/fill still require fresh text-snapshot refs.
