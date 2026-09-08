@@ -67,11 +67,10 @@ $connectorToken = Read-Host 'Connector token' -AsSecureString
 程序不可用时会回退到登录快捷方式。
 
 新会话没有默认工作目录，需要在 Web 界面选择项目。`-AllowedRoots` 可选，默认只允许连接器仓库；
-只有希望选择或预览其他目录时才增加根目录。`-AllowAnyFileDownload`、`-EnableNetworkAccess` 和
+需要选择其他项目目录或预览其中的位图时才增加根目录；文本类文件预览不需要。`-AllowAnyFileDownload`、`-EnableNetworkAccess` 和
 `-AllowFullAccess` 都是显式开关。
 
-图片、Markdown、源代码、配置和文本的内联预览始终受根目录限制。启用 `-AllowAnyFileDownload` 只会
-允许用户确认后下载根目录外的文件，不会静默扩大预览权限。需要在 Web 界面使用其他项目树时，请用
+Markdown、SVG、源代码、配置和文本预览支持连接器账号可读的任意绝对路径，保留 2 MiB、UTF-8 和类型校验；位图预览仍受根目录限制。`-AllowAnyFileDownload` 只控制确认下载的目录范围。需要在 Web 界面使用其他项目树时，请用
 完整的 `-AllowedRoots` 列表重新运行安装程序。
 
 安装多个连接器时，请为每个节点使用稳定、容易识别的路由：
@@ -201,8 +200,7 @@ Relay 在设备注册表旁单独写入私有 `devices.json.activity.json`，每
 | 预期的执行环境没有出现 | 确认对应 systemd/Windows 连接器正在运行且已批准，再等待转发服务刷新在线状态 |
 | Linux 会话完成第一轮后无法继续 | 确认 `CODEX_CONNECTOR_MODE=headless`，更新仓库并重启 systemd 服务 |
 
-预览权限和下载权限相互独立。`-AllowAnyFileDownload` 只影响确认下载，不会让根目录外的文件变得
-可预览。
+预览权限和下载权限相互独立。文本类文件不限根目录；位图仍受根目录限制。`-AllowAnyFileDownload` 只影响确认下载。
 
 ## 支持的配置
 
@@ -221,8 +219,8 @@ Relay 在设备注册表旁单独写入私有 `devices.json.activity.json`，每
 | --- | --- | --- |
 | `-BridgeUrl` | `ws://127.0.0.1:3300/ws` | 转发服务 WebSocket 地址 |
 | `-DeviceId` / `--device-id` | Windows 为 `personal-pc`，Linux 为 `ecs` | 浏览器显示的稳定执行环境路由 |
-| `-AllowedRoots` | 连接器仓库 | 新会话、预览和普通下载可使用的本机项目根目录 |
-| `-AllowAnyFileDownload` | 关闭 | 确认后允许下载配置根目录外的文件；不会扩大预览根目录 |
+| `-AllowedRoots` | 连接器仓库 | 新会话、位图预览和普通下载可使用的本机项目根目录；不限制文本类预览 |
+| `-AllowAnyFileDownload` | 关闭 | 确认后允许下载配置根目录外的文件；不改变预览策略 |
 | `-EnableNetworkAccess` | 关闭 | 允许连接器持有的 Codex 轮次申请网络访问 |
 | `-AllowFullAccess` / `--allow-full-access` | 关闭 | 允许已批准的 Web 端取消该节点上 Codex 的审批和沙箱限制 |
 

@@ -40,7 +40,7 @@ test('local SVG image references use the connector reader on Windows and ECS', (
   assert.equal(localFilePathFromHref('https://other.example/chart.svg'), null);
 });
 
-test('SVG source previews retain the connector root boundary', async (t) => {
+test('SVG source previews support files outside workspace roots', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'svg-preview-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const root = join(directory, 'allowed');
@@ -54,5 +54,5 @@ test('SVG source previews retain the connector root boundary', async (t) => {
   const document = await downloads.readText({ path });
   assert.equal(document.content, source);
   assert.equal(document.language, 'xml');
-  await assert.rejects(() => downloads.readText({ path: outside }), /not_allowed|outside/);
+  assert.equal((await downloads.readText({ path: outside })).content, source);
 });

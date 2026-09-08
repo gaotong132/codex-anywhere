@@ -86,7 +86,7 @@ Clicking a supported local file link opens a read-only preview without leaving t
 | Plain text, logs, CSV, and TSV | Plain-text preview with horizontal scrolling |
 | Binary, sensitive, or unrecognized files | Existing confirmed download flow; no inline preview |
 
-Text previews accept only regular UTF-8 files up to 2 MiB inside configured connector roots. Sensitive
+Text previews accept regular UTF-8 files up to 2 MiB at any absolute path readable by the selected connector’s OS user; no workspace-root restriction applies. Sensitive
 extensions such as `.env`, `.pem`, and `.key` are intentionally excluded. Every preview keeps a Download
 button, and highlighting falls back to escaped plain code if a language is unavailable or the input is
 too large to highlight efficiently.

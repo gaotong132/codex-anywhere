@@ -103,7 +103,7 @@ inherits trust from the first one.
   is not stored by the relay. The Web client tries to keep the screen awake; while hidden or disconnected,
   it stops requesting new chunks and resumes after the same browser reconnects.
 - Local text previews require an explicit click, accept only allowlisted Markdown, source, config, or
-  plain-text names, and remain restricted to configured or managed local roots. The connector resolves the
+  plain-text names, and may read any absolute path available to the connector service account, independently of workspace roots and download settings. The connector resolves the
   canonical file path, requires a regular UTF-8 file no larger than 2 MiB, rejects embedded NUL bytes and
   changing snapshots, and intentionally excludes sensitive extensions such as `.env`, `.pem`, and `.key`.
 - Source previews load the common syntax-highlighting runtime only when needed. Highlighted markup is
@@ -130,7 +130,7 @@ inherits trust from the first one.
   falls back to killing a process or archiving a task.
 - Headless tasks expose user approval and Codex auto-review modes. Full access is available only when the
   connector operator explicitly enables it; selecting it requires a second browser confirmation and sends
-  `never` plus `dangerFullAccess` to Codex. This removes the Codex sandbox rather than expanding preview roots.
+  `never` plus `dangerFullAccess` to Codex. This controls the Codex sandbox independently of file-preview policy.
 - The selected connector route is part of the authenticated secure-channel transcript. Switching routes
   destroys the browser's old channel, rejects its pending requests, and keeps session selection, unread
   state, workspace memory, and attachment lookup scoped to the new environment. A task already accepted by
@@ -140,8 +140,7 @@ inherits trust from the first one.
 
 Broad `-AllowedRoots`, `-AllowAnyFileDownload`, `-EnableNetworkAccess`, and `-AllowFullAccess` options increase connector
 authority and are disabled or narrow by default. `-AllowAnyFileDownload` expands only confirmed downloads;
-it does not expand the roots accepted by image or text previews. Full access is substantially broader: Codex
-can access anything available to the connector service account, regardless of preview roots.
+raster image previews retain their root checks, while text-based previews already accept any readable absolute path. Full access also allows Codex operations beyond read-only preview, subject to the connector service account’s OS permissions.
 
 ## Trust boundary and honest limits
 

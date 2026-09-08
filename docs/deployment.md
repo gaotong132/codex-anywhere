@@ -71,10 +71,10 @@ to a login shortcut.
 
 New sessions have no default workspace: choose a project in the Web UI. `-AllowedRoots` is optional and
 defaults to the connector checkout; specify additional roots only when those directories should be
-selectable or previewable. `-AllowAnyFileDownload`, `-EnableNetworkAccess`, and `-AllowFullAccess` are
+selectable or available for raster image previews; text-based previews need no additional roots. `-AllowAnyFileDownload`, `-EnableNetworkAccess`, and `-AllowFullAccess` are
 explicit opt-ins.
 
-Inline image, Markdown, source-code, config, and text previews always remain root-bound. Enabling
+Markdown, SVG, source-code, config, and text previews accept any readable absolute path, with type, UTF-8 and 2 MiB limits. Raster image previews remain root-bound. Enabling
 `-AllowAnyFileDownload` permits a confirmed download outside those roots; it does not silently expand
 preview access. Re-run the installer with the complete intended `-AllowedRoots` list when another project
 tree should be available in the Web UI.
@@ -220,7 +220,7 @@ the strict protocol does not support mixed versions.
 | A Linux session cannot continue after its first turn | Confirm `CODEX_CONNECTOR_MODE=headless`, update the checkout, and restart the systemd service |
 
 Preview access and download access are separate. `-AllowAnyFileDownload` affects only the confirmed
-download path and does not make an out-of-root file previewable.
+download path. Text-based previews already accept any readable absolute path; raster image previews retain their root checks.
 
 ## Supported configuration
 
@@ -239,8 +239,8 @@ Connector installer options:
 | --- | --- | --- |
 | `-BridgeUrl` | `ws://127.0.0.1:3300/ws` | Relay WebSocket endpoint |
 | `-DeviceId` / `--device-id` | `personal-pc` on Windows, `ecs` on Linux | Stable execution-environment route shown in the browser |
-| `-AllowedRoots` | connector checkout | Local roots available to new sessions, previews, and normal downloads |
-| `-AllowAnyFileDownload` | off | Allow confirmed downloads outside configured roots; never expands preview roots |
+| `-AllowedRoots` | connector checkout | Local roots for new sessions, raster image previews and normal downloads; does not restrict text-based previews |
+| `-AllowAnyFileDownload` | off | Allow confirmed downloads outside configured roots; does not change preview policy |
 | `-EnableNetworkAccess` | off | Allow connector-owned Codex turns to request network access |
 | `-AllowFullAccess` / `--allow-full-access` | off | Let approved Web clients remove Codex approval and sandbox restrictions on this node |
 

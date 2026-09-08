@@ -161,39 +161,43 @@ test('download defaults to configured roots and rejects sibling paths', async (t
   );
 });
 
-test('Markdown previews are bounded, UTF-8, and restricted to configured roots', async (t) => {
+test('Markdown previews work outside configured roots while retaining type, size and UTF-8 checks', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-markdown-preview-test-'));
   const allowedRoot = join(directory, 'allowed');
   const outsideRoot = join(directory, 'outside');
   await Promise.all([mkdir(allowedRoot), mkdir(outsideRoot)]);
   t.after(() => rm(directory, { recursive: true, force: true }));
   const markdown = join(allowedRoot, 'README.md');
-  const outside = join(outsideRoot, 'private.md');
+  const outside = join(outsideRoot, '交接总览.md');
   const wrongType = join(allowedRoot, 'notes.txt');
   const invalidUtf8 = join(allowedRoot, 'invalid.md');
   const tooLarge = join(allowedRoot, 'large.markdown');
   await Promise.all([
     writeFile(markdown, '# 标题\n\n正文'),
-    writeFile(outside, '# private'),
+    writeFile(outside, '# 交接总览'),
     writeFile(wrongType, '# text'),
     writeFile(invalidUtf8, Buffer.from([0xff, 0xfe, 0xfd])),
     writeFile(tooLarge, Buffer.alloc(MAX_MARKDOWN_PREVIEW_BYTES + 1, 0x61)),
   ]);
   const downloads = new DownloadManager({
-    auditPath: null, allowedRoots: [allowedRoot], allowAnyFileDownload: true,
+    auditPath: null, allowedRoots: [allowedRoot], allowAnyFileDownload: false,
   });
   t.after(() => downloads.closeAll());
 
   assert.deepEqual(await downloads.readMarkdown({ path: markdown }), {
     name: 'README.md', size: Buffer.byteLength('# 标题\n\n正文'), content: '# 标题\n\n正文',
   });
-  await assert.rejects(() => downloads.readMarkdown({ path: outside }), /markdown_preview_path_not_allowed/);
+  assert.deepEqual(await downloads.readMarkdown({ path: outside }), {
+    name: '交接总览.md', size: Buffer.byteLength('# 交接总览'), content: '# 交接总览',
+  });
+  assert.equal((await downloads.readText({ path: outside })).kind, 'markdown');
+  await assert.rejects(() => downloads.open({ path: outside, confirmed: true }, 'client'), /download_path_not_allowed/);
   await assert.rejects(() => downloads.readMarkdown({ path: wrongType }), /markdown_preview_type_not_allowed/);
   await assert.rejects(() => downloads.readMarkdown({ path: invalidUtf8 }), /markdown_preview_encoding_invalid/);
   await assert.rejects(() => downloads.readMarkdown({ path: tooLarge }), /markdown_preview_too_large/);
 });
 
-test('code previews are allowlisted, bounded, UTF-8, and restricted to configured roots', async (t) => {
+test('text and code previews need no configured roots and retain content validation', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-code-preview-test-'));
   const allowedRoot = join(directory, 'allowed');
   const outsideRoot = join(directory, 'outside');
@@ -218,7 +222,7 @@ test('code previews are allowlisted, bounded, UTF-8, and restricted to configure
     writeFile(bomFile, '\uFEFF# 中文'),
   ]);
   const downloads = new DownloadManager({
-    auditPath: null, allowedRoots: [allowedRoot], allowAnyFileDownload: true,
+    auditPath: null, allowedRoots: [], allowAnyFileDownload: false,
   });
   t.after(() => downloads.closeAll());
 
@@ -236,6 +240,8 @@ test('code previews are allowlisted, bounded, UTF-8, and restricted to configure
   assert.equal(bomDocument.content, '\uFEFF# 中文');
   assert.equal(Buffer.byteLength(bomDocument.content), bomDocument.size);
   await assert.rejects(() => downloads.readText({ path: sensitive }), /text_preview_type_not_allowed/);
-  await assert.rejects(() => downloads.readText({ path: outside }), /text_preview_path_not_allowed/);
+  assert.equal((await downloads.readText({ path: outside })).content, 'export const secret = true;');
   await assert.rejects(() => downloads.readText({ path: invalidUtf8 }), /text_preview_encoding_invalid/);
+  await assert.rejects(() => downloads.readText({ path: 'relative.md' }), /download_path_must_be_absolute/);
+  await assert.rejects(() => downloads.readText({ path: join(outsideRoot, 'missing.md') }), /text_preview_not_found/);
 });
