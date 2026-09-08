@@ -135,6 +135,12 @@ snapshot the chosen page. Empty CUA tabs do not prove extension disconnection. A
 messages append a current exact-Session authorization count and tool guidance, with no extra turn, page content, URL or secret.
 Messages entered directly in Desktop do not pass through the Connector; they rely on the reloaded MCP instructions.
 
+Shared workflows and consent boundaries live in MCP server instructions. Each tool describes only its own operation;
+specific failures carry recovery hints. The per-message reminder keeps live counts, list/snapshot entry points and the
+extension/CUA distinction. The 2026-09-09 copy update reduces server/tool prose from 9,065 to 3,822 characters and the
+single-page reminder from 901 to 408, without changing tool contracts. Update Connector/MCP and Web history parsing;
+refresh loaded MCP instructions when idle. This text-only update needs no extension reload or new pairing.
+
 Guidance tells the model to execute task-required navigation, search, ordinary clicks and input directly, verifying the
 result and pausing for actual login, verification, new permissions or out-of-scope actions. Host MCP approval rejection,
 browser connectivity and website login are diagnosed separately. Follow the extension setup to preapprove the five specific
@@ -147,6 +153,9 @@ branch does not deploy production.
 
 ## Acceptance gates
 
+- 2026-09-09 guidance deduplication: 361 root tests and all type/build checks pass; SDK discovery matches the previous
+  eight tool contracts apart from descriptions. A real Codex ephemeral task against a synthetic table independently
+  follows snapshot → 80% → snapshot → 67% → snapshot to read a clipped price. No business page is used.
 - 2026-09-07 console-controls increment: 340 root tests and 25 compiled-extension tests pass. Real Chrome for Testing
   151 with a local Relay/E2E path validates numeric bounds without changing invalid input, native select labels and
   selection, clipped panel scrolling, nested button labels, exact disabled/obscured errors, and navigation revocation.

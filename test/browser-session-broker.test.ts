@@ -225,6 +225,8 @@ test('official MCP SDK → private loopback → exact Session broker round trip'
   await Promise.all([server.connect(left), sdk.connect(right)]);
   t.after(async () => { await sdk.close(); await server.close(); });
   const tools = await sdk.listTools(); assert.equal(tools.tools.length, 8);
+  const guidanceChars = sdk.getInstructions()!.length + tools.tools.reduce((sum, tool) => sum + (tool.description?.length || 0), 0);
+  assert.ok(guidanceChars < 4500, 'shared guidance and tool descriptions stay within the compact prose budget');
   const zoomTool = tools.tools.find(tool => tool.name === 'anywhere_browser_zoom')!;
   assert.equal(zoomTool.annotations?.readOnlyHint, false); assert.equal(zoomTool.annotations?.idempotentHint, true);
   assert.match(sdk.getInstructions()!, /prefer anywhere_browser_zoom/);

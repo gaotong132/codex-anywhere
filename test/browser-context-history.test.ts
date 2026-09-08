@@ -55,11 +55,13 @@ test('browser context examples, incomplete or modified suffixes and assistant te
 
 test('older delivered browser guidance stays hidden after the execution guidance update', () => {
   const previous = readFileSync(new URL('./fixtures/browser-context-before-compact.txt', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
-  assert.ok(browserContext(1, 1).length < previous.length * .5, 'per-message reminder stays less than half the old length');
-  assert.match(browserContext(1, 1), /horizontal clipping.*prefer anywhere_browser_zoom.*80%.*67%/);
+  const compact = readFileSync(new URL('./fixtures/browser-context-before-dedup.txt', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+  assert.ok(browserContext(1, 1).length < compact.length * .5, 'live metadata stays less than half the previous reminder');
+  assert.match(browserContext(1, 1), /Follow the Anywhere MCP instructions/);
   for (const [pages, online] of [[0, 0], [1, 1], [3, 2], [64, 64]]) {
     const historical = previous.replace('has 1 explicitly', `has ${pages} explicitly`).replace('1 currently online', `${online} currently online`);
-    for (const suffix of [historical, historical.replace(BROWSER_ZOOM_GUIDANCE, ''), browserContext(pages, online)]) {
+    const lastReminder = compact.replace('has 1 explicitly', `has ${pages} explicitly`).replace('1 currently online', `${online} currently online`);
+    for (const suffix of [historical, historical.replace(BROWSER_ZOOM_GUIDANCE, ''), lastReminder, browserContext(pages, online)]) {
       assert.equal(parseUserMessage(`查看宽表格\n\n${suffix}`).text, '查看宽表格');
       const edited = `正文\n\n${suffix.replace('explicitly authorized', 'edited')}`;
       assert.equal(parseUserMessage(edited).text, edited);

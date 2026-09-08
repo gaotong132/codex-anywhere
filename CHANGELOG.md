@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Deduplicate browser MCP guidance: keep shared workflows in server instructions, operation-specific details in eight tool descriptions, and live state in the message reminder. MCP prose falls from 9,065 to 3,822 characters; the reminder falls from 901 to 408. Tool contracts and authorization stay unchanged, with exact historical reminders still hidden. Update Connector/MCP and Web; this change needs no extension reload or new pairing.
+
 - Refactor the experimental browser extension into page drivers and managed-tab lifecycle modules with shared deadline and late-resource cleanup. Bound stalled native clicks and accept reordered target fields without weakening identity checks. Reuse style/layout reads only within one snapshot and correct debugger-lifetime documentation.
 
 - Remove workspace-directory restrictions from Markdown, SVG, source/config and plain-text file previews. Explicit absolute paths can be read wherever the selected connector’s OS user has access; type, UTF-8, 2 MiB and unchanged-file checks remain. Download and raster image policies are independent.
