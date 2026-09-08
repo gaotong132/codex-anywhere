@@ -86,7 +86,7 @@ test('browser context follows only the exact PC/headless turn, steer and revocat
       assert.match(payload.text, /^Inspect current page\n\n\[Anywhere browser context/);
       assert.match(payload.text, /1 explicitly authorized/);
       assert.match(payload.text, /anywhere_browser_list_pages/);
-      assert.match(payload.text, /MCP tools unavailable/);
+      assert.match(payload.text, /MCP unavailable/);
       assert.doesNotMatch(payload.text, /private\.example|browser-a|doc-a/);
     }
     assert.equal(calls[1].text, 'Unrelated task'); assert.equal(calls[3].text, 'Unrelated task');

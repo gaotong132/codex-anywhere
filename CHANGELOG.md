@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Shorten the browser reminder attached to each message by 54%, retaining task/page boundaries and zoom guidance. Detailed MCP instructions remain available, and historical reminders stay hidden in chat history.
+
 - Add experimental native zoom for an authorized browser tab (50%–200%, 100% reset). Snapshots report the current ratio and horizontal overflow; guidance prefers 80%, then 67% before horizontal scrolling. Changes invalidate element refs and retain tab isolation, page consent and snapshot limits. Update Connector/MCP and the extension and preapprove the new zoom tool.
 
 - Preserve distinct clickable menu options inside a pointer container whose combined label previously swallowed their refs, while still deduplicating decorative text and icons.
