@@ -82,7 +82,7 @@ export async function captureScreenshot(target: BrowserTarget, grantId: string, 
   // Prove the grant before attaching even though attachment itself takes no image.
   try { await inspect('begin'); } finally { await inspect('end').catch(() => {}); }
   valid();
-  try { lease = await bounded(acquireDebugger(target, deadline, current), deadline, late => late.release()); }
+  try { lease = await bounded(acquireDebugger(target, deadline, current), deadline, late => { void late.close(); }); }
   catch { throw new Error('browser_screenshot_unavailable'); }
   let completed = false;
   try {

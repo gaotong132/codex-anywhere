@@ -148,6 +148,9 @@ test('oversized output has bounded retries and always releases bitmap and debugg
 
 test('an attach completing after deadline is detached without taking a late screenshot', async t => {
   const h = capture(t); let release!: () => void;
+  // The timer can fire before Date.now reaches its deadline. Cleanup must use
+  // the expired operation's outcome, not leave a late lease idle for 60 seconds.
+  t.mock.method(Date, 'now', () => 1_800_000_000_000);
   h.attaching(() => new Promise<void>(resolve => { release = resolve; }));
   await assert.rejects(h.run(30), /screenshot_unavailable/);
   release(); await new Promise(resolve => setTimeout(resolve, 0));
