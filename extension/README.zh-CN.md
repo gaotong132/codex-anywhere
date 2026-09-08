@@ -161,11 +161,12 @@ Chrome 120+ 的 `chrome://extensions` 中开启开发者模式，加载已解压
 仍使用原有六个工具。快照把按钮内嵌文字和可见标签关联到可操作的 ref，并按需提供 `role`、`inputType`、
 `disabled`、`checked`、`expanded`、`scrollable`。默认不读取表单当前值。
 遍历时直接跳过隐藏/私有分支和 select/textarea 的内部内容，折叠菜单不会在可见控件之前耗尽扫描额度。
-快照返回 `scannedElements`；截断时附 `truncationReason`（`scan_limit`、`node_limit`、`text_limit`）。
-仍保留 5,000 个检查节点、100 个输出节点和 8,000 个文本字符的上限。
+快照返回 `scannedElements`；截断时附 `truncationReason`（`scan_limit`、`node_limit`、`text_limit`、`result_limit`）。
+最多检查 5,000 个节点，输出最多 200 个节点、8,000 个文本字符；序列化预算为 23,000 字符，低于 Connector 的 24,000 字符上限。
 控件的内嵌标签只输出一次。具有可聚焦属性、内联点击处理或手形光标的自定义控件也可获得 ref；这些是可交互的提示，
 不等同于操作已经生效，点击后仍须验证结果。禁用/遮挡检查和链接纳管流程保持，独立的内嵌控件仍可操作。
 没有 `href` 的 a 元素可以作为普通控件点击；只有具备实际 HTTP(S) 目标的链接才能使用 `open_link`。
+点击和填写时对支持聚焦的控件正常聚焦，不触发滚动；填写仍不自动提交表单。
 
 - `fill` 支持文本和数字输入。数字先校验浏览器原生的 `min`、`max`、`step`、必填约束，通过后才改值。
   操作触发 input/change 事件，不提交表单。

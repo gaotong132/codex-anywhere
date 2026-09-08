@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Focus controls during click/fill and read denser lists with up to 200 snapshot nodes, retaining scan/text caps and an explicit serialized-result budget.
+
 - Follow links opened by the browser extension by activating the new tab in its original window, keeping the current side panel chat and existing site authorization boundaries.
 
 - Treat anchors without `href` as ordinary clickable controls; `open_link` returns a precise link-required error instead of a URL parsing failure.

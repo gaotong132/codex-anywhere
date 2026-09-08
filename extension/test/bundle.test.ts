@@ -429,6 +429,23 @@ test('snapshot still bounds a large visible tree and explains truncation', async
   assert.equal(snapshot.scannedElements, 5000);
 });
 
+test('dense snapshots retain later rows and stay within both node and transport limits', async (t) => {
+  const h = await harness(t);
+  const list = h.document.createElement('div');
+  h.document.body.prepend(list);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  for (const decorated of [false, true]) {
+    list.innerHTML = Array.from({ length: 230 }, (_, i) => `<button${decorated ? ` role="${'r'.repeat(40)}" aria-checked="mixed" aria-expanded="true"` : ''}>Row ${i}</button>`).join('');
+    for (const element of list.children) Object.defineProperty(element, 'getBoundingClientRect', { value: () => h.document.querySelector('#safe')!.getBoundingClientRect() });
+    const snapshot: any = await h.broker.execute('task-a', 'turn-dense', { method: 'snapshot' });
+    assert.equal(snapshot.truncated, true);
+    assert.ok(JSON.stringify(snapshot).length < 24_000);
+    assert.ok(snapshot.nodes.length <= 200);
+    if (decorated) assert.equal(snapshot.truncationReason, 'result_limit');
+    else { assert.equal(snapshot.nodes.length, 200); assert.ok(snapshot.nodes.some((node: Frame) => node.text === 'Row 150')); }
+  }
+});
+
 test('nested navigation labels leave room for content and custom pointer tabs remain clickable', async (t) => {
   const h = await harness(t);
   const nav = h.document.createElement('nav');

@@ -164,11 +164,13 @@ The same six tools support console forms. Snapshots attach nested button text an
 and include `role`, `inputType`, `disabled`, `checked`, `expanded` and `scrollable` when applicable. Form values stay omitted.
 Hidden/private branches and select/textarea contents are skipped during traversal, so a collapsed menu does not consume
 the scan budget before visible controls. Snapshots report `scannedElements` and, when truncated, `truncationReason`
-(`scan_limit`, `node_limit`, `text_limit`). The limits remain 5,000 inspected elements, 100 output nodes and 8,000 text characters.
+(`scan_limit`, `node_limit`, `text_limit`, `result_limit`). Snapshots inspect at most 5,000 elements and return up to 200 nodes
+and 8,000 text characters, with a 23,000-character serialized budget below the Connector's 24,000-character ceiling.
 Nested control labels are returned once. Custom controls with focusability, an inline click handler or a pointer cursor
 can also receive refs; these are interaction hints, not proof of a successful action. Verify the result after clicking.
 Disabled/obscured checks and the managed-link flow still apply; independent nested controls remain available.
 Anchors without `href` can be clicked as controls; only anchors with actual HTTP(S) destinations can be opened as links.
+Click/fill focuses eligible controls without scrolling; filling still does not submit forms.
 
 - `fill` accepts text and numeric inputs. Native number constraints (`min`, `max`, `step`, required) are checked before
   changing the input. It emits input/change events but does not submit the form.

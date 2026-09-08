@@ -21,6 +21,10 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     if (input.operation.method === 'revoke') { delete scope.__anywhereBrowser; return { authorized: false }; }
     const excluded = 'script,style,noscript,iframe,object,embed,[hidden],[inert],[aria-hidden="true"],[data-anywhere-private]';
     const controlSelector = 'a[href],button,input,textarea,select,summary,[role="button"],[role="link"],[role="combobox"],[role="option"],[role="tab"],[role="checkbox"],[role="radio"],[role="switch"],[role="menuitem"]';
+    const focusControl = (element: HTMLElement) => {
+      element.focus?.({ preventScroll: true });
+      if (!element.isConnected) throw new Error('browser_stale_element_read_again');
+    };
     const sensitive = (element: Element) => {
       const hint = ['type', 'name', 'id', 'autocomplete', 'aria-label'].map((key) => element.getAttribute(key) || '').join(' ');
       return /password|passwd|secret|token|credit|cc-|card.?number|one-time-code|otp|cvv|cvc|social.?security/i.test(hint);
@@ -78,13 +82,14 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       state.refs.clear(); state.snapshot = crypto.randomUUID();
       const nodes: { ref?: string; tag: string; text: string; role?: string; inputType?: string; disabled?: boolean; checked?: boolean | 'mixed'; expanded?: boolean; scrollable?: boolean }[] = [];
       let chars = 0; let visited = 0; let truncated = false;
-      let truncationReason: 'scan_limit' | 'node_limit' | 'text_limit' | undefined;
+      let truncationReason: 'scan_limit' | 'node_limit' | 'text_limit' | 'result_limit' | undefined;
+      let resultSize = JSON.stringify({ origin: location.origin, nodes: [], truncated: true, scannedElements: 5000, truncationReason: 'result_limit' }).length;
       const root = document.body || document.documentElement;
       const representedLabels = new Map<Element, string>();
       let next = skipSubtree(root) ? null : root.firstElementChild;
       while (next) {
-        if (visited >= 5000 || nodes.length >= 100 || chars >= 8000) {
-          truncated = true; truncationReason = visited >= 5000 ? 'scan_limit' : nodes.length >= 100 ? 'node_limit' : 'text_limit'; break;
+        if (visited >= 5000 || nodes.length >= 200 || chars >= 8000) {
+          truncated = true; truncationReason = visited >= 5000 ? 'scan_limit' : nodes.length >= 200 ? 'node_limit' : 'text_limit'; break;
         }
         visited++;
         const element = next, skip = skipSubtree(element);
@@ -118,13 +123,19 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         const role = element.getAttribute('role')?.slice(0, 40);
         const checked = element.getAttribute('aria-checked');
         const expanded = element.getAttribute('aria-expanded');
-        nodes.push({ ...(ref ? { ref } : {}), tag: element.tagName.toLowerCase(), text: bounded,
+        const node: (typeof nodes)[number] = { ...(ref ? { ref } : {}), tag: element.tagName.toLowerCase(), text: bounded,
           ...(role ? { role } : {}), ...(element instanceof HTMLInputElement ? { inputType: element.type } : {}),
           ...(actionable ? { disabled: element.matches(':disabled,[aria-disabled="true"]') } : {}),
           ...(element instanceof HTMLInputElement && ['checkbox', 'radio'].includes(element.type) ? { checked: element.checked }
             : ['true', 'false', 'mixed'].includes(checked ?? '') ? { checked: checked === 'mixed' ? 'mixed' : checked === 'true' } : {}),
           ...(['true', 'false'].includes(expanded ?? '') ? { expanded: expanded === 'true' } : {}),
-          ...(canScroll ? { scrollable: true } : {}) });
+          ...(canScroll ? { scrollable: true } : {}) };
+        resultSize += JSON.stringify(node).length + 1;
+        if (resultSize > 23_000) {
+          if (ref) state.refs.delete(ref);
+          truncated = true; truncationReason = 'result_limit'; break;
+        }
+        nodes.push(node);
       }
       return { origin: location.origin, nodes, truncated, scannedElements: visited, ...(truncationReason ? { truncationReason } : {}) };
     }
@@ -159,6 +170,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       const rect = element.getBoundingClientRect();
       const hit = document.elementFromPoint(Math.max(0, Math.min(innerWidth - 1, rect.x + rect.width / 2)), Math.max(0, Math.min(innerHeight - 1, rect.y + rect.height / 2)));
       if (!hit || (hit !== element && !element.contains(hit))) throw new Error('browser_element_obscured');
+      focusControl(element);
       if (element instanceof HTMLSelectElement) {
         const options: { label: string; disabled: boolean }[] = [];
         let chars = 0; let truncated = false;
@@ -177,6 +189,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     const fillText = input.operation.text;
     if (element instanceof HTMLSelectElement) {
       if (element.multiple) throw new Error('browser_select_multiple_not_supported');
+      focusControl(element);
       const matches = [...element.options].filter((option) => !option.disabled && !option.hidden && !option.closest('optgroup[disabled],optgroup[hidden]')
         && option.label.replace(/\s+/g, ' ').trim() === fillText);
       if (matches.length !== 1) throw new Error('browser_option_not_available');
@@ -190,6 +203,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         if ((fillText !== '' && probe.value === '') || !probe.validity.valid) throw new Error('browser_number_value_invalid');
       }
       const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      focusControl(element);
       Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(element, fillText);
     }
     element.dispatchEvent(new Event('input', { bubbles: true })); element.dispatchEvent(new Event('change', { bubbles: true }));
