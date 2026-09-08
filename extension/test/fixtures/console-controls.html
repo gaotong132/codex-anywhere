@@ -23,7 +23,7 @@ collapsedMenu.hidden=true;
 collapsedMenu.innerHTML='<span>Hidden console menu item</span>'.repeat(6000);
 document.body.prepend(collapsedMenu);
 window.fixtureEvents=[];
-document.getElementById('custom-tab').addEventListener('click',()=>{document.getElementById('tab-result').textContent='Information tab selected';});
+document.getElementById('custom-tab').addEventListener('click',()=>{document.getElementById('tab-result').textContent='Information tab selected';location.hash='basic-information';});
 for(const id of ['port','protocol']) for(const event of ['input','change']) document.getElementById(id).addEventListener(event,()=>window.fixtureEvents.push(id+':'+event));
 document.getElementById('save').addEventListener('click',()=>{document.getElementById('result').textContent='Saved '+document.getElementById('protocol').selectedOptions[0].label+':'+document.getElementById('port').value;});
 </script></html>

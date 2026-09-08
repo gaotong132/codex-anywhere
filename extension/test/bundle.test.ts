@@ -182,7 +182,9 @@ async function harness(t: test.TestContext) {
       throw new Error('reloaded_worker_did_not_reconnect');
     },
     manualTab: () => { const id = pages.size + 1; pages.set(id, makePage(id, 'https://example.com/manual')); activeTab = id; return id; },
-    navigate: (id = 1) => onUpdated(id, { status: 'loading' }), close: (id = 1) => onRemoved(id), replace: () => { pages.get(1)!.documentId = 'doc-b'; } };
+    urlChanged: (url: string, id = 1) => { pages.get(id)!.url = url; onUpdated(id, { url }); },
+    navigate: (id = 1) => { pages.get(id)!.documentId += '-navigated'; onUpdated(id, { status: 'loading' }); },
+    close: (id = 1) => onRemoved(id), replace: () => { pages.get(1)!.documentId = 'doc-b'; } };
 }
 
 test('connection status stays pending until environment initialization finishes', async (t) => {
@@ -354,6 +356,26 @@ test('built worker rejects website senders and revokes on document replacement/n
     h[action]();
     await assert.rejects(h.broker.execute('task-a', 'turn-1', { method: 'snapshot' }), /not_authorized|authorization_changed|operation_failed/);
   }
+});
+
+test('SPA URL changes retain the exact document grant but replacement and cross-origin changes revoke it', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const original = (await h.send('status')).result.binding.grantId;
+  for (const url of ['https://example.com/#details', 'https://example.com/items/1?view=details']) {
+    h.urlChanged(url);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal((await h.send('status')).result.binding.grantId, original);
+    const snapshot: any = await h.broker.execute('task-a', 'turn-spa', { method: 'snapshot' });
+    assert.ok(snapshot.nodes.some((node: Frame) => node.text === 'Increment'));
+  }
+  h.replace(); h.urlChanged('https://example.com/replaced');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal((await h.send('status')).result.binding, null);
+  await h.send('grant', { threadId: 'task-a' });
+  h.urlChanged('https://foreign.example/replaced');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal((await h.send('status')).result.binding, null);
 });
 
 test('console controls expose nested labels and exact recoverable failures without losing page consent', async (t) => {

@@ -80,6 +80,9 @@ writes. Browser session storage retains consent only within the current browser 
 and manual revocation invalidate it. Fixed ISOLATED scripts target exact document IDs. Page text is untrusted
 data, not an instruction or authorization source; content is not logged or persistently cached.
 
+Same-document SPA URL changes keep the existing grant only after probing its exact document ID and origin. The probe
+never targets a replacement document; document replacement, a failed probe or an origin change still revokes consent.
+
 Root navigation/closure/revocation revokes all children. Child navigation revokes only that child. Network reconnection
 rotates known grants without replaying tab creation. If connector restart erased child provenance, only the root restores;
 AI must open children again. Chrome site permission is separate from Session consent and can be removed in extension settings.

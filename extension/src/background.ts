@@ -110,6 +110,24 @@ async function revokeTab(tabId: number) {
   if (old) await revokeBinding(old);
 }
 
+async function checkDocument(tabId: number, url?: string) {
+  intents.delete(tabId);
+  const captured = bindings.get(tabId);
+  if (!captured) return;
+  try {
+    const currentUrl = url ?? (await chrome.tabs.get(tabId)).url;
+    if (browserOrigin(currentUrl) !== captured.target.origin) throw new Error('browser_document_changed');
+    // SPA routes can change the URL without replacing the authorized document.
+    // Probe only that exact document; never inspect or adopt its replacement.
+    const [proof] = await chrome.scripting.executeScript({
+      target: { tabId, documentIds: [captured.target.documentId] }, world: 'ISOLATED', func: () => location.origin,
+    });
+    if (!proof || proof.documentId !== captured.target.documentId || proof.result !== captured.target.origin) {
+      throw new Error('browser_document_changed');
+    }
+  } catch { await revokeBinding(captured); }
+}
+
 async function revokeAll() {
   revision++; intents.clear();
   await Promise.all([...bindings.values()].map(revokeBinding));
@@ -420,7 +438,9 @@ chrome.action.onClicked.addListener((tab) => {
 });
 chrome.tabs.onRemoved.addListener((tabId) => { void revokeTab(tabId).catch(() => {}); });
 chrome.tabs.onUpdated.addListener((tabId, change) => {
-  if (change.url !== undefined || change.status === 'loading') void revokeTab(tabId).catch(() => {});
+  // Chrome also emits loading/complete for hash-only navigation. Every operation
+  // and this check targets the original document, even while a replacement loads.
+  if (change.url !== undefined || change.status !== undefined) void checkDocument(tabId, change.url).catch(() => {});
 });
 setInterval(() => {
   if (bindings.size && connection?.ready()) void Promise.all([...bindings.values()].map((binding) => connection.request('browser.heartbeat', { grantId: binding.grantId }))).catch(() => {

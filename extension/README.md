@@ -142,7 +142,7 @@ page, then reopen the popup and check whether any new errors appear.
   end-to-end encrypted operation/results frames.
 - Closing the popup does not revoke. Worker/network restart can restore only the same Session/document consent
   within the current browser lifetime, with a new grant ID. Same-document SPA routes retain consent only after an exact
-  documentId/origin check; loading a new document, tab closure, revocation or browser restart requires new consent. Timed-out writes may have
+  documentId/origin check; document replacement, tab closure, revocation or browser restart requires new consent. Timed-out writes may have
   executed: inspect before retrying. Writes are never replayed automatically after disconnect.
 - Root navigation/closure/revocation stops all children; child navigation stops only that child. A connector restart
   that loses child provenance restores only the root; ask AI to open children again. Tabs are not automatically closed.
