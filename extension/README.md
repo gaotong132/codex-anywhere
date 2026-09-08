@@ -185,6 +185,9 @@ can also receive refs; these are interaction hints, not proof of a successful ac
 Disabled/obscured checks and the managed-link flow still apply; independent nested controls remain available.
 Anchors without `href` can be clicked as controls; only anchors with actual HTTP(S) destinations can be opened as links.
 Click/fill focuses eligible controls without scrolling; filling still does not submit forms.
+Click checks a point inside a visible line fragment after viewport/panel clipping. A partly visible control or
+wrapped inline link can be operated without mistaking its offscreen center or whitespace for an overlay;
+controls actually covered by another element still return `browser_element_obscured`.
 
 Snapshots include `viewport` dimensions, scroll position and document size. Document overflow propagated to the
 viewport and `display: contents` wrappers do not hide visible descendants; ordinary clipped panels still do.

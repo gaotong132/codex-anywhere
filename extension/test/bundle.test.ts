@@ -75,6 +75,7 @@ async function harness(t: test.TestContext) {
   const removedTabs: number[] = [];
   const tabFlags = new Map<number, Frame>();
   let clicks = 0;
+  let hitTest: ((x: number, y: number) => Element | null) | undefined;
   let injections = 0;
   const injectedTabs: number[] = [];
   const navigationListeners = new Set<(event: Frame) => void>();
@@ -103,12 +104,13 @@ async function harness(t: test.TestContext) {
   }
   for (const node of document.querySelectorAll('*')) Object.defineProperty(node, 'getBoundingClientRect', { value: () => ({ x: 10, y: 10, width: 100, height: 20, top: 10, left: 10, bottom: 30, right: 110 }) });
   document.querySelector('#safe')!.addEventListener('click', () => { clicks++; });
-  Object.defineProperty(document, 'elementFromPoint', { value: () => document.querySelector('#safe') });
+  Object.defineProperty(document, 'elementFromPoint', { value: (x: number, y: number) => hitTest ? hitTest(x, y) : document.querySelector('#safe') });
   const pageContext = createContext({ document, location: new URL(url), crypto, URL,
     Node: { TEXT_NODE: 3 }, NodeFilter: { SHOW_ELEMENT: 1 }, innerHeight: 800, innerWidth: 1200,
     HTMLInputElement: window.HTMLInputElement, HTMLTextAreaElement: window.HTMLTextAreaElement, HTMLSelectElement: window.HTMLSelectElement,
     HTMLAnchorElement: window.HTMLAnchorElement, Event: window.Event,
-    getComputedStyle: (element: HTMLElement) => ({ display: element.style.display || 'block', visibility: element.style.visibility || 'visible', opacity: element.style.opacity || '1', cursor: element.style.cursor || element.parentElement?.style.cursor || 'auto' }), window: { scrollBy: () => {} },
+    getComputedStyle: (element: HTMLElement) => ({ display: element.style.display || 'block', visibility: element.style.visibility || 'visible', opacity: element.style.opacity || '1', cursor: element.style.cursor || element.parentElement?.style.cursor || 'auto',
+      overflowX: element.style.overflowX || 'visible', overflowY: element.style.overflowY || 'visible' }), window: { scrollBy: () => {} },
   });
   return { document, pageContext, documentId: id === 1 ? 'doc-a' : `doc-${id}`, url, loadingResources };
   }
@@ -186,6 +188,7 @@ async function harness(t: test.TestContext) {
     openPanel: (windowId: number) => onActionClicked({ id: activeTab, windowId }), openedPanels,
     pairUrl: `${origin}/#pair=${encodeBrowserPairingCredential(pairing.credential)}`, origin,
     local, session, badges, document, clicks: () => clicks, injections: () => injections,
+    setHitTest: (callback: typeof hitTest) => { hitTest = callback; },
     dropConnection: () => { for (const client of relay.clients.values()) client.close(1001, 'test disconnect'); },
     allowChildren: () => { sitePermission = true; }, denyChildren: () => { sitePermission = false; }, createdTabs: () => createdTabs,
     removedTabs, pages, setTabFlags: (id: number, flags: Frame) => tabFlags.set(id, flags),
@@ -429,6 +432,38 @@ test('console controls expose nested labels and exact recoverable failures witho
   await assert.rejects(h.broker.execute('task-a', 'turn-controls', { method: 'click', ref: disabled.ref }), { message: 'browser_element_not_allowed' });
   assert.equal(h.clicks(), 0); assert.equal(h.broker.status('task-a').online, true);
   await assert.rejects(h.broker.execute('task-a', 'turn-controls', { method: 'scroll', ref: obscured.ref, deltaY: 100 }), { message: 'browser_stale_element_read_again' });
+});
+
+test('partially clipped controls use their visible area and still refuse real overlays', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const button = h.document.querySelector('#safe')!;
+  const panel = h.document.createElement('div'); panel.style.overflowX = 'hidden';
+  Object.defineProperty(panel, 'getBoundingClientRect', { value: () => ({ x: 10, y: 10, top: 10, bottom: 30, left: 10, right: 35, width: 25, height: 20 }) });
+  button.replaceWith(panel); panel.append(button);
+  let overlay = false;
+  h.setHitTest((x, y) => !overlay && x >= 10 && x < 35 && y >= 10 && y < 30 ? button : h.document.body);
+  const read = () => h.broker.execute('task-a', 'turn-clipped', { method: 'snapshot' }) as Promise<any>;
+  let snapshot = await read();
+  await h.broker.execute('task-a', 'turn-clipped', { method: 'click', ref: snapshot.nodes.find((n: Frame) => n.text === 'Increment').ref });
+  assert.equal(h.clicks(), 1);
+  overlay = true; snapshot = await read();
+  await assert.rejects(h.broker.execute('task-a', 'turn-clipped', { method: 'click', ref: snapshot.nodes.find((n: Frame) => n.text === 'Increment').ref }), /element_obscured/);
+  assert.equal(h.clicks(), 1);
+});
+
+test('wrapped inline controls use an actual line fragment rather than bounding-box whitespace', async (t) => {
+  const h = await harness(t);
+  await h.send('connect', { url: h.pairUrl }); await h.send('grant', { threadId: 'task-a' });
+  const button = h.document.querySelector('#safe')!;
+  Object.defineProperty(button, 'getClientRects', { value: () => [
+    { x: 70, y: 10, top: 10, bottom: 18, left: 70, right: 110, width: 40, height: 8 },
+    { x: 10, y: 22, top: 22, bottom: 30, left: 10, right: 40, width: 30, height: 8 },
+  ] });
+  h.setHitTest((x, y) => x >= 70 && y < 18 ? button : h.document.body);
+  const snapshot: any = await h.broker.execute('task-a', 'turn-fragment', { method: 'snapshot' });
+  await h.broker.execute('task-a', 'turn-fragment', { method: 'click', ref: snapshot.nodes.find((n: Frame) => n.text === 'Increment').ref });
+  assert.equal(h.clicks(), 1);
 });
 
 test('hidden console menus do not exhaust snapshots before visible controls', async (t) => {

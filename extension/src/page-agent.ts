@@ -49,27 +49,27 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     const bodyStyle = document.body ? getComputedStyle(document.body) : undefined;
     const bodyOverflowAtViewport = rootStyle.overflowX === 'visible' && rootStyle.overflowY === 'visible'
       && (!rootStyle.contain || rootStyle.contain === 'none') && (!bodyStyle?.contain || bodyStyle.contain === 'none');
-    const visible = (element: Element) => {
-      if (element.closest(excluded) || element.closest('[contenteditable]')) return false;
-      const rect = element.getBoundingClientRect();
+    const visibleBox = (element: Element, rect = element.getBoundingClientRect()) => {
+      if (element.closest(excluded) || element.closest('[contenteditable]')) return null;
       let top = Math.max(0, rect.top), bottom = Math.min(innerHeight, rect.bottom);
       let left = Math.max(0, rect.left), right = Math.min(innerWidth, rect.right);
-      if (rect.width <= 0 || rect.height <= 0 || bottom <= top || right <= left) return false;
+      if (rect.width <= 0 || rect.height <= 0 || bottom <= top || right <= left) return null;
       let depth = 0;
       for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
-        if (++depth > 64) return false;
+        if (++depth > 64) return null;
         const style = getComputedStyle(ancestor);
-        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return null;
         if (ancestor !== element && ancestor !== document.documentElement && style.display !== 'contents'
           && !(ancestor === document.body && bodyOverflowAtViewport)) {
           const bounds = ancestor.getBoundingClientRect();
           if (/auto|scroll|hidden|clip|overlay/.test(style.overflowY)) { top = Math.max(top, bounds.top); bottom = Math.min(bottom, bounds.bottom); }
           if (/auto|scroll|hidden|clip|overlay/.test(style.overflowX)) { left = Math.max(left, bounds.left); right = Math.min(right, bounds.right); }
-          if (bottom <= top || right <= left) return false;
+          if (bottom <= top || right <= left) return null;
         }
       }
-      return true;
+      return { top, bottom, left, right };
     };
+    const visible = (element: Element) => visibleBox(element) !== null;
     const scrollable = (element: Element) => element !== document.body && element !== document.documentElement
       && element.scrollHeight > element.clientHeight && /auto|scroll|overlay/.test(getComputedStyle(element).overflowY);
     const directText = (element: Element) => element.matches('input,textarea,select') ? '' : [...element.childNodes]
@@ -176,9 +176,16 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       // A newly inserted anchor must not turn a generic control ref into an
       // unmanaged link click after the snapshot.
       if (element.closest('a[href]')) throw new Error('browser_stale_element_read_again');
-      const rect = element.getBoundingClientRect();
-      const hit = document.elementFromPoint(Math.max(0, Math.min(innerWidth - 1, rect.x + rect.width / 2)), Math.max(0, Math.min(innerHeight - 1, rect.y + rect.height / 2)));
-      if (!hit || (hit !== element && !element.contains(hit))) throw new Error('browser_element_obscured');
+      // Test a point inside a visible fragment, not the unclipped bounding box's
+      // center (which can sit outside its panel or in a wrapped link's whitespace).
+      const fragments = element.getClientRects ? [...element.getClientRects()].slice(0, 20) : [element.getBoundingClientRect()];
+      const reachable = fragments.some((fragment) => {
+        const box = visibleBox(element, fragment);
+        if (!box) return false;
+        const hit = document.elementFromPoint((box.left + box.right) / 2, (box.top + box.bottom) / 2);
+        return hit !== null && (hit === element || element.contains(hit));
+      });
+      if (!reachable) throw new Error('browser_element_obscured');
       focusControl(element);
       if (element instanceof HTMLSelectElement) {
         const options: { label: string; disabled: boolean }[] = [];
