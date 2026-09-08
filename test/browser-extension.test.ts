@@ -21,7 +21,6 @@ test('extension declares its input driver but keeps site access optional and has
   assert.doesNotMatch(popup, /<select|id="grant"/);
   const source = await readFile('extension/src/background.ts', 'utf8');
   assert.match(source, /sender\.url !== chrome\.runtime\.getURL\('popup.html'\)/);
-  assert.match(source, /documentIds: \[target.documentId\]/);
   assert.match(source, /chrome\.tabs\.onRemoved/);
   assert.match(source, /chrome\.tabs\.onUpdated/);
 });

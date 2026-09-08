@@ -1,20 +1,13 @@
 import type { BrowserTarget } from '../../src/browser-control/contracts.js';
 import { acquireDebugger } from './debugger-session.js';
+import { withinDeadline } from './deadline.js';
 import { parseScreenshot, SCREENSHOT_MAX_BYTES, SCREENSHOT_MAX_EDGE, type BrowserScreenshot } from '../../src/browser-control/screenshot.js';
 
 type Region = { x: number; y: number; width: number; height: number };
 type View = { width: number; height: number; x: number; y: number; dpr: number; regions: Region[] };
 
-function bounded<T>(work: Promise<T>, deadline: number, late?: (value: T) => void): Promise<T> {
-  return new Promise((resolve, reject) => {
-    let finished = false;
-    const timer = setTimeout(() => { finished = true; reject(new Error('browser_screenshot_unavailable')); }, Math.max(0, deadline - Date.now()));
-    work.then(value => {
-      if (finished) { late?.(value); return; }
-      finished = true; clearTimeout(timer); resolve(value);
-    }, error => { if (!finished) { finished = true; clearTimeout(timer); reject(error); } });
-  });
-}
+const bounded = <T>(work: Promise<T>, deadline: number, late?: (value: T) => void | Promise<void>) =>
+  withinDeadline(work, deadline, 'browser_screenshot_unavailable', late);
 
 // Serialized into the exact authorized ISOLATED document. Form values never
 // leave the page. Observe changes until the image has been masked and validated.

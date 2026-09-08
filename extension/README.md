@@ -76,7 +76,10 @@ the selected Session, exact tab, and document grant. Other manually opened tabs 
 Real mouse input requires the manifest's `debugger` permission; Chrome does not support it as an optional permission.
 Reload/re-enable the updated extension and accept Chrome's new permission warning if prompted.
 Chrome may show a debugging notice during an operation. The extension attaches only to
-the already granted tab, sends a fixed move/press/release sequence, then detaches. It does not expose debugger
+the already granted tab and sends a fixed move/press/release sequence. Successful clicks and screenshots reuse the
+same authorized document's debugger until 60 seconds idle, avoiding notice-driven layout changes that close menus.
+Navigation, revocation, disconnection or failure releases it earlier; cancelling Chrome's debugging notice also revokes that page.
+It does not expose debugger
 commands or coordinates to the model, grant other tabs, disable popup protection, or take over another debugger.
 Browser policy denial or a debugger conflict is reported without a DOM-click fallback.
 
@@ -318,6 +321,7 @@ See the [rollout record](../docs/browser-rollout-2026-09-04.md). Everyday Chrome
 forced worker updates and all PC write-approval combinations remain unverified. Reload an installed unpacked
 extension in its management page; the rollout does not force-restart user browsers or business Sessions.
 See [architecture and acceptance gates](../docs/browser-agent.md).
+See also the [staged review and refactor record](docs/refactor-2026-09-09.md).
 
 For a fixed manual fixture, run `npx vite --config extension/vite.config.ts --host 127.0.0.1` and open
 `/test/fixtures/control.html` on the reported local URL. Authorize only a dedicated test Session. Its input

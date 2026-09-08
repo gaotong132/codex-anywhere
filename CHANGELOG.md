@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Refactor the experimental browser extension into page drivers and managed-tab lifecycle modules with shared deadline and late-resource cleanup. Bound stalled native clicks and accept reordered target fields without weakening identity checks. Reuse style/layout reads only within one snapshot and correct debugger-lifetime documentation.
+
 - Remove workspace-directory restrictions from Markdown, SVG, source/config and plain-text file previews. Explicit absolute paths can be read wherever the selected connector’s OS user has access; type, UTF-8, 2 MiB and unchanged-file checks remain. Download and raster image policies are independent.
 
 - Shorten the browser reminder attached to each message by 54%, retaining task/page boundaries and zoom guidance. Detailed MCP instructions remain available, and historical reminders stay hidden in chat history.
@@ -14,7 +16,7 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 - Add experimental page screenshots, enabled by default for the current task's granted pages without a separate setting; upgrades remove the obsolete screenshot toggle. The model receives a viewport image of the exact granted page, including background tabs and visible canvas. Form/embedded/detected private regions are masked before transport; JPEG output is limited to 1920 pixels per side and 1 MiB. Changes or revocation discard pending results, and native MCP image content uses a separate response budget. Update Connector/MCP and reload the extension/tool list; no new pairing is needed.
 
-- Use browser mouse events for control clicks so pointer handlers and script popups work without residual user activation. Add the required `debugger` permission (accept Chrome's extension update warning if prompted), revalidate the granted document and visible ref between events, detach after each click, and report interrupted input without replaying it. Ordinary managed links and select-label reads keep their existing paths.
+- Use browser mouse events for control clicks so pointer handlers and script popups work without residual user activation. Add the required `debugger` permission (accept Chrome's extension update warning if prompted), revalidate the granted document and visible ref between events, reuse the same document's debugger after success until 60 seconds idle, and report interrupted input without replaying it. Ordinary managed links and select-label reads keep their existing paths.
 
 - Support horizontal and two-axis scrolling in the browser extension and MCP, expose panel axes/positions, and report actual movement at scroll boundaries. Click the visible fragment of partially clipped or wrapped controls while still refusing real overlays. Update Connector/MCP and reload the extension together.
 

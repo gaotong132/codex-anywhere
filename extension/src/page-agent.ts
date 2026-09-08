@@ -28,6 +28,23 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     if (input.operation.method === 'screenshot' || input.operation.method === 'zoom') throw new Error('browser_operation_failed');
     // Native Ctrl+/- also changes DPR. A manual zoom cannot keep old element refs.
     if (state.pixelRatio !== window.devicePixelRatio) { state.refs.clear(); state.snapshot = ''; }
+    // A snapshot is synchronous and read-only. Reuse layout reads only within
+    // that snapshot; action phases and later calls always inspect live DOM again.
+    const snapshotRead = input.operation.method === 'snapshot';
+    const styles = new Map<Element, CSSStyleDeclaration>();
+    const rects = new Map<Element, DOMRect>();
+    const readStyle = (element: Element) => {
+      if (!snapshotRead) return getComputedStyle(element);
+      let style = styles.get(element);
+      if (!style) { style = getComputedStyle(element); styles.set(element, style); }
+      return style;
+    };
+    const readRect = (element: Element) => {
+      if (!snapshotRead) return element.getBoundingClientRect();
+      let rect = rects.get(element);
+      if (!rect) { rect = element.getBoundingClientRect(); rects.set(element, rect); }
+      return rect;
+    };
     const excluded = 'script,style,noscript,iframe,object,embed,[hidden],[inert],[aria-hidden="true"],[data-anywhere-private]';
     const controlSelector = 'a[href],button,input,textarea,select,summary,[role="button"],[role="link"],[role="combobox"],[role="option"],[role="tab"],[role="checkbox"],[role="radio"],[role="switch"],[role="menuitem"]';
     const focusControl = (element: HTMLElement) => {
@@ -40,7 +57,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     };
     const skipSubtree = (element: Element) => {
       if (element.matches(`${excluded},[contenteditable]`) || sensitive(element)) return true;
-      const style = getComputedStyle(element);
+      const style = readStyle(element);
       return style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
     };
     // Collapsed console menus can contain thousands of nodes. Skip their descendants,
@@ -54,8 +71,8 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     };
     // HTML/body overflow can belong to the viewport rather than their own box.
     // Their DOM rectangles move above the screen during document scrolling.
-    const rootStyle = getComputedStyle(document.documentElement);
-    const bodyStyle = document.body ? getComputedStyle(document.body) : undefined;
+    const rootStyle = readStyle(document.documentElement);
+    const bodyStyle = document.body ? readStyle(document.body) : undefined;
     const bodyOverflowAtViewport = rootStyle.overflowX === 'visible' && rootStyle.overflowY === 'visible'
       && (!rootStyle.contain || rootStyle.contain === 'none') && (!bodyStyle?.contain || bodyStyle.contain === 'none');
     const boxPoints = (box: { left: number; right: number; top: number; bottom: number }) => {
@@ -63,7 +80,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       return ys.flatMap(y => xs.map(x => ({ x: box.left + (box.right - box.left) * x, y: box.top + (box.bottom - box.top) * y })));
     };
     let visibilityReason: 'outside-viewport' | 'ancestor-depth' | 'hidden-style' | 'clipped' | undefined;
-    const visibleBox = (element: Element, rect = element.getBoundingClientRect()) => {
+    const visibleBox = (element: Element, rect = readRect(element)) => {
       visibilityReason = undefined;
       if (element.closest(excluded) || element.closest('[contenteditable]')) return null;
       let top = Math.max(0, rect.top), bottom = Math.min(innerHeight, rect.bottom);
@@ -73,11 +90,11 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       let depth = 0;
       for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
         if (++depth > 64) { visibilityReason = 'ancestor-depth'; return null; }
-        const style = getComputedStyle(ancestor);
+        const style = readStyle(ancestor);
         if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') { visibilityReason = 'hidden-style'; return null; }
         if (ancestor !== element && ancestor !== document.documentElement && style.display !== 'contents'
           && !(ancestor === document.body && bodyOverflowAtViewport)) {
-          const bounds = ancestor.getBoundingClientRect();
+          const bounds = readRect(ancestor);
           if (/auto|scroll|hidden|clip|overlay/.test(style.overflowY)) { top = Math.max(top, bounds.top); bottom = Math.min(bottom, bounds.bottom); }
           if (/auto|scroll|hidden|clip|overlay/.test(style.overflowX)) { left = Math.max(left, bounds.left); right = Math.min(right, bounds.right); }
         }
@@ -97,7 +114,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
     const visible = (element: Element) => visibleBox(element) !== null;
     const scrollAxes = (element: Element): ('x' | 'y')[] => {
       if (element === document.body || element === document.documentElement) return [];
-      const style = getComputedStyle(element), axes: ('x' | 'y')[] = [];
+      const style = readStyle(element), axes: ('x' | 'y')[] = [];
       if (element.scrollWidth > element.clientWidth && /auto|scroll|overlay/.test(style.overflowX)) axes.push('x');
       if (element.scrollHeight > element.clientHeight && /auto|scroll|overlay/.test(style.overflowY)) axes.push('y');
       return axes;
@@ -140,7 +157,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         const element = next, skip = skipSubtree(element);
         next = nextElement(element, root, skip || element.matches('input,textarea,select'));
         if (skip && excludedVisibleBranches.length < 4) {
-          const box = element.getBoundingClientRect(), style = getComputedStyle(element);
+          const box = readRect(element), style = readStyle(element);
           if (box.width > 0 && box.height > 0 && box.right > 0 && box.left < innerWidth && box.bottom > 0 && box.top < innerHeight
             && style.display !== 'none') {
             excludedVisibleBranches.push({ tag: element.tagName.toLowerCase().slice(0, 30),
@@ -160,7 +177,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
         const explicitControl = semanticControl || (element.hasAttribute('tabindex') && (element as HTMLElement).tabIndex >= 0)
           || element.hasAttribute('onclick');
         const actionable = semanticControl || (!element.closest(controlSelector)
-          && (explicitControl || getComputedStyle(element).cursor === 'pointer'));
+          && (explicitControl || readStyle(element).cursor === 'pointer'));
         const axes = scrollAxes(element), canScroll = axes.length > 0;
         const labels = element.matches('input,textarea,select') ? [...((element as HTMLInputElement).labels ?? [])]
           .filter((label) => visible(label) && !sensitive(label)).map(labelText).join(' ') : '';
@@ -248,7 +265,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
       if (element.closest('a[href]')) throw new Error('browser_stale_element_read_again');
       // Test a point inside a visible fragment, not the unclipped bounding box's
       // center (which can sit outside its panel or in a wrapped link's whitespace).
-      const fragments = element.getClientRects ? [...element.getClientRects()].slice(0, 20) : [element.getBoundingClientRect()];
+      const fragments = element.getClientRects ? [...element.getClientRects()].slice(0, 20) : [readRect(element)];
       let clickPoint: { x: number; y: number } | undefined;
       const candidates = fragments.flatMap((fragment) => {
         const box = visibleBox(element, fragment);
@@ -264,7 +281,7 @@ export function runPageAgent(input: { grantId: string; origin: string; deadline:
           if (child.matches(controlSelector) || child.hasAttribute('onclick')
             || (child.hasAttribute('tabindex') && (child as HTMLElement).tabIndex >= 0)) return false;
           if (!element.matches('button,a[href],input,textarea,select,summary,[role="button"],[role="link"],[role="option"],[role="tab"],[role="menuitem"]')
-            && getComputedStyle(child).cursor === 'pointer'
+            && readStyle(child).cursor === 'pointer'
             && (!labelText(child) || labelText(child) !== labelText(element))) return false;
         }
         clickPoint = point; return true;

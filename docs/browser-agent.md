@@ -48,6 +48,9 @@ of the chat frame. Closing chat does not revoke consent, and selecting another S
 | --- | --- |
 | Extension connection | Automatic association of an independent identity, WS, reused E2E client, bounded requests |
 | Extension background | Session selection, document consent, reconnect, grant rotation and revocation |
+| Page runtime / binding | Exact-document dispatch to fixed DOM/native drivers; validated target identity independent of field order |
+| Managed-tab lifecycle | Reuse known unedited children and retire old idle children, rechecking grant identity and activity |
+| Deadline helper | Bounded waits and disposal of late resources; no cancellation claim or write replay |
 | Page agent | Fixed isolated scripts, bounded snapshots/references, click/fill/scroll |
 | Managed tabs / click navigation | Identify a newly created child from the current operation; validate optional site permission, source/destination documents, origin and deadline |
 | Session broker | Environment-local Session routing, one in-flight operation, strict results and cancellation |
@@ -102,7 +105,9 @@ AI must open children again. Chrome site permission is separate from Session con
 Control clicks use a fixed browser mouse sequence with the manifest's `debugger` permission. Chrome does not
 support optional debugger permission; users accept its warning when enabling the updated extension.
 An exact-document ISOLATED script validates the latest ref and visible hit point before input;
-the click driver sends fixed `Input.dispatchMouseEvent` commands to that already granted tab and detaches afterward.
+the click driver sends fixed `Input.dispatchMouseEvent` commands to that already granted tab.
+Successful clicks and screenshots reuse its exact-document debugger for up to 60 seconds idle; navigation, revocation,
+disconnection or failure closes it earlier. User cancellation of the debugging notice revokes that page's consent.
 Hover/press changes trigger revalidation; interrupted presses are reported as uncertain, with no click replay.
 Links retain the managed-tab path and native selects retain bounded label reads. No tool accepts debugger commands,
 raw coordinates, cookie access or script evaluation; missing permission/policy conflicts never trigger a fallback.
@@ -114,7 +119,7 @@ Capture is bounded to 15 seconds and overall image transport to 60 seconds. Inte
 form/embedded/detected private regions are masked before JPEG encoding (1920 pixels per side, 1 MiB maximum).
 Broker and MCP validate image headers, dimensions, origin and byte limits; ordinary text responses retain the 24 KB cap.
 MCP returns standard image content with metadata-only text/structuredContent. Images remain untrusted page data;
-masking cannot identify all sensitive visible text or canvas content. The driver detaches on completion and Relay has no
+masking cannot identify all sensitive visible text or canvas content. Capture shares the scoped debugger lifecycle above; Relay has no
 image cache; the host may retain tool history. See [page screenshots](../extension/README.md#page-screenshots-experimental).
 
 The `anywhere_browser_zoom` tool uses the same exact Session/tab grant for native 50%–200% zoom (100 resets).

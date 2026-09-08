@@ -40,6 +40,9 @@ Relay 同时校验 Web 批准状态、关联签名与插件持钥证明，并将
 | --- | --- |
 | `extension/src/connection.ts` | 自动关联独立设备身份、WS、复用现有 E2E 客户端、请求截止时间 |
 | `extension/src/background.ts` | 选择与授权、文档绑定、同意恢复、重连、撤销、序号校验 |
+| `extension/src/page-runtime.ts` / `page-binding.ts` | 精确文档派发、固定 DOM/原生驱动、与字段顺序无关的严格目标匹配 |
+| `extension/src/managed-tab-lifecycle.ts` | 复用已授权且未编辑的子页，复核身份与活动后清理旧页 |
+| `extension/src/deadline.ts` | 有界等待与迟到资源清理，不声称取消浏览器调用，不重放写操作 |
 | `extension/src/page-agent.ts` | 固定隔离脚本，快照、稳定引用、点击、输入、滚动 |
 | `extension/src/managed-tabs.ts` | 仅创建并识别本次 AI 操作产生的子页；同源、文档身份、权限、截止时间校验 |
 | `src/browser-control/session-broker.ts` | 每环境的 Session→浏览器授权路由；并发、超时、回包隔离 |
@@ -89,7 +92,8 @@ Relay 同时校验 Web 批准状态、关联签名与插件持钥证明，并将
 控件点击改为固定的浏览器鼠标事件序列，需要扩展声明 `debugger` 权限。Chrome 不支持可选调试权限；
 用户在启用新版扩展时确认浏览器的新增权限提示。
 精确文档中的 ISOLATED 脚本先校验最新 ref 与可见命中点，worker 仅向已授权标签页发送
-`Input.dispatchMouseEvent`，结束后断开。移动、按下后重新检查；中断的按下按不确定结果报告，不重放点击。
+`Input.dispatchMouseEvent`。成功点击与截图复用同一文档的调试连接，空闲 60 秒后释放；导航、撤销、断线或失败时提前释放。
+用户取消调试提示会撤销该页授权。移动、按下后重新检查；中断的按下按不确定结果报告，不重放点击。
 普通链接保留原受控开页流程，原生下拉框保留有界标签读取。工具不接受调试命令、任意坐标、Cookie 读取
 或脚本执行；权限缺失、策略拒绝、其他调试器占用均不触发替代操作。
 
@@ -100,7 +104,7 @@ PNG 中间结果只在插件内存内处理，遮挡输入/嵌入/可检测私�
 Broker 与 MCP 都校验文件头、尺寸、来源和字节数；普通文字回包的 24 KB 上限不变。
 MCP 返回标准 `image` content，文字/structuredContent 只含尺寸、来源和遮挡数量等元信息，不复制 Base64。
 页面内容及工具图片均为不可信数据；遮挡不保证识别正文或 canvas 中全部敏感内容。
-操作结束断开调试连接，不写入 Relay 图片缓存；宿主仍可能保存工具历史。安装步骤与限制见[页面截图](../extension/README.zh-CN.md#页面截图实验性)。
+截图沿用上述调试连接生命周期，不写入 Relay 图片缓存；宿主仍可能保存工具历史。安装步骤与限制见[页面截图](../extension/README.zh-CN.md#页面截图实验性)。
 
 页面缩放 `anywhere_browser_zoom` 复用原会话/精确页签授权，原生比例为 50%–200%，100% 恢复。
 固定文档探测覆盖比例修改，先设置 Chrome `automatic/per-tab` 再设置比例，不影响其他页签或站点偏好；导航时由浏览器重置。

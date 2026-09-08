@@ -1,4 +1,5 @@
 import type { BrowserTarget } from '../../src/browser-control/contracts.js';
+import { withinDeadline } from './deadline.js';
 
 // Fixed isolated-document probe. It never returns page text or touches form data.
 export function inspectZoom(input: { grantId: string; origin: string; deadline: number; invalidate: boolean }) {
@@ -14,10 +15,7 @@ export async function zoomPage(target: BrowserTarget, grantId: string, percent: 
   if (!Number.isInteger(percent) || percent < 50 || percent > 200) throw new Error('browser_invalid_operation');
   let started = false;
   const valid = () => { if (!current() || Date.now() >= deadline) throw new Error('browser_document_changed'); };
-  const bounded = <T>(work: Promise<T>) => new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('browser_zoom_unavailable')), Math.max(0, deadline - Date.now()));
-    work.then(resolve, reject).finally(() => clearTimeout(timer));
-  });
+  const bounded = <T>(work: Promise<T>) => withinDeadline(work, deadline, 'browser_zoom_unavailable');
   const inspect = async (invalidate: boolean) => {
     valid();
     const [proof] = await bounded(chrome.scripting.executeScript({ target: { tabId: target.tabId, documentIds: [target.documentId] },

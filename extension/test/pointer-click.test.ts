@@ -8,21 +8,22 @@ function harness(t: test.TestContext) {
   const original = globalThis.chrome;
   const calls: any[] = [];
   let granted = true, attachFails = false, current = true;
-  let onInput = (_type: string) => {};
+  let onInput = (_type: string): void | Promise<void> => {};
+  let onAttach = async () => {};
   globalThis.chrome = { permissions: { contains: async (value: any) => {
     assert.deepEqual(value, { permissions: ['debugger'] }); return granted;
   } }, debugger: {
-    attach: async (value: any, version: string) => { calls.push({ attach: value, version }); if (attachFails) throw Error('private browser details'); },
+    attach: async (value: any, version: string) => { calls.push({ attach: value, version }); if (attachFails) throw Error('private browser details'); await onAttach(); },
     detach: async (value: any) => { calls.push({ detach: value }); },
     sendCommand: async (value: any, method: string, params: any) => {
       assert.deepEqual(value, { tabId: target.tabId }); assert.equal(method, 'Input.dispatchMouseEvent');
-      calls.push(params); onInput(params.type);
+      calls.push(params); await onInput(params.type);
     },
   } } as any;
   t.after(async () => { await releaseAllDebuggers(); globalThis.chrome = original; });
-  return { calls, run: (prepare: Parameters<typeof pointerClick>[3]) => pointerClick(target, Date.now() + 5000, () => current, prepare),
+  return { calls, run: (prepare: Parameters<typeof pointerClick>[3], budget = 5000) => pointerClick(target, Date.now() + budget, () => current, prepare),
     permission: (value: boolean) => { granted = value; }, attachFailure: () => { attachFails = true; }, revoke: () => { current = false; },
-    input: (callback: typeof onInput) => { onInput = callback; } };
+    input: (callback: typeof onInput) => { onInput = callback; }, attaching: (callback: typeof onAttach) => { onAttach = callback; } };
 }
 const point = () => Promise.resolve({ clickPoint: { x: 30, y: 40 } });
 
@@ -81,5 +82,43 @@ test('uncertain final release is never replayed', async (t) => {
   h.input((type) => { if (type === 'mouseReleased') throw Error('transport disconnected'); });
   await assert.rejects(h.run(point), /native_click_interrupted/);
   assert.equal(h.calls.filter((c) => c.type === 'mouseReleased').length, 1);
+  assert.ok(h.calls.at(-1).detach);
+});
+
+test('a late debugger attachment after timeout is closed without sending input', async t => {
+  const h = harness(t); let finish!: () => void;
+  // Exercise the timer outcome independently of Date.now precision.
+  t.mock.method(Date, 'now', () => 1_800_000_000_000);
+  h.attaching(() => new Promise<void>(resolve => { finish = resolve; }));
+  await assert.rejects(h.run(point, 30), /native_click_unavailable/);
+  finish(); await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(h.calls.map(c => c.type ?? (c.attach ? 'attach' : 'detach')), ['attach', 'detach']);
+});
+
+test('a hung hover times out, detaches, and allows a subsequent operation', async t => {
+  const h = harness(t);
+  h.input(type => type === 'mouseMoved' ? new Promise<void>(() => {}) : undefined);
+  await assert.rejects(h.run(point, 50), /native_click_unavailable/);
+  assert.equal(h.calls.some(c => c.type === 'mousePressed'), false);
+  assert.ok(h.calls.at(-1).detach);
+  h.input(() => {});
+  assert.deepEqual(await h.run(point), { clicked: true });
+});
+
+test('a hung final release is reported as interrupted and is never replayed', async t => {
+  const h = harness(t);
+  h.input(type => type === 'mouseReleased' ? new Promise<void>(() => {}) : undefined);
+  await assert.rejects(h.run(point, 50), /native_click_interrupted/);
+  assert.equal(h.calls.filter(c => c.type === 'mouseReleased').length, 1);
+  assert.ok(h.calls.at(-1).detach);
+});
+
+test('a hung page cleanup cannot retain the debugger or block completion forever', { timeout: 2500 }, async t => {
+  const h = harness(t);
+  await assert.rejects(h.run(async phase => {
+    if (phase === 'hover') throw Error('browser_element_obscured');
+    if (phase === 'end') return new Promise(() => {});
+    return point();
+  }), /browser_element_obscured/);
   assert.ok(h.calls.at(-1).detach);
 });

@@ -3,28 +3,26 @@ import { browserOperationErrorCode, parseOperation } from '../../src/browser-con
 import { createDeviceIdentity, type DeviceAuthProof } from '../../src/shared/device-auth.js';
 import type { BrowserLinkRequest } from '../../src/shared/browser-link.js';
 import { ExtensionConnection } from './connection.js';
-import { runPageAgent } from './page-agent.js';
+import { page, runPageOperation } from './page-runtime.js';
+import { matchesTarget, type Binding } from './page-binding.js';
+import { ManagedTabLifecycle } from './managed-tab-lifecycle.js';
 import { inspectCreatedTab, openManagedTab } from './managed-tabs.js';
-import { observeClickNavigation } from './click-navigation.js';
-import { pointerClick } from './pointer-click.js';
 import { releaseDebugger, releaseAllDebuggers, onDebuggerCancellation } from './debugger-session.js';
 import { sitePattern } from './site-permission.js';
-import { canRetireTab, RECENT_CHILD_TABS } from './tab-lifecycle.js';
-import { captureScreenshot } from './screenshot.js';
-import { zoomPage } from './page-zoom.js';
+import { canRetireTab } from './tab-lifecycle.js';
 import { SCREENSHOT_TIMEOUT_MS } from '../../src/browser-control/screenshot.js';
 
-type Binding = { grantId: string; environmentId: string; threadId: string; title: string; pageTitle?: string; target: BrowserTarget; sequence: number; rootTabId?: number; lastUsedAt?: number };
 type Frame = Record<string, any>;
+const sessionSummaries = (value: Frame[] = []) => value.slice(0, 200).map(session => ({ id: session.id,
+  title: String(session.name || session.title || session.preview || session.id).slice(0, 100) }));
 const bindings = new Map<number, Binding>();
 const intents = new Map<number, object>();
 const busy = new Set<Binding>();
-const retiring = new Set<Binding>();
 const documentChecks = new Map<number, { again: boolean }>();
 const changingDocuments = new Set<Binding>();
-let pruning = false;
-let pruneAgain = false;
 let saving = Promise.resolve();
+const childTabs = new ManagedTabLifecycle({ bindings, busy, connected: () => !connecting && Boolean(connection?.ready()),
+  generation: () => revision, persist, revoke: revokeBinding });
 let origin = '';
 let connection: ExtensionConnection;
 let identity: ReturnType<typeof createDeviceIdentity>;
@@ -98,14 +96,6 @@ function changed() {
   }
 }
 
-async function page(target: BrowserTarget, grantId: string, operation: Parameters<typeof runPageAgent>[0]['operation'], deadline = Date.now() + 15_000, clickPhase?: Parameters<typeof runPageAgent>[0]['clickPhase']) {
-  const [result] = await chrome.scripting.executeScript({ target: { tabId: target.tabId, documentIds: [target.documentId] }, world: 'ISOLATED', injectImmediately: true,
-    func: runPageAgent, args: [{ grantId, origin: target.origin, operation, deadline, clickPhase }] });
-  if (!result || result.documentId !== target.documentId || !result.result) throw new Error('browser_document_changed');
-  if ('errorCode' in result.result) throw new Error(browserOperationErrorCode(result.result.errorCode));
-  if ('denied' in result.result && result.result.denied === 'browser_child_origin_denied') throw new Error(result.result.denied);
-  return result.result;
-}
 
 async function revokeBinding(old: Binding) {
   if (bindings.get(old.target.tabId) !== old) return;
@@ -185,116 +175,27 @@ async function revokeAll() {
   await Promise.all([...bindings.values()].map(revokeBinding));
 }
 
-function sameTree(a: Binding, b: Binding) {
-  return a.environmentId === b.environmentId && a.threadId === b.threadId
-    && (a.rootTabId ?? a.target.tabId) === (b.rootTabId ?? b.target.tabId);
-}
-
-async function reuseChild(url: string, parent: Binding, current: () => boolean, deadline: number) {
-  for (const candidate of [...bindings.values()].reverse()) {
-    if (Date.now() >= deadline) throw new Error('browser_operation_timeout');
-    if (candidate.rootTabId === undefined || !sameTree(candidate, parent)
-      || retiring.has(candidate) || (candidate !== parent && busy.has(candidate))) continue;
-    try {
-      const tab = await chrome.tabs.get(candidate.target.tabId);
-      const parentTab = await chrome.tabs.get(parent.target.tabId);
-      if (tab.url !== url || tab.pendingUrl || tab.windowId !== parentTab.windowId
-        || !await canRetireTab(candidate.target, candidate.grantId)) continue;
-      const latest = await chrome.tabs.get(candidate.target.tabId);
-      if (latest.url !== url || latest.pendingUrl || latest.windowId !== parentTab.windowId) continue;
-      if (!current()) throw new Error('browser_authorization_changed');
-      if (bindings.get(candidate.target.tabId) !== candidate || retiring.has(candidate)
-        || (candidate !== parent && busy.has(candidate))) continue;
-      await chrome.tabs.update(candidate.target.tabId, { active: true });
-      if (!current() || bindings.get(candidate.target.tabId) !== candidate) throw new Error('browser_authorization_changed');
-      candidate.lastUsedAt = Date.now();
-      void persist().catch(() => {});
-      return { opened: true, reused: true, pageId: candidate.grantId, origin: candidate.target.origin };
-    } catch (failure) { if (!current()) throw failure; }
-  }
-  return null;
-}
-
-async function pruneChildTabs() {
-  if (pruning) { pruneAgain = true; return; }
-  if (connecting || !connection?.ready()) return;
-  pruning = true;
-  const expectedRevision = revision;
-  try {
-    const root = [...bindings.values()].find((binding) => binding.rootTabId === undefined);
-    if (!root) return;
-    const children = [...bindings.values()].filter((binding) => binding.rootTabId !== undefined && sameTree(binding, root));
-    if (children.length <= RECENT_CHILD_TABS) return;
-    const rootTab = await chrome.tabs.get(root.target.tabId);
-    const ordinary: { binding: Binding; usedAt: number; sequence: number }[] = [];
-    for (const child of children) {
-      if (revision !== expectedRevision || !connection.ready()) return;
-      try {
-        const tab = await chrome.tabs.get(child.target.tabId);
-        if (tab.windowId === rootTab.windowId && !tab.pendingUrl && !tab.pinned && !tab.audible && await canRetireTab(child.target, child.grantId)) {
-          ordinary.push({ binding: child, usedAt: child.lastUsedAt || 0, sequence: child.sequence });
-        }
-      } catch { /* A closed or replaced tab is handled by its lifecycle event. */ }
-    }
-    ordinary.sort((a, b) => b.usedAt - a.usedAt);
-    for (const candidate of ordinary.slice(RECENT_CHILD_TABS)) {
-      const old = candidate.binding;
-      if (revision !== expectedRevision || !connection.ready()) return;
-      if (bindings.get(old.target.tabId) !== old || busy.has(old)) continue;
-      retiring.add(old);
-      try {
-        if (!await canRetireTab(old.target, old.grantId)) continue;
-        const tab = await chrome.tabs.get(old.target.tabId);
-        if (tab.active || tab.pendingUrl || tab.pinned || tab.audible || tab.windowId !== rootTab.windowId
-          || busy.has(old) || old.sequence !== candidate.sequence || (old.lastUsedAt || 0) !== candidate.usedAt || revision !== expectedRevision
-          || bindings.get(old.target.tabId) !== old) continue;
-        await chrome.tabs.remove(old.target.tabId);
-        await revokeBinding(old);
-      } catch { /* Failed cleanup must never fail or replay a browser operation. */ }
-      finally { retiring.delete(old); }
-    }
-  } finally {
-    pruning = false;
-    if (pruneAgain) { pruneAgain = false; void pruneChildTabs().catch(() => {}); }
-  }
-}
 
 async function handleOperation(frame: Frame) {
   if (frame.event !== 'browser.operation') return;
   const request = frame.payload;
   const captured = bindings.get(request?.target?.tabId);
   if (!captured || !request || request.grantId !== captured.grantId || request.threadId !== captured.threadId
-    || request.environmentId !== captured.environmentId || JSON.stringify(request.target) !== JSON.stringify(captured.target)
+    || request.environmentId !== captured.environmentId || !matchesTarget(request.target, captured.target)
     || !Number.isSafeInteger(request.sequence) || request.sequence <= captured.sequence || !Number.isSafeInteger(request.deadline)
     || request.deadline <= Date.now() || request.deadline > Date.now() + (request.operation?.method === 'screenshot' ? SCREENSHOT_TIMEOUT_MS + 5000 : 20_000) || busy.has(captured)) return;
   captured.sequence = request.sequence;
   captured.lastUsedAt = Date.now();
   busy.add(captured);
   try {
-    if (retiring.has(captured)) throw new Error('browser_authorization_changed');
+    if (childTabs.retiring.has(captured)) throw new Error('browser_authorization_changed');
     const operation = parseOperation(request.operation);
     if (bindings.get(captured.target.tabId) !== captured || !connection.ready()) throw new Error('browser_not_authorized');
     const expectedRevision = revision;
     const current = () => revision === expectedRevision && bindings.get(captured.target.tabId) === captured && !changingDocuments.has(captured) && connection.ready();
     if (!current()) throw new Error('browser_document_changed');
-    const run = () => {
-      if (operation.method === 'zoom') return zoomPage(captured.target, captured.grantId, operation.percent, request.deadline, current);
-      if (operation.method !== 'screenshot') return page(captured.target, captured.grantId, operation, request.deadline);
-      return captureScreenshot(captured.target, captured.grantId, Math.min(request.deadline, Date.now() + 15_000), current);
-    };
-    const observed = operation.method === 'click'
-      ? await observeClickNavigation(captured.target, request.deadline, current,
-        () => pointerClick(captured.target, request.deadline, current,
-          (phase) => page(captured.target, captured.grantId, operation, request.deadline, phase)))
-      : { result: await run(), targets: [] };
+    const observed = await runPageOperation(captured.target, captured.grantId, operation, request.deadline, current);
     let result: Record<string, unknown> = observed.result;
-    if (operation.method === 'snapshot') {
-      const zoom = await chrome.tabs.getZoom(captured.target.tabId);
-      if (!current()) throw new Error('browser_document_changed');
-      result.viewport = { ...Object(result.viewport), zoomPercent: Math.round(zoom * 100) };
-      result.extensionBuild = chrome.runtime.getManifest().version_name || chrome.runtime.getManifest().version;
-      result.browserEngine = globalThis.navigator?.userAgent?.match(/(?:Chrome|Edg)\/[\d.]+/g)?.slice(0, 2).join(' ');
-    }
     let scriptTabId: number | undefined;
     if (result.clicked === true && observed.targets.length) {
       if (observed.targets.length === 1) {
@@ -305,7 +206,7 @@ async function handleOperation(frame: Frame) {
     }
     const linkUrl = typeof result.openInNewTab === 'string' ? result.openInNewTab : undefined;
     if (linkUrl !== undefined || scriptTabId !== undefined) {
-      const reused = linkUrl === undefined ? null : await reuseChild(linkUrl, captured, current, request.deadline);
+      const reused = linkUrl === undefined ? null : await childTabs.reuse(linkUrl, captured, current, request.deadline);
       if (reused) result = reused;
       else {
         if (bindings.size >= 64) throw new Error('browser_grant_limit');
@@ -349,7 +250,7 @@ async function handleOperation(frame: Frame) {
     await connection.request('browser.result', { requestId: request.requestId, grantId: captured.grantId, ok: true, result },
       operation.method === 'screenshot' ? Math.max(1000, request.deadline - Date.now()) : 15_000);
     // The source operation must finish before its old child can be retired.
-    void pruneChildTabs().catch(() => {});
+    void childTabs.prune().catch(() => {});
   } catch (failure) {
     if (bindings.get(captured.target.tabId) === captured && captured.sequence === request.sequence) {
       busy.delete(captured);
@@ -398,7 +299,7 @@ async function selectEnvironment(environmentId: string, expectedRevision = revis
   grantReplacementSupported = capability.capabilities.browserGrantReplacement === true;
   const response = await connection.request('sessions.list');
   if (revision !== expectedRevision) throw new Error('browser_environment_changed');
-  sessions = (response.sessions ?? []).slice(0, 200).map((session: Frame) => ({ id: session.id, title: String(session.name || session.title || session.preview || session.id).slice(0, 100) }));
+  sessions = sessionSummaries(response.sessions ?? []);
 }
 
 async function connect(url: string, restoring = false, link?: (challenge: string) => Promise<DeviceAuthProof>) {
@@ -504,8 +405,7 @@ async function authorizeFromPanel(message: Frame) {
   } else {
     const response = await connection.request('sessions.list');
     if (revision !== expectedRevision) throw new Error('browser_authorization_changed');
-    sessions = (response.sessions ?? []).slice(0, 200).map((session: Frame) => ({ id: session.id,
-      title: String(session.name || session.title || session.preview || session.id).slice(0, 100) }));
+    sessions = sessionSummaries(response.sessions ?? []);
   }
   if (revision !== expectedRevision || connection.environmentId !== environmentId) throw new Error('browser_authorization_changed');
   await authorize(threadId, target);
