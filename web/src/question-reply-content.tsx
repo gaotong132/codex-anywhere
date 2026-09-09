@@ -20,7 +20,6 @@ export function QuestionReplyContent({ replies, onDownloadFile, onReadTextFile }
               <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5 6 3 3 3-3" /></svg>
             </span>
           </span>
-          <span className="question-reply-preview">{reply.question}</span>
         </summary>
         <div className="question-reply-full">{reply.question}</div>
       </details>

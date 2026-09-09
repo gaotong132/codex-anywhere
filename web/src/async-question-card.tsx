@@ -36,7 +36,6 @@ export function AsyncQuestionCard({ questions, answers, disabled, onReply }: {
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7" /></svg>
           {questions.length > 1 ? t(`已回答 ${questions.length} 个问题`, `${questions.length} questions answered`) : t('已回答', 'Answered')}
         </span>
-        <span className="async-question-summary">{questions[0]?.title}</span>
         <svg className="async-question-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m5 6 3 3 3-3" /></svg>
       </summary>
       <div className="async-question-history">

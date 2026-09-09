@@ -1086,6 +1086,16 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
 .timeline-notice.approval.rejected .timeline-notice-content strong { color: #c99a92; }
 .timeline-notice.approval.approved .timeline-notice-content svg { stroke: #69b993; }
 .timeline-notice.approval.approved .timeline-notice-content strong { color: #82bea2; }
+.timeline-notice.turnStatus:not(.aborted) {
+  box-sizing: border-box; padding: 12px 14px; border: 1px solid #684540; border-radius: 10px; background: #251c20;
+}
+.timeline-notice.turnStatus:not(.aborted) .timeline-notice-rule { display: none; }
+.timeline-notice.turnStatus:not(.aborted) .timeline-notice-content {
+  width: 100%; max-width: none; display: grid; grid-template-columns: 16px minmax(0, 1fr); justify-content: start; white-space: normal; font-size: 13px; line-height: 1.5;
+}
+.timeline-notice.turnStatus:not(.aborted) .timeline-notice-detail,
+.timeline-notice-help { grid-column: 2; max-width: none; overflow: visible; overflow-wrap: anywhere; white-space: pre-wrap; color: #e0beb8; }
+.timeline-notice.turnStatus:not(.aborted) .timeline-notice-content time { grid-column: 2; font-size: 11px; }
 .typewriter-text { min-width: 0; line-height: inherit; }
 .typewriter-copy { white-space: pre-wrap; }
 .typewriter-caret { position: relative; display: inline-block; width: 0; height: 0; margin: 0; vertical-align: baseline; }

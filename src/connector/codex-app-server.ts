@@ -1028,12 +1028,18 @@ export class CodexAppServer extends EventEmitter {
     }
     if (method === 'turn/completed' || method === 'turn.completed') {
       const previous = this.activeTurn;
+      const threadId = params.threadId || params.thread_id;
+      const turnId = params.turn?.id || params.turnId || params.turn_id;
+      if (!previous || (threadId && threadId !== previous.threadId) || (turnId && turnId !== previous.turnId)) return;
       const status = String(params.turn?.status || params.status || 'completed');
+      const failure = params.turn?.error || params.error;
       const reason = /interrupted/i.test(status) ? 'cancelled'
-        : /failed/i.test(status) ? 'failed' : 'completed';
+        : failure || /failed|error/i.test(status) ? 'failed' : 'completed';
+      const error = failure ? publicError(extractText(failure) || 'Codex execution error').slice(0, 500) : '';
       this.clearApprovalsForThread(previous?.threadId);
       this.emitTurn('turn.ended', {
         reason, status, threadId: previous?.threadId, usage: params.usage || params.turn?.usage,
+        ...(error ? { error } : {}),
       });
       this.activeTurn = null;
       void this.releaseThread(previous?.threadId);

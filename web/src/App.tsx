@@ -116,6 +116,7 @@ import {
   type ContextUsage,
 } from '../../src/shared/context-compaction';
 import type { TimelineNotice } from '../../src/shared/timeline-notice';
+import { appendTimelineNotice } from './timeline-notice-events';
 import { PresenceIndicator } from './presence-indicator';
 import { PermissionModeControl } from './permission-mode-control';
 import { BrowserSessionStatus } from './browser-session-status';
@@ -417,19 +418,19 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     return item.id;
   }, []);
 
-  const addTimelineNotice = useCallback((notice: TimelineNotice) => {
+  const addTimelineNotice = useCallback((notice: TimelineNotice, turnId?: string) => {
     const item: TimelineItem = {
       id: makeId(),
       kind: 'system',
       text: '',
       notice,
       transient: true,
-      historyTurnId: activeTurnIdRef.current || undefined,
+      historyTurnId: turnId || activeTurnIdRef.current || undefined,
       completedAt: Date.now(),
     };
     autoFollowLatestRef.current = true;
     shouldScrollBottomRef.current = true;
-    setTimeline((current) => [...current, item]);
+    setTimeline((current) => appendTimelineNotice(current, item));
     return item.id;
   }, []);
 
@@ -865,7 +866,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       });
     } else if (message.event === 'turn.error') {
       const error = String(payload.error || t('Codex 运行错误', 'Codex execution error'));
-      addTimelineNotice({ kind: 'turnStatus', status: 'error', detail: error });
+      addTimelineNotice({ kind: 'turnStatus', status: 'error', detail: error }, String(payload.turnId || ''));
       streamItemRef.current = null;
       activeTurnIdRef.current = '';
       setApproval(null);
@@ -875,7 +876,9 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       resetExecution('failed');
     } else if (message.event === 'turn.ended') {
       if (payload.reason === 'cancelled') {
-        addTimelineNotice({ kind: 'turnStatus', status: 'aborted', detail: 'cancelled' });
+        addTimelineNotice({ kind: 'turnStatus', status: 'aborted', detail: 'cancelled' }, String(payload.turnId || ''));
+      } else if (payload.reason === 'failed') {
+        addTimelineNotice({ kind: 'turnStatus', status: 'failed', detail: String(payload.error || '') }, String(payload.turnId || ''));
       }
       streamItemRef.current = null;
       activeTurnIdRef.current = '';
@@ -891,7 +894,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         activity: 'working',
         startedAt: null,
         progress: {},
-        state: current.state === 'failed' ? 'failed' : 'completed',
+        state: payload.reason === 'failed' || current.state === 'failed' ? 'failed' : 'completed',
       }));
       void refreshSessions();
     }

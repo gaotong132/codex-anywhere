@@ -271,6 +271,8 @@ function TimelineNoticeMarker({ item }: { item: TimelineItem }) {
     if (notice.other) badges.push(t(`${notice.other} 其他`, `${notice.other} other`));
   }
   const accessibleLabel = [label, detail, ...badges].filter(Boolean).join(' · ');
+  const capacityError = notice.kind === 'turnStatus' && notice.status !== 'aborted'
+    && /selected model is at capacity/i.test(detail);
   return (
     <div className={`timeline-notice ${variant}`} role="note" aria-label={accessibleLabel} title={detail || accessibleLabel}>
       <span className="timeline-notice-rule" aria-hidden="true" />
@@ -287,6 +289,7 @@ function TimelineNoticeMarker({ item }: { item: TimelineItem }) {
         <strong>{label}</strong>
         {badges.map((badge) => <b key={badge}>{badge}</b>)}
         {detail && <span className="timeline-notice-detail">{detail}</span>}
+        {capacityError && <span className="timeline-notice-help">{t('所选模型当前繁忙，可以稍后重试或更换模型。', 'The selected model is busy. Retry later or choose another model.')}</span>}
         {notice.kind !== 'toolSummary' && item.completedAt && completedDateTime && (
           <time dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
         )}

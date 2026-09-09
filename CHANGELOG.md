@@ -4,6 +4,10 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Display terminal errors carried by rollout `task_complete.error` and live `turn/completed`, including model-capacity failures, with the full reason in a wrapping error card. Keep live/history failures consistent and deduplicate terminal notices. Update Connector and Web; existing rollout errors become visible without retrying the task.
+
+- Reduce answered-question duplication: collapse answered cards to one status row and hide quoted question text behind an expand control. Answers remain visible; full questions, keyboard access and complete message copying remain available.
+
 - Separate structured question replies in chat: show the question as an expandable two-line quote and keep the answer fully visible. Collapse answered question cards into a compact summary, retaining all questions and answers on expansion, full-message copying, file links and the original reply protocol. Update Web; no extension reload or new pairing is needed.
 
 - Send a 91-character browser status hint only on the first related message or after page authorization/online state changes. Commit reminder state only after successful message delivery, so failed sends can include it again without automatic retries. Detect replaced pages even with unchanged counts, preserve exact async question answers and hide all historical reminder formats. Update Connector and Web; no extension reload or new pairing is needed.

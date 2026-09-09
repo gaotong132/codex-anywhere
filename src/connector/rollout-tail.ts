@@ -444,7 +444,7 @@ function isVisibleRolloutRow(row: RolloutRow) {
     || (row?.type === 'event_msg' && /^(?:thread_settings_applied|task_failed|turn_aborted|turn_error)$/.test(type))
     || (row?.type === 'response_item' && type === 'message')
     || toolCallFromRow(row)
-    || (type === 'task_complete' && fullText(payload.last_agent_message).trim()),
+    || (type === 'task_complete' && (payload.error || fullText(payload.last_agent_message).trim())),
   );
 }
 
@@ -666,7 +666,7 @@ function inferRolloutActivity(rows: RolloutRow[]): RolloutActivity {
     const type = String(payload.type || '');
     const id = String(payload.turn_id || payload.turnId || '');
     const startedAt = epochMillis(payload.started_at || payload.startedAt || row.timestamp);
-    if (type === 'task_complete') return { status: 'completed', id, startedAt };
+    if (type === 'task_complete') return { status: payload.error ? 'failed' : 'completed', id, startedAt };
     if (type === 'task_started') return { status: 'inProgress', id, startedAt };
     if (/task_failed|turn_aborted|turn_error/.test(type)) return { status: 'failed', id, startedAt };
   }
@@ -953,7 +953,7 @@ function changedModelSettings(
 
 function turnStatusNotice(payload: RolloutRow): TimelineNotice | undefined {
   const type = String(payload.type || '');
-  if (!/task_failed|turn_aborted|turn_error/.test(type)) return undefined;
+  if (!/task_failed|turn_aborted|turn_error/.test(type) && !(type === 'task_complete' && payload.error)) return undefined;
   const status = type === 'turn_aborted' ? 'aborted' : type === 'turn_error' ? 'error' : 'failed';
   const detailValue = payload.error?.message || payload.error || payload.message || payload.reason;
   const rawDetail = typeof detailValue === 'string'
