@@ -101,6 +101,7 @@ type RolloutMappingState = {
 };
 type SnapshotOptions = { threadId: string; maxBytes: number; maxItems: number };
 type RolloutSnapshot = SnapshotOptions & {
+  lastCompactionAt: number;
   fileSize: number;
   parsedOffset: number;
   items: RolloutItem[];
@@ -195,6 +196,7 @@ export async function readRolloutTail(options: RolloutOptions) {
       activityDetail: snapshot.activity.status === 'inProgress' ? snapshot.activityDetail : '',
       turnProgress: { plan: snapshot.progress.plan, files: snapshot.progress.files },
       contextUsage: snapshot.contextUsage,
+      lastCompactionAt: snapshot.lastCompactionAt,
     };
   } finally {
     await handle.close();
@@ -255,6 +257,7 @@ async function readHistoryPage(
     contextUsage: encodedCursor
       ? undefined
       : latestContextUsage(window.rows) || await findLatestContextUsageBefore(handle, window.firstCompleteOffset),
+    lastCompactionAt: latestCompactionTime(window.rows),
   };
 }
 
@@ -333,6 +336,7 @@ async function initializeSnapshot(handle: FileHandle, fileSize: number, options:
     activityDetail: updateActivityDetail('', window.rows, activity.status),
     progress,
     mapping: mapped.state,
+    lastCompactionAt: latestCompactionTime(window.rows),
     contextUsage: latestContextUsage(window.rows)
       || await findLatestContextUsageBefore(handle, window.firstCompleteOffset),
   };
@@ -365,6 +369,7 @@ async function updateSnapshot(handle: FileHandle, fileSize: number, cached: Roll
     activityDetail: updateActivityDetail(cached.activityDetail, appended.rows, activity.status),
     progress: updateTurnProgress(cached.progress, appended.rows, activity.status),
     mapping: mapped.state,
+    lastCompactionAt: latestCompactionTime(appended.rows) || cached.lastCompactionAt,
     contextUsage: latestContextUsage(appended.rows) || cached.contextUsage,
   };
 }
@@ -1211,6 +1216,13 @@ function latestContextUsage(rows: RolloutRow[]): ContextUsage | undefined {
     if (usage) return usage;
   }
   return undefined;
+}
+
+function latestCompactionTime(rows: RolloutRow[]) {
+  for (let index = rows.length - 1; index >= 0; index--) {
+    if (rows[index].type === 'compacted') return epochMillis(rows[index].timestamp) || 0;
+  }
+  return 0;
 }
 
 async function findLatestContextUsageBefore(handle: FileHandle, endOffset: number) {

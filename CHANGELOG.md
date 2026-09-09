@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Show ongoing context compaction above the composer with an elapsed timer, using native item lifecycle events for headless runs and bounded local trace metadata for Desktop runs. Clear the indicator on completion, failure or task changes; retain completed timeline markers without inventing percentages or treating ordinary waits as compaction. Update Connector and Web.
+
 - Display terminal errors carried by rollout `task_complete.error` and live `turn/completed`, including model-capacity failures, with the full reason in a wrapping error card. Keep live/history failures consistent and deduplicate terminal notices. Update Connector and Web; existing rollout errors become visible without retrying the task.
 
 - Reduce answered-question duplication: collapse answered cards to one status row and hide quoted question text behind an expand control. Answers remain visible; full questions, keyboard access and complete message copying remain available.

@@ -16,6 +16,7 @@ export type ConversationExecution = {
   detail: string;
   activity: LiveActivityKind;
   startedAt: number | null;
+  compactionStartedAt: number | null;
   progress: TurnProgress;
 };
 
@@ -32,6 +33,7 @@ export function initialConversationExecution(
     detail: '',
     activity: 'working',
     startedAt: null,
+    compactionStartedAt: null,
     progress: {},
   };
 }
@@ -84,6 +86,7 @@ export function useConversationExecution() {
     setDetail: fieldSetter(setExecution, 'detail'),
     setActivity: fieldSetter(setExecution, 'activity'),
     setStartedAt: fieldSetter(setExecution, 'startedAt'),
+    setCompactionStartedAt: fieldSetter(setExecution, 'compactionStartedAt'),
     setProgress: fieldSetter(setExecution, 'progress'),
   } satisfies FieldSetters), []);
   const updateExecution = useCallback((

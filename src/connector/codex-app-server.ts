@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
+import { CompactionProgressReader } from './compaction-progress.js';
 import {
   readRolloutContextUsage,
   readRolloutModelSettings,
@@ -88,6 +89,7 @@ type ModelOption = {
 };
 type SessionModelConfig = RolloutModelSettings & { fastMode: boolean; models: ModelOption[] };
 type TurnContext = {
+  compaction?: { itemId: string; startedAt: number };
   clientId?: string;
   requestId?: string;
   threadId: string;
@@ -127,6 +129,7 @@ export class CodexAppServer extends EventEmitter {
   activeTurn: TurnContext | null;
   private threadRelease: Promise<void>;
   private runtimeRelease: Promise<void> | null = null;
+  private compactionProgress = new CompactionProgressReader();
   private inflightRpcs = new Set<Promise<unknown>>();
   private releaseRuntimeAfterTurn: boolean;
   sessionMetadata: Map<string, SessionMetadata>;
@@ -387,7 +390,20 @@ export class CodexAppServer extends EventEmitter {
     threadId: string, filePath?: string, options: { paged?: boolean; cursor?: string | null } = {},
   ) {
     if (!filePath) throw new Error('session_history_unavailable');
-    return readRolloutTail({ filePath, threadId, ...options });
+    const page = await readRolloutTail({ filePath, threadId, ...options });
+    let compactionStartedAt: number | null = null;
+    if (!options.cursor && page.turns[0]?.status === 'inProgress' && page.activityId) {
+      if (this.activeTurn?.threadId === threadId && this.activeTurn.turnId === page.activityId) {
+        compactionStartedAt = this.activeTurn.compaction?.startedAt || null;
+      } else {
+        const progress = await this.compactionProgress.read({
+          threadId, turnId: page.activityId, turnStartedAt: page.activityStartedAt || 0,
+          after: Math.max(page.lastCompactionAt || 0, page.contextUsage?.updatedAt || 0),
+        });
+        compactionStartedAt = progress?.startedAt || null;
+      }
+    }
+    return { ...page, compactionStartedAt };
   }
 
   async readTurnDiff(threadId: unknown, turnId: unknown) {
@@ -969,6 +985,18 @@ export class CodexAppServer extends EventEmitter {
   }
 
   handleNotification(method: string, params: JsonObject) {
+    if ((method === 'item/started' || method === 'item/completed') && params.item?.type === 'contextCompaction') {
+      const active = this.activeTurn;
+      if (!active || params.threadId !== active.threadId || params.turnId !== active.turnId) return;
+      if (method === 'item/started') {
+        if (active.compaction?.itemId !== params.item.id) active.compaction = { itemId: params.item.id, startedAt: Date.now() };
+      } else {
+        if (active.compaction && active.compaction.itemId !== params.item.id) return;
+        delete active.compaction;
+      }
+      this.emitTurn('turn.compaction', { startedAt: active.compaction?.startedAt || null });
+      return;
+    }
     if (method === 'turn/plan/updated') {
       const plan = summarizePlanSteps(params.plan);
       if (plan) this.emitTurn('turn.progress', { plan });

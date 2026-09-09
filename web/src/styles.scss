@@ -1096,6 +1096,18 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
 .timeline-notice.turnStatus:not(.aborted) .timeline-notice-detail,
 .timeline-notice-help { grid-column: 2; max-width: none; overflow: visible; overflow-wrap: anywhere; white-space: pre-wrap; color: #e0beb8; }
 .timeline-notice.turnStatus:not(.aborted) .timeline-notice-content time { grid-column: 2; font-size: 11px; }
+.context-compaction-progress {
+  box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 12px; min-height: 62px;
+  padding: 12px 14px; border: 1px solid #3b5684; border-radius: 14px; background: #152035; color: #d5e4fc; text-align: left; cursor: pointer;
+}
+.compaction-progress-text { min-width: 0; flex: 1; display: grid; gap: 4px; overflow-wrap: anywhere; }
+.compaction-progress-text strong { font-size: 14px; font-weight: 600; }
+.compaction-progress-text > span { color: #9eb0ca; font-size: 12px; }
+.context-compaction-progress time { flex-shrink: 0; color: #adc5eb; font-size: 13px; font-variant-numeric: tabular-nums; }
+.context-compaction-progress:focus-visible { outline: 2px solid #a8caff; outline-offset: 2px; }
+.compaction-spinner { flex-shrink: 0; width: 16px; height: 16px; border: 2px solid #344b70; border-top-color: #a8caff; border-radius: 50%; animation: compaction-spin 1.2s linear infinite; }
+@keyframes compaction-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .compaction-spinner { animation: none; } }
 .typewriter-text { min-width: 0; line-height: inherit; }
 .typewriter-copy { white-space: pre-wrap; }
 .typewriter-caret { position: relative; display: inline-block; width: 0; height: 0; margin: 0; vertical-align: baseline; }

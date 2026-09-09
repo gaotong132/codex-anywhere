@@ -112,6 +112,13 @@ before/after totals. Completed turns retain compact counts for tools, commands, 
 plus bounded model-setting changes and failure or cancellation reasons. Raw reasoning, tool arguments, and
 tool output are not copied into these summaries.
 
+While compaction is in progress, the input area shows **Compacting context** with an elapsed timer; it
+returns to normal activity when compaction finishes. Headless runs use the native `contextCompaction`
+item lifecycle. Desktop runs use a bounded, read-only check of the current task/turn's local Codex trace
+span, since rollout history records only completion. The trace database is optional: if absent or changed,
+chat remains available and only the completed marker is shown. No log text, percentage estimate or prompt
+is sent to the browser. Update Connector and Web; no extension reload or pairing is required.
+
 ## Browser Agent (experimental add-on)
 
 The Anywhere Browser extension (Browser Agent) is an **experimental add-on**, disabled by default and built,

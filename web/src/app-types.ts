@@ -50,7 +50,7 @@ export type SessionPermissionConfig = {
 export type FollowState = 'idle' | 'checking' | 'following' | 'synced' | 'error';
 export type ExecutionState = 'idle' | 'waiting' | 'running' | 'completed' | 'failed';
 export type LiveActivityKind = 'starting' | 'planning' | 'command' | 'editing' | 'searching'
-  | 'connectedTool' | 'generating' | 'waiting' | 'checking' | 'responding' | 'working';
+  | 'connectedTool' | 'generating' | 'waiting' | 'checking' | 'responding' | 'working' | 'compacting';
 export type AwaitingDesktopTurn = {
   text: string;
   previousActivityId: string;
@@ -78,6 +78,7 @@ export type BridgeMessage = {
   payload?: Record<string, unknown>;
 };
 export type HistoryPage = {
+  compactionStartedAt?: number | null;
   threadId: string;
   turns: Turn[];
   nextCursor: string | null;

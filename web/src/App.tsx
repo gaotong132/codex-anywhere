@@ -78,6 +78,7 @@ import {
   epochMillis,
   liveEventActivity,
   LiveActivityStatus,
+  ContextCompactionStatus,
   RunDetailsSheet,
   safeActivityKind,
 } from './live-activity';
@@ -245,6 +246,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       detail: activityDetail,
       activity: liveActivity,
       startedAt: activityStartedAt,
+      compactionStartedAt,
       progress: turnProgress,
     },
     resetExecution,
@@ -786,6 +788,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         detail: '',
         progress: {},
         activity: 'starting',
+        compactionStartedAt: null,
         startedAt: Date.now(),
         ...(nextThreadId ? { state: 'running' as const } : {}),
       });
@@ -795,6 +798,9 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         storeEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current, nextThreadId);
         setCreatingNewSession(false);
       }
+    } else if (message.event === 'turn.compaction') {
+      if (String(payload.turnId || '') !== activeTurnIdRef.current) return;
+      updateExecution({ compactionStartedAt: epochMillis(payload.startedAt) });
     } else if (message.event === 'turn.delta') {
       setLiveActivity('responding');
       appendStream(
@@ -893,6 +899,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         detail: '',
         activity: 'working',
         startedAt: null,
+        compactionStartedAt: null,
         progress: {},
         state: payload.reason === 'failed' || current.state === 'failed' ? 'failed' : 'completed',
       }));
@@ -1269,6 +1276,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         const failed = latestStatus === 'failed';
         updateExecution({
           state: active ? 'running' : failed ? 'failed' : 'idle',
+          compactionStartedAt: active ? epochMillis(page.compactionStartedAt) : null,
           purpose: active ? normalizeToolPurpose(page.toolPurpose) : '',
           detail: active ? normalizeToolPurpose(page.activityDetail) : '',
           activity: active
@@ -1329,6 +1337,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         const inProgress = latestStatus === 'inProgress';
         const failed = latestStatus === 'failed';
         updateExecution((current) => ({
+          compactionStartedAt: inProgress ? epochMillis(page.compactionStartedAt) : null,
           purpose: inProgress ? normalizeToolPurpose(page.toolPurpose) || current.purpose : '',
           detail: inProgress ? normalizeToolPurpose(page.activityDetail) : '',
           activity: inProgress
@@ -2174,9 +2183,9 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       <RunDetailsSheet
         open={runDetailsOpen && executionActive}
         state={executionState}
-        kind={liveActivity}
-        purpose={toolPurpose}
-        detail={activityDetail}
+        kind={compactionStartedAt ? 'compacting' : liveActivity}
+        purpose={compactionStartedAt ? '' : toolPurpose}
+        detail={compactionStartedAt ? '' : activityDetail}
         progress={turnProgress}
         startedAt={activityStartedAt}
         environment={environmentDisplayName(environmentId)}
@@ -2259,7 +2268,9 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           onReadVisualization={readVisualization}
         />
         <div className="execution-strip">
-          {(executionState === 'running' || executionState === 'waiting') && (
+          {executionActive && online && compactionStartedAt ? (
+            <ContextCompactionStatus startedAt={compactionStartedAt} onOpenDetails={() => setRunDetailsOpen(true)} />
+          ) : (executionState === 'running' || executionState === 'waiting') && (
             <LiveActivityStatus
               kind={liveActivity}
               purpose={toolPurpose}
