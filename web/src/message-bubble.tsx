@@ -13,6 +13,7 @@ import {
 import { CodePreview } from './code-preview';
 import { isSvgFilePath, SvgPreview } from './svg-preview';
 import { MessageMarkdown } from './message-markdown';
+import { QuestionReplyContent } from './question-reply-content';
 import { t } from './i18n';
 import { progressTypewriterKey, type TimelineItem } from './history-utils';
 import { TypewriterText } from './ui-components';
@@ -490,12 +491,16 @@ function MessageBubbleComponent({
     <div className={`message-block ${item.kind}${copyable ? ' copyable' : ''}`}>
       <div className={`message ${item.kind}${copyable ? ' copyable' : ''}${active ? ' live' : ''}${finalReplyArriving ? ' final-arriving' : ''}`}>
         <MessageContexts item={item} />
-        <MessageMarkdown
+        {item.kind === 'user' && item.questionReplies?.length ? <QuestionReplyContent
+          replies={item.questionReplies}
+          onReadTextFile={onReadTextFile}
+          onDownloadFile={openLocalFile}
+        /> : <MessageMarkdown
           text={item.text}
           attachmentPath={item.attachment?.path}
           onReadTextFile={onReadTextFile}
           onDownloadFile={openLocalFile}
-        />
+        />}
         {item.attachment && (
           <figure className="message-image">
             {imageSource === undefined && <div className="message-image-state">{t('正在加载图片…', 'Loading image…')}</div>}

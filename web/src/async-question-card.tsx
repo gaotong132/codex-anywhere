@@ -29,6 +29,25 @@ export function AsyncQuestionCard({ questions, answers, disabled, onReply }: {
     finally { inFlight.current = false; setSubmitting(false); }
   }
 
+  if (pending.length === 0) return (
+    <details className="async-question-card answered">
+      <summary>
+        <span className="async-question-status">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7" /></svg>
+          {questions.length > 1 ? t(`已回答 ${questions.length} 个问题`, `${questions.length} questions answered`) : t('已回答', 'Answered')}
+        </span>
+        <span className="async-question-summary">{questions[0]?.title}</span>
+        <svg className="async-question-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m5 6 3 3 3-3" /></svg>
+      </summary>
+      <div className="async-question-history">
+        {questions.map((question) => <section key={question.id}>
+          <p className="async-question-title">{question.title}</p>
+          <p className="async-question-answer">{answers.get(question.id)}</p>
+        </section>)}
+      </div>
+    </details>
+  );
+
   return (
     <form className="async-question-card" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <strong>{pending.length ? t('需要你补充信息', 'Your input is requested') : t('已回答', 'Answered')}</strong>

@@ -13,6 +13,8 @@ import { CodexAppServer } from '../src/connector/codex-app-server.js';
 import { BrowserSessionBroker } from '../src/browser-control/session-broker.js';
 import { historyFingerprint, historyItems, mergeHistorySnapshot } from '../web/src/history-utils.js';
 import { AsyncQuestionCard } from '../web/src/async-question-card.js';
+import { MessageBubble } from '../web/src/message-bubble.js';
+import { parseHTML } from 'linkedom';
 
 const source = { type: 'agentMessage', id: 'call_example', delivery: 'async', text: '', questions: [
   { title: 'Which environment?', options: ['Test (Recommended)', 'Production'] },
@@ -105,4 +107,23 @@ test('the question card renders choices and free text, and shows persisted answe
   const answered = renderToStaticMarkup(createElement(AsyncQuestionCard, { questions, answers: new Map(replies.map((r) => [r.questionItemId, r.answer])), disabled: false }));
   assert.match(answered, /已回答/);
   assert.doesNotMatch(answered, /<textarea|type="submit"/);
+  const { document } = parseHTML(answered);
+  assert.ok(document.querySelector('details.answered:not([open])'));
+  assert.equal(document.querySelectorAll('.async-question-history section').length, replies.length);
+});
+
+test('reply bubbles pair each answer with a collapsed question and preserve ordinary message rendering', () => {
+  const item = { id: 'reply', kind: 'user' as const, text: questionReplyText(replies), questionReplies: replies };
+  const props = { item, onDownloadFile() {}, onReadVisualization: async () => '' };
+  const { document } = parseHTML(renderToStaticMarkup(createElement(MessageBubble, props)));
+  const pairs = [...document.querySelectorAll('.question-reply')];
+  assert.equal(pairs.length, replies.length);
+  pairs.forEach((pair, index) => {
+    assert.ok(pair.querySelector('details:not([open]) > summary'));
+    assert.equal(pair.querySelector('.question-reply-full')?.textContent, replies[index].question);
+    assert.equal(pair.querySelector('.question-reply-answer')?.textContent, replies[index].answer);
+  });
+  const ordinary = renderToStaticMarkup(createElement(MessageBubble, { ...props, item: { ...item, questionReplies: undefined } }));
+  assert.doesNotMatch(ordinary, /question-reply-context/);
+  assert.ok(ordinary.includes(replies[0].question));
 });
