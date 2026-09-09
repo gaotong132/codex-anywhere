@@ -1,4 +1,5 @@
 import { t } from './i18n';
+import { matchCompactionSnapshots } from './compaction-timeline';
 import {
   parseAssistantMessage,
   parseUserMessage,
@@ -61,6 +62,7 @@ export type TimelineKind = 'user' | 'assistant' | 'progress' | 'system' | 'error
 export type ImageAttachment = { path: string; name: string; source?: 'generated' | 'local' };
 export type VisualizationArtifact = { path: string; name: string; source: 'visualize' };
 export type TimelineItem = {
+  compactionProgress?: { startedAt: number; status: 'inProgress' | 'completed' };
   questions?: AsyncQuestion[];
   questionReplies?: QuestionReply[];
   id: string;
@@ -295,6 +297,8 @@ function messageTime(item: TurnItem, turn: Turn, kind: TimelineKind) {
 }
 
 export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineItem[], latestTurnIds: Set<string>) {
+  const compactions = matchCompactionSnapshots(current, latest);
+  latest = compactions.latest;
   const knownTurnIds = new Set(current.map((item) => item.historyTurnId).filter(Boolean));
   const introducesNewTurn = [...latestTurnIds].some((turnId) => !knownTurnIds.has(turnId));
   const persistedFileChanges = new Map(current
@@ -393,7 +397,8 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
   }
   const firstMatch = current.findIndex((item) => item.historyTurnId && latestTurnIds.has(item.historyTurnId));
   const keep = (item: TimelineItem) => (
-    !carriedProgressIds.has(item.id)
+    !compactions.matched.has(item.id)
+    && !carriedProgressIds.has(item.id)
     && !duplicateFinalProgressIds.has(item.id)
     && !coveredTransientProgressIds.has(item.id)
     && !(persistedSnapshotIdentity(item) && persistedSnapshotItems.has(persistedSnapshotIdentity(item)))

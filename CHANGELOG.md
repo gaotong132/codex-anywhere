@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Unify active and completed compaction in the existing timeline marker. Update its text in place and preserve its identity during history hydration; remove the separate composer banner. Update Web only.
+
 - Show ongoing context compaction above the composer with an elapsed timer, using native item lifecycle events for headless runs and bounded local trace metadata for Desktop runs. Clear the indicator on completion, failure or task changes; retain completed timeline markers without inventing percentages or treating ordinary waits as compaction. Update Connector and Web.
 
 - Display terminal errors carried by rollout `task_complete.error` and live `turn/completed`, including model-capacity failures, with the full reason in a wrapping error card. Keep live/history failures consistent and deduplicate terminal notices. Update Connector and Web; existing rollout errors become visible without retrying the task.

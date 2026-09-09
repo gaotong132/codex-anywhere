@@ -112,8 +112,8 @@ before/after totals. Completed turns retain compact counts for tools, commands, 
 plus bounded model-setting changes and failure or cancellation reasons. Raw reasoning, tool arguments, and
 tool output are not copied into these summaries.
 
-While compaction is in progress, the input area shows **Compacting context** with an elapsed timer; it
-returns to normal activity when compaction finishes. Headless runs use the native `contextCompaction`
+Compaction uses one timeline marker throughout: **Compacting context** and its elapsed timer change to
+**Context compacted** in place, preserving the same styling and position. Headless runs use the native `contextCompaction`
 item lifecycle. Desktop runs use a bounded, read-only check of the current task/turn's local Codex trace
 span, since rollout history records only completion. The trace database is optional: if absent or changed,
 chat remains available and only the completed marker is shown. No log text, percentage estimate or prompt

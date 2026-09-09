@@ -78,7 +78,6 @@ import {
   epochMillis,
   liveEventActivity,
   LiveActivityStatus,
-  ContextCompactionStatus,
   RunDetailsSheet,
   safeActivityKind,
 } from './live-activity';
@@ -118,6 +117,7 @@ import {
 } from '../../src/shared/context-compaction';
 import type { TimelineNotice } from '../../src/shared/timeline-notice';
 import { appendTimelineNotice } from './timeline-notice-events';
+import { clearPendingCompactions, finishTimelineCompaction, startTimelineCompaction } from './compaction-timeline';
 import { PresenceIndicator } from './presence-indicator';
 import { PermissionModeControl } from './permission-mode-control';
 import { BrowserSessionStatus } from './browser-session-status';
@@ -800,7 +800,12 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       }
     } else if (message.event === 'turn.compaction') {
       if (String(payload.turnId || '') !== activeTurnIdRef.current) return;
-      updateExecution({ compactionStartedAt: epochMillis(payload.startedAt) });
+      const startedAt = epochMillis(payload.startedAt);
+      updateExecution({ compactionStartedAt: startedAt });
+      setTimeline(current => startedAt
+        ? startTimelineCompaction(current, String(payload.turnId), startedAt)
+        : finishTimelineCompaction(current, String(payload.turnId), Date.now()));
+      if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
     } else if (message.event === 'turn.delta') {
       setLiveActivity('responding');
       appendStream(
@@ -871,6 +876,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         summary: String(payload.summary || ''),
       });
     } else if (message.event === 'turn.error') {
+      setTimeline(clearPendingCompactions);
       const error = String(payload.error || t('Codex 运行错误', 'Codex execution error'));
       addTimelineNotice({ kind: 'turnStatus', status: 'error', detail: error }, String(payload.turnId || ''));
       streamItemRef.current = null;
@@ -881,6 +887,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       ownedTurnThreadIdRef.current = null;
       resetExecution('failed');
     } else if (message.event === 'turn.ended') {
+      setTimeline(clearPendingCompactions);
       if (payload.reason === 'cancelled') {
         addTimelineNotice({ kind: 'turnStatus', status: 'aborted', detail: 'cancelled' }, String(payload.turnId || ''));
       } else if (payload.reason === 'failed') {
@@ -1268,7 +1275,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         for (const item of items) {
           if (item.kind === 'progress') seedTypewriterText(progressTypewriterKey(item), item.text);
         }
-        setTimeline(items);
+        setTimeline(startTimelineCompaction(items, page.activityId || '', epochMillis(page.compactionStartedAt)));
         followFingerprintRef.current = historyFingerprint(page.turns, page.turnProgress);
         latestActivityIdRef.current = page.activityId || '';
         const latestStatus = page.turns[0]?.status;
@@ -1385,13 +1392,17 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           setExecutionState((current) => current === 'running' || current === 'waiting' ? 'completed' : current);
         }
 
-        if (!previousFingerprint || previousFingerprint !== fingerprint) {
-          if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
-          const latestTurnIds = new Set(latestItems
-            .map((item) => item.historyTurnId)
-            .filter((turnId): turnId is string => Boolean(turnId)));
-          setTimeline((current) => mergeHistorySnapshot(current, latestItems, latestTurnIds));
-        }
+        const historyChanged = !previousFingerprint || previousFingerprint !== fingerprint;
+        if (autoFollowLatestRef.current && (historyChanged || page.compactionStartedAt)) shouldScrollBottomRef.current = true;
+        const latestTurnIds = new Set(latestItems
+          .map((item) => item.historyTurnId)
+          .filter((turnId): turnId is string => Boolean(turnId)));
+        setTimeline((current) => {
+          const merged = historyChanged ? mergeHistorySnapshot(current, latestItems, latestTurnIds) : current;
+          return inProgress
+            ? startTimelineCompaction(merged, page.activityId || '', epochMillis(page.compactionStartedAt))
+            : clearPendingCompactions(merged);
+        });
         schedule(inProgress || changed ? 1_500 : 6_000);
       } catch {
         if (disposed) return;
@@ -2268,9 +2279,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           onReadVisualization={readVisualization}
         />
         <div className="execution-strip">
-          {executionActive && online && compactionStartedAt ? (
-            <ContextCompactionStatus startedAt={compactionStartedAt} onOpenDetails={() => setRunDetailsOpen(true)} />
-          ) : (executionState === 'running' || executionState === 'waiting') && (
+          {!compactionStartedAt && (executionState === 'running' || executionState === 'waiting') && (
             <LiveActivityStatus
               kind={liveActivity}
               purpose={toolPurpose}

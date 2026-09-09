@@ -135,24 +135,6 @@ export function LiveActivityStatus({
   );
 }
 
-export function ContextCompactionStatus({ startedAt, onOpenDetails }: { startedAt: number; onOpenDetails: () => void }) {
-  const [clock, setClock] = useState(Date.now());
-  useEffect(() => {
-    setClock(Date.now());
-    const timer = setInterval(() => setClock(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [startedAt]);
-  return <button type="button" className="context-compaction-progress" onClick={onOpenDetails}
-    aria-label={t('正在整理上下文，查看运行详情', 'Compacting context. View run details')}>
-    <span className="compaction-spinner" aria-hidden="true" />
-    <span className="compaction-progress-text" role="status">
-      <strong>{activityLabel('compacting')}</strong>
-      <span>{t('整理完成后继续当前任务', 'The task continues when compaction finishes')}</span>
-    </span>
-    <time aria-label={t('已等待', 'Elapsed')}>{elapsedLabel(startedAt, clock)}</time>
-  </button>;
-}
-
 export function RunDetailsSheet({
   open,
   state,

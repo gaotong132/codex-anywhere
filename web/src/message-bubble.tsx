@@ -14,10 +14,12 @@ import { CodePreview } from './code-preview';
 import { isSvgFilePath, SvgPreview } from './svg-preview';
 import { MessageMarkdown } from './message-markdown';
 import { QuestionReplyContent } from './question-reply-content';
+import { elapsedLabel } from './live-activity';
 import { t } from './i18n';
 import { progressTypewriterKey, type TimelineItem } from './history-utils';
 import { TypewriterText } from './ui-components';
 import type { TextPreviewDocument, TurnDiffDocument } from './app-types';
+import type { ContextCompaction } from '../../src/shared/context-compaction';
 
 type MessageCopyState = 'idle' | 'copied' | 'failed';
 
@@ -192,7 +194,15 @@ function contextUsagePercent(tokens: number | undefined, contextWindow: number |
 }
 
 function ContextCompactionMarker({ item }: { item: TimelineItem }) {
-  const compaction = item.compaction!;
+  const pending = item.compactionProgress?.status === 'inProgress';
+  const [clock, setClock] = useState(Date.now());
+  useEffect(() => {
+    if (!pending) return;
+    setClock(Date.now());
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [pending]);
+  const compaction: Partial<ContextCompaction> = item.compaction || {};
   const beforePercent = contextUsagePercent(compaction.beforeTokens, compaction.contextWindow);
   const afterPercent = contextUsagePercent(compaction.afterTokens, compaction.contextWindow);
   const usage = beforePercent !== null && afterPercent !== null
@@ -208,9 +218,9 @@ function ContextCompactionMarker({ item }: { item: TimelineItem }) {
       `${compaction.beforeTokens.toLocaleString()} / ${compaction.contextWindow.toLocaleString()} tokens before${compaction.afterTokens !== undefined ? `, ${compaction.afterTokens.toLocaleString()} after` : ''}`,
     )
     : '';
-  const label = t(
-    `上下文已压缩，第 ${compaction.sequence} 次${usage ? `，${usage}` : ''}`,
-    `Context compacted, pass ${compaction.sequence}${usage ? `, ${usage}` : ''}`,
+  const label = pending ? t('正在压缩上下文', 'Compacting context') : t(
+    `上下文已压缩${compaction.sequence ? `，第 ${compaction.sequence} 次` : ''}${usage ? `，${usage}` : ''}`,
+    `Context compacted${compaction.sequence ? `, pass ${compaction.sequence}` : ''}${usage ? `, ${usage}` : ''}`,
   );
   const completedDateTime = dateTimeValue(item.completedAt);
   return (
@@ -220,10 +230,10 @@ function ContextCompactionMarker({ item }: { item: TimelineItem }) {
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M4 8h6m4 0h6M8 5l3 3-3 3m8-6-3 3 3 3M7 16h10" />
         </svg>
-        <strong>{t('上下文已压缩', 'Context compacted')}</strong>
-        <span>{t(`第 ${compaction.sequence} 次`, `Pass ${compaction.sequence}`)}</span>
+        <strong aria-live="polite">{pending ? t('正在压缩上下文', 'Compacting context') : t('上下文已压缩', 'Context compacted')}</strong>
+        {compaction.sequence && <span>{t(`第 ${compaction.sequence} 次`, `Pass ${compaction.sequence}`)}</span>}
         {usage && <b>{usage}</b>}
-        {item.completedAt && completedDateTime && (
+        {pending ? <time>{elapsedLabel(item.compactionProgress!.startedAt, clock)}</time> : item.completedAt && completedDateTime && (
           <time dateTime={completedDateTime}>{formatDate(item.completedAt)}</time>
         )}
       </span>
@@ -474,7 +484,7 @@ function MessageBubbleComponent({
     setTurnDiffPreview(null);
   }
 
-  if (item.kind === 'system' && item.compaction) return <ContextCompactionMarker item={item} />;
+  if (item.kind === 'system' && (item.compaction || item.compactionProgress)) return <ContextCompactionMarker item={item} />;
   if (item.kind === 'system' && item.notice) return <TimelineNoticeMarker item={item} />;
   if (item.kind === 'progress') {
     return (
