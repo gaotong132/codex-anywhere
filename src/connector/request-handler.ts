@@ -216,7 +216,8 @@ async function dispatchAction({
   });
   if (action === 'turn.steer') {
     return {
-      ...await codex.steerTurn({ ...payload, text: browser?.withContext(String(payload.threadId || '').trim(), payload.text) ?? payload.text, clientId, requestId }),
+      ...await sendWithBrowserContext(browser, String(payload.threadId || '').trim(), payload.text,
+        (text) => codex.steerTurn({ ...payload, text, clientId, requestId })),
       delivery: 'appServer',
     };
   }
@@ -257,7 +258,8 @@ async function startTurn({
 }: Pick<DispatchContext, 'codex' | 'desktop' | 'mode' | 'payload' | 'clientId' | 'requestId' | 'browser'>) {
   const threadId = String(payload.threadId || '').trim();
   if (!threadId || mode === 'headless') {
-    return { ...await codex.startTurn({ ...payload, text: browser?.withContext(threadId, payload.text) ?? payload.text, clientId, requestId }), delivery: 'appServer' };
+    return { ...await sendWithBrowserContext(browser, threadId, payload.text,
+      (text) => codex.startTurn({ ...payload, text, clientId, requestId })), delivery: 'appServer' };
   }
   // Existing Desktop tasks must keep their original writer. Starting or
   // resuming them through the bridge's app-server creates a second writer and
@@ -265,11 +267,15 @@ async function startTurn({
   if (!desktop) throw new Error('desktop_app_unavailable');
   await codex.prepareDesktopTurn?.();
   const { model, thinking } = await codex.getDesktopTurnOverrides(threadId);
-  return desktop.sendMessage({
+  return sendWithBrowserContext(browser, threadId, payload.text, (text) => desktop.sendMessage({
     threadId,
-    text: browser?.withContext(threadId, payload.text) ?? payload.text,
+    text,
     requestId,
     ...(model ? { model } : {}),
     ...(thinking ? { thinking } : {}),
-  });
+  }));
+}
+
+function sendWithBrowserContext<T>(browser: BrowserSessionBroker | undefined, threadId: string, text: unknown, deliver: (text: unknown) => Promise<T>) {
+  return browser ? browser.withContext(threadId, text, deliver) : deliver(text);
 }

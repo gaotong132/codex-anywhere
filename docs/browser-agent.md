@@ -132,14 +132,18 @@ Remaining clipped panels can scroll horizontally. Interrupted changes are never 
 
 MCP initialization instructions distinguish the extension from in-app CUA. Start with `anywhere_browser_list_pages`, then
 snapshot the chosen page. Empty CUA tabs do not prove extension disconnection. Anywhere-delivered Desktop, headless and steer
-messages append a current exact-Session authorization count and tool guidance, with no extra turn, page content, URL or secret.
+messages append exact-Session status on the first related send and after the page set or online state changes,
+with no extra turn, page content, URL or secret. Ordinary messages in an unchanged state carry no reminder.
 Messages entered directly in Desktop do not pass through the Connector; they rely on the reloaded MCP instructions.
 
 Shared workflows and consent boundaries live in MCP server instructions. Each tool describes only its own operation;
-specific failures carry recovery hints. The per-message reminder keeps live counts, list/snapshot entry points and the
-extension/CUA distinction. The 2026-09-09 copy update reduces server/tool prose from 9,065 to 3,822 characters and the
-single-page reminder from 901 to 408, without changing tool contracts. Update Connector/MCP and Web history parsing;
-refresh loaded MCP instructions when idle. This text-only update needs no extension reload or new pairing.
+specific failures carry recovery hints. The status hint is one line with live counts and the list-pages entry point
+(91 characters for a single page, down from 408). It is recorded only after a successful send; failed/uncertain sends
+do not consume it or trigger an automatic resend. Page replacement and per-page liveness changes are detected even when
+counts stay equal. Revocation sends a zero-page notice on the next ordinary message; question-answer envelopes remain exact.
+The Connector retains up to 64 recent task states in memory, so restarting it or revisiting an evicted authorized task
+may send the initial hint again. Tools always recheck live authorization. Server/tool prose remains 3,822 characters;
+the current update changes no MCP tool descriptions. Update Connector and Web; no extension reload or new pairing is needed.
 
 Guidance tells the model to execute task-required navigation, search, ordinary clicks and input directly, verifying the
 result and pausing for actual login, verification, new permissions or out-of-scope actions. Host MCP approval rejection,
@@ -153,6 +157,9 @@ branch does not deploy production.
 
 ## Acceptance gates
 
+- 2026-09-09 state reminders: 370 root tests, type checks and builds pass. Coverage includes stable-state suppression,
+  failures and reordered delivery receipts, same-count page replacement, liveness changes, reconnect, bounded retention,
+  async question envelopes, old/new history parsing and all three message delivery routes. Extension build stays `f4d6f529`.
 - 2026-09-09 guidance deduplication: 361 root tests and all type/build checks pass; SDK discovery matches the previous
   eight tool contracts apart from descriptions. A real Codex ephemeral task against a synthetic table independently
   follows snapshot → 80% → snapshot → 67% → snapshot to read a clipped price. No business page is used.

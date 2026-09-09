@@ -64,7 +64,7 @@ function request(action, payload = {}) {
   return { action, payload, requestId: 'request-1', clientId: 'client-1' };
 }
 
-test('browser context follows only the exact PC/headless turn, steer and revocation without extra messages', async () => {
+test('browser context follows exact PC/headless state changes without repeating on steer', async () => {
   for (const mode of ['desktop', 'headless'] as const) {
     const calls: any[] = [];
     const dependencies = createDependencies({ mode, codex: {
@@ -81,19 +81,44 @@ test('browser context follows only the exact PC/headless turn, steer and revocat
       assert.equal((await handler(request(action, { threadId: 'other', text: 'Unrelated task', turnId: 'turn-1' }))).ok, true);
     }
     assert.equal(calls.length, 4);
-    for (const payload of [calls[0], calls[2]]) {
+    {
+      const payload = calls[0];
       assert.equal(payload.threadId, 'bound');
-      assert.match(payload.text, /^Inspect current page\n\n\[Anywhere browser context/);
-      assert.match(payload.text, /1 explicitly authorized/);
+      assert.match(payload.text, /^Inspect current page\n\n\[Anywhere browser:/);
+      assert.match(payload.text, /1 authorized/);
       assert.match(payload.text, /anywhere_browser_list_pages/);
-      assert.match(payload.text, /MCP unavailable/);
       assert.doesNotMatch(payload.text, /private\.example|browser-a|doc-a/);
     }
+    assert.equal(calls[2].text, 'Inspect current page', 'unchanged state is not repeated on steer');
     assert.equal(calls[1].text, 'Unrelated task'); assert.equal(calls[3].text, 'Unrelated task');
     browser.revoke(client, root.grantId);
     await handler(request('turn.start', { threadId: 'bound', text: 'Continue' }));
-    assert.match(calls[4].text, /0 explicitly authorized/);
+    assert.match(calls[4].text, /0 authorized/);
     assert.equal(browser.status('bound').online, false);
+  }
+});
+
+test('failed Desktop, headless and steer deliveries retain browser context for the next user send', async () => {
+  for (const [mode, action] of [['desktop', 'turn.start'], ['headless', 'turn.start'], ['desktop', 'turn.steer']] as const) {
+    const texts: unknown[] = [];
+    const deliver = async (payload: any) => {
+      texts.push(payload.text);
+      if (texts.length === 1) throw new Error('delivery_timeout');
+      return { threadId: payload.threadId };
+    };
+    const dependencies = createDependencies({ mode, codex: { startTurn: deliver, steerTurn: deliver }, desktop: { sendMessage: deliver } });
+    const browser = new BrowserSessionBroker(mode, () => true);
+    const client = { clientId: 'extension', clientDeviceId: 'browser' };
+    browser.bind(client, 'task', { browserDeviceId: 'browser', tabId: 1, documentId: 'doc', origin: 'https://example.com' });
+    const handle = createRequestHandler({ ...dependencies, browser });
+    const send = () => handle(request(action, { threadId: 'task', turnId: 'turn', text: 'Read' }));
+    assert.equal((await send()).ok, false);
+    assert.equal(texts.length, 1, 'no automatic resend');
+    assert.equal((await send()).ok, true);
+    assert.equal(texts[0], texts[1]);
+    assert.match(String(texts[1]), /Anywhere browser:/);
+    assert.equal((await send()).ok, true);
+    assert.equal(texts[2], 'Read');
   }
 });
 

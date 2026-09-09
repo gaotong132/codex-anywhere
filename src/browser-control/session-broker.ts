@@ -9,13 +9,15 @@ type Client = { clientId: string; clientDeviceId: string };
 type BindOptions = { replaceExisting?: boolean; recoverOnly?: boolean };
 type Grant = Client & { id: string; threadId: string; target: BrowserTarget; seenAt: number; sequence: number; active: boolean; lastToolSuccessAt?: number; rootGrantId?: string };
 type Pending = { grant: Grant; operation: BrowserOperation; adopted?: boolean; resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> };
+type DeliveredContext = { state?: string; sequence: number };
 
 // Consent has no TTL. Heartbeats describe transport liveness, not consent duration.
 export class BrowserSessionBroker {
   private grants = new Map<string, Grant>();
   private pending = new Map<string, Pending>();
   private bindingIntents = new Map<string, object>();
-  private contextualized = new Set<string>();
+  private contextualized = new Map<string, DeliveredContext>();
+  private contextSequence = 0;
   constructor(readonly environmentId: string, private send: (frame: Record<string, unknown>) => boolean,
     private now = Date.now, private timeoutMs = 15_000) {}
 
@@ -131,15 +133,29 @@ export class BrowserSessionBroker {
 
   // Added to this exact turn, never a second message or global Codex configuration.
   // No page content, credentials, URLs or model-supplied routing IDs in the prompt.
-  withContext(threadId: string, text: unknown) {
+  async withContext<T>(threadId: string, text: unknown, deliver: (text: unknown) => Promise<T>): Promise<T> {
     // Desktop recognizes question answers by an exact envelope. A context
     // suffix would turn it into ordinary text and leave its question unanswered.
-    if (parseQuestionReplies(text)) return text;
+    if (parseQuestionReplies(text)) return deliver(text);
     const grants = this.forSession(threadId);
-    if (!grants.length && !this.contextualized.has(threadId)) return text;
-    this.contextualized.delete(threadId); this.contextualized.add(threadId);
-    if (this.contextualized.size > 64) this.contextualized.delete(this.contextualized.values().next().value!);
-    return `${String(text ?? '')}\n\n${browserContext(grants.length, grants.filter((grant) => this.isOnline(grant)).length)}`;
+    if (!grants.length && !this.contextualized.has(threadId)) return deliver(text);
+    // Track page identity and per-page liveness, not just counts: replacing a page
+    // or swapping which page is online must refresh the model's live inventory.
+    const pages = grants.map((grant) => ({ id: grant.id, online: this.isOnline(grant) })).sort((a, b) => a.id.localeCompare(b.id));
+    const state = JSON.stringify(pages);
+    const previous = this.contextualized.get(threadId) ?? { sequence: 0 };
+    this.contextualized.delete(threadId); this.contextualized.set(threadId, previous);
+    if (this.contextualized.size > 64) this.contextualized.delete(this.contextualized.keys().next().value!);
+    const sequence = ++this.contextSequence;
+    const message = previous.state === state ? text
+      : `${String(text ?? '')}\n\n${browserContext(pages.length, pages.filter((page) => page.online).length)}`;
+    const result = await deliver(message);
+    // Failed/uncertain sends remain eligible for the next user message. A late
+    // success cannot overwrite newer delivery state or resurrect an evicted task.
+    if (this.contextualized.get(threadId) === previous && sequence > previous.sequence) {
+      previous.state = state; previous.sequence = sequence;
+    }
+    return result;
   }
 
   async execute(threadId: string, turnId: string, operation: BrowserOperation, pageId?: string): Promise<unknown> {

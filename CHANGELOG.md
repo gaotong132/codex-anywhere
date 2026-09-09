@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Send a 91-character browser status hint only on the first related message or after page authorization/online state changes. Commit reminder state only after successful message delivery, so failed sends can include it again without automatic retries. Detect replaced pages even with unchanged counts, preserve exact async question answers and hide all historical reminder formats. Update Connector and Web; no extension reload or new pairing is needed.
+
 - Deduplicate browser MCP guidance: keep shared workflows in server instructions, operation-specific details in eight tool descriptions, and live state in the message reminder. MCP prose falls from 9,065 to 3,822 characters; the reminder falls from 901 to 408. Tool contracts and authorization stay unchanged, with exact historical reminders still hidden. Update Connector/MCP and Web; this change needs no extension reload or new pairing.
 
 - Refactor the experimental browser extension into page drivers and managed-tab lifecycle modules with shared deadline and late-resource cleanup. Bound stalled native clicks and accept reordered target fields without weakening identity checks. Reuse style/layout reads only within one snapshot and correct debugger-lifetime documentation.

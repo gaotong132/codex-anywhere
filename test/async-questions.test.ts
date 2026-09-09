@@ -72,13 +72,13 @@ test('question normalization rejects malformed, excessive and non-async data wit
   assert.equal(parseUserMessage(malformed).text, malformed);
 });
 
-test('an authorized browser keeps async answers as exact Desktop envelopes', () => {
+test('an authorized browser keeps async answers as exact Desktop envelopes', async () => {
   const broker = new BrowserSessionBroker('personal-pc', () => true);
   const client = { clientId: 'extension', clientDeviceId: 'browser-a' };
   broker.bind(client, 'task-a', { browserDeviceId: 'browser-a', tabId: 1, documentId: 'doc-a', origin: 'https://example.com' });
   const envelope = buildQuestionReply(replies);
-  assert.equal(broker.withContext('task-a', envelope), envelope);
-  assert.match(String(broker.withContext('task-a', 'Continue reading the page')), /Anywhere browser context/);
+  assert.equal(await broker.withContext('task-a', envelope, async (text) => text), envelope);
+  assert.match(String(await broker.withContext('task-a', 'Continue reading the page', async (text) => text)), /Anywhere browser:/);
 });
 
 test('live async question events stay bound to their original task and turn', () => {
