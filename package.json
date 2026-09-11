@@ -69,7 +69,7 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "6.1.1",
     "linkedom": "0.18.13",
-    "sass": "1.103.1",
+    "sass": "1.104.0",
     "tsx": "^4.23.13",
     "typescript": "7.0.2",
     "vite": "8.2.2"
