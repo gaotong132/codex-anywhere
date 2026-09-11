@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Show generated images from newer Codex `Extension` image events in Web history, including older pages with large image payloads. Preserve image timestamps and avoid repeated images across pagination. Update Connector; existing images need no regeneration or new pairing.
+
 - Unify active and completed compaction in the existing timeline marker. Update its text in place and preserve its identity during history hydration; remove the separate composer banner. Update Web only.
 
 - Show ongoing context compaction above the composer with an elapsed timer, using native item lifecycle events for headless runs and bounded local trace metadata for Desktop runs. Clear the indicator on completion, failure or task changes; retain completed timeline markers without inventing percentages or treating ordinary waits as compaction. Update Connector and Web.

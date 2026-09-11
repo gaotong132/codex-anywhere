@@ -113,7 +113,9 @@ type RolloutSnapshot = SnapshotOptions & {
   mapping: RolloutMappingState;
   contextUsage?: ContextUsage;
 };
-type CompleteRows = { rows: RolloutRow[]; parsedOffset: number; firstCompleteOffset: number };
+type CompleteRows = {
+  rows: RolloutRow[]; parsedOffset: number; firstCompleteOffset: number; recoveredLeadingRow?: boolean;
+};
 const activityMarkers = [
   { needle: Buffer.from('"type":"task_started"'), status: 'inProgress' },
   { needle: Buffer.from('"type":"task_complete"'), status: 'completed' },
@@ -389,7 +391,10 @@ async function readVisibleRows(handle: FileHandle, end: number, chunkBytes: numb
     newestParsedOffset ??= window.parsedOffset;
     rows = window.rows.concat(rows);
     firstCompleteOffset = window.firstCompleteOffset;
-    const next = firstCompleteOffset < cursor ? firstCompleteOffset : start;
+    // A recovered image belongs to the partial row before firstCompleteOffset.
+    // Consume its suffix too, otherwise the next page emits the same image again.
+    const next = window.recoveredLeadingRow ? start
+      : firstCompleteOffset < cursor ? firstCompleteOffset : start;
     if (next >= cursor) break;
     cursor = next;
     // Map only this chunk when deciding whether to stop; tool output and
@@ -418,11 +423,13 @@ async function readCompleteRows(
   const firstCompleteOffset = start + begin;
   const lastNewline = data.lastIndexOf(0x0a);
   if (lastNewline < begin) {
-    return { rows: recoveredRows, parsedOffset: firstCompleteOffset, firstCompleteOffset };
+    return { rows: recoveredRows, parsedOffset: firstCompleteOffset, firstCompleteOffset,
+      recoveredLeadingRow: recoveredRows.length > 0 };
   }
   const rows = recoveredRows.concat(data.subarray(begin, lastNewline + 1).toString('utf8')
     .split('\n').filter(Boolean).map(parseRow).filter((row): row is RolloutRow => Boolean(row)));
-  return { rows, parsedOffset: start + lastNewline + 1, firstCompleteOffset };
+  return { rows, parsedOffset: start + lastNewline + 1, firstCompleteOffset,
+    recoveredLeadingRow: recoveredRows.length > 0 };
 }
 
 async function initialTurnIdForWindow(handle: FileHandle, window: CompleteRows) {
@@ -446,6 +453,7 @@ function isVisibleRolloutRow(row: RolloutRow) {
     || row?.type === 'compacted'
     || row?.type === 'turn_context'
     || (row?.type === 'event_msg' && /^(?:agent_message|user_message|image_generation_end)$/.test(type))
+    || (row?.type === 'event_msg' && type === 'item_completed' && extractGeneratedImageAttachment(payload.item))
     || (row?.type === 'event_msg' && /^(?:thread_settings_applied|task_failed|turn_aborted|turn_error)$/.test(type))
     || (row?.type === 'response_item' && type === 'message')
     || toolCallFromRow(row)
@@ -843,13 +851,19 @@ function parseRow(line: string): RolloutRow | null {
 
 function recoverGeneratedImageRows(partialRow: string): RolloutRow[] {
   const rows: RolloutRow[] = [];
-  const pattern = /"saved_path"\s*:\s*("(?:\\.|[^"\\])*")/g;
+  const completedAt = /"completed_at_ms"\s*:\s*(\d{13})\b/.exec(partialRow);
+  const pattern = /"(?:saved_path|savedPath)"\s*:\s*("(?:\\.|[^"\\])*")/g;
   for (const match of partialRow.matchAll(pattern)) {
     try {
       const savedPath = JSON.parse(match[1]);
       if (typeof savedPath === 'string' && /\.codex[\\/]generated_images[\\/]/i.test(savedPath)) {
         rows.push({
           type: 'event_msg',
+          // Extension image events put completion time after the large image
+          // result, so it survives a bounded read that drops the row's prefix.
+          ...(completedAt
+            ? { timestamp: new Date(Number(completedAt[1])).toISOString() }
+            : {}),
           payload: { type: 'image_generation_end', status: 'completed', saved_path: savedPath },
         });
       }
@@ -1055,9 +1069,10 @@ function mapRolloutRowsWithState(
           ...content, ...finalFileChanges(payload.phase, progress), ...turn, ...timing,
         });
       }
-    } else if (row?.type === 'event_msg' && payloadType === 'image_generation_end') {
-      const attachment = extractGeneratedImageAttachment(payload);
-      if (payload.status === 'completed' && attachment) {
+    } else if (row?.type === 'event_msg' && /^(?:image_generation_end|item_completed)$/.test(payloadType)) {
+      const item = payloadType === 'item_completed' ? payload.item : payload;
+      const attachment = extractGeneratedImageAttachment(item);
+      if (item?.status === 'completed' && attachment) {
         pushText(items, {
           type: 'agentMessage', phase: 'final_answer', text: '', attachment, ...turn, ...timing,
         });

@@ -17,7 +17,10 @@ export function generatedImagesDirectory() {
 
 export function extractGeneratedImageAttachment(value: Record<string, any>): GeneratedImageAttachment | undefined {
   const type = String(value?.type || '');
-  if (!/image.?generation|generated.?image/i.test(type)) return undefined;
+  const extensionGeneration = type === 'Extension' && value.kind === 'image_gen.generation';
+  if (extensionGeneration) {
+    if (value.status !== 'completed' || value.failure) return undefined;
+  } else if (!/image.?generation|generated.?image/i.test(type)) return undefined;
   const path = [
     value.saved_path,
     value.savedPath,
