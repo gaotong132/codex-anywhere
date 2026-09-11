@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline';
 import { CompactionProgressReader } from './compaction-progress.js';
 import {
   readRolloutContextUsage,
+  readRolloutGeneratedImages,
   readRolloutModelSettings,
   readRolloutPermissionMode,
   readRolloutTail,
@@ -324,9 +325,19 @@ export class CodexAppServer extends EventEmitter {
       const hydratedTurns = mode === 'conversation'
         ? await this.hydrateInjectedTurnInputs(resolvedThreadId, rawTurns)
         : rawTurns;
+      const turns = mapTurns(hydratedTurns);
+      if (mode === 'conversation' && metadata?.path) {
+        const images = await readRolloutGeneratedImages(metadata.path).catch(() => []);
+        for (const turn of turns) {
+          const missing = images.filter((image) => image.turnId === turn.id
+            && !turn.items.some((item: JsonObject) => item.attachment?.path === image.attachment?.path));
+          const finalIndex = turn.items.findIndex((item: JsonObject) => item.phase === 'final_answer');
+          turn.items.splice(finalIndex < 0 ? turn.items.length : finalIndex, 0, ...missing);
+        }
+      }
       return {
         threadId: resolvedThreadId,
-        turns: mapTurns(hydratedTurns),
+        turns,
         nextCursor: result?.nextCursor || null,
         truncated: false,
         source: 'appServer',

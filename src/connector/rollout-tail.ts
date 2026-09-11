@@ -27,6 +27,8 @@ const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_ITEMS = 80;
 const HISTORY_PAGE_BYTES = 512 * 1024;
 const MAX_VISIBLE_HISTORY_SCAN_BYTES = 16 * 1024 * 1024;
+// Summary hydration is used below the app-server's 64 MiB rollout cutoff.
+const MAX_GENERATED_IMAGE_SCAN_BYTES = 64 * 1024 * 1024;
 const ROLLOUT_CURSOR_PREFIX = 'rollout:v1:';
 const MAX_TEXT_LENGTH = 4_000;
 const ACTIVITY_SCAN_CHUNK_BYTES = 4 * 1024 * 1024;
@@ -127,6 +129,51 @@ type CachedRollout = RolloutSnapshot & {
   fileIdentity: string; mtimeMs: number; ctimeMs: number; tail: Buffer;
 };
 const rolloutCache = new Map<string, CachedRollout>();
+const generatedImageCache = new Map<string, { signature: string; items: RolloutItem[] }>();
+
+// Summary RPCs omit image items. Read only lightweight references from a bounded
+// local window instead of fetching full turns and their multi-megabyte results.
+export async function readRolloutGeneratedImages(filePath: string): Promise<RolloutItem[]> {
+  const handle = await open(filePath, 'r');
+  try {
+    const info = await handle.stat();
+    const signature = `${info.dev}:${info.ino}:${info.birthtimeMs}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
+    const cached = generatedImageCache.get(filePath);
+    if (cached?.signature === signature) return cached.items;
+    const floor = Math.max(0, info.size - MAX_GENERATED_IMAGE_SCAN_BYTES);
+    let cursor = info.size;
+    const rows: RolloutRow[] = [];
+    while (cursor > floor) {
+      const start = Math.max(floor, cursor - HISTORY_PAGE_BYTES);
+      const window = await readCompleteRows(handle, start, cursor, start > 0);
+      const references: RolloutRow[] = [];
+      for (const row of window.rows) {
+        const payload = row.payload || {};
+        if (row.type !== 'event_msg') continue;
+        if (payload.type === 'task_started') {
+          references.push({ type: 'event_msg', payload: { type: 'task_started', turn_id: rolloutRowTurnId(row) } });
+          continue;
+        }
+        const item = payload.type === 'item_completed' ? payload.item
+          : payload.type === 'image_generation_end' ? payload : undefined;
+        const attachment = extractGeneratedImageAttachment(item);
+        if (item?.status === 'completed' && attachment) references.push({
+          type: 'event_msg', timestamp: row.timestamp,
+          payload: { type: 'image_generation_end', status: 'completed', saved_path: attachment.path,
+            turn_id: rolloutRowTurnId(row) },
+        });
+      }
+      rows.unshift(...references);
+      cursor = window.recoveredLeadingRow ? start
+        : window.firstCompleteOffset < cursor ? window.firstCompleteOffset : start;
+    }
+    const items = mapRolloutRows(rows).filter((item) => item.attachment && item.turnId);
+    generatedImageCache.delete(filePath);
+    generatedImageCache.set(filePath, { signature, items });
+    if (generatedImageCache.size > MAX_CACHED_ROLLOUTS) generatedImageCache.delete(generatedImageCache.keys().next().value!);
+    return items;
+  } finally { await handle.close(); }
+}
 
 export async function readRolloutModelSettings(filePath: string): Promise<RolloutModelSettings> {
   const handle = await open(filePath, 'r');

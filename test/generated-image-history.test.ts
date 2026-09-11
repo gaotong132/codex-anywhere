@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { extractGeneratedImageAttachment } from '../src/connector/generated-images.js';
 import { mapTurns } from '../src/connector/app-server-history.js';
-import { internals, readRolloutTail } from '../src/connector/rollout-tail.js';
+import { CodexAppServer } from '../src/connector/codex-app-server.js';
+import { internals, readRolloutGeneratedImages, readRolloutTail } from '../src/connector/rollout-tail.js';
 import { historyItems } from '../web/src/history-utils.js';
 
 const savedPath = 'C:\\Users\\example\\.codex\\generated_images\\thread-image\\result.png';
@@ -83,8 +84,51 @@ test('bounded tail and older pages recover Extension images across large Base64 
     assert.deepEqual(images.map((item) => [item.attachment?.name, item.turnId, item.completedAt]), [
       ['edited.png', 'second', completedAt + 1000], ['result.png', 'first', completedAt],
     ]);
+    const references = await readRolloutGeneratedImages(filePath);
+    assert.deepEqual(references.map((item) => item.attachment?.name), ['result.png', 'edited.png']);
+    assert.equal(await readRolloutGeneratedImages(filePath), references, 'unchanged file reuses only metadata');
+    await appendFile(filePath, turn('third', savedPath.replace('result.png', 'third.png'), completedAt + 2000));
+    assert.equal((await readRolloutGeneratedImages(filePath)).length, 3, 'appends refresh the cached references');
   } finally {
     internals.rolloutCache.delete(filePath);
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('conversation summaries receive only their own missing images without fetching full turns', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-summary-images-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  const codex = new CodexAppServer({ runtimeCwd: directory });
+  codex.ensureStarted = async () => {};
+  codex.sessionMetadata.set('thread-image', { cwd: directory, path: filePath, canAcceptDirectInput: false });
+  const summaryItems = [{ type: 'userMessage', text: 'make an image' },
+    { type: 'agentMessage', phase: 'final_answer', text: 'image ready' }];
+  const calls: string[] = [];
+  codex.rpcRaw = async (method, params) => {
+    calls.push(method);
+    assert.equal(method, 'thread/turns/list');
+    assert.equal(params.itemsView, 'summary');
+    return { data: [
+      { id: 'turn-image', items: summaryItems },
+      { id: 'already-present', items: [image, ...summaryItems] },
+      { id: 'unrelated', items: summaryItems },
+    ], nextCursor: 'older-api-page' } as any;
+  };
+  try {
+    await writeFile(filePath, ['turn-image', 'already-present', 'not-on-page'].map((id) => JSON.stringify({
+      timestamp: new Date(completedAt).toISOString(), type: 'event_msg',
+      payload: { type: 'item_completed', turn_id: id, item: image },
+    }) + '\n').join(''));
+    const result = await codex.listSessionTurns('thread-image');
+    assert.equal(result.source, 'appServer');
+    assert.equal(result.nextCursor, 'older-api-page');
+    assert.deepEqual(result.turns.map((t) => t.items.filter((i: any) => i.attachment).length), [1, 1, 0]);
+    assert.deepEqual(result.turns[0].items.map((i: any) => i.attachment?.name || i.text), [
+      'make an image', 'result.png', 'image ready',
+    ]);
+    assert.deepEqual(calls, ['thread/turns/list']);
+    assert.ok(!JSON.stringify(result).includes('base64-result'));
+    await rm(filePath);
+    assert.equal((await codex.listSessionTurns('thread-image')).turns[0].items.length, 2, 'missing rollout preserves ordinary history');
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
