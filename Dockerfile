@@ -1,6 +1,6 @@
 FROM node:24-alpine AS web-build
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY --chmod=644 package.json package-lock.json ./
 RUN npm ci
 COPY tsconfig.json tsconfig.node.json vite.config.ts ./
 COPY web ./web
@@ -9,7 +9,7 @@ RUN npm run build
 
 FROM node:24-alpine
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY --chmod=644 package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=web-build /app/build ./build
 COPY --from=web-build /app/dist ./dist
