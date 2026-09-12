@@ -1,5 +1,7 @@
 # Browser Agent 部署验收 · 2026-09-04
 
+> 历史记录：以下版本、分支、测试数量与部署状态描述的是当时情况。相关代码已纳入 v0.3.0；当前安装和升级以[发布说明](release-0.3.0.zh-CN.md)为准。
+
 本次由所有者明确授权更新全部环境；代码保留在 `codex/browser-agent`，没有合并 main、发布版本或打 Tag。
 Relay/Web、ECS Connector、PC Connector 已更新，双方注册了独立本机 `anywhere_browser` MCP。
 CLI 保持 ECS 0.151.0、PC 0.153.0，没有顺带升级。端点仅监听 loopback，Linux 文件权限 0600；

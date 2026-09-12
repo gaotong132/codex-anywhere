@@ -1,5 +1,7 @@
 # September 2026 architecture review
 
+> Historical record: versions, branches, test counts and deployment statements below describe the original run. This work is included in v0.3.0; use the [release guide](release-0.3.0.md) for current installation and upgrades.
+
 This pass reviewed the Web client, Relay, Connector, shared protocol, browser extension, and deployment/test paths.
 It preserves the existing E2E protocol, device identities, workspace boundaries, and Desktop writer ownership.
 

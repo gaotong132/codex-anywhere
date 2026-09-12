@@ -2,6 +2,8 @@
 
 English | [简体中文](browser-agent.zh-CN.md)
 
+Documentation for **v0.3.0 (2026-09-12)** · [Release and upgrade](release-0.3.0.md) · [Documentation index](README.md)
+
 Browser Agent is included in `main` as an **experimental add-on**, disabled by default. It requires a separate
 extension build and installation plus Relay configuration; page control also needs Connector/MCP setup. Normal session
 features do not require it; its configuration, interactions, and compatibility may still change.
@@ -142,8 +144,8 @@ specific failures carry recovery hints. The status hint is one line with live co
 do not consume it or trigger an automatic resend. Page replacement and per-page liveness changes are detected even when
 counts stay equal. Revocation sends a zero-page notice on the next ordinary message; question-answer envelopes remain exact.
 The Connector retains up to 64 recent task states in memory, so restarting it or revisiting an evicted authorized task
-may send the initial hint again. Tools always recheck live authorization. Server/tool prose remains 3,822 characters;
-the current update changes no MCP tool descriptions. Update Connector and Web; no extension reload or new pairing is needed.
+may send the initial hint again. Tools always recheck live authorization. Server/tool guidance is shared through MCP.
+For a full v0.3.0 upgrade, update Connector/MCP, Web and the extension as described in the release notes; existing pairing is retained.
 
 Guidance tells the model to execute task-required navigation, search, ordinary clicks and input directly, verifying the
 result and pausing for actual login, verification, new permissions or out-of-scope actions. Host MCP approval rejection,
@@ -153,9 +155,11 @@ Both current and older generated guidance suffixes remain hidden by history pars
 
 Web says “Browser authorized”, distinguishing page heartbeat from the last successful tool call, and reports unverified
 tools when there is no call evidence. These changes require matching Connector/MCP, Web and extension updates; editing the
-branch does not deploy production.
+source does not update running processes.
 
 ## Acceptance gates
+
+Release v0.3.0 passed 389 root tests and 100 extension tests plus type checks and builds. The dated entries below retain their original evidence and fingerprints; they are not current release counts. See [release verification](release-0.3.0.md#verification-and-limits).
 
 - 2026-09-09 state reminders: 370 root tests, type checks and builds pass. Coverage includes stable-state suppression,
   failures and reordered delivery receipts, same-count page replacement, liveness changes, reconnect, bounded retention,

@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+文档对应 **v0.3.0（2026-09-12）** · [发布与升级](docs/release-0.3.0.zh-CN.md) · [文档索引](docs/README.zh-CN.md)
+
 [![CI](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)
 [![Version](https://img.shields.io/github/v/tag/gaotong132/codex-anywhere?sort=semver)](https://github.com/gaotong132/codex-anywhere/tags)
@@ -49,6 +51,9 @@ Codex Anywhere 刻意保持小而专注：它不是多用户网关、通用远�
 托管会话内容。
 
 ### 粘贴截图
+上传会分别显示图片准备、按字节计算的发送进度和接收确认。100% 只表示字节已发送，收到确认后才算上传完成；
+图片上传和读取请求最多等待 120 秒。已发送和生成的图片可点击放大，原图下载仍需单独确认。
+
 
 在 PC 上截图后，聚焦聊天输入框，按 **Ctrl+V**（macOS 为 **⌘+V**）即可添加剪贴板中的图片。
 “新建会话”的第一条消息也支持粘贴。确认预览后可以补充文字，再点击发送或按 Ctrl/⌘+Enter 上传并发送。
@@ -60,8 +65,14 @@ Codex Anywhere 刻意保持小而专注：它不是多用户网关、通用远�
 任务调用 `request_user_input_async` 时，Web 时间线会显示问题卡片。可以选择建议答案或输入自己的回答，
 点击“发送回答”后提交到原任务；提问不会阻塞任务继续工作。回答会保留问题编号，刷新后仍可查看已回答状态，
 桌面端提交的答案也会同步显示。回答时不会发送或清空聊天输入框中另外编辑的文字和图片。
+已回答卡片收为一行状态，展开后仍可查看全部问答；回复直接显示答案，重复的问题默认折叠。预选项不会自动提交。
 
 ### 回复中的本机文件链接
+生成图片兼容旧格式和新版 Codex 图片事件，也会补全历史摘要遗漏的图片。历史只传图片引用，再从当前 Connector
+读取经过校验的预览，不把原始工具 Base64 结果塞进聊天。只要原图仍在，更新 Connector 并刷新 Web 后已有图片即可显示，
+无需重新生成，也不依赖浏览器插件。
+
+
 
 点击支持的本机文件链接，会直接在会话内打开只读预览：
 
@@ -106,7 +117,9 @@ Anywhere 浏览器插件（Browser Agent）是**实验性附加特性**，默认
 日常使用 Codex Anywhere 的会话功能无需安装此插件；插件的配置、交互和兼容性仍可能调整。
 点击插件图标即可在浏览器侧栏打开现有 Web 聊天页，选择环境和会话后直接对话；网页控制仍需单独授权。
 当前支持：连接 Anywhere，选择 PC、
-ECS 或其他环境的**已有 Session**，授权当前页，再由原会话通过加密链路和 MCP 读取、点击、输入、滚动。
+ECS 或其他环境的**已有 Session**，授权当前页，再由原会话通过加密链路和八个 MCP 工具列页、读取快照、截图、缩放、点击、输入、滚动和打开链接。
+页面控制沿用侧栏当前选中的任务，无需再次选择会话或输入第二条配对链接。新页签在原窗口跟随，普通受控子页保留最近 5 个；
+横向内容裁剪时优先缩到 80%、67%，每次重新读取快照，仍被裁剪时再滚动。
 需要显式配置 Relay/Connector/MCP 并完成真实浏览器验收；不会自动更新现网。
 详见[开发方案](docs/browser-agent.zh-CN.md)与[扩展使用说明](extension/README.zh-CN.md)。
 

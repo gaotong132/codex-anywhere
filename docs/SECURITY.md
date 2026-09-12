@@ -2,6 +2,8 @@
 
 English | [简体中文](SECURITY.zh-CN.md)
 
+Documentation for **v0.3.0 (2026-09-12)** · [Release and upgrade](release-0.3.0.md) · [Documentation index](README.md)
+
 ## Supported versions
 
 Use the latest tagged release or current `main`, and keep the browser, relay, and connector on the same
@@ -90,11 +92,20 @@ sequenceDiagram
     Note over B,R: Reconnects use the approved key and fresh challenges
 ```
 
+Side-panel chat pairs once and sponsors a separate extension identity using a connection-bound signature. Private keys
+remain separate. Revoking the sponsoring Web device also revokes its linked extensions; explicit revocation prevents
+automatic re-enrollment. Device pairing does not authorize page control.
+
 Connectors do not use browser pairing. Their first signed connection appears as pending and must be
 reviewed from the relay host with `./scripts/relay.sh approve`. Adding a second execution environment never
 inherits trust from the first one.
 
 ## Files, previews, and approvals
+Generated-image summary hydration reads only the known session rollout, in 512 KiB chunks with a 64 MiB scan cap,
+and caches local references keyed by file identity and modification metadata. It does not fetch complete image tool
+results through summary RPCs. A displayed reference never bypasses canonical-path, regular-file, MIME or preview-size checks.
+
+
 
 - Image previews must resolve inside an allowed root, pass content validation, and are resized and
   converted to WebP before transfer.

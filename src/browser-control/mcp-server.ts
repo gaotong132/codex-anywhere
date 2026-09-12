@@ -51,7 +51,7 @@ function recovery(code: string) {
 }
 
 export function createBrowserMcpServer(stateFile: string) {
-  const server = new McpServer({ name: 'anywhere-browser', version: '0.2.1' }, { instructions: BROWSER_INSTRUCTIONS });
+  const server = new McpServer({ name: 'anywhere-browser', version: '0.3.0' }, { instructions: BROWSER_INSTRUCTIONS });
   const call = async (input: { operation: BrowserOperation; pageId?: string } | { method: 'list_pages'; offset: number; limit: number }, meta: unknown): Promise<CallToolResult> => {
     try {
       const screenshot = 'operation' in input && input.operation.method === 'screenshot';

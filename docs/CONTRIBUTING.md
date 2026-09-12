@@ -2,6 +2,8 @@
 
 English | [简体中文](CONTRIBUTING.zh-CN.md)
 
+Documentation for **v0.3.0 (2026-09-12)** · [Release and upgrade](release-0.3.0.md) · [Documentation index](README.md)
+
 Thanks for improving Codex Anywhere. Keep changes aligned with its purpose: a single-user, self-hosted
 mobile Web bridge for Codex running on the user's own execution nodes.
 
@@ -78,6 +80,14 @@ relay, or local-computer trust boundary. Load large renderers on demand, bound t
 generated markup, and preserve a safe plain-text fallback.
 
 ## Extra checks
+Release checklist: keep root package/lockfile, source extension manifest and MCP server version aligned. Build the
+extension from the same commit and compare fingerprints across deployment hosts; generated `extension/dist` remains
+untracked. Publish an annotated tag only on the checked commit. See [release instructions](release-0.3.0.md#upgrade).
+
+For history changes, test summary RPCs as well as complete and truncated rollout rows. Cover generated-image references,
+pagination deduplication and cache invalidation without transferring Base64 payloads. Keep dated validation reports historical.
+
+
 
 - For Browser Agent work, read [the development plan](browser-agent.md), run `npm run test:extension`
   as well as the normal checks, and test cancellation, document replacement, and concurrent task bindings.

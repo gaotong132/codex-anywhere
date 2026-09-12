@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+Documentation for **v0.3.0 (2026-09-12)** · [Release and upgrade](docs/release-0.3.0.md) · [Documentation index](docs/README.md)
+
 [![CI](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)
 [![Version](https://img.shields.io/github/v/tag/gaotong132/codex-anywhere?sort=semver)](https://github.com/gaotong132/codex-anywhere/tags)
@@ -60,6 +62,10 @@ Codex Anywhere deliberately stays small: it is not a multi-user gateway, a gener
 automatic session forker, or hosted conversation storage.
 
 ### Paste screenshots
+Upload status separates image preparation, byte-based sending progress and receipt confirmation. Reaching 100%
+means the bytes were sent; wait for confirmation before treating the attachment as received. Image upload/read requests
+allow up to 120 seconds. Sent/generated previews can be enlarged; original downloads remain separately confirmed.
+
 
 After taking a screenshot on your PC, focus the chat input and press **Ctrl+V** (**⌘+V** on macOS)
 to attach the clipboard image. The first message in the new-task dialog also supports pasting.
@@ -73,8 +79,16 @@ When a task calls `request_user_input_async`, Web shows question cards in the ti
 answer or enter your own, then click Send answer to reply to the original task while it continues working.
 Answers retain their question IDs and appear after refresh, including answers submitted from Desktop.
 Answering leaves any separate text/image draft in the chat composer intact.
+Answered cards collapse to one status row; expand them to review all questions and answers. The reply keeps its answer
+visible and hides the repeated question behind an expand control. A preselected option is never submitted automatically.
 
 ### Linked local files
+Generated images are recovered from both legacy events and newer Codex image-generation events, including images
+omitted by conversation summaries. History sends local references, then fetches validated previews from the selected
+Connector; it does not send the original Base64 tool result. Existing images appear after updating the Connector and
+refreshing Web, provided the original files still exist. No regeneration or browser extension is required.
+
+
 
 Clicking a supported local file link opens a read-only preview without leaving the conversation:
 
@@ -127,7 +141,10 @@ its configuration, interactions, and compatibility may still change.
 Click the extension icon to open the existing Web chat in the browser side panel. Choose an environment
 and Session to chat directly; page control remains separately authorized.
 It connects an explicitly authorized page to an **existing Session**
-on PC, ECS, or another Connector, using encrypted routing and session-bound MCP read/click/fill/scroll tools.
+on PC, ECS, or another Connector, using encrypted routing and eight session-bound MCP tools: list pages, snapshot, screenshot, zoom, click, fill, scroll and open links.
+Page control uses the currently selected side-panel task without a second task selector or pairing link.
+AI-opened tabs follow in the same window; the five most recently used ordinary children are retained.
+Horizontal clipping prefers 80%, then 67% zoom with a fresh snapshot before scrolling.
 It requires opt-in Relay/Connector/MCP setup and real-browser acceptance; production is not changed automatically.
 See the [development plan](docs/browser-agent.md) and [extension instructions](extension/README.md).
 

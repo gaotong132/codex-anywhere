@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+Documentation for **v0.3.0 (2026-09-12)** · [Release and upgrade](../docs/release-0.3.0.md) · [Documentation index](../docs/README.md)
+
 This extension is an **experimental add-on** for Codex Anywhere, disabled by default. It requires a separate
 build and installation plus explicit Relay configuration; page control also needs Connector and MCP setup. Normal session features do
 not require it; its configuration, interactions, and compatibility may still change.
@@ -10,7 +12,7 @@ In side panel chat, choose an execution environment (PC, ECS, or any connected n
 Session**, then authorize the current page. Continue that original Session in Anywhere to read, click, fill,
 and scroll. No replacement Session is created. The built manifest follows the root `package.json` version
 and displays `version dev (build fingerprint)`. The content fingerprint identifies the loaded artifacts;
-it does not publish a release or create a Tag.
+it is independent of the Git release tag. v0.3.0 still shows dev because the extension is an unpacked experimental build.
 
 ## Side panel chat
 
@@ -56,6 +58,12 @@ updates, the Origin allowlist, and network setup. Camera access may be restricte
 or upload a QR screenshot instead. Actual Chrome/Edge side panels, clipboard, downloads, and sleep recovery need acceptance checks.
 
 ## Build and install
+For another computer, copy the entire generated `extension/dist` directory into a fixed location, then load it unpacked.
+Git contains the source/build configuration, not this generated folder. Check the new installation’s extension ID
+and add its exact Origin to the Relay allowlist. Pair chat once on that browser profile; do not copy private identity
+files or browser profiles. For upgrades at the same path, reload the extension and preserve its existing pairing.
+See [v0.3.0 upgrade notes](../docs/release-0.3.0.md#upgrade).
+
 
 With Node.js 22+, from the repository root:
 
@@ -95,17 +103,17 @@ and fingerprint on the card or popup footer match `version_name` in `extension/d
 If it still shows `0.0.1`, the new build has not loaded. Clear historical entries on the extension's Errors
 page, then reopen the popup and check whether any new errors appear.
 
-## One-time setup on test infrastructure
+## One-time setup
 
 1. Configure Relay `BRIDGE_EXTENSION_ORIGINS=chrome-extension://YOUR_EXACT_32_CHARACTER_EXTENSION_ID`.
    Use the actual ID shown in the popup/Extensions page; multiple exact Origins are comma-separated.
    No wildcards. Compose passes this setting through. Restart the test Relay during a planned update window;
-   this branch does not deploy or restart production automatically.
+   the extension build alone does not deploy or restart the Relay.
 2. On each selected Connector host, set `BRIDGE_BROWSER_ENDPOINT_FILE` to an **absolute private state path**
    outside the repository, static Web root and shared directories. Example:
    `/home/YOUR_USER/.codex-anywhere/browser-ecs.json`, or
    `C:\Users\YOUR_USER\.codex-anywhere\browser-pc.json`. On Windows, restrict directory ACLs to the runtime
-   user and administrators. Start the branch Connector with this setting. It creates a private loopback
+   user and administrators. Start the matching Connector with this setting. It creates a private loopback
    port/token file; never share it. Without the setting, browser control remains disabled.
    With the Windows login launcher, persist that absolute path as `browserEndpointFile` in private
    `connector.json`. If the parent state directory grants other users read access, use a private child
@@ -153,8 +161,8 @@ page, then reopen the popup and check whether any new errors appear.
 ## Use and boundaries
 
 - Choose the environment and existing Session in chat, verify its title above the chat, authorize the current page, then converse
-  in that Session in Anywhere. Keep one manually authorized root per extension/Session. Revoke the root and its
-  children from the secondary menu before selecting another root or Session.
+  in that Session in Anywhere. Keep one manually authorized root per extension/Session. Explicit authorization can
+  replace this extension’s old root as described above; switching the selected task alone does not transfer consent.
 - Site access granted by the side panel also permits AI-opened same-site children. Older temporary root grants
   can request that optional permission from settings. `open_link` or a link click from a fresh snapshot creates
   a same-origin managed child, keeping its parent authorized. Cross-origin destinations/redirects or missing site permission
@@ -263,7 +271,7 @@ This does not assert that an application's asynchronous content has finished; ve
   Positive deltas move right/down and negative deltas left/up; RTL panels retain native negative scroll coordinates.
   Unsupported panel axes fail before either axis moves. Results report actual `deltaX`/`deltaY` and `scrolled`;
   zero movement can mean an edge was reached. Read a fresh snapshot afterward. For clipped table columns,
-  scroll that same table horizontally; offscreen contents become available only after entering the visible area.
+  first use the zoom workflow above, then scroll that same table horizontally if needed; offscreen contents become available only after entering the visible area.
 
 Start diagnosis with `list_pages`. Its `environmentId` identifies the Connector actually reached. `no_authorized_page`
 means this Session currently has no grant on that Connector, `authorized_pages_offline` means all its grants missed
@@ -282,6 +290,8 @@ Update Connector/MCP and reload the extension together. An already-running MCP p
 its old code. Build output alone does not update either process.
 
 ## Verification status
+
+For v0.3.0, all 389 main and 100 extension tests, type checks and builds passed. Dated browser runs below retain their original scope; see the [release notes](../docs/release-0.3.0.md#verification-and-limits) for the release fingerprint and upgrade steps.
 
 On 2026-09-08, native zoom passed in isolated Chrome for Testing 151 through the official MCP SDK and local Relay/E2E:
 a clipped right-hand column became readable at 80% (CSS viewport 1188 → 1485 pixels); 67%, 125% and 100% worked,

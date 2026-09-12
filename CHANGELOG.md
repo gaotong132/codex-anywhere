@@ -4,120 +4,35 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
-- Set readable package metadata permissions in Docker images so the non-root Node process can start even when the deployment checkout uses a restrictive umask.
+No changes yet.
 
-- Show generated images from newer Codex `Extension` image events in Web history, including older pages with large image payloads. Preserve image timestamps and avoid repeated images across pagination. Update Connector; existing images need no regeneration or new pairing.
+## v0.3.0 — 2026-09-12
 
-- Unify active and completed compaction in the existing timeline marker. Update its text in place and preserve its identity during history hydration; remove the separate composer banner. Update Web only.
+- Add the experimental Browser Agent: current-task side-panel chat, one-time Web pairing with a separate linked extension identity, explicit page consent, and eight MCP tools for list/snapshot/screenshot/zoom/click/fill/scroll/open-link.
 
-- Show ongoing context compaction above the composer with an elapsed timer, using native item lifecycle events for headless runs and bounded local trace metadata for Desktop runs. Clear the indicator on completion, failure or task changes; retain completed timeline markers without inventing percentages or treating ordinary waits as compaction. Update Connector and Web.
+- Follow AI-opened tabs in their original window, reuse eligible children and retain the five most recently used ordinary children. Preserve same-origin navigation consent, require cross-origin authorization and recover orphaned grants only on explicit consent.
 
-- Display terminal errors carried by rollout `task_complete.error` and live `turn/completed`, including model-capacity failures, with the full reason in a wrapping error card. Keep live/history failures consistent and deduplicate terminal notices. Update Connector and Web; existing rollout errors become visible without retrying the task.
+- Support native pointer controls, numeric inputs, native select labels and per-panel horizontal/vertical scrolling. Add bounded viewport screenshots with protected-region masking and per-tab 50%–200% zoom; prefer 80%, then 67% for horizontal clipping, refreshing snapshot refs each time.
 
-- Reduce answered-question duplication: collapse answered cards to one status row and hide quoted question text behind an expand control. Answers remain visible; full questions, keyboard access and complete message copying remain available.
+- Paste PNG/JPEG/WebP screenshots into chat or new-task messages. Show image preparation, byte-based sending progress and receipt confirmation, with 120-second image upload/read timeouts.
 
-- Separate structured question replies in chat: show the question as an expandable two-line quote and keep the answer fully visible. Collapse answered question cards into a compact summary, retaining all questions and answers on expansion, full-message copying, file links and the original reply protocol. Update Web; no extension reload or new pairing is needed.
+- Answer request_user_input_async from Web using choices or free text, preserving the original task, composer drafts, question IDs and Desktop answer synchronization. Collapse answered cards and repeated question quotes.
 
-- Send a 91-character browser status hint only on the first related message or after page authorization/online state changes. Commit reminder state only after successful message delivery, so failed sends can include it again without automatic retries. Detect replaced pages even with unchanged counts, preserve exact async question answers and hide all historical reminder formats. Update Connector and Web; no extension reload or new pairing is needed.
+- Display generated images from legacy and newer Codex Extension events, hydrate images omitted by summary RPCs, recover large image rows and avoid pagination duplicates. Transfer lightweight references and validated previews instead of Base64 tool history.
 
-- Deduplicate browser MCP guidance: keep shared workflows in server instructions, operation-specific details in eight tool descriptions, and live state in the message reminder. MCP prose falls from 9,065 to 3,822 characters; the reminder falls from 901 to 408. Tool contracts and authorization stay unchanged, with exact historical reminders still hidden. Update Connector/MCP and Web; this change needs no extension reload or new pairing.
+- Support GPT-6 Astra and every reasoning level advertised by the selected Connector, including Max and Ultra.
 
-- Refactor the experimental browser extension into page drivers and managed-tab lifecycle modules with shared deadline and late-resource cleanup. Bound stalled native clicks and accept reordered target fields without weakening identity checks. Reuse style/layout reads only within one snapshot and correct debugger-lifetime documentation.
+- Keep context compaction progress and completion in one timeline marker. Surface terminal failure reasons, recover history across large hidden records, and retain stable message identity.
 
-- Remove workspace-directory restrictions from Markdown, SVG, source/config and plain-text file previews. Explicit absolute paths can be read wherever the selected connector’s OS user has access; type, UTF-8, 2 MiB and unchanged-file checks remain. Download and raster image policies are independent.
+- Reduce browser guidance to a 91-character state hint sent only initially or after page/online-state changes; shared workflows remain in MCP instructions, with exact historical reminders hidden.
 
-- Shorten the browser reminder attached to each message by 54%, retaining task/page boundaries and zoom guidance. Detailed MCP instructions remain available, and historical reminders stay hidden in chat history.
+- Render SVG previews and allow supported text/code/Markdown previews at readable absolute paths. Keep raster preview roots and confirmed download policy separate; fix empty/truncated downloads, cancellation and wake-lock ownership.
 
-- Add experimental native zoom for an authorized browser tab (50%–200%, 100% reset). Snapshots report the current ratio and horizontal overflow; guidance prefers 80%, then 67% before horizontal scrolling. Changes invalidate element refs and retain tab isolation, page consent and snapshot limits. Update Connector/MCP and the extension and preapprove the new zoom tool.
+- Show approved endpoint connection counts and last-connected/seen times through relay.sh devices and --json. Preserve device trust separately from activity and strengthen Desktop task isolation, RPC draining and extension lifecycle handling.
 
-- Preserve distinct clickable menu options inside a pointer container whose combined label previously swallowed their refs, while still deduplicating decorative text and icons.
+- Set Docker package metadata permissions explicitly so non-root Node can start under restrictive checkout permissions. Refresh all guides, align version metadata and document tag-pinned upgrades.
 
-- Add experimental page screenshots, enabled by default for the current task's granted pages without a separate setting; upgrades remove the obsolete screenshot toggle. The model receives a viewport image of the exact granted page, including background tabs and visible canvas. Form/embedded/detected private regions are masked before transport; JPEG output is limited to 1920 pixels per side and 1 MiB. Changes or revocation discard pending results, and native MCP image content uses a separate response budget. Update Connector/MCP and reload the extension/tool list; no new pairing is needed.
-
-- Use browser mouse events for control clicks so pointer handlers and script popups work without residual user activation. Add the required `debugger` permission (accept Chrome's extension update warning if prompted), revalidate the granted document and visible ref between events, reuse the same document's debugger after success until 60 seconds idle, and report interrupted input without replaying it. Ordinary managed links and select-label reads keep their existing paths.
-
-- Support horizontal and two-axis scrolling in the browser extension and MCP, expose panel axes/positions, and report actual movement at scroll boundaries. Click the visible fragment of partially clipped or wrapped controls while still refusing real overlays. Update Connector/MCP and reload the extension together.
-
-- Show image preparation, byte-based sending progress and receipt confirmation in the Web composer. Allow 60 seconds for ordinary Web requests and 120 seconds for image uploads/reads, with timeout messages showing the actual limit. Existing turn-start waits and explicit request limits are preserved.
-
-- Correct scrolled-page visibility for viewport overflow and boxless wrappers, return viewport metrics, and make parsed child pages usable before optional resources finish. Track a single script-created child during a live click using browser navigation events, preserving origin/document/site checks and explicit handoff for ambiguous destinations. Reload the extension and accept its added `webNavigation` permission if prompted.
-
-- Reuse unchanged managed child tabs for repeated links and automatically retire older ordinary children beyond the 5 most recently used, preserving roots, manual/protected tabs, edits and in-flight operations.
-
-- Focus controls during click/fill and read denser lists with up to 200 snapshot nodes, retaining scan/text caps and an explicit serialized-result budget.
-
-- Follow links opened by the browser extension by activating the new tab in its original window, keeping the current side panel chat and existing site authorization boundaries.
-
-- Treat anchors without `href` as ordinary clickable controls; `open_link` returns a precise link-required error instead of a URL parsing failure.
-
-- Keep exact-document grants during SPA hash/history route changes; verify the original document ID and origin while retaining revocation on reload, replacement and cross-origin navigation.
-
-- Simplify the extension side panel: keep one authorization action, move secondary controls into a More menu, and show a compact authorized state only for the selected Session and page.
-
-- Exclude decorative descendants that merely inherit a control's pointer cursor, including empty SVG icon nodes, from snapshot refs.
-
-- Keep HTML templates on LF line endings so extension build fingerprints agree across Windows and Linux checkouts.
-
-- Display `request_user_input_async` questions in live/history Web timelines, with choices, free-text replies, persisted answer state, and Desktop-compatible question IDs. Keep replies in the original task and preserve composer drafts.
-
-- Keep visible console content within snapshot bounds by deduplicating nested control labels, and recognize focusable
-  or pointer-cursor custom tabs without losing managed-link routing or disabled/obscured checks.
-
-- Paste clipboard screenshots with Ctrl/⌘+V in chat and new-task messages. Preview before sending, reuse image validation/compression, and preserve plain text paste.
-
-- Skip collapsed/private DOM branches when reading extension pages. Large hidden console menus no longer exhaust
-  the scan before visible controls; retain existing bounds and report the reason when a snapshot is truncated.
-
-- Recover visible messages across empty ranges after large compaction records or tool output, with bounded history/live scans.
-  Keep pagination available for empty pages and show the loading indicator only while a request is running.
-
-- Improve experimental browser control for console forms: nested button labels and control states, numeric inputs,
-  native select labels and selection, and scrolling an individual panel. Preserve specific recoverable errors through
-  the extension and MCP. Page inventory distinguishes no current-Session grant from offline pages and identifies the
-  Connector environment; neither means the user must pair again. Update Connector/MCP and reload the extension together.
-
-- Pair experimental extension chat once and automatically link/reconnect page control without a second pairing link.
-  Keep private keys separate, bind association proofs to the connection, extension and device, and preserve explicit
-  page consent, existing identities and revocation boundaries.
-
-- Separate Web download/preview and Markdown responsibilities and Relay HTTP handling. Fix empty/truncated downloads,
-  selection cancellation and wake-lock ownership; validate preview byte sizes and preserve UTF-8 BOMs. Isolate stale
-  extension callbacks, distinguish inbound JSON-RPC request IDs from responses, and invalidate rewritten rollout caches.
-  See [the architecture review](docs/refactoring-2026-09.md) for scope and validation.
-
-- Render linked SVG files, local SVG image references, and `svg` code blocks as isolated vector images, with
-  source viewing and existing downloads preserved. Resolve Linux file links and Markdown-relative paths alongside Windows paths.
-
-- Execute authorized browser tasks directly, distinguish host MCP approval rejection from site/login failures, and
-  document per-tool preapproval under Codex `never`. Open new-site destinations for user authorization without reading
-  them; ordinary links preserve the parent page. Keep older browser guidance hidden in history and add a real host write probe.
-
-- Extend `relay.sh devices` with online/offline/unknown status, connection counts, last connected/seen
-  timestamps, and `--json`. Persist private activity separately from device trust, retain history across
-  restarts, and report stale snapshots as unknown.
-
-- Recover orphaned browser roots after a tab closes and the extension loses its local grant record. Explicit authorization
-  can replace this device's old root or a fully stale browser tree, revoke children, and cancel pending operations; automatic
-  recovery and delayed validation cannot reclaim newer consent.
-
-- Fix normal-page authorization after switching tabs with the side panel open: read active-tab metadata and request
-  current-site access on the authorization click. Remove duplicate environment/Session selectors from control settings;
-  use the current chat Session and cancel consent if the target or Session changes during the permission prompt.
-
-- Add experimental side panel chat using the live Web app, with current-Session selection and explicit page
-  authorization. Preserve separate pairing and worker-owned grants; add an allowlisted embed entry, source
-  and freshness checks, and window/document-replacement regressions.
-
-- Support GPT-6 Astra through the selected Connector's live model catalog. Show all advertised reasoning
-  levels, including distinct Max and Ultra options, and preserve them when editing or saving settings.
-- Keep injected browser guidance out of displayed user messages and history matching, and drain pending
-  RPCs before releasing a Desktop connector runtime so concurrent reads finish normally.
-- Replaced the local-only browser prototype with opt-in extension pairing, environment/existing Session
-  selection and document consent; added session-bound MCP snapshot/click/fill/scroll tools over E2E routing
-  and private loopback IPC. No ten-minute grant expiry, no replacement Session, no Desktop writer takeover.
-- Added a compact popup, fixed icon/tab-specific status, secondary revoke menu and Web Session status.
-  Added SDK/IPC and compiled-worker real WS/E2E regression tests and a live ephemeral Codex probe.
-  Actual Chrome/Edge, Desktop UI and ECS acceptance remain required; no production deployment or release.
+See [v0.3.0 upgrade steps and limits](docs/release-0.3.0.md). Update Relay/Web, all Connectors and the optional extension together; retain existing pairing identities.
 
 ## v0.2.1 — 2026-09-04
 
