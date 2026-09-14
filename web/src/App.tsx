@@ -379,20 +379,17 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     const element = messageListRef.current;
     const content = messageContentRef.current;
     if (!element || !content || typeof ResizeObserver === 'undefined') return undefined;
-    let frame = 0;
     const followResizedContent = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        if (autoFollowLatestRef.current && preserveScrollHeightRef.current == null) {
-          element.scrollTop = element.scrollHeight;
-        }
-      });
+      // ResizeObserver runs before paint. Deferring this to another animation
+      // frame exposes the old scroll position when diagrams or images grow.
+      if (autoFollowLatestRef.current && preserveScrollHeightRef.current == null) {
+        element.scrollTop = element.scrollHeight;
+      }
     };
     const observer = new ResizeObserver(followResizedContent);
     observer.observe(element);
     observer.observe(content);
     return () => {
-      cancelAnimationFrame(frame);
       observer.disconnect();
     };
   }, [initialBootstrapPending, threadId]);
