@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Fetch initial conversation text and live progress concurrently and display one merged timeline; retain known answers and fall back to text if progress is unavailable.
+
 - Precompress Web assets with Brotli/gzip, preload the message renderer while connecting, and incrementally index generated-image references as session histories grow.
 
 - Add a fresh-ECS deployment appendix covering software, DNS, ingress, TLS, Nginx/WSS, renewal and verification.

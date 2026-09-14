@@ -71,6 +71,7 @@ import {
   SidebarIcon,
 } from './ui-components';
 import { ConversationTimeline, preloadMessageBubble } from './conversation-timeline';
+import { loadHistoryPage } from './history-page-loader';
 import { useConversationExecution } from './conversation-execution';
 import { SessionSidebar } from './session-sidebar';
 import { SessionRenameDialog } from './session-rename-dialog';
@@ -1256,43 +1257,39 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       }
     };
     try {
-      const page = await request<HistoryPage>('session.turns.list', {
-        threadId: targetThreadId,
-        cursor,
-        limit: HISTORY_PAGE_SIZE,
-        mode: 'conversation',
-      });
+      const { page, snapshot, items } = await loadHistoryPage(request, targetThreadId, cursor, HISTORY_PAGE_SIZE);
       if (selectedRequestRef.current !== requestVersion || threadIdRef.current !== targetThreadId) {
         discardUnusedScrollAnchor();
         return;
       }
-      const items = attachLatestAssistantFileChanges(historyItems(page.turns), page.turnProgress);
       if (cursor) setTimeline((current) => [...items, ...current]);
       else {
-        setContextUsage(normalizeContextUsage(page.contextUsage) || null);
+        const state = snapshot || page;
+        setContextUsage(normalizeContextUsage(state.contextUsage) || normalizeContextUsage(page.contextUsage) || null);
         autoFollowLatestRef.current = true;
         shouldScrollBottomRef.current = true;
         for (const item of items) {
           if (item.kind === 'progress') seedTypewriterText(progressTypewriterKey(item), item.text);
         }
-        setTimeline(startTimelineCompaction(items, page.activityId || '', epochMillis(page.compactionStartedAt)));
-        followFingerprintRef.current = historyFingerprint(page.turns, page.turnProgress);
-        latestActivityIdRef.current = page.activityId || '';
-        const latestStatus = page.turns[0]?.status;
+        setTimeline(startTimelineCompaction(items, state.activityId || '', epochMillis(state.compactionStartedAt)));
+        followFingerprintRef.current = historyFingerprint(state.turns, state.turnProgress);
+        latestActivityIdRef.current = state.activityId || '';
+        if (snapshot) liveHistoryHydratedThreadRef.current = targetThreadId;
+        const latestStatus = state.turns[0]?.status;
         const active = latestStatus === 'inProgress';
         const failed = latestStatus === 'failed';
         updateExecution({
           state: active ? 'running' : failed ? 'failed' : 'idle',
-          compactionStartedAt: active ? epochMillis(page.compactionStartedAt) : null,
-          purpose: active ? normalizeToolPurpose(page.toolPurpose) : '',
-          detail: active ? normalizeToolPurpose(page.activityDetail) : '',
+          compactionStartedAt: active ? epochMillis(state.compactionStartedAt) : null,
+          purpose: active ? normalizeToolPurpose(state.toolPurpose) : '',
+          detail: active ? normalizeToolPurpose(state.activityDetail) : '',
           activity: active
-            ? safeActivityKind(page.activityKind || (page.toolPurpose ? 'planning' : 'working'))
+            ? safeActivityKind(state.activityKind || (state.toolPurpose ? 'planning' : 'working'))
             : 'working',
           startedAt: active
-            ? epochMillis(page.activityStartedAt || page.turns[0]?.startedAt) || Date.now()
+            ? epochMillis(state.activityStartedAt || state.turns[0]?.startedAt) || Date.now()
             : null,
-          progress: active ? normalizeTurnProgress(page.turnProgress) : {},
+          progress: active ? normalizeTurnProgress(state.turnProgress) : {},
         });
       }
       setNextCursor(page.nextCursor || null);
@@ -1412,7 +1409,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     };
 
     setFollowState('checking');
-    schedule(800);
+    schedule(liveHistoryHydratedThreadRef.current === threadId ? 1_500 : 800);
     return () => {
       disposed = true;
       if (timer) clearTimeout(timer);
