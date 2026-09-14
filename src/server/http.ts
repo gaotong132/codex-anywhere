@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { TLSSocket } from 'node:tls';
 import type sirv from 'sirv';
 import { SIDEPANEL_PATH, sidePanelTarget } from '../shared/sidepanel.js';
+import { serveHtmlPreview } from './html-preview.js';
 
 type StaticHandler = ReturnType<typeof sirv>;
 type HttpContext = {
@@ -42,6 +43,10 @@ export function handleHttpRequest({ request, response, trustProxy, uiLanguage, s
   }
   if (pathname === '/config.js') {
     serveRuntimeConfig(response, uiLanguage, headOnly);
+    return;
+  }
+  if (pathname === '/html-preview') {
+    serveHtmlPreview(response, headOnly, extensionOrigins);
     return;
   }
   if (pathname === SIDEPANEL_PATH) {

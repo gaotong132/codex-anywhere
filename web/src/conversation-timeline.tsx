@@ -45,6 +45,7 @@ type ConversationTimelineProps = {
   onReadTextFile: (path: string) => Promise<TextPreviewDocument>;
   onReadTurnDiff: (turnId: string) => Promise<TurnDiffDocument>;
   onReadVisualization: (path: string) => Promise<string>;
+  onReadPreviewImage: (path: string) => Promise<string>;
 };
 
 export const ConversationTimeline = memo(function ConversationTimeline({
@@ -72,6 +73,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   onReadTextFile,
   onReadTurnDiff,
   onReadVisualization,
+  onReadPreviewImage,
 }: ConversationTimelineProps) {
   const olderHistorySentinelRef = useRef<HTMLButtonElement | null>(null);
   const questionAnswers = useMemo(() => new Map(timeline.flatMap((item) => (
@@ -167,6 +169,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
               onReadTextFile={onReadTextFile}
               onReadTurnDiff={onReadTurnDiff}
               onReadVisualization={onReadVisualization}
+              onReadPreviewImage={onReadPreviewImage}
             />
           ))}
         </Suspense>

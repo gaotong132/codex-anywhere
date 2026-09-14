@@ -12,6 +12,7 @@ import {
 } from './file-utils';
 import { CodePreview } from './code-preview';
 import { isSvgFilePath, SvgPreview } from './svg-preview';
+import { isHtmlFilePath, HtmlPreview } from './html-preview';
 import { MessageMarkdown } from './message-markdown';
 import { QuestionReplyContent } from './question-reply-content';
 import { elapsedLabel } from './live-activity';
@@ -31,6 +32,7 @@ export type MessageBubbleProps = {
   onReadTextFile?: (path: string) => Promise<TextPreviewDocument>;
   onReadTurnDiff?: (turnId: string) => Promise<TurnDiffDocument>;
   onReadVisualization: (path: string) => Promise<string>;
+  onReadPreviewImage?: (path: string) => Promise<string>;
 };
 
 type FilePreviewState = {
@@ -317,12 +319,14 @@ function MessageBubbleComponent({
   onReadTextFile,
   onReadTurnDiff,
   onReadVisualization,
+  onReadPreviewImage,
 }: MessageBubbleProps) {
   const [imageExpanded, setImageExpanded] = useState(false);
   const [visualizationOpen, setVisualizationOpen] = useState(false);
   const [visualizationSource, setVisualizationSource] = useState('');
   const [visualizationStatus, setVisualizationStatus] = useState<'idle' | 'loading' | 'failed'>('idle');
   const [filePreview, setFilePreview] = useState<FilePreviewState | null>(null);
+  const [filePreviewHistory, setFilePreviewHistory] = useState<FilePreviewState[]>([]);
   const [turnDiffPreview, setTurnDiffPreview] = useState<TurnDiffPreviewState | null>(null);
   const visualizationHistoryEntry = useRef(false);
   const visualizationRequestRef = useRef(0);
@@ -457,6 +461,7 @@ function MessageBubbleComponent({
   function closeFilePreview() {
     filePreviewRequestRef.current += 1;
     setFilePreview(null);
+    setFilePreviewHistory([]);
   }
 
   async function openTurnDiff() {
@@ -608,6 +613,11 @@ function MessageBubbleComponent({
             <header>
               <span title={filePreview.path}>{filePreview.name}</span>
               <div className="markdown-lightbox-actions">
+                {filePreviewHistory.length > 0 && <button type="button" onClick={() => {
+                  filePreviewRequestRef.current += 1;
+                  setFilePreview(filePreviewHistory.at(-1)!);
+                  setFilePreviewHistory(history => history.slice(0, -1));
+                }}>{t('返回', 'Back')}</button>}
                 <button type="button" onClick={() => onDownloadFile(filePreview.path)}>
                   {t('下载', 'Download')}
                 </button>
@@ -616,7 +626,7 @@ function MessageBubbleComponent({
                 </button>
               </div>
             </header>
-            <main aria-busy={filePreview.status === 'loading'}>
+            <main className={isHtmlFilePath(filePreview.path) ? 'html-preview-container' : undefined} aria-busy={filePreview.status === 'loading'}>
               {filePreview.status === 'loading' && (
                 <div className="markdown-preview-state">{t('正在读取文件…', 'Loading file…')}</div>
               )}
@@ -634,7 +644,13 @@ function MessageBubbleComponent({
                 </article>
               )}
               {filePreview.status === 'ready' && filePreview.kind !== 'markdown' && (
-                isSvgFilePath(filePreview.path)
+                isHtmlFilePath(filePreview.path)
+                  ? <HtmlPreview key={filePreview.path} source={filePreview.content} name={filePreview.name} path={filePreview.path}
+                    onReadImage={onReadPreviewImage} onOpen={(path) => {
+                      if (localTextPreviewInfo(path)) setFilePreviewHistory(history => [...history.slice(-19), filePreview]);
+                      void openLocalFile(path);
+                    }} />
+                  : isSvgFilePath(filePreview.path)
                   ? <SvgPreview key={filePreview.path} source={filePreview.content} name={filePreview.name} />
                   : <CodePreview content={filePreview.content} language={filePreview.language} />
               )}
@@ -734,6 +750,7 @@ function messageBubblePropsEqual(left: MessageBubbleProps, right: MessageBubbleP
     && left.onReadTextFile === right.onReadTextFile
     && left.onReadTurnDiff === right.onReadTurnDiff
     && left.onReadVisualization === right.onReadVisualization
+    && left.onReadPreviewImage === right.onReadPreviewImage
     && messagePresentationEqual(left.item, right.item);
 }
 

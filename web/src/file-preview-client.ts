@@ -1,6 +1,8 @@
 import { useCallback } from 'react';
 import type { BridgeRequest } from './bridge-request-manager';
 import type { TextPreviewDocument, TurnDiffDocument, VisualizationDocument } from './app-types';
+import type { DownloadedImage } from './app-types';
+import { isValidImagePayload } from './image-utils';
 
 export function validPreviewText(content: unknown, size: unknown, maximumBytes: number) {
   return typeof content === 'string' && !content.includes('\0')
@@ -18,6 +20,11 @@ export function validateTextPreview(result: TextPreviewDocument) {
 }
 
 export function useFilePreviews(request: BridgeRequest, threadId: string | null) {
+  const readPreviewImage = useCallback(async (path: string) => {
+    const image = await request<DownloadedImage>('attachment.read', { path, source: 'local' });
+    if (!isValidImagePayload(image.mimeType, image.data)) throw new Error('attachment_content_mismatch');
+    return `data:${image.mimeType};base64,${image.data}`;
+  }, [request]);
   const readVisualization = useCallback(async (path: string) => {
     const result = await request<VisualizationDocument>('visualization.read', { path });
     if (!result?.content || !validPreviewText(result.content, result.size, 2 * 1024 * 1024)) {
@@ -42,5 +49,5 @@ export function useFilePreviews(request: BridgeRequest, threadId: string | null)
       || typeof result.truncated !== 'boolean') throw new Error('turn_diff_content_invalid');
     return result;
   }, [request, threadId]);
-  return { readVisualization, readTextFile, readTurnDiff };
+  return { readVisualization, readTextFile, readTurnDiff, readPreviewImage };
 }

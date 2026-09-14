@@ -128,8 +128,14 @@ results through summary RPCs. A displayed reference never bypasses canonical-pat
 - Mermaid code blocks load the renderer on demand with strict security and bounded input and edge counts.
   Generated SVG is sanitized again before inline display and uses an explicit high-contrast dark theme;
   invalid diagrams fall back to their source code.
-- Interactive HTML is limited to Codex visualization roots and rendered in an opaque-origin,
-  network-blocked sandbox.
+- Visualization cards remain limited to Codex visualization roots. Explicitly opened `.html`/`.htm`
+  file links use the bounded text reader and an opaque-origin sandbox. The relay serves only an empty
+  renderer; decrypted HTML goes directly into the frame over a private browser message channel.
+  Inline CSS/JavaScript can run, but application storage, top navigation, popups, forms and automatic
+  network requests are blocked. Standalone external or local CSS/JS files are not bundled.
+  Up to 100 declared local raster images load near the viewport through the existing root/MIME checks,
+  with three concurrent reads and a 32 MiB encoded-data budget. Up to 200 local links can be opened by
+  a real user click, retaining source/download controls and up to 20 back-navigation entries.
 - Timeline diagnostics expose only aggregate tool counts, bounded public failure details, model settings,
   and context totals. Raw reasoning, tool arguments and output, encrypted compaction content, and rate-limit
   payloads are not rendered. Completed approval markers use a reduced action summary instead of replaying

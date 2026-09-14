@@ -521,7 +521,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const { fileDownload, downloadLocalFile, cancelFileDownload } = useFileTransfer({
     online, request, reportTimelineError, environmentIdRef, selectedRequestRef, connectorOnlineRef, secureChannelRef,
   });
-  const { readVisualization, readTextFile, readTurnDiff } = useFilePreviews(request, threadId);
+  const { readVisualization, readTextFile, readTurnDiff, readPreviewImage } = useFilePreviews(request, threadId);
 
   useLayoutEffect(() => {
     const element = messageListRef.current;
@@ -2278,6 +2278,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           onReadTextFile={readTextFile}
           onReadTurnDiff={readTurnDiff}
           onReadVisualization={readVisualization}
+          onReadPreviewImage={readPreviewImage}
         />
         <div className="execution-strip">
           {!compactionStartedAt && (executionState === 'running' || executionState === 'waiting') && (

@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Render linked HTML files as sandboxed pages with a source toggle, lazy local images, relative file navigation and Back controls instead of displaying XML code.
+
 - Keep the conversation anchored before paint when diagrams or images change height, avoiding startup flicker while preserving manual reading and history pagination positions.
 
 - Fetch initial conversation text and live progress concurrently and display one merged timeline; retain known answers and fall back to text if progress is unavailable.

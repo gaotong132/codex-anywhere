@@ -47,7 +47,8 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
   file. Preview one image per message before sending; upload status distinguishes preparation, byte-based progress
   and receipt confirmation.
 - **Preview images and local files** — enlarge sent or generated images and open linked Markdown, source, config,
-  logs and SVG with syntax highlighting, Mermaid diagrams and isolated visualizations. Historical generated images
+  logs and SVG with syntax highlighting, Mermaid diagrams and isolated visualizations. HTML offers page/source views,
+  lazy local images and relative file navigation. Historical generated images
   can be recovered from the selected node while their original files remain available.
 - **Review code changes by turn** — open a completed turn's Diff on demand, with file boundaries, old and new line
   numbers and optional wrapping on narrow screens. Oversized content is marked as truncated; unavailable historical
