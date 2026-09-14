@@ -33,6 +33,30 @@ test('Extension image generations reach API and rollout history without binary t
   }
 });
 
+test('generated image index follows partial appends, turn changes and file replacement', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-image-index-'));
+  const filePath = join(directory, 'rollout.jsonl');
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const row = (payload: unknown) => JSON.stringify({ type: 'event_msg', payload }) + '\n';
+  const start = (id: string) => row({ type: 'task_started', turn_id: id });
+  const picture = (name: string) => row({ type: 'item_completed', item: { ...image, savedPath: savedPath.replace('result.png', name) } });
+  await writeFile(filePath, start('first') + picture('first.png'));
+  const before = await readRolloutGeneratedImages(filePath);
+  assert.deepEqual(before.map((i) => [i.turnId, i.attachment?.name]), [['first', 'first.png']]);
+  // The incomplete line is larger than one scan window; never cache a position inside it.
+  const large = row({ type: 'item_completed', item: { ...image, result: 'x'.repeat(900 * 1024), savedPath: savedPath.replace('result.png', 'second.png') } });
+  await appendFile(filePath, start('second') + large.slice(0, -20));
+  assert.deepEqual((await readRolloutGeneratedImages(filePath)).map((i) => i.attachment?.name), ['first.png']);
+  await appendFile(filePath, large.slice(-20));
+  const firstRead = readRolloutGeneratedImages(filePath);
+  assert.equal(readRolloutGeneratedImages(filePath), firstRead, 'simultaneous readers share one scan');
+  assert.deepEqual((await firstRead).map((i) => [i.turnId, i.attachment?.name]), [['first', 'first.png'], ['second', 'second.png']]);
+  await appendFile(filePath, picture('third.png'));
+  assert.equal((await readRolloutGeneratedImages(filePath)).at(-1)?.turnId, 'second');
+  await writeFile(filePath, start('replacement') + picture('replacement.png'));
+  assert.deepEqual((await readRolloutGeneratedImages(filePath)).map((i) => [i.turnId, i.attachment?.name]), [['replacement', 'replacement.png']]);
+});
+
 test('unrelated, unfinished and failed extension items do not become generated images', () => {
   for (const item of [
     { ...image, kind: 'other.extension' }, { ...image, type: 'ImageView' },

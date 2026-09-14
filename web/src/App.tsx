@@ -70,7 +70,7 @@ import {
   seedTypewriterText,
   SidebarIcon,
 } from './ui-components';
-import { ConversationTimeline } from './conversation-timeline';
+import { ConversationTimeline, preloadMessageBubble } from './conversation-timeline';
 import { useConversationExecution } from './conversation-execution';
 import { SessionSidebar } from './session-sidebar';
 import { SessionRenameDialog } from './session-rename-dialog';
@@ -1419,6 +1419,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     };
   }, [initialHistoryLoaded, online, request, running, threadId, updateExecution]);
 
+  useEffect(() => {
+    if (authenticated && online) preloadMessageBubble();
+  }, [authenticated, online]);
+
   const selectSession = useCallback((session: Session | null) => {
     const nextThreadId = session?.id || null;
     if (nextThreadId) {
@@ -1458,7 +1462,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     streamItemRef.current = null;
     activeTurnIdRef.current = '';
     setDrawerOpen(false);
-    if (nextThreadId) void loadHistory(nextThreadId, null, requestVersion);
+    if (nextThreadId) {
+      preloadMessageBubble();
+      void loadHistory(nextThreadId, null, requestVersion);
+    }
   }, [cancelFileDownload, loadHistory, resetExecutionPresentation, updateSessionAttention]);
 
   const selectEnvironment = useCallback((value: string) => {

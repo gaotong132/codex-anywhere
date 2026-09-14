@@ -395,6 +395,11 @@ curl --fail --silent --show-error https://codex.example.com/health
 不要用 `curl -k` 忽略证书错误。若已持有云厂商签发的证书，可以跳过 Certbot，安装完整证书链和私钥，
 并自行安排续期与 Nginx reload；不要把私钥提交到 Git。
 
+`npm run build` 也会生成 Web 资源的 Brotli/gzip 版本，Relay 根据 `Accept-Encoding` 协商返回，普通代理即可
+转发已压缩的响应。更新后，在浏览器 Network 中检查 JavaScript 的实际 **GET** 请求是否包含
+`Content-Encoding: br` 或 `gzip`，且响应下载完整；仅健康检查成功不能证明大文件传输正常。若 Nginx 日志在
+`proxy_temp_path` 下报告权限错误，检查工作进程用户能否访问该目录及子目录；保留严格权限，不要开放全员写入。
+
 ### F. 配对、WSS 验收和可选执行节点
 
 按正文“安装 Windows/Desktop 连接器”把 PC 连接到 `wss://codex.example.com/ws`，随后在 ECS 执行：

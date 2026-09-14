@@ -15,6 +15,11 @@ const MessageBubble = lazy(() => import('./message-bubble').then((module) => ({
   default: module.MessageBubble,
 })));
 
+export function preloadMessageBubble() {
+  // A failed speculative load must not block connecting or fetching history.
+  void import('./message-bubble').catch(() => undefined);
+}
+
 type ConversationTimelineProps = {
   questionReplyDisabled?: boolean;
   onQuestionReply?: (replies: QuestionReply[]) => Promise<boolean>;

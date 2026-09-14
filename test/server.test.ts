@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { brotliCompressSync, gzipSync } from 'node:zlib';
 import { WebSocket } from 'ws';
 import { createBridgeServer, internals as serverInternals } from '../src/server/server.js';
 import { createConnectorAuthProof } from '../src/shared/auth.js';
@@ -350,6 +351,32 @@ test('static middleware serves assets and preserves SPA fallback caching', async
   const traversalBody = await traversalAttempt.text();
   assert.match(traversalBody, /Codex Anywhere/);
   assert.doesNotMatch(traversalBody, /must not be served/);
+});
+
+test('static compression negotiates encodings without changing asset bytes or HTML caching', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-compressed-static-'));
+  const source = 'console.log("压缩静态资源");\n'.repeat(100);
+  await writeFile(join(directory, 'index.html'), '<main>hello</main>');
+  await writeFile(join(directory, 'app.js'), source);
+  await writeFile(join(directory, 'app.js.gz'), gzipSync(source));
+  await writeFile(join(directory, 'app.js.br'), brotliCompressSync(Buffer.from(source)));
+  const server = createBridgeServer({ connectorToken: TOKEN, publicDir: directory });
+  const address = await server.listen(0, '127.0.0.1');
+  t.after(async () => { await server.close(); await rm(directory, { recursive: true, force: true }); });
+  const origin = `http://127.0.0.1:${address.port}`;
+  for (const encoding of ['identity', 'gzip', 'br']) {
+    const response = await fetch(`${origin}/app.js`, { headers: { 'accept-encoding': encoding } });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-encoding'), encoding === 'identity' ? null : encoding);
+    assert.match(response.headers.get('content-type') || '', /javascript/);
+    assert.match(response.headers.get('vary') || '', /Accept-Encoding/i);
+    assert.equal(response.headers.get('cache-control'), 'public, max-age=3600');
+    assert.equal(await response.text(), source);
+    if (encoding !== 'identity') assert.ok(Number(response.headers.get('content-length')) < Buffer.byteLength(source));
+  }
+  const page = await fetch(`${origin}/sessions/example`, { headers: { 'accept-encoding': 'br, gzip' } });
+  assert.equal(page.headers.get('cache-control'), 'no-store');
+  assert.equal(await page.text(), '<main>hello</main>');
 });
 
 test('content security policy limits WebSocket connections to the current host', async (t) => {

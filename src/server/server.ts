@@ -82,6 +82,8 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
   const staticHandler = sirv(publicDir, {
     dev: !existsSync(publicDir),
     etag: true,
+    gzip: true,
+    brotli: true,
     single: true,
     setHeaders(response, pathname) {
       const cacheableAsset = /\.[^/]+$/.test(pathname)

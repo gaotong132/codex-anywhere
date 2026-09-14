@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Precompress Web assets with Brotli/gzip, preload the message renderer while connecting, and incrementally index generated-image references as session histories grow.
+
 - Add a fresh-ECS deployment appendix covering software, DNS, ingress, TLS, Nginx/WSS, renewal and verification.
 
 ## v0.3.0 — 2026-09-12

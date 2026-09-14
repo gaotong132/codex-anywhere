@@ -129,11 +129,24 @@ type CachedRollout = RolloutSnapshot & {
   fileIdentity: string; mtimeMs: number; ctimeMs: number; tail: Buffer;
 };
 const rolloutCache = new Map<string, CachedRollout>();
-const generatedImageCache = new Map<string, { signature: string; items: RolloutItem[] }>();
+type CachedGeneratedImages = {
+  signature: string; fileIdentity: string; fileSize: number; parsedOffset: number; floor: number;
+  tail: Buffer; rows: RolloutRow[]; items: RolloutItem[];
+};
+const generatedImageCache = new Map<string, CachedGeneratedImages>();
+const generatedImageReads = new Map<string, Promise<RolloutItem[]>>();
 
 // Summary RPCs omit image items. Read only lightweight references from a bounded
 // local window instead of fetching full turns and their multi-megabyte results.
-export async function readRolloutGeneratedImages(filePath: string): Promise<RolloutItem[]> {
+export function readRolloutGeneratedImages(filePath: string): Promise<RolloutItem[]> {
+  const pending = generatedImageReads.get(filePath);
+  if (pending) return pending;
+  const read = scanRolloutGeneratedImages(filePath).finally(() => { generatedImageReads.delete(filePath); });
+  generatedImageReads.set(filePath, read);
+  return read;
+}
+
+async function scanRolloutGeneratedImages(filePath: string): Promise<RolloutItem[]> {
   const handle = await open(filePath, 'r');
   try {
     const info = await handle.stat();
@@ -141,11 +154,25 @@ export async function readRolloutGeneratedImages(filePath: string): Promise<Roll
     const cached = generatedImageCache.get(filePath);
     if (cached?.signature === signature) return cached.items;
     const floor = Math.max(0, info.size - MAX_GENERATED_IMAGE_SCAN_BYTES);
+    const fileIdentity = `${info.dev}:${info.ino}:${info.birthtimeMs}`;
+    // Reuse only an append to the same bounded window. A partial final JSON line
+    // is reread from its start when it becomes complete; replacement/truncation
+    // invalidates the index, as does a changed boundary in the existing file.
+    const incremental = cached && cached.fileIdentity === fileIdentity
+      && cached.floor === floor && info.size > cached.fileSize
+      && cached.tail.equals(await readCacheTail(handle, cached.fileSize));
+    const scanFloor = incremental ? cached.parsedOffset : floor;
     let cursor = info.size;
+    let parsedOffset = scanFloor;
+    let foundLastNewline = false;
     const rows: RolloutRow[] = [];
-    while (cursor > floor) {
-      const start = Math.max(floor, cursor - HISTORY_PAGE_BYTES);
-      const window = await readCompleteRows(handle, start, cursor, start > 0);
+    while (cursor > scanFloor) {
+      const start = Math.max(scanFloor, cursor - HISTORY_PAGE_BYTES);
+      const window = await readCompleteRows(handle, start, cursor, start > scanFloor || (!incremental && start > 0));
+      if (!foundLastNewline && window.parsedOffset > start) {
+        parsedOffset = window.parsedOffset;
+        foundLastNewline = true;
+      }
       const references: RolloutRow[] = [];
       for (const row of window.rows) {
         const payload = row.payload || {};
@@ -167,9 +194,13 @@ export async function readRolloutGeneratedImages(filePath: string): Promise<Roll
       cursor = window.recoveredLeadingRow ? start
         : window.firstCompleteOffset < cursor ? window.firstCompleteOffset : start;
     }
-    const items = mapRolloutRows(rows).filter((item) => item.attachment && item.turnId);
+    const indexedRows = incremental ? cached.rows.concat(rows) : rows;
+    const items = mapRolloutRows(indexedRows).filter((item) => item.attachment && item.turnId);
     generatedImageCache.delete(filePath);
-    generatedImageCache.set(filePath, { signature, items });
+    generatedImageCache.set(filePath, {
+      signature, fileIdentity, fileSize: info.size, parsedOffset, floor, rows: indexedRows, items,
+      tail: await readCacheTail(handle, info.size),
+    });
     if (generatedImageCache.size > MAX_CACHED_ROLLOUTS) generatedImageCache.delete(generatedImageCache.keys().next().value!);
     return items;
   } finally { await handle.close(); }

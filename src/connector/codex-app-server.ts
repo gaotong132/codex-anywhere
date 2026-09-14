@@ -310,6 +310,8 @@ export class CodexAppServer extends EventEmitter {
     if (!cursor && await this.isLargeSession(resolvedThreadId)) {
       return this.readSessionTail(resolvedThreadId, metadata?.path, { paged: true });
     }
+    const imageReferences = mode === 'conversation' && metadata?.path
+      ? readRolloutGeneratedImages(metadata.path).catch(() => []) : Promise.resolve([]);
     try {
       const result = await this.rpcRaw('thread/turns/list', {
         threadId: resolvedThreadId,
@@ -327,7 +329,7 @@ export class CodexAppServer extends EventEmitter {
         : rawTurns;
       const turns = mapTurns(hydratedTurns);
       if (mode === 'conversation' && metadata?.path) {
-        const images = await readRolloutGeneratedImages(metadata.path).catch(() => []);
+        const images = await imageReferences;
         for (const turn of turns) {
           const missing = images.filter((image) => image.turnId === turn.id
             && !turn.items.some((item: JsonObject) => item.attachment?.path === image.attachment?.path));

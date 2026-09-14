@@ -428,6 +428,13 @@ Do not bypass certificate failures with `curl -k`. If you already have a cloud-p
 skip Certbot, install its full chain and private key, and arrange renewal plus Nginx reload yourself.
 Keep private keys out of Git.
 
+`npm run build` also generates Brotli/gzip variants of Web assets. Relay negotiates these through
+`Accept-Encoding`, so a normal proxy can forward already-compressed responses. After an update, check an
+actual JavaScript **GET** in the browser Network panel for `Content-Encoding: br` or `gzip` and a complete
+response; a successful health check alone does not validate large asset downloads. If Nginx logs a
+permission error under `proxy_temp_path`, check that its worker user can access that directory and its
+children. Preserve restrictive permissions rather than making the directory world-writable.
+
 ### F. Pair clients, verify WSS and optionally add an execution node
 
 Follow “Install a Windows/Desktop connector” above to connect the PC to `wss://codex.example.com/ws`,
