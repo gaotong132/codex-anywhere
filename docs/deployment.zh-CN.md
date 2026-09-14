@@ -12,6 +12,8 @@ Codex Anywhere 使用一台小型 Linux 转发服务作为浏览器与一个或�
 
 ## 准备资源
 
+第一次购买 ECS、尚未配置公网入口时，可按文末[附录：新购 ECS 从零部署](#附录新购-ecs-从零部署)完成基础安装。
+
 - 可访问的 Linux ECS/VPS：Git、Docker Engine、Docker Compose v2；如果还要作为执行节点，需要
   Node.js 22+ 和已登录认证的 Codex CLI。
 - Windows Codex 电脑：Codex Desktop/CLI、Node.js 22+、Git、PowerShell。
@@ -247,3 +249,206 @@ Relay 在设备注册表旁单独写入私有 `devices.json.activity.json`，每
 沙箱，并可读写连接器服务账号能访问的任何文件。只应在专用节点上、且所有已批准浏览器都可信时开启。
 
 调整文件根目录、下载范围、入口或连接器网络、完全访问权限前，请阅读[安全策略](SECURITY.zh-CN.md)。
+
+## 附录：新购 ECS 从零部署
+
+本附录以 **Ubuntu Server 24.04 LTS、systemd、独立公网 IPv4** 的全新 ECS 为例，步骤核对日期为
+2026-09-14。其他发行版需要换用相应的软件源和服务配置。已有网站的服务器应合并配置，避免覆盖原站点。
+下文的 `codex.example.com` 必须全部换成自己的域名。
+
+### A. 软件和服务清单
+
+| 组件 | 是否需要 | 用途 / 运行方式 |
+| --- | --- | --- |
+| Git、curl、CA 证书 | 必需 | 获取代码、下载依赖、验证 HTTPS |
+| Docker Engine、Compose 插件 | 必需 | 构建和运行 Relay，Docker 由 systemd 管理 |
+| Nginx | 本附录需要 | 监听 80/443，终止 TLS，反向代理 HTTP 和 WebSocket |
+| 域名及 DNS 解析 | 本附录需要 | 让客户端访问固定域名，并完成证书域名验证 |
+| TLS 证书、Certbot / snapd | 本附录需要 | 签发和自动续期证书；已有受信任证书可用自己的证书管理工具 |
+| Node.js 22+、已认证的 Codex CLI、Connector | 可选 | 仅在 ECS 也要执行 Codex 任务时安装；仅转发时 Node 在容器内运行 |
+
+**WSS 是经过 TLS 加密的 WebSocket，不需要另外安装“WSS 服务”。** 在这个方案中：
+
+```text
+浏览器 ── HTTPS / WSS :443 ──> Nginx ── HTTP / WS 127.0.0.1:3300 ──> Relay
+PC Connector ── 出站 WSS :443 ──> 同一个 Nginx / Relay
+ECS Connector（可选）── 本机 WS 127.0.0.1:3300 ──> Relay
+```
+
+Web 入口为 `https://codex.example.com`，远程连接器地址为 `wss://codex.example.com/ws`。
+TLS 在 Nginx 终止，Relay 使用回环地址上的明文 WS；不需要给容器配置证书，也不需要数据库或 Redis。
+
+### B. 公网、域名和端口
+
+在域名服务商处添加 `codex` 的 **A 记录**，指向 ECS 的公网 IPv4（不是内网 IP）。只有在 ECS 的 IPv6
+监听、路由和安全组均已配置时才添加 AAAA 记录。先使用直接 DNS 解析；如需 CDN，之后再核对其 WebSocket 支持。
+
+同时检查云安全组和操作系统防火墙：
+
+| 入站 TCP 端口 | 来源 | 用途 |
+| --- | --- | --- |
+| 22（或实际 SSH 端口） | 管理员的可信 IP | SSH 运维 |
+| 80 | 公网 | 本附录的 HTTP-01 证书验证，以及跳转 HTTPS |
+| 443 | 需要访问的客户端网络 | HTTPS 页面和 WSS 共用此端口 |
+| 3300 | 不向公网开放 | 仅允许本机回环访问 Relay |
+
+若启用主机防火墙，先允许实际 SSH 端口与管理员 IP，并保留当前 SSH 连接验证新连接可用；不要清空已有规则。
+Docker 发布端口可能绕过 UFW，因此应保留 Compose 的 `127.0.0.1:3300:3300` 绑定，不能只依赖 UFW 阻止公网 3300。
+参见 [Docker 防火墙说明](https://docs.docker.com/engine/install/ubuntu/#firewall-limitations)。
+服务器还需要可用的 DNS、软件源及 HTTPS 出站网络；若运行 Connector，还需能访问其 Codex 服务。
+
+### C. 安装基础软件与 Docker
+
+通过 SSH 登录后，以下安装命令在 **ECS 的 root Bash** 中依次执行（普通管理员先运行 `sudo -i`）。
+本示例将仓库放在 `/root/codex-anywhere`，不要求为 Docker 开放远程管理端口。
+
+```bash
+apt-get update
+apt-get install -y git curl ca-certificates nginx snapd dnsutils nano
+```
+
+按 [Docker 官方 Ubuntu 安装指南](https://docs.docker.com/engine/install/ubuntu/#install-using-the-apt-repository)
+的“Set up Docker's apt repository”配置官方 APT 软件源，然后执行：
+
+```bash
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+systemctl enable --now docker nginx
+docker compose version
+docker run --rm hello-world
+```
+
+云镜像若已预装 Docker，先核对现有版本和 Compose 插件，不要直接混装不同来源的软件包。
+
+### D. 启动 Relay，建立 HTTP 验证入口
+
+```bash
+cd /root
+git clone https://github.com/gaotong132/codex-anywhere.git
+cd /root/codex-anywhere
+./scripts/relay.sh setup
+curl --fail --silent --show-error http://127.0.0.1:3300/health
+dig +short A codex.example.com
+dig +short AAAA codex.example.com
+```
+
+健康接口应返回成功，DNS 应指向这台 ECS。此时还不能直接启用仓库里的 HTTPS 配置：证书尚未签发。
+先用 `nano /etc/nginx/sites-available/codex-anywhere` 创建以下临时 HTTP 站点：
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name codex.example.com;
+    server_tokens off;
+    access_log off;
+    location / {
+        default_type text/plain;
+        return 200 "codex-anywhere TLS setup\n";
+    }
+}
+```
+
+```bash
+ln -s /etc/nginx/sites-available/codex-anywhere /etc/nginx/sites-enabled/codex-anywhere
+nginx -t && systemctl reload nginx
+```
+
+从另一台电脑打开 `http://codex.example.com`，确认显示 `codex-anywhere TLS setup`。如果出现默认欢迎页，
+检查域名和 `server_name`；如果连接超时，检查 DNS、安全组、防火墙及云服务商的入口限制。此临时站点不提供配对入口。
+
+### E. 签发证书，启用 HTTPS / WSS
+
+使用 [Certbot 的 snap 安装方式](https://certbot.eff.org/instructions?os=snap&ws=nginx)。
+本附录使用 `certonly --nginx` 获取证书，再安装项目提供的代理配置：
+
+```bash
+snap install --classic certbot
+/snap/bin/certbot certonly --nginx --cert-name codex.example.com -d codex.example.com
+```
+
+按提示填写联系邮箱并阅读、接受服务条款。确认签发成功后，备份临时配置并安装模板：
+
+```bash
+cp /etc/nginx/sites-available/codex-anywhere /root/codex-anywhere-http-bootstrap.conf
+install -m 644 /root/codex-anywhere/deploy/nginx-example.conf /etc/nginx/sites-available/codex-anywhere
+nano /etc/nginx/sites-available/codex-anywhere
+```
+
+在配置中替换两个 `server_name` 的示例域名，并将证书路径改为：
+
+```nginx
+ssl_certificate /etc/letsencrypt/live/codex.example.com/fullchain.pem;
+ssl_certificate_key /etc/letsencrypt/live/codex.example.com/privkey.pem;
+```
+
+保留模板中的 `/ws` 精确匹配、HTTP/1.1、`Upgrade` / `Connection` 请求头和长连接超时。
+这些设置负责将 WSS 连接升级并转发到 Relay，参见 [Nginx WebSocket 代理文档](https://nginx.org/en/docs/http/websocket.html)。
+模板还覆盖客户端地址转发头，与参考 Compose 的 `BRIDGE_TRUST_PROXY=1` 配合；若在 Nginx 前再加一层代理，
+需要重新确定可信代理和真实客户端地址规则。
+
+```bash
+nginx -t && systemctl reload nginx
+curl --fail --silent --show-error https://codex.example.com/health
+```
+
+不要用 `curl -k` 忽略证书错误。若已持有云厂商签发的证书，可以跳过 Certbot，安装完整证书链和私钥，
+并自行安排续期与 Nginx reload；不要把私钥提交到 Git。
+
+### F. 配对、WSS 验收和可选执行节点
+
+按正文“安装 Windows/Desktop 连接器”把 PC 连接到 `wss://codex.example.com/ws`，随后在 ECS 执行：
+
+```bash
+cd /root/codex-anywhere
+./scripts/relay.sh approve
+./scripts/relay.sh pair https://codex.example.com
+./scripts/relay.sh devices
+```
+
+配对链接只交给自己的浏览器。打开 HTTPS 页面完成配对，确认执行环境在线，并在自己的测试会话中发送消息、
+检查流式回复。浏览器开发者工具 Network → WS 中的 `/ws` 请求应返回 **101 Switching Protocols** 并持续收发帧。
+仅 `/health` 成功不能证明 WSS 升级和连接器认证成功，普通 `curl /ws` 也不是完整的 WebSocket 验收。
+
+如果 ECS 也要执行任务，再按正文“安装 24×7 Linux/ECS 连接器”安装 Node.js、认证 Codex CLI 和 systemd 服务，
+完成相同的批准与在线检查；仅作 Relay 时无需此步骤。浏览器扩展属于实验性附加特性，也不是基础部署的前提。
+
+### G. 自动续期、巡检和备份
+
+`certonly` 没有替你安装证书到 Nginx，需要配置续期成功后的 reload。创建部署钩子：
+
+```bash
+install -d -m 755 /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/codex-anywhere-nginx.sh <<'EOF'
+#!/bin/sh
+set -eu
+/usr/sbin/nginx -t
+/bin/systemctl reload nginx
+EOF
+chmod 755 /etc/letsencrypt/renewal-hooks/deploy/codex-anywhere-nginx.sh
+/snap/bin/certbot renew --dry-run --run-deploy-hooks
+systemctl list-timers --all | grep -i certbot
+```
+
+确认定时器有下次执行时间；snap 安装通常显示 `snap.certbot.renew.timer`。本流程使用 Nginx HTTP-01 验证，
+续期时仍需公网 80 可达；若无法开放 80，改用 DNS 服务商支持的自动 DNS 验证。续期机制和钩子参见
+[Certbot 使用指南](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates)。
+
+常用巡检命令：
+
+```bash
+cd /root/codex-anywhere
+./scripts/relay.sh status
+./scripts/relay.sh devices
+systemctl is-active docker nginx
+docker compose logs --tail 100 bridge
+tail -n 100 /var/log/nginx/codex-bridge-error.log
+/snap/bin/certbot certificates
+# 仅安装了 ECS Connector 时执行：
+systemctl status codex-anywhere-connector.service --no-pager
+```
+
+公网 HTTPS 超时先查 DNS 和入口端口；502 先查 Relay 的本机健康接口；页面正常而 WS 失败则检查 `/ws`
+升级头、代理超时和连接器状态。更新前备份当前提交、镜像、`.env`、Compose 数据卷中的设备注册表、
+连接器配置与身份文件，以及 Nginx 配置和 `/etc/letsencrypt`；这些私有备份应限制访问。保留业务会话、工作区和
+现有网络配置，等待任务空闲后再重启服务。应用更新参见正文“日常管理与升级”。

@@ -13,6 +13,8 @@ rule. The relay host can also run a headless connector for 24×7 work.
 
 ## Requirements
 
+For a newly purchased ECS without a public endpoint, follow the [fresh-ECS appendix](#appendix-deploy-on-a-new-ecs) at the end of this guide.
+
 - Reachable Linux ECS/VPS: Git, Docker Engine, Docker Compose v2. Add Node.js 22+ and an authenticated
   Codex CLI when this host should also be an execution node.
 - Windows Codex computer: Codex Desktop/CLI, Node.js 22+, Git, PowerShell.
@@ -269,3 +271,225 @@ service account. Enable it only on a dedicated node and only when every approved
 
 See the [security policy](SECURITY.md) before changing file roots, download scope, ingress, or connector
 network or full access.
+
+## Appendix: deploy on a new ECS
+
+This reference uses a fresh **Ubuntu Server 24.04 LTS** ECS with systemd and a dedicated public IPv4
+address. Steps reviewed on 2026-09-14. Other distributions need their own repositories and service
+configuration. On a server hosting existing websites, merge settings without overwriting those sites.
+Replace every occurrence of `codex.example.com` below with your own domain.
+
+### A. Software and services
+
+| Component | Needed? | Purpose / operation |
+| --- | --- | --- |
+| Git, curl, CA certificates | Required | Fetch source, download dependencies and verify HTTPS |
+| Docker Engine, Compose plugin | Required | Build and run Relay; systemd manages Docker |
+| Nginx | For this appendix | Listen on 80/443, terminate TLS and proxy HTTP/WebSocket |
+| Domain and DNS record | For this appendix | Give clients a stable endpoint and validate domain ownership |
+| TLS certificate, Certbot / snapd | For this appendix | Issue and renew certificates; existing trusted certificates can use another manager |
+| Node.js 22+, authenticated Codex CLI, Connector | Optional | Install on the host only if ECS also executes Codex tasks; Relay runs Node inside Docker |
+
+**WSS is WebSocket over TLS; there is no separate WSS service to install.** The connections are:
+
+```text
+Browser ── HTTPS / WSS :443 ──> Nginx ── HTTP / WS 127.0.0.1:3300 ──> Relay
+PC Connector ── outbound WSS :443 ──> the same Nginx / Relay
+ECS Connector (optional) ── local WS 127.0.0.1:3300 ──> Relay
+```
+
+The Web URL is `https://codex.example.com`; remote connectors use `wss://codex.example.com/ws`.
+Nginx terminates TLS and forwards plain WS over loopback. The container needs no certificate,
+database or Redis service.
+
+### B. Public address, domain and ports
+
+At your DNS provider, create an **A record** for `codex` pointing to the ECS public IPv4 address,
+not its private address. Add an AAAA record only after configuring IPv6 listeners, routing and security
+groups. Start with direct DNS; check WebSocket support before introducing a CDN.
+
+Check both the cloud security group and the host firewall:
+
+| Inbound TCP port | Source | Purpose |
+| --- | --- | --- |
+| 22 (or your actual SSH port) | Trusted administrator IPs | SSH administration |
+| 80 | Public Internet | HTTP-01 certificate validation and HTTPS redirects |
+| 443 | Client networks that need access | HTTPS and WSS share this port |
+| 3300 | Never expose publicly | Relay is reachable only through host loopback |
+
+Before enabling a host firewall, allow your actual SSH port and administrator IP; keep the current SSH
+connection open while verifying a second connection. Preserve existing rules. Docker-published ports
+can bypass UFW, so retain Compose's `127.0.0.1:3300:3300` binding instead of relying only on UFW to
+block public port 3300. See [Docker's firewall notes](https://docs.docker.com/engine/install/ubuntu/#firewall-limitations).
+The server also needs DNS and outbound access to package sources over HTTPS; an optional Connector
+needs access to its Codex service too.
+
+### C. Install base packages and Docker
+
+After connecting over SSH, run the following steps in **root Bash on ECS** (`sudo -i` for a sudo-enabled
+administrator). This example uses `/root/codex-anywhere` and does not expose Docker's management API.
+
+```bash
+apt-get update
+apt-get install -y git curl ca-certificates nginx snapd dnsutils nano
+```
+
+Follow “Set up Docker's apt repository” in the [official Docker Ubuntu guide](https://docs.docker.com/engine/install/ubuntu/#install-using-the-apt-repository)
+to configure its APT repository, then run:
+
+```bash
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+systemctl enable --now docker nginx
+docker compose version
+docker run --rm hello-world
+```
+
+If the cloud image already includes Docker, check its version and Compose plugin before mixing packages
+from different sources.
+
+### D. Start Relay and bootstrap HTTP validation
+
+```bash
+cd /root
+git clone https://github.com/gaotong132/codex-anywhere.git
+cd /root/codex-anywhere
+./scripts/relay.sh setup
+curl --fail --silent --show-error http://127.0.0.1:3300/health
+dig +short A codex.example.com
+dig +short AAAA codex.example.com
+```
+
+The health endpoint must succeed and DNS must point to this ECS. Do not enable the repository's HTTPS
+configuration yet: its certificate does not exist. Use `nano /etc/nginx/sites-available/codex-anywhere`
+to create this temporary HTTP site first:
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name codex.example.com;
+    server_tokens off;
+    access_log off;
+    location / {
+        default_type text/plain;
+        return 200 "codex-anywhere TLS setup\n";
+    }
+}
+```
+
+```bash
+ln -s /etc/nginx/sites-available/codex-anywhere /etc/nginx/sites-enabled/codex-anywhere
+nginx -t && systemctl reload nginx
+```
+
+Open `http://codex.example.com` from another computer and confirm it shows `codex-anywhere TLS setup`.
+A default welcome page means you should check DNS and `server_name`; a timeout calls for checking DNS,
+security groups, firewalls and the cloud provider's ingress restrictions. This temporary site does not expose pairing.
+
+### E. Issue the certificate and enable HTTPS / WSS
+
+Use [Certbot's snap installation](https://certbot.eff.org/instructions?os=snap&ws=nginx).
+This procedure obtains the certificate with `certonly --nginx`, then installs the project's proxy configuration:
+
+```bash
+snap install --classic certbot
+/snap/bin/certbot certonly --nginx --cert-name codex.example.com -d codex.example.com
+```
+
+Follow the prompts for a contact email and review and accept the terms. After successful issuance,
+back up the temporary configuration and install the template:
+
+```bash
+cp /etc/nginx/sites-available/codex-anywhere /root/codex-anywhere-http-bootstrap.conf
+install -m 644 /root/codex-anywhere/deploy/nginx-example.conf /etc/nginx/sites-available/codex-anywhere
+nano /etc/nginx/sites-available/codex-anywhere
+```
+
+Replace the example domain in both `server_name` directives and use these certificate paths:
+
+```nginx
+ssl_certificate /etc/letsencrypt/live/codex.example.com/fullchain.pem;
+ssl_certificate_key /etc/letsencrypt/live/codex.example.com/privkey.pem;
+```
+
+Keep the template's exact `/ws` location, HTTP/1.1, `Upgrade` / `Connection` headers and long connection
+timeouts. These settings upgrade and proxy WSS connections to Relay; see [Nginx WebSocket proxying](https://nginx.org/en/docs/http/websocket.html).
+The template also overwrites client address forwarding headers to work with reference Compose's
+`BRIDGE_TRUST_PROXY=1`. Adding a proxy in front of Nginx requires reviewing which proxies and client
+address headers to trust.
+
+```bash
+nginx -t && systemctl reload nginx
+curl --fail --silent --show-error https://codex.example.com/health
+```
+
+Do not bypass certificate failures with `curl -k`. If you already have a cloud-provider certificate,
+skip Certbot, install its full chain and private key, and arrange renewal plus Nginx reload yourself.
+Keep private keys out of Git.
+
+### F. Pair clients, verify WSS and optionally add an execution node
+
+Follow “Install a Windows/Desktop connector” above to connect the PC to `wss://codex.example.com/ws`,
+then run on ECS:
+
+```bash
+cd /root/codex-anywhere
+./scripts/relay.sh approve
+./scripts/relay.sh pair https://codex.example.com
+./scripts/relay.sh devices
+```
+
+Give the pairing link only to your own browser. Complete pairing over HTTPS, confirm the execution
+environment is online, and send a message in your own test session to check streamed replies.
+In browser developer tools, Network → WS should show **101 Switching Protocols** for `/ws`, followed
+by ongoing frames. A successful `/health` response alone does not verify WSS upgrades or connector
+authentication; ordinary `curl /ws` is not a complete WebSocket test either.
+
+If ECS should also execute tasks, follow “Install a 24×7 Linux/ECS connector” above for Node.js,
+Codex CLI authentication and the systemd service; approve it and verify its online status. Skip this
+step for a Relay-only host. The browser extension is an experimental extra, not a prerequisite for deployment.
+
+### G. Renewal, routine checks and backups
+
+`certonly` does not install the certificate into Nginx for you. Create a deployment hook to reload
+Nginx after successful renewal:
+
+```bash
+install -d -m 755 /etc/letsencrypt/renewal-hooks/deploy
+cat > /etc/letsencrypt/renewal-hooks/deploy/codex-anywhere-nginx.sh <<'EOF'
+#!/bin/sh
+set -eu
+/usr/sbin/nginx -t
+/bin/systemctl reload nginx
+EOF
+chmod 755 /etc/letsencrypt/renewal-hooks/deploy/codex-anywhere-nginx.sh
+/snap/bin/certbot renew --dry-run --run-deploy-hooks
+systemctl list-timers --all | grep -i certbot
+```
+
+Confirm a next execution time is scheduled; the snap installation typically uses
+`snap.certbot.renew.timer`. This Nginx HTTP-01 workflow still needs public port 80 during renewal.
+If port 80 is unavailable, use automated validation through a supported DNS provider.
+See the [Certbot renewal guide](https://eff-certbot.readthedocs.io/en/stable/using.html#renewing-certificates).
+
+Routine checks:
+
+```bash
+cd /root/codex-anywhere
+./scripts/relay.sh status
+./scripts/relay.sh devices
+systemctl is-active docker nginx
+docker compose logs --tail 100 bridge
+tail -n 100 /var/log/nginx/codex-bridge-error.log
+/snap/bin/certbot certificates
+# Only if the ECS Connector is installed:
+systemctl status codex-anywhere-connector.service --no-pager
+```
+
+For a public HTTPS timeout, check DNS and ingress ports. For 502, check Relay's local health endpoint.
+If the page works but WS fails, check `/ws` upgrade headers, proxy timeouts and connector status.
+Before updates, back up the current commit, image, `.env`, the device registry in the Compose data
+volume, connector configuration and identity files, Nginx configuration and `/etc/letsencrypt`.
+Restrict access to these private backups. Preserve sessions, workspaces and existing network configuration,
+and wait for tasks to become idle before restarting services. See “Operate and update” above for application upgrades.
