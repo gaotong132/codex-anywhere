@@ -18,135 +18,54 @@ Follow work from a phone, continue a task, send images, preview linked source fi
 files back without exposing a personal computer to the public internet. Codex and project files remain on
 the selected connector node; a small relay you control provides the remote meeting point.
 
+Codex Anywhere is designed for personal use, with conversations stored on your execution nodes.
+It does not provide multi-user hosting, a general remote shell or automatic session forks.
+
 > [!IMPORTANT]
 > This is an unofficial community project. It is not affiliated with or endorsed by OpenAI.
 
 ## What it does
 
-- **Switch execution environments** — choose a personal computer or a 24×7 headless ECS connector from
-  the same browser. Sessions, unread state, remembered workspace, attachments, and requests stay scoped
-  to the selected environment so matching thread IDs or paths cannot cross nodes.
-- **Continue real Codex sessions** — browse and rename recent sessions, read Markdown history, send text or
-  images, and start a task in an existing local project. Renames are written back to the original task on
-  the selected execution node.
-- **Follow work as it happens** — see running and unread-complete sessions, progress updates, plan steps,
-  tool purpose, elapsed time, and file-change totals. The status ring tracks current context usage and
-  reveals token details on hover or tap, while compaction events stay visible in the timeline. Completed
-  turns keep compact tool summaries, configuration changes, and failure or cancellation reasons. Tap a
-  completed turn's totals to inspect its bounded unified diff. Long histories open at the latest page and
-  load older pages only after you browse upward, preserving your reading position and exposing retryable
-  loading failures. Automation reports keep their full body and a compact source label; appended heartbeat
-  control fields and redundant notification summaries stay out of both the message and copied text.
-- **Guide an active task** — append text to a connector-owned run, or use Desktop delivery when the
-  existing session supports it. Open the running-status strip for elapsed time and a stop control when the
-  selected connector owns that exact turn. Messages are sent directly; Codex Anywhere does not maintain a
-  Web queue.
-- **Choose how Codex works** — view or change the model, reasoning effort, fast mode, and approval mode.
-  GPT-6 Astra (`gpt-6-astra`) appears when available in the selected connector's Codex model catalog;
-  reasoning choices follow that environment, including Max and Ultra when advertised. See the
-  [official Codex model guide](https://learn.chatgpt.com/docs/models) for model availability.
-  Headless connectors support user approval, Codex auto-review, or an explicitly enabled full-access mode;
-  the selection and new-task default stay scoped to the current execution environment.
-- **Use the results on mobile** — preview sent or generated images; open linked Markdown, source, config,
-  and plain-text files; view syntax-highlighted code and Mermaid diagrams; open isolated Codex
-  visualizations; copy messages; and download local files after confirmation. Downloads try to keep the
-  screen awake; a foreground transfer pauses safely and resumes after the approved browser reconnects.
-- **Handle supported approvals** — approve or reject requests owned by a run started through the
-  connector. Requests already owned by Codex Desktop remain on the computer.
-- **Recover from network changes** — browser, relay, and connectors reconnect and resynchronize without
-  duplicating accepted messages.
-- **Approve every endpoint** — browsers use a ten-minute, single-use pairing link and persistent device
-  keys; connectors require both a secret and explicit owner approval.
-
-Codex Anywhere deliberately stays small: it is not a multi-user gateway, a general remote shell, an
-automatic session forker, or hosted conversation storage.
-
-### Paste screenshots
-Upload status separates image preparation, byte-based sending progress and receipt confirmation. Reaching 100%
-means the bytes were sent; wait for confirmation before treating the attachment as received. Image upload/read requests
-allow up to 120 seconds. Sent/generated previews can be enlarged; original downloads remain separately confirmed.
-
-
-After taking a screenshot on your PC, focus the chat input and press **Ctrl+V** (**⌘+V** on macOS)
-to attach the clipboard image. The first message in the new-task dialog also supports pasting.
-Review the preview, optionally add text, then click Send or press Ctrl/⌘+Enter to upload and send.
-PNG, JPEG, and WebP are supported, with one image per message; pasting again replaces the pending image.
-Plain text paste and the “＋” file picker still work. The browser extension side panel uses the same feature.
-
-### Answer questions from a task
-
-When a task calls `request_user_input_async`, Web shows question cards in the timeline. Choose a suggested
-answer or enter your own, then click Send answer to reply to the original task while it continues working.
-Answers retain their question IDs and appear after refresh, including answers submitted from Desktop.
-Answering leaves any separate text/image draft in the chat composer intact.
-Answered cards collapse to one status row; expand them to review all questions and answers. The reply keeps its answer
-visible and hides the repeated question behind an expand control. A preselected option is never submitted automatically.
-
-### Linked local files
-Generated images are recovered from both legacy events and newer Codex image-generation events, including images
-omitted by conversation summaries. History sends local references, then fetches validated previews from the selected
-Connector; it does not send the original Base64 tool result. Existing images appear after updating the Connector and
-refreshing Web, provided the original files still exist. No regeneration or browser extension is required.
-
-
-
-Clicking a supported local file link opens a read-only preview without leaving the conversation:
-
-| File | Browser behavior |
-| --- | --- |
-| Markdown | Rendered Markdown; Mermaid blocks render on demand and relative links remain usable |
-| SVG | Rendered image with Image/Source controls; local image references and `svg` code blocks also render |
-| Common source and config files | Code preview with language detection and on-demand syntax highlighting |
-| Plain text, logs, CSV, and TSV | Plain-text preview with horizontal scrolling |
-| Binary, sensitive, or unrecognized files | Existing confirmed download flow; no inline preview |
-
-Text previews accept regular UTF-8 files up to 2 MiB at any absolute path readable by the selected connector’s OS user; no workspace-root restriction applies. Sensitive
-extensions such as `.env`, `.pem`, and `.key` are intentionally excluded. Every preview keeps a Download
-button, and highlighting falls back to escaped plain code if a language is unavailable or the input is
-too large to highlight efficiently.
-
-SVG previews use an isolated image context, preserving vector detail without executing scripts or loading
-external resources. Self-contained SVGs (including embedded styles and images) work best. Malformed SVGs
-keep the source and download available. Local file links support Windows and Linux connector paths.
-
-### Per-turn code changes
-
-When a completed reply shows file-change totals, tap them to open the unified diff produced by that Codex
-turn. The browser requests it only on demand; the connector reads the known session rollout incrementally,
-keeps turns isolated, and returns at most 512 KiB. Large diffs are marked as truncated, and unavailable
-legacy turns fail closed instead of falling back to the current working-tree diff. The preview includes
-old and new line numbers, file boundaries, and an optional line-wrapping control for narrow screens.
-
-### Context and timeline diagnostics
-
-When Codex reports token accounting, the top-right activity ring also shows how much of the model context
-window is in use. Hover over or tap the ring for the exact token count; the ring changes tone at high and
-critical usage. Context compactions appear as dedicated timeline markers with their sequence and available
-before/after totals. Completed turns retain compact counts for tools, commands, edits, and other actions,
-plus bounded model-setting changes and failure or cancellation reasons. Raw reasoning, tool arguments, and
-tool output are not copied into these summaries.
-
-Compaction uses one timeline marker throughout: **Compacting context** and its elapsed timer change to
-**Context compacted** in place, preserving the same styling and position. Headless runs use the native `contextCompaction`
-item lifecycle. Desktop runs use a bounded, read-only check of the current task/turn's local Codex trace
-span, since rollout history records only completion. The trace database is optional: if absent or changed,
-chat remains available and only the completed marker is shown. No log text, percentage estimate or prompt
-is sent to the browser. Update Connector and Web; no extension reload or pairing is required.
-
-## Browser Agent (experimental add-on)
-
-The Anywhere Browser extension (Browser Agent) is an **experimental add-on**, disabled by default and built,
-installed, and configured separately when needed. Normal Codex Anywhere session features do not require it;
-its configuration, interactions, and compatibility may still change.
-Click the extension icon to open the existing Web chat in the browser side panel. Choose an environment
-and Session to chat directly; page control remains separately authorized.
-It connects an explicitly authorized page to an **existing Session**
-on PC, ECS, or another Connector, using encrypted routing and eight session-bound MCP tools: list pages, snapshot, screenshot, zoom, click, fill, scroll and open links.
-Page control uses the currently selected side-panel task without a second task selector or pairing link.
-AI-opened tabs follow in the same window; the five most recently used ordinary children are retained.
-Horizontal clipping prefers 80%, then 67% zoom with a fresh snapshot before scrolling.
-It requires opt-in Relay/Connector/MCP setup and real-browser acceptance; production is not changed automatically.
-See the [development plan](docs/browser-agent.md) and [extension instructions](extension/README.md).
+- **Switch execution environments** — choose a personal computer or a 24×7 headless ECS node in the same
+  browser. Sessions, unread state, recent workspaces, attachments and requests stay scoped to the selected machine.
+- **Continue real sessions** — browse, rename and resume existing Codex sessions, or start a task in a local
+  project. Markdown history opens at the latest page and loads older entries as you browse upward, preserving your position.
+- **Follow task progress** — see running status, unread updates, progress, plans, tool purpose and elapsed time.
+  Completed turns retain action summaries, configuration changes and failure or cancellation reasons; automation reports
+  keep their full body while redundant notifications and internal fields stay out of the display.
+- **Add instructions during a run** — steer active tasks with text, using Desktop delivery for existing sessions
+  when supported. Stop a turn from Web when the selected connector owns it; messages are sent directly without a Web queue.
+- **Choose models and permissions** — select the model, reasoning effort, fast mode and approval mode, including
+  GPT-6 Astra, Max and Ultra when offered by the selected node. Headless nodes support user approval, Codex auto-review
+  and explicitly enabled full access; settings and new-task defaults stay scoped to each environment.
+- **Answer task questions** — choose suggested answers or enter your own in question cards, including those from
+  `request_user_input_async`. Answered state syncs with Desktop and full exchanges remain expandable; answering preserves
+  the chat draft, and preselected options are never submitted automatically.
+- **Handle task approvals** — approve or reject requests for connector-owned turns from Web.
+  Approvals already owned by Codex Desktop remain on the computer, preserving ownership across clients.
+- **Paste and upload screenshots** — paste with Ctrl+V / ⌘+V in chat or a new task, or choose a PNG, JPEG or WebP
+  file. Preview one image per message before sending; upload status distinguishes preparation, byte-based progress
+  and receipt confirmation.
+- **Preview images and local files** — enlarge sent or generated images and open linked Markdown, source, config,
+  logs and SVG with syntax highlighting, Mermaid diagrams and isolated visualizations. Historical generated images
+  can be recovered from the selected node while their original files remain available.
+- **Review code changes by turn** — open a completed turn's Diff on demand, with file boundaries, old and new line
+  numbers and optional wrapping on narrow screens. Oversized content is marked as truncated; unavailable historical
+  diffs never fall back to unrelated changes in the current working tree.
+- **Track context usage** — the status ring shows context usage and token details reported by Codex. Timeline markers
+  retain compaction progress, elapsed time and completion, with before/after usage when available for longer tasks.
+- **Bring results back** — copy replies and download files from the selected node after confirmation, including from
+  previews. Downloads try to keep the screen awake; interrupted foreground transfers pause safely and resume when
+  the approved browser reconnects.
+- **Authorize browser actions (experimental add-on)** — an optional extension shares chat and the current task in its
+  side panel. Pair once, then authorize pages for snapshots, screenshots, zoom, clicks, input, scrolling and navigation,
+  with new-tab following. Disabled by default; see the [extension instructions](extension/README.md) and
+  [development plan](docs/browser-agent.md) for setup and limitations.
+- **Recover from disconnections** — browser, Relay and connectors reconnect and resynchronize without duplicating
+  accepted messages, so you can keep following the original task after a network change.
+- **Approve every endpoint** — browsers pair through a ten-minute, single-use link and then use persistent device keys;
+  connectors also require a secret and explicit owner approval. Application traffic between browser and connector is
+  end-to-end encrypted, and personal computers make outbound connections only.
 
 ## Architecture
 
