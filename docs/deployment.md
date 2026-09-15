@@ -11,6 +11,46 @@ rule. The relay host can also run a headless connector for 24×7 work.
 
 `http://127.0.0.1:3300` is a same-computer test endpoint, not a practical phone deployment.
 
+## The easiest route: let Codex handle deployment
+
+You already use Codex; you do not need a second job copying commands into terminals. Give it this guide
+and temporary access to your ECS, and ask it to inspect the environment, install dependencies, configure
+the endpoint, and verify the result. The manual steps below serve as its instructions and your reference.
+
+Have these three things ready:
+
+- **Server access:** the ECS address, SSH port, login user, and a temporary SSH account or private-key file
+  path. Temporary cloud-console/API credentials do not necessarily provide SSH access; describe their scope.
+- **An entry point:** your domain or existing VPN/secure tunnel. Public HTTPS/WSS setup also needs access
+  to update the domain's DNS records.
+- **Execution hosts:** the computer where Codex is installed and signed in, and whether the ECS should
+  also run a 24×7 headless connector.
+
+Keep credentials in a private local file that Codex can read and provide only its path. Do not paste the
+secret into chat or commit it to the repository. Replace the brackets in this prompt and hand it over:
+
+```text
+Please deploy codex-anywhere using docs/deployment.md, including the fresh-ECS appendix.
+Repository: https://github.com/gaotong132/codex-anywhere
+ECS: [address], SSH port: [22], user: [username].
+Temporary SSH credential file: [local path].
+Domain or existing endpoint: [domain / VPN / secure tunnel details].
+Codex computer: [OS and location]; also run a headless connector on the ECS: [yes / no].
+
+Inspect the OS and existing services, save necessary backups, then install dependencies, deploy the relay,
+and configure HTTPS/WSS and the computer's connector. Preserve existing workloads, network configuration,
+and device identities. Install the ECS headless connector only if I selected yes.
+Carry out routine steps yourself instead of returning a list of commands for me to run. Pause when I
+need to sign in, complete verification, or provide missing access.
+Do not print or commit credentials. Report the deployed version, URL, health checks, connector status,
+and first-time pairing steps. List temporary deployment access to revoke afterward, while retaining
+the credentials and identities needed to run the services.
+```
+
+The amount Codex can automate depends on the available permissions and network access. If DNS, sign-in,
+or initial pairing needs your involvement, ask for the specific step. Using Codex remotely should not
+require retraining as a full-time system administrator.
+
 ## Requirements
 
 For a newly purchased ECS without a public endpoint, follow the [fresh-ECS appendix](#appendix-deploy-on-a-new-ecs) at the end of this guide.
