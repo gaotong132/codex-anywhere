@@ -43,9 +43,11 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
   the chat draft, and preselected options are never submitted automatically.
 - **Handle task approvals** — approve or reject requests for connector-owned turns from Web.
   Approvals already owned by Codex Desktop remain on the computer, preserving ownership across clients.
-- **Paste and upload screenshots** — paste with Ctrl+V / ⌘+V in chat or a new task, or choose a PNG, JPEG or WebP
-  file. Preview one image per message before sending; upload status distinguishes preparation, byte-based progress
-  and receipt confirmation.
+- **Upload files and paste screenshots** — use “+” in chat or a new task to attach one file per message.
+  General files (including ZIP, PDF, Office documents and binaries) support up to 100 MB, chunked transfer with progress,
+  unchanged bytes on the selected execution node, and persistent message links. PNG, JPEG and WebP retain image processing,
+  previews and Ctrl+V / ⌘+V screenshot pasting. Uploading never executes a file; temporary attachments older than 24 hours
+  may be cleaned up by later uploads.
 - **Preview images and local files** — enlarge sent or generated images and open linked Markdown, source, config,
   logs and SVG with syntax highlighting, Mermaid diagrams and isolated visualizations. HTML offers page/source views,
   lazy local images and relative file navigation. Historical generated images

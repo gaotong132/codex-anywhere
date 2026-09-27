@@ -35,9 +35,9 @@ import {
   formatBytes,
   getClipboardImage,
   isValidImagePayload,
-  prepareImageFile,
   type UploadedImage,
 } from './image-utils';
+import { buildFileMessage, prepareAttachment, uploadFile } from './file-upload';
 import { useFileTransfer } from './file-transfer';
 import { useFilePreviews } from './file-preview-client';
 import { t } from './i18n';
@@ -154,7 +154,7 @@ import type {
   DownloadedImage,
   FollowState,
   HistoryPage,
-  PendingImage,
+  PendingAttachment,
   PendingApprovals,
   Session,
   TurnStartResult,
@@ -231,7 +231,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [initialHistoryLoaded, setInitialHistoryLoaded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
-  const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
+  const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null);
   const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [knownAttachments, setKnownAttachments] = useState<Record<string, KnownAttachment>>(loadKnownAttachments);
   const [uploading, setUploading] = useState(false);
@@ -263,7 +263,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [newSessionPrompt, setNewSessionPrompt] = useState('');
-  const [newSessionImage, setNewSessionImage] = useState<PendingImage | null>(null);
+  const [newSessionAttachment, setNewSessionAttachment] = useState<PendingAttachment | null>(null);
   const [newSessionError, setNewSessionError] = useState('');
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const [runDetailsOpen, setRunDetailsOpen] = useState(false);
@@ -298,8 +298,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const followFingerprintRef = useRef('');
   const latestActivityIdRef = useRef('');
   const awaitingDesktopTurnRef = useRef<AwaitingDesktopTurn | null>(null);
-  const imageInputRef = useRef<HTMLInputElement | null>(null);
-  const newSessionImageInputRef = useRef<HTMLInputElement | null>(null);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const newSessionAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   const newSessionAutoSendRef = useRef(false);
   const sendingRef = useRef(false);
   const attachmentLoadsRef = useRef(new Set<string>());
@@ -360,11 +360,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     }
   }, [executionState, threadId, updateSessionAttention]);
   useEffect(() => () => {
-    if (pendingImage) URL.revokeObjectURL(pendingImage.previewUrl);
-  }, [pendingImage]);
+    if (pendingAttachment) URL.revokeObjectURL(pendingAttachment.previewUrl);
+  }, [pendingAttachment]);
   useEffect(() => () => {
-    if (newSessionImage) URL.revokeObjectURL(newSessionImage.previewUrl);
-  }, [newSessionImage]);
+    if (newSessionAttachment) URL.revokeObjectURL(newSessionAttachment.previewUrl);
+  }, [newSessionAttachment]);
   useEffect(() => {
     if (!newSessionDialogOpen) return undefined;
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
@@ -1513,7 +1513,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
 
   const beginNewSession = useCallback(() => {
     setNewSessionPrompt('');
-    setNewSessionImage(null);
+    setNewSessionAttachment(null);
     setNewSessionError('');
     setSearchOpen(false);
     setSessionSearch('');
@@ -1599,31 +1599,26 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     )) loadOlder();
   }, [historyLoading, initialHistoryLoaded, loadOlder, nextCursor]);
 
-  const chooseImage = useCallback(async (file?: File) => {
+  const chooseAttachment = useCallback(async (file?: File) => {
     if (!file) return;
     const selectionVersion = selectedRequestRef.current;
     try {
-      const prepared = await prepareImageFile(file);
-      if (selectionVersion !== selectedRequestRef.current) return;
-      setPendingImage({
-        file: prepared.file,
-        transferPreview: prepared.preview,
-        previewUrl: URL.createObjectURL(prepared.file),
-      });
+      const prepared = await prepareAttachment(file);
+      if (selectionVersion !== selectedRequestRef.current) {
+        if (prepared.previewUrl) URL.revokeObjectURL(prepared.previewUrl);
+        return;
+      }
+      setPendingAttachment(prepared);
     } catch (error) {
       if (selectionVersion === selectedRequestRef.current) reportTimelineError(error);
     }
   }, [reportTimelineError]);
 
-  const chooseNewSessionImage = useCallback(async (file?: File) => {
+  const chooseNewSessionAttachment = useCallback(async (file?: File) => {
     if (!file) return;
     try {
-      const prepared = await prepareImageFile(file);
-      setNewSessionImage({
-        file: prepared.file,
-        transferPreview: prepared.preview,
-        previewUrl: URL.createObjectURL(prepared.file),
-      });
+      const prepared = await prepareAttachment(file);
+      setNewSessionAttachment(prepared);
       setNewSessionError('');
     } catch (error) {
       setNewSessionError(friendlyError(error));
@@ -1637,31 +1632,32 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       setNewSessionError(t('请选择或填写项目目录。', 'Choose or enter a project directory.'));
       return;
     }
-    if (!text && !newSessionImage) {
-      setNewSessionError(t('请输入第一条消息或添加图片。', 'Enter the first message or add an image.'));
+    if (!text && !newSessionAttachment) {
+      setNewSessionError(t('请输入第一条消息或添加附件。', 'Enter the first message or add an attachment.'));
       return;
     }
-    const transferredImage = newSessionImage ? {
-      file: newSessionImage.file,
-      transferPreview: newSessionImage.transferPreview,
-      previewUrl: URL.createObjectURL(newSessionImage.file),
+    const transferredAttachment = newSessionAttachment ? {
+      kind: newSessionAttachment.kind,
+      file: newSessionAttachment.file,
+      transferPreview: newSessionAttachment.transferPreview,
+      previewUrl: newSessionAttachment.kind === 'image' ? URL.createObjectURL(newSessionAttachment.file) : '',
     } : null;
     selectSession(null);
     setCreatingNewSession(true);
     setPrompt(text);
-    setPendingImage(transferredImage);
+    setPendingAttachment(transferredAttachment);
     setNewSessionPrompt('');
-    setNewSessionImage(null);
+    setNewSessionAttachment(null);
     setNewSessionError('');
     setNewSessionDialogOpen(false);
     newSessionAutoSendRef.current = true;
-  }, [newSessionCwd, newSessionImage, newSessionPrompt, selectSession]);
+  }, [newSessionCwd, newSessionAttachment, newSessionPrompt, selectSession]);
 
   const sendTurn = useCallback(async (questionReplies?: QuestionReply[]) => {
-    // A question response is independent of the message/image draft.
+    // A question response is independent of the message/attachment draft.
     if (questionReplies && (!threadId || threadId !== threadIdRef.current)) return;
     const text = questionReplies ? buildQuestionReply(questionReplies) : prompt.trim();
-    const image = questionReplies ? null : pendingImage;
+    const attachment = questionReplies ? null : pendingAttachment;
     const targetThreadId = threadIdRef.current;
     const steering = canSteerOwnedTurn(
       running, executionState, ownedTurnThreadId, targetThreadId,
@@ -1670,11 +1666,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       running, executionState, ownedTurnThreadId, targetThreadId,
     );
     if (
-      (!text && !image)
+      (!text && !attachment)
       || uploading
       || sendingRef.current
       || (running && !steering)
-      || (steering && Boolean(image))
+      || (steering && Boolean(attachment))
     ) return;
     const isExistingSession = Boolean(targetThreadId);
     const selectionVersion = selectedRequestRef.current;
@@ -1693,14 +1689,21 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     let uploadedPreviewUrl = '';
     let optimisticItemId = '';
     let composerCleared = false;
-    if (image) {
+    if (attachment) {
       setUploading(true);
       setUploadProgress({ phase: 'preparing', percent: 0 });
     }
     try {
-      if (image) {
-        const encoded = await fileToBase64(image.file);
-        const previewEncoded = image.transferPreview ? await fileToBase64(image.transferPreview) : '';
+      if (attachment?.kind === 'file') {
+        const uploaded = await uploadFile(attachment.file, request, setUploadProgress, () => isCurrentSessionRequest(
+          targetThreadId, threadIdRef.current, selectionVersion, selectedRequestRef.current,
+        ));
+        const message = buildFileMessage(text, uploaded);
+        turnText = message.turnText;
+        visibleText = message.visibleText;
+      } else if (attachment) {
+        const encoded = await fileToBase64(attachment.file);
+        const previewEncoded = attachment.transferPreview ? await fileToBase64(attachment.transferPreview) : '';
         if (!isCurrentSessionRequest(
           targetThreadId, threadIdRef.current, selectionVersion, selectedRequestRef.current,
         )) {
@@ -1709,13 +1712,13 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         }
         setUploadProgress({ phase: 'sending', percent: 0 });
         const uploaded = await request<UploadedImage>('attachment.upload', {
-          name: image.file.name,
-          mimeType: image.file.type,
-          size: image.file.size,
+          name: attachment.file.name,
+          mimeType: attachment.file.type,
+          size: attachment.file.size,
           data: encoded,
-          preview: image.transferPreview ? {
-            mimeType: image.transferPreview.type,
-            size: image.transferPreview.size,
+          preview: attachment.transferPreview ? {
+            mimeType: attachment.transferPreview.type,
+            size: attachment.transferPreview.size,
             data: previewEncoded,
           } : undefined,
         }, { onUploadProgress: ({ sentBytes, totalBytes }) => {
@@ -1727,8 +1730,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         turnText = imageMessage.turnText;
         visibleText = imageMessage.visibleText;
         timelineAttachment = { path: uploaded.path, name: uploaded.name };
-        uploadedPreviewUrl = image.transferPreview
-          ? `data:${image.transferPreview.type};base64,${previewEncoded}`
+        uploadedPreviewUrl = attachment.transferPreview
+          ? `data:${attachment.transferPreview.type};base64,${previewEncoded}`
           : `data:${uploaded.mimeType};base64,${encoded}`;
       }
       if (!isCurrentSessionRequest(
@@ -1737,7 +1740,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         setUploading(false);
         return;
       }
-      if (image && timelineAttachment) {
+      if (attachment && timelineAttachment) {
         if (targetThreadId) rememberAttachment(targetThreadId, visibleText, timelineAttachment);
         setAttachmentUrls((current) => ({
           ...current,
@@ -1747,7 +1750,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       setUploading(false);
       if (!questionReplies) {
         setPrompt('');
-        setPendingImage(null);
+        setPendingAttachment(null);
         composerCleared = true;
       }
       optimisticItemId = addTimeline('user', visibleText, true, true, timelineAttachment);
@@ -1866,10 +1869,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       }
       if (composerCleared) {
         setPrompt((current) => current.trim() ? current : text);
-        if (image) setPendingImage((current) => current || {
-          file: image.file,
-          transferPreview: image.transferPreview,
-          previewUrl: URL.createObjectURL(image.file),
+        if (attachment) setPendingAttachment((current) => current || {
+          kind: attachment.kind,
+          file: attachment.file,
+          transferPreview: attachment.transferPreview,
+          previewUrl: attachment.kind === 'image' ? URL.createObjectURL(attachment.file) : '',
         });
       }
       if (error instanceof Error && error.message === 'turn_cancelled') {
@@ -1878,10 +1882,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       reportTimelineError(error);
     } finally {
       sendingRef.current = false;
-      if (image) setUploadProgress(null);
+      if (attachment) setUploadProgress(null);
     }
   }, [
-    addTimeline, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingImage,
+    addTimeline, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingAttachment,
     permissionConfig, prompt, threadId,
     refreshSessions, rememberAttachment, reportTimelineError, request, resetExecution, running,
     updateExecution, updateSessionAttention, uploading,
@@ -1895,7 +1899,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     if (!creatingNewSession || !newSessionAutoSendRef.current || running || uploading) return;
     newSessionAutoSendRef.current = false;
     void sendTurn();
-  }, [creatingNewSession, pendingImage, prompt, running, sendTurn, uploading]);
+  }, [creatingNewSession, pendingAttachment, prompt, running, sendTurn, uploading]);
 
   const stopTurn = useCallback(async () => {
     const selectionVersion = selectedRequestRef.current;
@@ -2136,7 +2140,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                     const file = getClipboardImage(event.clipboardData);
                     if (!file) return;
                     event.preventDefault();
-                    void chooseNewSessionImage(file);
+                    void chooseNewSessionAttachment(file);
                   }}
                   onChange={(event) => {
                     setNewSessionPrompt(event.target.value);
@@ -2148,25 +2152,25 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                   placeholder={t('告诉 Codex 要做什么…', 'Tell Codex what to do…')}
                 />
               </label>
-              {newSessionImage && (
+              {newSessionAttachment && (
                 <div className="new-session-image-preview">
-                  <img src={newSessionImage.previewUrl} alt="" />
-                  <span title={newSessionImage.file.name}>{newSessionImage.file.name}</span>
-                  <button type="button" onClick={() => setNewSessionImage(null)} aria-label={t('移除图片', 'Remove image')}>×</button>
+                  <>{newSessionAttachment.kind === 'image' ? <img src={newSessionAttachment.previewUrl} alt="" /> : <span className="attachment-file-icon" aria-hidden="true">▤</span>}</>
+                  <span title={newSessionAttachment.file.name}>{newSessionAttachment.file.name}</span>
+                  <button type="button" onClick={() => setNewSessionAttachment(null)} aria-label={t('移除附件', 'Remove attachment')}>×</button>
                 </div>
               )}
               <input
-                ref={newSessionImageInputRef}
+                ref={newSessionAttachmentInputRef}
                 className="image-input"
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                aria-label={t('选择附件', 'Choose attachment')}
                 onChange={(event) => {
-                  void chooseNewSessionImage(event.target.files?.[0]);
+                  void chooseNewSessionAttachment(event.target.files?.[0]);
                   event.target.value = '';
                 }}
               />
-              <button className="new-session-attach" type="button" onClick={() => newSessionImageInputRef.current?.click()}>
-                <span aria-hidden="true">＋</span>{t('添加图片', 'Add image')}
+              <button className="new-session-attach" type="button" onClick={() => newSessionAttachmentInputRef.current?.click()}>
+                <span aria-hidden="true">＋</span>{t('添加附件', 'Add attachment')}
               </button>
               {newSessionError && <p className="new-session-error" role="alert">{newSessionError}</p>}
             </div>
@@ -2175,7 +2179,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
               <button
                 className="primary-action"
                 type="button"
-                disabled={!online || running || uploading || !newSessionCwd.trim() || (!newSessionPrompt.trim() && !newSessionImage)}
+                disabled={!online || running || uploading || !newSessionCwd.trim() || (!newSessionPrompt.trim() && !newSessionAttachment)}
                 onClick={submitNewSession}
               >
                 {t('创建并发送', 'Create and send')}
@@ -2318,41 +2322,41 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         )}
 
         {(threadId || creatingNewSession) && <footer className="composer-wrap">
-          {pendingImage && (
+          {pendingAttachment && (
             <div className="image-preview">
-              <img src={pendingImage.previewUrl} alt={t('待发送图片预览', 'Image ready to send')} />
+              {pendingAttachment.kind === 'image' ? <img src={pendingAttachment.previewUrl} alt={t('待发送图片预览', 'Image ready to send')} /> : <span className="attachment-file-icon" aria-hidden="true">▤</span>}
               <div className="image-preview-details">
-                <strong>{pendingImage.file.name}</strong><small>{formatBytes(pendingImage.file.size)}</small>
-                {uploading && uploadProgress && <ImageUploadProgress state={uploadProgress} />}
+                <strong>{pendingAttachment.file.name}</strong><small>{formatBytes(pendingAttachment.file.size)}</small>
+                {uploading && uploadProgress && <ImageUploadProgress state={uploadProgress} kind={pendingAttachment.kind} />}
               </div>
               <button
                 type="button"
-                onClick={() => setPendingImage(null)}
+                onClick={() => setPendingAttachment(null)}
                 disabled={uploading || running}
-                aria-label={t('移除图片', 'Remove image')}
+                aria-label={t('移除附件', 'Remove attachment')}
               >×</button>
             </div>
           )}
           <div className="composer">
             <input
-              ref={imageInputRef}
+              ref={attachmentInputRef}
               className="image-input"
               type="file"
-              accept="image/jpeg,image/png,image/webp"
+              aria-label={t('选择附件', 'Choose attachment')}
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 event.target.value = '';
-                void chooseImage(file);
+                void chooseAttachment(file);
               }}
               disabled={!online || running || uploading}
             />
             <button
               className="attach-button"
               type="button"
-              onClick={() => imageInputRef.current?.click()}
+              onClick={() => attachmentInputRef.current?.click()}
               disabled={!online || running || uploading}
-              aria-label={t('添加图片', 'Add image')}
-              title={t('添加图片', 'Add image')}
+              aria-label={t('添加附件', 'Add attachment')}
+              title={t('添加附件（单个文件最大 100 MB）', 'Add attachment (up to 100 MB per file)')}
             >＋</button>
             <textarea
               rows={1}
@@ -2362,14 +2366,14 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                 const file = getClipboardImage(event.clipboardData);
                 if (!file) return;
                 event.preventDefault();
-                void chooseImage(file);
+                void chooseAttachment(file);
               }}
               onChange={(event) => setPrompt(event.target.value)}
               onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
                 if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') void sendTurn();
               }}
               placeholder={uploading
-                ? t('正在上传图片…', 'Uploading image…')
+                ? t('正在上传附件…', 'Uploading attachment…')
                 : steeringAvailable
                   ? t('向当前任务追加指令…', 'Steer the current run…')
                   : directDesktopDeliveryAvailable
@@ -2384,12 +2388,12 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                     !online
                     || uploading
                     || (running && !steeringAvailable)
-                    || (!prompt.trim() && !pendingImage)
+                    || (!prompt.trim() && !pendingAttachment)
                     || (!threadId && !newSessionCwd.trim())
                   }
                   onClick={() => void sendTurn()}
                   aria-label={uploading
-                    ? t('正在发送图片', 'Sending image')
+                    ? t('正在发送附件', 'Sending attachment')
                     : steeringAvailable
                       ? t('追加指令', 'Steer')
                       : t('发送', 'Send')}

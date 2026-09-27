@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Upload general files up to 100 MB with chunked transfer, progress, storage on the selected execution node, and file links in history; image previews and screenshot pasting remain supported.
+
 - Render linked HTML files as sandboxed pages with a source toggle, lazy local images, relative file navigation and Back controls instead of displaying XML code.
 
 - Keep the conversation anchored before paint when diagrams or images change height, avoiding startup flicker while preserving manual reading and history pagination positions.

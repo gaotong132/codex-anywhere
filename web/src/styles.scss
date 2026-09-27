@@ -1238,6 +1238,7 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
 }
 .image-preview { width: 100%; min-width: 0; max-width: $content-width; display: flex; align-items: center; gap: 10px; margin: 0 auto 8px; padding: 8px 10px; overflow: hidden; border: 1px solid #303a4d; border-radius: 13px; background: #111722; }
 .image-preview img { width: 48px; height: 48px; flex: 0 0 auto; border-radius: 9px; object-fit: cover; background: #090d14; }
+.attachment-file-icon { display: grid; place-items: center; width: 48px; height: 48px; flex: 0 0 auto; border-radius: 9px; background: #202a3b; color: #aeb9c9; font-size: 28px; }
 .image-preview-details { width: 0; min-width: 0; flex: 1 1 0; }
 .image-preview strong, .image-preview small { display: block; @include truncate; }
 .image-preview strong { color: #dbe4f3; font-size: 12px; }

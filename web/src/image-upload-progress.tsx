@@ -2,8 +2,12 @@ import { t } from './i18n';
 
 export type ImageUploadState = { phase: 'preparing' | 'sending' | 'confirming'; percent: number };
 
-export function ImageUploadProgress({ state }: { state: ImageUploadState }) {
-  const label = state.phase === 'preparing'
+export function ImageUploadProgress({ state, kind = 'image' }: { state: ImageUploadState; kind?: 'image' | 'file' }) {
+  const label = kind === 'file' ? (state.phase === 'preparing'
+    ? t('正在准备文件…', 'Preparing file…')
+    : state.phase === 'confirming'
+      ? t('文件已发送，等待确认…', 'File sent, awaiting confirmation…')
+      : t(`正在发送文件 · ${state.percent}%`, `Sending file · ${state.percent}%`)) : state.phase === 'preparing'
     ? t('正在准备图片…', 'Preparing image…')
     : state.phase === 'confirming'
       ? t('图片已发送，等待确认…', 'Image sent, awaiting confirmation…')

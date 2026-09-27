@@ -4,6 +4,7 @@ import { startBrowserEndpoint } from '../browser-control/local-endpoint.js';
 import { CodexAppServer } from './codex-app-server.js';
 import { CodexDesktopClient } from './codex-desktop.js';
 import { readImageAttachment, saveImageAttachment } from './attachments.js';
+import { FileUploadManager, UPLOAD_DIRECTORY } from './file-uploads.js';
 import { loadConnectorConfig } from './config.js';
 import { DownloadManager } from './file-downloads.js';
 import { generatedImagesDirectory } from './generated-images.js';
@@ -52,7 +53,7 @@ const codex = new CodexAppServer({
 });
 const desktop = mode === 'desktop' ? new CodexDesktopClient() : null;
 const downloads = new DownloadManager({
-  allowedRoots: [...allowedRoots, generatedImagesDirectory(), visualizationsDirectory()],
+  allowedRoots: [...allowedRoots, generatedImagesDirectory(), visualizationsDirectory(), UPLOAD_DIRECTORY],
   allowAnyFileDownload,
 });
 // Opt in per environment; no MCP listener or configuration change on stable installs.
@@ -64,6 +65,7 @@ const handleRequest = createRequestHandler({
   browser,
   codex,
   desktop,
+  fileUploads: new FileUploadManager(),
   attachments: {
     save: saveImageAttachment,
     read: (payload) => readImageAttachment(payload, { localAllowedRoots: allowedRoots }),

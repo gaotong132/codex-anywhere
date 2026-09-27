@@ -64,6 +64,24 @@ function request(action, payload = {}) {
   return { action, payload, requestId: 'request-1', clientId: 'client-1' };
 }
 
+test('file upload RPCs use the authenticated device owner and advertise support only when enabled', async () => {
+  const calls: any[] = [];
+  const fileUploads = Object.fromEntries(['begin', 'chunk', 'complete', 'cancel'].map((method) => [method,
+    async (payload, owner) => { calls.push({ method, owner, payload }); return { uploaded: true }; },
+  ]));
+  const handler = createRequestHandler({ ...createDependencies(), fileUploads });
+  const status = await handler(request('connector.status'));
+  assert.equal(status.data.capabilities.fileUpload, true);
+  for (const method of ['begin', 'chunk', 'complete', 'cancel']) {
+    const result = await handler({ ...request(`file.upload.${method}`, { owner: 'spoofed' }), clientDeviceId: 'approved-device' });
+    assert.equal(result.ok, true);
+  }
+  assert.deepEqual(calls.map((call) => call.owner), Array(4).fill('approved-device'));
+  const unsupported = createRequestHandler(createDependencies());
+  assert.equal((await unsupported(request('connector.status'))).data.capabilities.fileUpload, undefined);
+  assert.equal((await unsupported(request('file.upload.begin'))).error, 'file_upload_unsupported');
+});
+
 test('browser context follows exact PC/headless state changes without repeating on steer', async () => {
   for (const mode of ['desktop', 'headless'] as const) {
     const calls: any[] = [];

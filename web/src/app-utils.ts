@@ -55,6 +55,10 @@ export function friendlyError(error: unknown) {
   if (message === 'permission_mode_managed_on_computer' || message === 'desktop_permission_mode_managed_on_computer') return t('该会话的权限由 Codex 电脑端管理，请在电脑上修改。', 'This task’s permissions are managed by Codex Desktop. Change them on the computer.');
   if (message === 'desktop_required_for_large_session') return t('这是一个超大会话，需要桌面 Codex 打开后才能安全发送到原会话。', 'This large session requires Codex Desktop to be open before a message can be delivered safely.');
   if (message === 'attachment_type_not_allowed') return t('只支持 JPG、PNG 和 WebP 图片。', 'Only JPG, PNG, and WebP images are supported.');
+  if (message === 'file_upload_too_large') return t('单个文件不能超过 100 MB。', 'Each file must be 100 MB or smaller.');
+  if (message === 'file_upload_unsupported') return t('当前执行端尚不支持文件上传，请更新连接器。', 'Update this environment’s connector to enable file uploads.');
+  if (message === 'file_upload_limit') return t('正在上传的文件过多，请稍后重试。', 'Too many uploads are in progress. Try again shortly.');
+  if (/^file_upload_(expired|not_found|offset_mismatch|changed|protocol_error|write_failed|busy)$/.test(message)) return t('文件上传未完成，请重新发送。', 'The file upload did not complete. Please send it again.');
   if (message === 'attachment_too_large') return t('图片处理后仍超过 4 MB，请换一张更小的图片。', 'The processed image is still larger than 4 MB. Choose a smaller image.');
   if (message === 'attachment_invalid_base64' || message === 'attachment_size_mismatch' || message === 'attachment_content_mismatch') {
     return t('图片内容校验失败，请重新选择后再试。', 'Image validation failed. Select the image again and retry.');

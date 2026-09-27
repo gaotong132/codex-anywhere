@@ -38,7 +38,7 @@ export type ConnectorStatus = {
   platform: string;
   codexOnline: boolean;
   activeTurn: boolean;
-  capabilities: { networkAccess: boolean; fullAccess: boolean };
+  capabilities: { networkAccess: boolean; fullAccess: boolean; fileUpload?: boolean };
 };
 export type SessionPermissionConfig = {
   mode: PermissionMode;
@@ -94,7 +94,7 @@ export type HistoryPage = {
   contextUsage?: ContextUsage;
 };
 export type TurnStartResult = { threadId: string; delivery?: 'desktop' | 'appServer' };
-export type PendingImage = { file: File; transferPreview?: File; previewUrl: string };
+export type PendingAttachment = { file: File; kind: 'image' | 'file'; transferPreview?: File; previewUrl: string };
 export type DownloadedImage = { path: string; mimeType: string; size: number; data: string };
 export type VisualizationDocument = { name: string; size: number; content?: string };
 export type TextPreviewDocument = {

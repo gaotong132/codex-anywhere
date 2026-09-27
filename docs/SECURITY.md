@@ -109,6 +109,12 @@ results through summary RPCs. A displayed reference never bypasses canonical-pat
 
 - Image previews must resolve inside an allowed root, pass content validation, and are resized and
   converted to WebP before transfer.
+- General uploads use encrypted 256 KiB chunks, a 100 MiB per-file limit and an upload ID bound to the
+  authenticated browser device. A connector permits at most four incomplete uploads, two per device;
+  inactive uploads expire after 30 minutes. Files use private temporary storage, generated paths and
+  sanitized names; completion requires the exact declared byte count. Uploading never executes a file.
+  Completed uploads are available through the confirmed download flow; later uploads may remove temporary
+  files older than 24 hours. Copy files into the workspace when longer retention is needed.
 - Original file downloads require user confirmation and an in-memory capability bound to one approved
   browser identity and one unchanged file. The capability expires after 30 minutes without progress and
   is not stored by the relay. The Web client tries to keep the screen awake; while hidden or disconnected,

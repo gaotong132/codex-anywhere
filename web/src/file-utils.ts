@@ -7,7 +7,6 @@ import {
 export function localFilePathFromHref(href?: string) {
   if (!href) return null;
   let value = href.trim();
-  try { value = decodeURIComponent(value); } catch { return null; }
   const httpLink = /^https?:\/\//i.test(value);
   if (/^file:\/\//i.test(value)) {
     try {
@@ -21,8 +20,10 @@ export function localFilePathFromHref(href?: string) {
       if (url.origin !== location.origin) return null;
       value = decodeURIComponent(url.pathname);
     } catch { return null; }
+  } else {
+    // Strip URL anchors before decoding: %23 and %3F can be part of a filename.
+    try { value = decodeURIComponent(value.replace(/[?#].*$/, '')); } catch { return null; }
   }
-  value = value.replace(/[?#].*$/, '');
   if (/^\/[A-Za-z]:[\\/]/.test(value)) value = value.slice(1);
   if (!httpLink && /^\/[^/]/.test(value)) return value.replace(/:\d+$/, '');
   if (!/^[A-Za-z]:[\\/]/.test(value) && !/^\\\\[^\\]/.test(value)) return null;
@@ -54,7 +55,7 @@ export function localFilePathFromRelativeHref(href: string | undefined, basePath
     return null;
   }
   let decoded;
-  try { decoded = decodeURIComponent(value).replace(/[?#].*$/, ''); } catch { return null; }
+  try { decoded = decodeURIComponent(value.replace(/[?#].*$/, '')); } catch { return null; }
   if (!decoded) return null;
   if (basePath.startsWith('/')) {
     return decoded.startsWith('/') ? decoded : `${basePath.slice(0, basePath.lastIndexOf('/') + 1)}${decoded}`;

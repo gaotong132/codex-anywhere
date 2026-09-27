@@ -1,4 +1,5 @@
 import { publicError } from '../shared/protocol.js';
+import type { FileUploadManager } from './file-uploads.js';
 import type { BrowserSessionBroker } from '../browser-control/session-broker.js';
 import {
   mergeDesktopSessionStatuses,
@@ -47,6 +48,7 @@ type Dependencies = {
   codex: CodexGateway;
   desktop?: DesktopGateway | null;
   attachments: { save(payload: Payload): Promise<any>; read(payload: Payload): Promise<any> };
+  fileUploads?: Pick<FileUploadManager, 'begin' | 'chunk' | 'complete' | 'cancel'>;
   visualizations: { read(payload: Payload): Promise<any> };
   downloads: {
     open(payload: Payload, clientId?: string): Promise<any>;
@@ -73,7 +75,7 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
 const DESKTOP_STATUS_CACHE_MS = 15_000;
 
 export function createRequestHandler({
-  codex, desktop, attachments, visualizations, downloads, deviceId, browser,
+  codex, desktop, attachments, fileUploads, visualizations, downloads, deviceId, browser,
   deviceLabel = deviceId, mode = desktop ? 'desktop' : 'headless',
   networkAccess = false, allowFullAccess = false,
 }: Dependencies) {
@@ -100,7 +102,7 @@ export function createRequestHandler({
     try {
       const data = await dispatchAction({
         action, payload, requestId, clientId, clientDeviceId,
-        codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode, browser,
+        codex, desktop, attachments, fileUploads, visualizations, downloads, deviceId, deviceLabel, mode, browser,
         networkAccess, allowFullAccess, getDesktopThreads, refreshDesktopThreads,
       });
       return { type: 'response', clientId, requestId, ok: true, data };
@@ -112,7 +114,7 @@ export function createRequestHandler({
 
 async function dispatchAction({
   action, payload, requestId, clientId, clientDeviceId,
-  codex, desktop, attachments, visualizations, downloads, deviceId, deviceLabel, mode, browser,
+  codex, desktop, attachments, fileUploads, visualizations, downloads, deviceId, deviceLabel, mode, browser,
   networkAccess, allowFullAccess, getDesktopThreads, refreshDesktopThreads,
 }: DispatchContext) {
   if (action.startsWith('browser.')) {
@@ -142,7 +144,7 @@ async function dispatchAction({
       platform: process.platform,
       codexOnline: Boolean(codex.child),
       activeTurn: Boolean(codex.activeTurn),
-      capabilities: { networkAccess, fullAccess: allowFullAccess, ...(browser ? { browserControl: true, browserGrantReplacement: true } : {}) },
+      capabilities: { networkAccess, fullAccess: allowFullAccess, ...(fileUploads ? { fileUpload: true } : {}), ...(browser ? { browserControl: true, browserGrantReplacement: true } : {}) },
     };
   }
   if (action === 'sessions.list') {
@@ -203,6 +205,15 @@ async function dispatchAction({
     };
   }
   if (action === 'attachment.upload') return attachments.save(payload);
+  if (action.startsWith('file.upload.')) {
+    if (!fileUploads) throw new Error('file_upload_unsupported');
+    const owner = clientDeviceId || clientId || '';
+    if (action === 'file.upload.begin') return fileUploads.begin(payload, owner);
+    if (action === 'file.upload.chunk') return fileUploads.chunk(payload, owner);
+    if (action === 'file.upload.complete') return fileUploads.complete(payload, owner);
+    if (action === 'file.upload.cancel') return fileUploads.cancel(payload, owner);
+    throw new Error('unsupported_action');
+  }
   if (action === 'attachment.read') return attachments.read(payload);
   if (action === 'visualization.read') return visualizations.read(payload);
   const downloadOwner = clientDeviceId || clientId;
