@@ -43,6 +43,27 @@ test('concurrent sends keep each task source, destination, text and request id t
   }
 });
 
+test('all native app calls identify the Codex caller required by newer Desktop hosts', async () => {
+  const { desktop, calls } = captureDesktop();
+  // Browser-supplied metadata cannot change the task's backing kind.
+  const input = {
+    threadId: 'thread-a', text: 'hello', requestId: 'compatibility', callerSource: 'chatgpt',
+  };
+  await desktop.sendMessage(input);
+  await desktop.renameThread({ threadId: 'thread-a', name: 'title' });
+  await desktop.readThreadState({ threadId: 'thread-a' });
+  await desktop.listThreads({ callerThreadId: 'thread-a' });
+  assert.deepEqual(calls.map(({ params }) => params.tool), [
+    'send_message_to_thread', 'set_thread_title', 'read_thread', 'list_threads',
+  ]);
+  for (const { method, params } of calls) {
+    assert.equal(method, 'tools/call');
+    assert.equal(params.callerSource, 'codex');
+    assert.equal(params.namespace, 'codex_app');
+    assert.equal(params.threadId, 'thread-a');
+  }
+});
+
 test('rename and approval-status reads also use only the selected task identity', async () => {
   const { desktop, calls } = captureDesktop();
   await desktop.renameThread({ threadId: 'thread-a', name: 'A new title' });

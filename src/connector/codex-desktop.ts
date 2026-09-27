@@ -167,6 +167,9 @@ export class CodexDesktopClient {
     try {
       return await client.request('tools/call', {
         arguments: argumentsSnapshot,
+        // Newer Desktop hosts require the caller's backing kind. This bridge
+        // only delivers to Codex tasks, so never take it from browser input.
+        callerSource: 'codex',
         callId,
         namespace: 'codex_app',
         threadId: callerThreadId,
