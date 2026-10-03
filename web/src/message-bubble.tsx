@@ -226,7 +226,7 @@ function ContextCompactionMarker({ item }: { item: TimelineItem }) {
   );
   const completedDateTime = dateTimeValue(item.completedAt);
   return (
-    <div className="context-compaction" role="note" aria-label={label} title={tokenDetail || label}>
+    <div data-timeline-id={item.id} className="context-compaction" role="note" aria-label={label} title={tokenDetail || label}>
       <span className="context-compaction-rule" aria-hidden="true" />
       <span className="context-compaction-content">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -286,7 +286,7 @@ function TimelineNoticeMarker({ item }: { item: TimelineItem }) {
   const capacityError = notice.kind === 'turnStatus' && notice.status !== 'aborted'
     && /selected model is at capacity/i.test(detail);
   return (
-    <div className={`timeline-notice ${variant}`} role="note" aria-label={accessibleLabel} title={detail || accessibleLabel}>
+    <div data-timeline-id={item.id} className={`timeline-notice ${variant}`} role="note" aria-label={accessibleLabel} title={detail || accessibleLabel}>
       <span className="timeline-notice-rule" aria-hidden="true" />
       <span className="timeline-notice-content">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -493,7 +493,7 @@ function MessageBubbleComponent({
   if (item.kind === 'system' && item.notice) return <TimelineNoticeMarker item={item} />;
   if (item.kind === 'progress') {
     return (
-      <details className={`progress-card${active ? ' live' : ''}`} open>
+      <details data-timeline-id={item.id} className={`progress-card${active ? ' live' : ''}`} open>
         <summary>{t('进度更新', 'Progress update')}</summary>
         <pre><TypewriterText
           className="progress-typewriter"
@@ -506,7 +506,7 @@ function MessageBubbleComponent({
     );
   }
   return (
-    <div className={`message-block ${item.kind}${copyable ? ' copyable' : ''}`}>
+    <div data-timeline-id={item.id} className={`message-block ${item.kind}${copyable ? ' copyable' : ''}`}>
       <div className={`message ${item.kind}${copyable ? ' copyable' : ''}${active ? ' live' : ''}${finalReplyArriving ? ' final-arriving' : ''}`}>
         <MessageContexts item={item} />
         {item.kind === 'user' && item.questionReplies?.length ? <QuestionReplyContent

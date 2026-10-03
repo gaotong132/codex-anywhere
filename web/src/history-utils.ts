@@ -308,12 +308,25 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
     .filter((item) => item.transient && item.attachment)
     .map((item) => [messageContentIdentity(item), item.attachment]));
   const optimisticUserMatches = matchOptimisticUsers(current, latest);
+  const persistedIdentities = new Map<string, TimelineItem[]>();
+  for (const item of current) {
+    const identity = persistedSnapshotIdentity(item);
+    if (!identity) continue;
+    const matches = persistedIdentities.get(identity) || [];
+    matches.push(item);
+    persistedIdentities.set(identity, matches);
+  }
   const hydratedLatest = latest.map((item, index) => {
+    // Rollout offsets and live-tail indexes change on each read. Keep the DOM
+    // identity of the same persisted message, including its loaded image.
+    const persisted = item.compaction || item.compactionProgress ? undefined
+      : persistedIdentities.get(persistedSnapshotIdentity(item))?.shift();
     const retainedFileChanges = item.historyTurnId
       ? persistedFileChanges.get(`${item.historyTurnId}\0${messageIdentity(item)}`)
       : undefined;
     const hydrated = {
       ...item,
+      ...(persisted ? { id: persisted.id } : {}),
       ...(optimisticUserMatches.get(index) ? { id: optimisticUserMatches.get(index)!.id } : {}),
       ...(item.attachment ? {} : {
         attachment: transientAttachments.get(messageContentIdentity(item)),
@@ -415,6 +428,13 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
     ...mergedLatest,
     ...retained.slice(insertionIndex),
   ];
+}
+
+export function prependHistoryPage(older: TimelineItem[], current: TimelineItem[]) {
+  const ids = new Set(current.map((item) => item.id));
+  const snapshots = new Set(current.map(persistedSnapshotIdentity).filter(Boolean));
+  return [...older.filter((item) => !ids.has(item.id)
+    && !(persistedSnapshotIdentity(item) && snapshots.has(persistedSnapshotIdentity(item)))), ...current];
 }
 
 function matchOptimisticUsers(current: TimelineItem[], latest: TimelineItem[]) {

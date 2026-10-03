@@ -4,7 +4,6 @@ import {
   lazy,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -21,6 +20,7 @@ import {
   latestTurnProgressItemId,
   loadKnownAttachments,
   mergeHistorySnapshot,
+  prependHistoryPage,
   progressTypewriterKey,
   resolveTimelineAttachment,
   storeKnownAttachments,
@@ -53,7 +53,6 @@ import {
   isConnectionInterruption,
   isCurrentSessionRequest,
   isEventForSelectedThread,
-  isNearScrollBottom,
   isTemporaryProjectPath,
   makeId,
   markSessionAttentionRead,
@@ -71,6 +70,7 @@ import {
   SidebarIcon,
 } from './ui-components';
 import { ConversationTimeline, preloadMessageBubble } from './conversation-timeline';
+import { useConversationScroll } from './use-conversation-scroll';
 import { loadHistoryPage } from './history-page-loader';
 import { useConversationExecution } from './conversation-execution';
 import { SessionSidebar } from './session-sidebar';
@@ -289,9 +289,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const selectedRequestRef = useRef(0);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const messageContentRef = useRef<HTMLDivElement | null>(null);
-  const preserveScrollHeightRef = useRef<number | null>(null);
-  const shouldScrollBottomRef = useRef(false);
-  const autoFollowLatestRef = useRef(true);
+  const viewport = useConversationScroll(messageListRef, messageContentRef, `${environmentId}:${threadId}`, initialBootstrapPending);
   const streamItemRef = useRef<{ id: string; kind: TimelineKind; sourceItemId: string } | null>(null);
   const activeTurnIdRef = useRef('');
   const turnProgressRef = useRef<TurnProgress>({});
@@ -304,7 +302,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const sendingRef = useRef(false);
   const attachmentLoadsRef = useRef(new Set<string>());
   const sessionRefreshInFlightRef = useRef(false);
-  const olderHistoryLoadingRef = useRef(false);
+  const olderHistoryLoadingRef = useRef<number | null>(null);
   const liveHistoryHydratedThreadRef = useRef<string | null>(null);
   const optimisticRestoreRef = useRef<string | null>(null);
   const runningRef = useRef(running);
@@ -376,25 +374,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
 
 
   useEffect(() => {
-    const element = messageListRef.current;
-    const content = messageContentRef.current;
-    if (!element || !content || typeof ResizeObserver === 'undefined') return undefined;
-    const followResizedContent = () => {
-      // ResizeObserver runs before paint. Deferring this to another animation
-      // frame exposes the old scroll position when diagrams or images grow.
-      if (autoFollowLatestRef.current && preserveScrollHeightRef.current == null) {
-        element.scrollTop = element.scrollHeight;
-      }
-    };
-    const observer = new ResizeObserver(followResizedContent);
-    observer.observe(element);
-    observer.observe(content);
-    return () => {
-      observer.disconnect();
-    };
-  }, [initialBootstrapPending, threadId]);
-
-  useEffect(() => {
     if (executionState !== 'completed') return;
     const timer = setTimeout(() => setExecutionState('idle'), 3_000);
     return () => clearTimeout(timer);
@@ -409,8 +388,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   ) => {
     const item = { id: makeId(), kind, text, transient, attachment };
     if (scroll) {
-      autoFollowLatestRef.current = true;
-      shouldScrollBottomRef.current = true;
+      viewport.following = true;
+      viewport.forceBottom = true;
     }
     setTimeline((current) => kind === 'error'
       ? appendUniqueTimelineError(current, item)
@@ -428,8 +407,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       historyTurnId: turnId || activeTurnIdRef.current || undefined,
       completedAt: Date.now(),
     };
-    autoFollowLatestRef.current = true;
-    shouldScrollBottomRef.current = true;
+    if (viewport.following) viewport.forceBottom = true;
     setTimeline((current) => appendTimelineNotice(current, item));
     return item.id;
   }, []);
@@ -458,7 +436,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
 
   const appendStream = useCallback((kind: TimelineKind, text: string, sourceItemId = '') => {
     if (!text) return;
-    if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
+    if (viewport.following) viewport.forceBottom = true;
     const current = streamItemRef.current;
     if (current?.kind === kind) {
       const normalizedSourceItemId = sourceItemId.trim();
@@ -483,7 +461,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     const content = parseAssistantMessage(text);
     const visibleText = content.text;
     if (!visibleText) return;
-    if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
+    if (viewport.following) viewport.forceBottom = true;
     const current = streamItemRef.current;
     const completedAt = Date.now();
     streamItemRef.current = null;
@@ -522,27 +500,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     online, request, reportTimelineError, environmentIdRef, selectedRequestRef, connectorOnlineRef, secureChannelRef,
   });
   const { readVisualization, readTextFile, readTurnDiff, readPreviewImage } = useFilePreviews(request, threadId);
-
-  useLayoutEffect(() => {
-    const element = messageListRef.current;
-    if (!element) return;
-    if (preserveScrollHeightRef.current != null) {
-      element.scrollTop += element.scrollHeight - preserveScrollHeightRef.current;
-      preserveScrollHeightRef.current = null;
-    } else if (shouldScrollBottomRef.current || autoFollowLatestRef.current) {
-      shouldScrollBottomRef.current = false;
-      const scrollToLatest = () => {
-        element.scrollTop = element.scrollHeight;
-      };
-      scrollToLatest();
-      const frame = requestAnimationFrame(scrollToLatest);
-      return () => cancelAnimationFrame(frame);
-    }
-  }, [
-    timeline, executionState, attachmentUrls, fileDownload, approval,
-    initialBootstrapPending,
-  ]);
-
 
   const {
     modelConfig,
@@ -590,7 +547,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             targetThreadId, threadIdRef.current, requestVersion, selectedRequestRef.current,
           )) return;
           if (!isValidImagePayload(image.mimeType, image.data)) throw new Error('attachment_content_mismatch');
-          if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
+          if (viewport.following) viewport.forceBottom = true;
           setAttachmentUrls((current) => ({
             ...current,
             [attachment.path]: `data:${image.mimeType};base64,${image.data}`,
@@ -803,7 +760,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       setTimeline(current => startedAt
         ? startTimelineCompaction(current, String(payload.turnId), startedAt)
         : finishTimelineCompaction(current, String(payload.turnId), Date.now()));
-      if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
+      if (viewport.following) viewport.forceBottom = true;
     } else if (message.event === 'turn.delta') {
       setLiveActivity('responding');
       appendStream(
@@ -831,7 +788,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       const questions = normalizeAsyncQuestions(payload.questions);
       if (!questions) return;
       streamItemRef.current = null;
-      if (autoFollowLatestRef.current) shouldScrollBottomRef.current = true;
+      if (viewport.following) viewport.forceBottom = true;
       setTimeline((current) => current.some((item) => item.questions?.[0]?.id === questions[0].id)
         ? current : [...current, {
           id: `questions:${questions[0].id}`, kind: 'assistant', questions,
@@ -862,8 +819,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           activity: 'waiting',
           startedAt: current.startedAt || Date.now(),
         }));
-        autoFollowLatestRef.current = true;
-        shouldScrollBottomRef.current = true;
+        if (viewport.following) viewport.forceBottom = true;
       }
     } else if (message.event === 'approval.resolved') {
       setApproval(null);
@@ -1245,26 +1201,20 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const loadHistory = useCallback(async (targetThreadId: string, cursor: string | null, requestVersion: number) => {
     setHistoryLoading(true);
     if (cursor) setOlderHistoryError(false);
-    const preservedScrollHeight = cursor && messageListRef.current
-      ? messageListRef.current.scrollHeight : null;
-    if (preservedScrollHeight != null) preserveScrollHeightRef.current = preservedScrollHeight;
-    const discardUnusedScrollAnchor = () => {
-      if (preserveScrollHeightRef.current === preservedScrollHeight) {
-        preserveScrollHeightRef.current = null;
-      }
-    };
     try {
       const { page, snapshot, items } = await loadHistoryPage(request, targetThreadId, cursor, HISTORY_PAGE_SIZE);
       if (selectedRequestRef.current !== requestVersion || threadIdRef.current !== targetThreadId) {
-        discardUnusedScrollAnchor();
         return;
       }
-      if (cursor) setTimeline((current) => [...items, ...current]);
+      if (cursor) {
+        if (messageListRef.current && !viewport.following) viewport.capture(messageListRef.current);
+        setTimeline((current) => prependHistoryPage(items, current));
+      }
       else {
         const state = snapshot || page;
         setContextUsage(normalizeContextUsage(state.contextUsage) || normalizeContextUsage(page.contextUsage) || null);
-        autoFollowLatestRef.current = true;
-        shouldScrollBottomRef.current = true;
+        viewport.following = true;
+        viewport.forceBottom = true;
         for (const item of items) {
           if (item.kind === 'progress') seedTypewriterText(progressTypewriterKey(item), item.text);
         }
@@ -1293,7 +1243,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       if (cursor) setOlderHistoryError(false);
       setInitialHistoryLoaded(true);
     } catch (error) {
-      discardUnusedScrollAnchor();
       if (selectedRequestRef.current === requestVersion) {
         if (cursor) setOlderHistoryError(true);
         else reportTimelineError(error);
@@ -1387,7 +1336,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         }
 
         const historyChanged = !previousFingerprint || previousFingerprint !== fingerprint;
-        if (autoFollowLatestRef.current && (historyChanged || page.compactionStartedAt)) shouldScrollBottomRef.current = true;
+        if (viewport.following && (historyChanged || page.compactionStartedAt)) viewport.forceBottom = true;
         const latestTurnIds = new Set(latestItems
           .map((item) => item.historyTurnId)
           .filter((turnId): turnId is string => Boolean(turnId)));
@@ -1436,8 +1385,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     if (nextThreadId) storeEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current, nextThreadId);
     setTimeline([]);
     setContextUsage(null);
-    preserveScrollHeightRef.current = null;
-    olderHistoryLoadingRef.current = false;
+    viewport.reset();
+    olderHistoryLoadingRef.current = null;
     setAttachmentUrls({});
     attachmentLoadsRef.current.clear();
     setNextCursor(null);
@@ -1452,7 +1401,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     setFollowState(nextThreadId ? 'checking' : 'idle');
     resetExecutionPresentation();
     setApproval(null);
-    autoFollowLatestRef.current = true;
+    viewport.following = true;
     streamItemRef.current = null;
     activeTurnIdRef.current = '';
     setDrawerOpen(false);
@@ -1581,18 +1530,19 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   }, [finishInitialBootstrap, initialBootstrapPending]);
 
   const loadOlder = useCallback(() => {
-    if (!threadId || !nextCursor || olderHistoryLoadingRef.current) return;
-    olderHistoryLoadingRef.current = true;
-    void loadHistory(threadId, nextCursor, selectedRequestRef.current)
-      .finally(() => { olderHistoryLoadingRef.current = false; });
+    if (!threadId || !nextCursor || olderHistoryLoadingRef.current !== null) return;
+    const version = selectedRequestRef.current;
+    olderHistoryLoadingRef.current = version;
+    if (messageListRef.current) viewport.pause(messageListRef.current);
+    void loadHistory(threadId, nextCursor, version)
+      .finally(() => { if (olderHistoryLoadingRef.current === version) olderHistoryLoadingRef.current = null; });
   }, [loadHistory, nextCursor, threadId]);
 
   const handleMessageScroll = useCallback(() => {
     const element = messageListRef.current;
     if (!element) return;
-    const followingLatest = isNearScrollBottom(element);
+    if (!viewport.onScroll(element)) return;
     const browsingOlder = element.scrollHeight - element.scrollTop - element.clientHeight > 2;
-    autoFollowLatestRef.current = followingLatest;
     if (browsingOlder) setOlderHistoryAutoLoadEnabled(true);
     if (browsingOlder && shouldLoadOlderHistory(
       element, nextCursor, initialHistoryLoaded, historyLoading,
@@ -1965,8 +1915,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             activity: 'waiting',
             startedAt: current.startedAt || Date.now(),
           }));
-          autoFollowLatestRef.current = true;
-          shouldScrollBottomRef.current = true;
+          if (viewport.following) viewport.forceBottom = true;
         } else if (approval?.actionable === false) {
           setApproval(null);
           runningRef.current = false;

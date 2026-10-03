@@ -1225,7 +1225,7 @@ test('history merge deduplicates the same persisted row across page and live sna
   }];
 
   const merged = mergeHistorySnapshot(current, latest, new Set(['tail:thread']));
-  assert.deepEqual(merged.map((item) => item.id), ['live-message']);
+  assert.deepEqual(merged.map((item) => item.id), ['page-message']);
 });
 
 test('history merge preserves intentionally repeated persisted messages with different times', () => {

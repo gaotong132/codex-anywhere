@@ -154,7 +154,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
           {resolvedItems.map(({ item, attachment }) => item.questions ? (
             <AsyncQuestionCard
               key={`${environmentId}:${threadId}:${item.questions.map((question) => question.id).join(':')}`}
-              questions={item.questions} answers={questionAnswers}
+              timelineId={item.id} questions={item.questions} answers={questionAnswers}
               disabled={questionReplyDisabled} onReply={onQuestionReply}
             />
           ) : (

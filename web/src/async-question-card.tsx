@@ -2,7 +2,8 @@ import { useRef, useState } from 'react';
 import type { AsyncQuestion, QuestionReply } from '../../src/shared/async-questions';
 import { t } from './i18n';
 
-export function AsyncQuestionCard({ questions, answers, disabled, onReply }: {
+export function AsyncQuestionCard({ questions, answers, disabled, onReply, timelineId }: {
+  timelineId?: string;
   questions: AsyncQuestion[];
   answers: ReadonlyMap<string, string>;
   disabled: boolean;
@@ -30,7 +31,7 @@ export function AsyncQuestionCard({ questions, answers, disabled, onReply }: {
   }
 
   if (pending.length === 0) return (
-    <details className="async-question-card answered">
+    <details data-timeline-id={timelineId} className="async-question-card answered">
       <summary>
         <span className="async-question-status">
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3 8 3 3 7-7" /></svg>
@@ -48,7 +49,7 @@ export function AsyncQuestionCard({ questions, answers, disabled, onReply }: {
   );
 
   return (
-    <form className="async-question-card" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+    <form data-timeline-id={timelineId} className="async-question-card" onSubmit={(event) => { event.preventDefault(); void submit(); }}>
       <strong>{pending.length ? t('需要你补充信息', 'Your input is requested') : t('已回答', 'Answered')}</strong>
       {questions.map((question) => {
         const answer = answers.get(question.id);

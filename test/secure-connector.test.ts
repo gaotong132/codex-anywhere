@@ -76,7 +76,7 @@ test('connector secure channel authenticates, decrypts requests, and encrypts re
   manager.clear();
 });
 
-test('connector deduplicates replayed mutating requests for the same browser identity', async () => {
+for (const action of ['turn.start', 'file.upload.begin', 'file.upload.chunk', 'file.upload.complete', 'file.upload.cancel']) test(`connector deduplicates replayed ${action} for the same browser identity`, async () => {
   const browserIdentity = createDeviceIdentity();
   const connectorIdentity = createDeviceIdentity();
   const sent: Record<string, any>[] = [];
@@ -119,7 +119,7 @@ test('connector deduplicates replayed mutating requests for the same browser ide
   }
 
   const request = {
-    type: 'request', requestId: 'same-request', action: 'turn.start', payload: { text: 'once' },
+    type: 'request', requestId: 'same-request', action, payload: { text: 'once' },
   };
   const first = await connect('client-1');
   await manager.handle({ type: 'secure', clientId: 'client-1', envelope: first.seal(request) });

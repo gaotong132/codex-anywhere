@@ -1,5 +1,6 @@
 import type { DeviceIdentity } from '../shared/device-auth.js';
 import { LRUCache } from 'lru-cache';
+import { createHash } from 'node:crypto';
 import {
   SecureChannelCodec,
   acceptSecureChannelOffer,
@@ -20,10 +21,11 @@ type SecureChannelState = {
 type CachedRequest = { fingerprint: string; response: Promise<JsonObject> };
 
 const DEFAULT_REQUEST_RESULT_TTL_MS = 2 * 60_000;
-const DOWNLOAD_REQUEST_RESULT_TTL_MS = 30 * 60_000;
+const FILE_REQUEST_RESULT_TTL_MS = 30 * 60_000;
 
 const DEDUPLICATED_ACTIONS = new Set([
   'attachment.upload',
+  'file.upload.begin', 'file.upload.chunk', 'file.upload.complete', 'file.upload.cancel',
   'file.download.open', 'file.download.chunk', 'file.download.close',
   'session.rename',
   'turn.start', 'turn.steer', 'turn.stop', 'approval.respond',
@@ -167,9 +169,9 @@ export class ConnectorSecureChannels {
         envelope: state.codec.seal({ type: 'ack', requestId }),
       });
       const cacheKey = `${state.acceptance.transcript.initiator.id}\0${requestId}`;
-      const fingerprint = JSON.stringify(request);
       let responsePromise: Promise<JsonObject>;
       if (DEDUPLICATED_ACTIONS.has(request.action)) {
+        const fingerprint = createHash('sha256').update(JSON.stringify(request)).digest('hex');
         const cached = this.requestResults.get(cacheKey);
         if (cached && cached.fingerprint !== fingerprint) {
           throw new Error('secure_channel_request_conflict');
@@ -183,8 +185,8 @@ export class ConnectorSecureChannels {
           });
         if (!cached) {
           this.requestResults.set(cacheKey, { fingerprint, response: responsePromise }, {
-            ttl: request.action.startsWith('file.download.')
-              ? DOWNLOAD_REQUEST_RESULT_TTL_MS
+            ttl: /^file\.(download|upload)\./.test(request.action)
+              ? FILE_REQUEST_RESULT_TTL_MS
               : DEFAULT_REQUEST_RESULT_TTL_MS,
           });
         }

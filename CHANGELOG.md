@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Preserve the reading position while older history, live updates and images load; retain message DOM identities and isolate pagination across session switches. Extract the scroll controller, deduplicate replayed file uploads, and keep POSIX path allowlists case-sensitive.
+
 - Upload general files up to 100 MB with chunked transfer, progress, storage on the selected execution node, and file links in history; image previews and screenshot pasting remain supported.
 
 - Render linked HTML files as sandboxed pages with a source toggle, lazy local images, relative file navigation and Back controls instead of displaying XML code.
