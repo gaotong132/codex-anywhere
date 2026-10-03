@@ -43,6 +43,6 @@ export async function loadHistoryPage(
   return {
     page, snapshot: summaryHasNewerTurn ? page
       : completed ? { ...snapshot, compactionStartedAt: null, turns: [{ ...snapshot.turns[0], status: newest.status }] } : snapshot,
-    items: mergeHistorySnapshot(current, combined, turnIds),
+    items: mergeHistorySnapshot(current, combined, turnIds, { partial: true }),
   };
 }

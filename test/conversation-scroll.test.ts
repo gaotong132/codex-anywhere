@@ -93,3 +93,39 @@ test('persisted image DOM identities survive moving rollout offsets and overlapp
   const prepended = prependHistoryPage([earlier, old], merged);
   assert.deepEqual(prepended.map((item) => item.id), ['previous', 'page:1']);
 });
+
+test('hidden-page layout and scroll events cannot overwrite the reading anchor on wake', () => {
+  const { root, rows, controller } = viewport();
+  root.scrollTop = 320;
+  controller.pause(root);
+  controller.suspend(root);
+  root.clientHeight = 0;
+  root.scrollTop = 0;
+  rows.forEach((row) => { row.y += 170; });
+  root.scrollHeight += 170;
+  assert.equal(controller.onScroll(root), false);
+  controller.restore(root);
+  root.clientHeight = 500;
+  controller.resume(root);
+  assert.equal(root.scrollTop, 490);
+  assert.equal(controller.following, false);
+});
+
+test('an image growing inside the same long reply preserves the currently read paragraph', () => {
+  const { root, controller } = viewport();
+  const paragraphs = [{ y: 0, height: 120, text: 'before image' }, { y: 300, height: 400, text: 'reading after image' }];
+  root.querySelectorAll = (() => [{
+    dataset: { timelineId: 'long-reply' },
+    getBoundingClientRect: () => ({ top: 100 - root.scrollTop, bottom: 1100 - root.scrollTop }),
+    querySelectorAll: () => paragraphs.map((part) => ({
+      tagName: 'P', textContent: part.text,
+      getBoundingClientRect: () => ({ top: part.y + 100 - root.scrollTop, bottom: part.y + part.height + 100 - root.scrollTop }),
+    })),
+  }]) as unknown as HTMLElement['querySelectorAll'];
+  root.scrollTop = 350;
+  controller.pause(root);
+  paragraphs[1].y += 200;
+  root.scrollHeight += 200;
+  controller.restore(root);
+  assert.equal(root.scrollTop, 550);
+});

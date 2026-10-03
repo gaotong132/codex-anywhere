@@ -25,6 +25,7 @@ import type { ContextCompaction } from '../../src/shared/context-compaction';
 type MessageCopyState = 'idle' | 'copied' | 'failed';
 
 export type MessageBubbleProps = {
+  onRetryImage?: () => void;
   item: TimelineItem;
   active?: boolean;
   imageSource?: string;
@@ -320,6 +321,7 @@ function MessageBubbleComponent({
   onReadTurnDiff,
   onReadVisualization,
   onReadPreviewImage,
+  onRetryImage,
 }: MessageBubbleProps) {
   const [imageExpanded, setImageExpanded] = useState(false);
   const [visualizationOpen, setVisualizationOpen] = useState(false);
@@ -491,7 +493,7 @@ function MessageBubbleComponent({
 
   if (item.kind === 'system' && (item.compaction || item.compactionProgress)) return <ContextCompactionMarker item={item} />;
   if (item.kind === 'system' && item.notice) return <TimelineNoticeMarker item={item} />;
-  if (item.kind === 'progress') {
+  if (item.kind === 'progress' && !item.attachment && !item.visualization) {
     return (
       <details data-timeline-id={item.id} className={`progress-card${active ? ' live' : ''}`} open>
         <summary>{t('进度更新', 'Progress update')}</summary>
@@ -522,7 +524,10 @@ function MessageBubbleComponent({
         {item.attachment && (
           <figure className="message-image">
             {imageSource === undefined && <div className="message-image-state">{t('正在加载图片…', 'Loading image…')}</div>}
-            {imageSource === '' && <div className="message-image-state">{t('图片已过期或无法读取', 'Image expired or unavailable')}</div>}
+            {imageSource === '' && <div className="message-image-state">
+              <span>{t('图片暂时无法读取', 'Image temporarily unavailable')}</span>
+              {onRetryImage && <button type="button" onClick={onRetryImage}>{t('重新加载', 'Retry')}</button>}
+            </div>}
             {imageSource && (
               <button
                 className="message-image-preview"
@@ -751,6 +756,7 @@ function messageBubblePropsEqual(left: MessageBubbleProps, right: MessageBubbleP
     && left.onReadTurnDiff === right.onReadTurnDiff
     && left.onReadVisualization === right.onReadVisualization
     && left.onReadPreviewImage === right.onReadPreviewImage
+    && left.onRetryImage === right.onRetryImage
     && messagePresentationEqual(left.item, right.item);
 }
 

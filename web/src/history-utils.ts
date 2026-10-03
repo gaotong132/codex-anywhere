@@ -176,8 +176,8 @@ export function historyItems(turns: Turn[]) {
       }
       if (!kind || (!displayText && !attachment && !visualization && !compaction && !notice)) continue;
       const previous = items.at(-1);
-      if (kind === 'progress' && !visualization
-        && previous?.kind === 'progress' && previous.historyTurnId === historyTurnId) {
+      if (kind === 'progress' && !visualization && !attachment
+        && previous?.kind === 'progress' && !previous.attachment && previous.historyTurnId === historyTurnId) {
         previous.text = `${previous.text}\n\n${displayText}`;
         previous.completedAt = messageTime(item, turn, kind) || previous.completedAt;
         continue;
@@ -296,7 +296,10 @@ function messageTime(item: TurnItem, turn: Turn, kind: TimelineKind) {
     || (kind === 'user' ? turn.startedAt : turn.completedAt) || null;
 }
 
-export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineItem[], latestTurnIds: Set<string>) {
+export function mergeHistorySnapshot(
+  current: TimelineItem[], latest: TimelineItem[], latestTurnIds: Set<string>,
+  options: { partial?: boolean } = {},
+) {
   const compactions = matchCompactionSnapshots(current, latest);
   latest = compactions.latest;
   const knownTurnIds = new Set(current.map((item) => item.historyTurnId).filter(Boolean));
@@ -309,6 +312,8 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
     .map((item) => [messageContentIdentity(item), item.attachment]));
   const optimisticUserMatches = matchOptimisticUsers(current, latest);
   const persistedIdentities = new Map<string, TimelineItem[]>();
+  const claimedIds = new Set<string>();
+  const occupiedIds = new Set([...current, ...latest].map((item) => item.id));
   for (const item of current) {
     const identity = persistedSnapshotIdentity(item);
     if (!identity) continue;
@@ -319,27 +324,50 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
   const hydratedLatest = latest.map((item, index) => {
     // Rollout offsets and live-tail indexes change on each read. Keep the DOM
     // identity of the same persisted message, including its loaded image.
-    const persisted = item.compaction || item.compactionProgress ? undefined
+    let persisted = item.compaction || item.compactionProgress ? undefined
       : persistedIdentities.get(persistedSnapshotIdentity(item))?.shift();
+    if (!persisted && options.partial) {
+      persisted = current.find((previous) => !claimedIds.has(previous.id) && samePersistedMessage(previous, item));
+    }
+    if (persisted) claimedIds.add(persisted.id);
     const retainedFileChanges = item.historyTurnId
       ? persistedFileChanges.get(`${item.historyTurnId}\0${messageIdentity(item)}`)
       : undefined;
+    let id = optimisticUserMatches.get(index)?.id || persisted?.id || item.id;
+    if (options.partial && !persisted && !optimisticUserMatches.has(index)
+      && current.some((previous) => previous.id === id && !compactions.matched.has(id))) {
+      // Tail indexes are positions in a moving window, not message identities.
+      const base = id;
+      let suffix = 1;
+      while (occupiedIds.has(id)) id = `${base}~${suffix++}`;
+      occupiedIds.add(id);
+    }
     const hydrated = {
       ...item,
-      ...(persisted ? { id: persisted.id } : {}),
-      ...(optimisticUserMatches.get(index) ? { id: optimisticUserMatches.get(index)!.id } : {}),
+      id,
       ...(item.attachment ? {} : {
         attachment: transientAttachments.get(messageContentIdentity(item)),
       }),
       ...(item.fileChanges || !retainedFileChanges ? {} : { fileChanges: retainedFileChanges }),
     };
-    if (hydrated.kind !== 'progress' || !hydrated.historyTurnId) return hydrated;
+    if (hydrated.kind !== 'progress' || !hydrated.historyTurnId || hydrated.attachment || hydrated.visualization) return hydrated;
     for (let index = current.length - 1; index >= 0; index -= 1) {
       const previous = current[index];
       if (previous.transient
         || previous.kind !== 'progress'
+        || previous.attachment || previous.visualization
         || previous.historyTurnId !== hydrated.historyTurnId) continue;
       if (hydrated.text.startsWith(previous.text)) return { ...hydrated, id: previous.id };
+      if (options.partial) {
+        if (previous.text.includes(hydrated.text)) return { ...previous, ...hydrated, id: previous.id, text: previous.text };
+        const paragraphs = previous.text.split('\n\n');
+        for (let start = 1; start < paragraphs.length; start++) {
+          const overlap = paragraphs.slice(start).join('\n\n');
+          if (overlap && hydrated.text.startsWith(`${overlap}\n\n`)) {
+            return { ...hydrated, id: previous.id, text: previous.text + hydrated.text.slice(overlap.length) };
+          }
+        }
+      }
       break;
     }
     return hydrated;
@@ -423,11 +451,56 @@ export function mergeHistorySnapshot(current: TimelineItem[], latest: TimelineIt
   const insertionIndex = firstMatch < 0
     ? retained.length
     : current.slice(0, firstMatch).filter(keep).length;
-  return [
+  const result = [
     ...retained.slice(0, insertionIndex),
     ...mergedLatest,
     ...retained.slice(insertionIndex),
   ];
+  if (!options.partial) return result;
+  // A bounded tail is additive evidence. Missing rows are not deletions: a
+  // long-running turn can scroll its input, images and earlier replies out of it.
+  const omitted = current.filter((item) => !item.transient && !keep(item)
+    && !compactions.matched.has(item.id)
+    && !hydratedLatest.some((next) => next.id === item.id || samePersistedMessage(item, next)
+      || (item.kind === 'progress' && next.kind === 'progress' && !item.attachment && !item.visualization
+        && !next.attachment && !next.visualization
+        && item.historyTurnId === next.historyTurnId && next.text.includes(item.text))));
+  for (const item of omitted) {
+    const previousIndex = current.indexOf(item);
+    const successor = current.slice(previousIndex + 1).find((other) => result.some((next) => next.id === other.id));
+    let index = successor ? result.findIndex((next) => next.id === successor.id) : -1;
+    if (index < 0) {
+      const time = timelineTime(item);
+      index = time == null ? -1 : result.findIndex((next) => {
+        const nextTime = timelineTime(next);
+        return nextTime != null && nextTime > time;
+      });
+    }
+    if (index < 0) {
+      const predecessor = current.slice(0, previousIndex).reverse().find((other) => result.some((next) => next.id === other.id));
+      index = predecessor ? result.findIndex((next) => next.id === predecessor.id) + 1
+        : Math.max(0, result.findIndex((next) => next.historyTurnId === item.historyTurnId));
+    }
+    result.splice(index, 0, item);
+  }
+  return result;
+}
+
+function timelineTime(item: TimelineItem) {
+  const value = item.completedAt;
+  if (value == null) return null;
+  const time = typeof value === 'number' ? (value < 10_000_000_000 ? value * 1_000 : value) : Date.parse(value);
+  return Number.isFinite(time) ? time : null;
+}
+
+function samePersistedMessage(previous: TimelineItem, next: TimelineItem) {
+  if (previous.transient || next.transient || messageIdentity(previous) !== messageIdentity(next)) return false;
+  const before = timelineTime(previous);
+  const after = timelineTime(next);
+  if (before != null && after != null) return before === after
+    && JSON.stringify(previous.contexts || []) === JSON.stringify(next.contexts || []);
+  return Boolean(previous.historyTurnId && !/^(tail|rollout):/.test(previous.historyTurnId)
+    && previous.historyTurnId === next.historyTurnId);
 }
 
 export function prependHistoryPage(older: TimelineItem[], current: TimelineItem[]) {

@@ -34,7 +34,6 @@ import {
   fileToBase64,
   formatBytes,
   getClipboardImage,
-  isValidImagePayload,
   type UploadedImage,
 } from './image-utils';
 import { buildFileMessage, prepareAttachment, uploadFile } from './file-upload';
@@ -71,6 +70,7 @@ import {
 } from './ui-components';
 import { ConversationTimeline, preloadMessageBubble } from './conversation-timeline';
 import { useConversationScroll } from './use-conversation-scroll';
+import { useTimelineImages } from './timeline-images';
 import { loadHistoryPage } from './history-page-loader';
 import { useConversationExecution } from './conversation-execution';
 import { SessionSidebar } from './session-sidebar';
@@ -151,7 +151,6 @@ import type {
   Approval,
   AwaitingDesktopTurn,
   BridgeMessage,
-  DownloadedImage,
   FollowState,
   HistoryPage,
   PendingAttachment,
@@ -232,7 +231,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null);
-  const [attachmentUrls, setAttachmentUrls] = useState<Record<string, string>>({});
   const [knownAttachments, setKnownAttachments] = useState<Record<string, KnownAttachment>>(loadKnownAttachments);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<ImageUploadState | null>(null);
@@ -266,6 +264,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [newSessionAttachment, setNewSessionAttachment] = useState<PendingAttachment | null>(null);
   const [newSessionError, setNewSessionError] = useState('');
   const [connectionEpoch, setConnectionEpoch] = useState(0);
+  const [resumeEpoch, setResumeEpoch] = useState(0);
   const [runDetailsOpen, setRunDetailsOpen] = useState(false);
   const [stopping, setStopping] = useState(false);
 
@@ -300,9 +299,9 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const newSessionAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   const newSessionAutoSendRef = useRef(false);
   const sendingRef = useRef(false);
-  const attachmentLoadsRef = useRef(new Set<string>());
-  const sessionRefreshInFlightRef = useRef(false);
+  const sessionRefreshInFlightRef = useRef<{ environment: string; channel: BrowserSecureChannel | null } | null>(null);
   const olderHistoryLoadingRef = useRef<number | null>(null);
+  const initialHistoryAttemptRef = useRef('');
   const liveHistoryHydratedThreadRef = useRef<string | null>(null);
   const optimisticRestoreRef = useRef<string | null>(null);
   const runningRef = useRef(running);
@@ -529,44 +528,19 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     [sessions, threadId],
   );
 
-  useEffect(() => {
-    if (!online) return;
-    const targetThreadId = threadId;
-    const requestVersion = selectedRequestRef.current;
-    for (const attachment of timelineAttachments) {
-      const loadKey = `${requestVersion}\0${attachment.path}`;
-      if (Object.prototype.hasOwnProperty.call(attachmentUrls, attachment.path)
-        || attachmentLoadsRef.current.has(loadKey)) continue;
-      attachmentLoadsRef.current.add(loadKey);
-      void request<DownloadedImage>('attachment.read', {
-        path: attachment.path,
-        source: attachment.source,
-      })
-        .then((image) => {
-          if (!isCurrentSessionRequest(
-            targetThreadId, threadIdRef.current, requestVersion, selectedRequestRef.current,
-          )) return;
-          if (!isValidImagePayload(image.mimeType, image.data)) throw new Error('attachment_content_mismatch');
-          if (viewport.following) viewport.forceBottom = true;
-          setAttachmentUrls((current) => ({
-            ...current,
-            [attachment.path]: `data:${image.mimeType};base64,${image.data}`,
-          }));
-        })
-        .catch(() => {
-          if (isCurrentSessionRequest(
-            targetThreadId, threadIdRef.current, requestVersion, selectedRequestRef.current,
-          )) setAttachmentUrls((current) => ({ ...current, [attachment.path]: '' }));
-        })
-        .finally(() => attachmentLoadsRef.current.delete(loadKey));
-    }
-  }, [attachmentUrls, online, request, threadId, timelineAttachments]);
+  const { attachmentUrls, rememberImage, retryImages } = useTimelineImages(
+    `${environmentId}:${threadId}:${selectedRequestRef.current}`, timelineAttachments, online, connectionEpoch, request,
+  );
 
   const refreshSessions = useCallback(async () => {
-    if (sessionRefreshInFlightRef.current) return [];
-    sessionRefreshInFlightRef.current = true;
+    const refresh = { environment: environmentIdRef.current, channel: secureChannelRef.current };
+    if (sessionRefreshInFlightRef.current?.environment === refresh.environment
+      && sessionRefreshInFlightRef.current?.channel === refresh.channel) return [];
+    sessionRefreshInFlightRef.current = refresh;
     try {
       const data = await request<{ sessions: Session[] }>('sessions.list', {});
+      if (sessionRefreshInFlightRef.current !== refresh || environmentIdRef.current !== refresh.environment
+        || secureChannelRef.current !== refresh.channel) return [];
       const nextSessions = data.sessions || [];
       setSessions(nextSessions);
       setSessionsInitialized(true);
@@ -583,7 +557,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       // the next retry communicate failures without polluting the conversation.
       return [];
     } finally {
-      sessionRefreshInFlightRef.current = false;
+      if (sessionRefreshInFlightRef.current === refresh) sessionRefreshInFlightRef.current = null;
     }
   }, [request, updateSessionAttention]);
 
@@ -602,6 +576,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       onReady: () => {
         if (secureChannelRef.current !== channel || environmentIdRef.current !== routeDeviceId) return;
         connectorOnlineRef.current = true;
+        setConnectionEpoch((current) => current + 1);
         setOnline(true);
         setStatusText(environmentOnlineLabel(routeDeviceId));
         replayPendingRequests();
@@ -642,7 +617,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       reconnectAttemptRef.current = 0;
       setAuthenticated(true);
       setConnecting(false);
-      setConnectionEpoch((current) => current + 1);
       const devices = normalizeEnvironmentIds(message.devices);
       onlineEnvironmentIdsRef.current = devices;
       setOnlineEnvironmentIds(devices);
@@ -941,12 +915,22 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       socketRef.current = null;
       existing.close(1000, 'connection replaced');
     }
+    // The detached socket's close callback cannot clean up a replacement.
+    // Invalidate its channel and reads before exposing the new connection.
+    secureChannelRef.current?.clear();
+    secureChannelRef.current = null;
+    connectorOnlineRef.current = false;
+    setOnline(false);
+    runningRef.current = false;
+    ownedTurnThreadIdRef.current = null;
+    updateExecution({ running: false, ownedTurnThreadId: null });
     clearReconnectTimer();
     setConnecting(true);
     setStatusText(reconnectAttemptRef.current ? t('正在重新连接…', 'Reconnecting…') : t('正在连接…', 'Connecting…'));
     const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(`${scheme}//${location.host}/ws`);
     socketRef.current = socket;
+    lastServerActivityRef.current = Date.now();
     socketAuthenticatedRef.current = false;
     socket.addEventListener('message', (incoming) => {
       if (socketRef.current !== socket) return;
@@ -1129,7 +1113,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       const socket = socketRef.current;
       if (socket?.readyState === WebSocket.OPEN && socketAuthenticatedRef.current) {
         if (lastServerActivityRef.current && Date.now() - lastServerActivityRef.current > CLIENT_STALE_AFTER_MS) {
-          socket.close(4000, 'stale connection');
+          scheduleReconnectRef.current(true);
           return;
         }
         sendWebSocketFrame(socket, { type: 'ping', at: Date.now() });
@@ -1149,11 +1133,15 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       setStatusText(t('等待网络恢复', 'Waiting for network'));
     };
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') reconnectNow();
+      if (document.visibilityState === 'visible') {
+        setResumeEpoch((current) => current + 1);
+        reconnectNow();
+      }
     };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('pageshow', handleVisibility);
     return () => {
       reconnectWantedRef.current = false;
       clearReconnectTimer();
@@ -1162,6 +1150,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('pageshow', handleVisibility);
       const socket = socketRef.current;
       socketRef.current = null;
       secureChannelRef.current?.clear();
@@ -1177,7 +1166,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       if (!socket || socket.readyState !== WebSocket.OPEN || !socketAuthenticatedRef.current) return;
       if (document.visibilityState === 'hidden') return;
       if (lastServerActivityRef.current && Date.now() - lastServerActivityRef.current > CLIENT_STALE_AFTER_MS) {
-        socket.close(4000, 'heartbeat timeout');
+        scheduleReconnectRef.current(true);
         return;
       }
       sendWebSocketFrame(socket, { type: 'ping', at: Date.now() });
@@ -1199,11 +1188,14 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   }, [authenticated, online, refreshSessions]);
 
   const loadHistory = useCallback(async (targetThreadId: string, cursor: string | null, requestVersion: number) => {
+    const requestChannel = secureChannelRef.current;
+    if (!cursor) initialHistoryAttemptRef.current = `${requestVersion}:${connectionEpoch}:${resumeEpoch}`;
     setHistoryLoading(true);
     if (cursor) setOlderHistoryError(false);
     try {
       const { page, snapshot, items } = await loadHistoryPage(request, targetThreadId, cursor, HISTORY_PAGE_SIZE);
-      if (selectedRequestRef.current !== requestVersion || threadIdRef.current !== targetThreadId) {
+      if (selectedRequestRef.current !== requestVersion || threadIdRef.current !== targetThreadId
+        || secureChannelRef.current !== requestChannel) {
         return;
       }
       if (cursor) {
@@ -1250,7 +1242,17 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     } finally {
       if (selectedRequestRef.current === requestVersion) setHistoryLoading(false);
     }
-  }, [reportTimelineError, request, updateExecution]);
+  }, [connectionEpoch, resumeEpoch, reportTimelineError, request, updateExecution]);
+
+  useEffect(() => {
+    // An initial read can time out while mobile timers are suspended. Re-enter
+    // the selected conversation after recovery instead of leaving it stuck.
+    const key = `${selectedRequestRef.current}:${connectionEpoch}:${resumeEpoch}`;
+    if (online && threadId && !initialHistoryLoaded && !historyLoading && initialHistoryAttemptRef.current !== key) {
+      void loadHistory(threadId, null, selectedRequestRef.current);
+    }
+    // Retry on an actual recovery, not continuously after a permanent failure.
+  }, [connectionEpoch, resumeEpoch, online, threadId, initialHistoryLoaded, historyLoading, loadHistory]);
 
   useEffect(() => {
     if (!threadId) {
@@ -1260,6 +1262,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     }
     if (!initialHistoryLoaded || running || !online) return;
     let disposed = false;
+    const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const schedule = (delay: number) => {
@@ -1272,12 +1275,13 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         return;
       }
       try {
+        const requestChannel = secureChannelRef.current;
         const page = await request<HistoryPage>('session.turns.list', {
           threadId,
           limit: 2,
           mode: 'live',
-        });
-        if (disposed || threadIdRef.current !== threadId) return;
+        }, { signal: controller.signal });
+        if (disposed || threadIdRef.current !== threadId || secureChannelRef.current !== requestChannel) return;
         const nextContextUsage = normalizeContextUsage(page.contextUsage);
         if (nextContextUsage) setContextUsage(nextContextUsage);
         const fingerprint = historyFingerprint(page.turns, page.turnProgress);
@@ -1341,7 +1345,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           .map((item) => item.historyTurnId)
           .filter((turnId): turnId is string => Boolean(turnId)));
         setTimeline((current) => {
-          const merged = historyChanged ? mergeHistorySnapshot(current, latestItems, latestTurnIds) : current;
+          const merged = historyChanged ? mergeHistorySnapshot(current, latestItems, latestTurnIds, { partial: true }) : current;
           return inProgress
             ? startTimelineCompaction(merged, page.activityId || '', epochMillis(page.compactionStartedAt))
             : clearPendingCompactions(merged);
@@ -1358,9 +1362,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     schedule(liveHistoryHydratedThreadRef.current === threadId ? 1_500 : 800);
     return () => {
       disposed = true;
+      controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [initialHistoryLoaded, online, request, running, threadId, updateExecution]);
+  }, [connectionEpoch, resumeEpoch, initialHistoryLoaded, online, request, running, threadId, updateExecution]);
 
   useEffect(() => {
     if (authenticated && online) preloadMessageBubble();
@@ -1387,8 +1392,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     setContextUsage(null);
     viewport.reset();
     olderHistoryLoadingRef.current = null;
-    setAttachmentUrls({});
-    attachmentLoadsRef.current.clear();
     setNextCursor(null);
     setOlderHistoryError(false);
     setOlderHistoryAutoLoadEnabled(false);
@@ -1692,10 +1695,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       }
       if (attachment && timelineAttachment) {
         if (targetThreadId) rememberAttachment(targetThreadId, visibleText, timelineAttachment);
-        setAttachmentUrls((current) => ({
-          ...current,
-          [timelineAttachment!.path]: uploadedPreviewUrl,
-        }));
+        rememberImage(timelineAttachment.path, uploadedPreviewUrl);
       }
       setUploading(false);
       if (!questionReplies) {
@@ -1837,7 +1837,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   }, [
     addTimeline, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingAttachment,
     permissionConfig, prompt, threadId,
-    refreshSessions, rememberAttachment, reportTimelineError, request, resetExecution, running,
+    refreshSessions, rememberAttachment, rememberImage, reportTimelineError, request, resetExecution, running,
     updateExecution, updateSessionAttention, uploading,
   ]);
 
@@ -2222,6 +2222,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           onQuestionReply={answerQuestions}
           knownAttachments={knownAttachments}
           attachmentUrls={attachmentUrls}
+          onRetryImages={retryImages}
           executionActive={executionActive}
           progressAnimationReady={followState !== 'checking'}
           liveProgressItemId={liveProgressItemId}

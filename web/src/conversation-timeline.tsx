@@ -36,6 +36,7 @@ type ConversationTimelineProps = {
   timeline: TimelineItem[];
   knownAttachments: Record<string, KnownAttachment>;
   attachmentUrls: Record<string, string>;
+  onRetryImages?: () => void;
   executionActive: boolean;
   progressAnimationReady: boolean;
   liveProgressItemId: string | null;
@@ -64,6 +65,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   timeline,
   knownAttachments,
   attachmentUrls,
+  onRetryImages,
   executionActive,
   progressAnimationReady,
   liveProgressItemId,
@@ -165,6 +167,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
                 ? progressAnimationReady && item.id === liveProgressItemId
                 : Boolean(item.transient))}
               imageSource={attachment ? attachmentUrls[attachment.path] : undefined}
+              onRetryImage={onRetryImages}
               onDownloadFile={onDownloadFile}
               onReadTextFile={onReadTextFile}
               onReadTurnDiff={onReadTurnDiff}

@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Preserve history, images and reading anchors after mobile background/resume: merge bounded live tails without deleting known messages, render commentary images, bound image transfers, retry failed reads, and discard obsolete connection reads.
+
 - Recover stale Connector WebSockets after laptop sleep with active heartbeats, a silence deadline and a bounded handshake; preserve paired device identities.
 
 - Preserve the reading position while older history, live updates and images load; retain message DOM identities and isolate pagination across session switches. Extract the scroll controller, deduplicate replayed file uploads, and keep POSIX path allowlists case-sensitive.
