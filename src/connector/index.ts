@@ -12,7 +12,7 @@ import { readVisualization, visualizationsDirectory } from './visualizations.js'
 import { acquireConnectorInstanceLock } from './instance-lock.js';
 import { loadOrCreateConnectorDeviceIdentity } from './device-identity.js';
 import { createRequestHandler } from './request-handler.js';
-import { scheduleReferencedRetry } from './reconnect.js';
+import { monitorConnectorSocket, scheduleReferencedRetry } from './reconnect.js';
 import { ConnectorSecureChannels } from './secure-channels.js';
 import { connectorSessionModelSettingsPath } from './session-model-settings.js';
 import { createConnectorAuthProof } from '../shared/auth.js';
@@ -87,6 +87,7 @@ const secureChannels = new ConnectorSecureChannels({
 
 let socket: WebSocket | undefined;
 let reconnectAttempt = 0;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 let stopped = false;
 codex.on('turn-event', (message) => {
   const frame = { type: 'event', ...message };
@@ -95,8 +96,15 @@ codex.on('turn-event', (message) => {
 
 function connect() {
   if (stopped) return;
-  socket = new WebSocket(url, { maxPayload: MAX_FRAME_BYTES, perMessageDeflate: false });
-  socket.on('message', async (data) => {
+  const current = new WebSocket(url, {
+    maxPayload: MAX_FRAME_BYTES, perMessageDeflate: false, handshakeTimeout: 15_000,
+  });
+  socket = current;
+  monitorConnectorSocket(current, {
+    onTimeout: () => console.log('Connector relay connection became stale; reconnecting.'),
+  });
+  current.on('message', async (data) => {
+    if (socket !== current || stopped) return;
     let message;
     try { message = parseFrame(data); } catch { return; }
     if (message.type === 'auth.challenge') {
@@ -109,11 +117,11 @@ function connect() {
           routeDeviceId: deviceId,
           authProof: proof,
         }, `Connector · ${deviceId}`);
-        safeSend(socket, {
+        safeSend(current, {
           type: 'auth.connector', role: 'connector', proof, deviceId, device, protocol,
         });
       } catch {
-        socket?.close(4003, 'invalid authentication challenge');
+        current.close(4003, 'invalid authentication challenge');
       }
       return;
     }
@@ -127,21 +135,29 @@ function connect() {
     }
     if (await secureChannels.handle(message)) return;
   });
-  socket.on('close', scheduleReconnect);
-  socket.on('error', () => {});
+  current.on('close', () => {
+    if (socket !== current) return;
+    socket = undefined;
+    scheduleReconnect();
+  });
+  current.on('error', () => { current.terminate(); });
 }
 
 function scheduleReconnect() {
-  if (stopped) return;
+  if (stopped || reconnectTimer) return;
   browser?.clear();
   secureChannels.clear();
   const delay = Math.min(30_000, 1_000 * (2 ** reconnectAttempt)) + Math.floor(Math.random() * 500);
   reconnectAttempt += 1;
-  scheduleReferencedRetry(connect, delay);
+  reconnectTimer = scheduleReferencedRetry(() => {
+    reconnectTimer = undefined;
+    connect();
+  }, delay);
 }
 
 async function shutdown() {
   stopped = true;
+  if (reconnectTimer) clearTimeout(reconnectTimer);
   await browserEndpoint?.close();
   secureChannels.clear();
   socket?.close(1000, 'connector shutdown');
