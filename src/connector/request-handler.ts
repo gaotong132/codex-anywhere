@@ -176,6 +176,7 @@ async function dispatchAction({
       cursor: payload.cursor,
       limit: payload.limit,
       mode: payload.mode,
+      questionIds: payload.questionIds,
     });
   }
   if (action === 'session.turn.diff.read') {

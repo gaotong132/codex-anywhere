@@ -9,6 +9,7 @@ import { CompactionProgressReader } from './compaction-progress.js';
 import {
   readRolloutContextUsage,
   readRolloutGeneratedImages,
+  readRolloutQuestionReplies,
   readRolloutModelSettings,
   readRolloutPermissionMode,
   readRolloutTail,
@@ -284,7 +285,24 @@ export class CodexAppServer extends EventEmitter {
     return { threadId: resolvedThreadId, title: name };
   }
 
-  async listSessionTurns(threadId: unknown, options: { mode?: string; limit?: unknown; cursor?: unknown } = {}) {
+  async listSessionTurns(threadId: unknown, options: {
+    mode?: string; limit?: unknown; cursor?: unknown; questionIds?: unknown;
+  } = {}) {
+    const page = await this.readSessionTurns(threadId, options);
+    const ids = new Set<string>(page.turns.flatMap((turn) => turn.items.flatMap((item: JsonObject) => (
+      item.questions?.map((question: { id: string }) => question.id) || []
+    ))));
+    if (Array.isArray(options.questionIds)) for (const id of options.questionIds.slice(0, 512)) {
+      if (typeof id === 'string' && id.length > 0 && id.length <= 1024) ids.add(id);
+    }
+    const path = this.sessionMetadata.get(String(threadId || '').trim())?.path;
+    const questionReplies = ids.size && path
+      ? (await readRolloutQuestionReplies(path).catch(() => [])).filter((reply) => ids.has(reply.questionItemId))
+      : [];
+    return { ...page, questionReplies };
+  }
+
+  async readSessionTurns(threadId: unknown, options: { mode?: string; limit?: unknown; cursor?: unknown } = {}) {
     await this.ensureStarted();
     const resolvedThreadId = String(threadId || '').trim();
     if (!resolvedThreadId) throw new Error('thread_id_required');

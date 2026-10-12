@@ -41,7 +41,7 @@ import { useFileTransfer } from './file-transfer';
 import { useFilePreviews } from './file-preview-client';
 import { t } from './i18n';
 import {
-  buildQuestionReply, normalizeAsyncQuestions, questionReplyText, type QuestionReply,
+  buildQuestionReply, normalizeAsyncQuestions, normalizeQuestionReplies, questionReplyText, type QuestionReply,
 } from '../../src/shared/async-questions';
 import {
   friendlyError,
@@ -223,6 +223,18 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [threadId, setThreadId] = useState<string | null>(null);
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
+  const [resolvedQuestionAnswers, setResolvedQuestionAnswers] = useState<Record<string, string>>({});
+  const visibleQuestionIdsRef = useRef<string[]>([]);
+  visibleQuestionIdsRef.current = [...new Set(timeline.flatMap((item) => item.questions?.map((question) => question.id) || []))]
+    .filter((id) => !Object.prototype.hasOwnProperty.call(resolvedQuestionAnswers, id)).slice(-512);
+  const rememberQuestionReplies = useCallback((replies: QuestionReply[] = []) => {
+    // Each reply is validated independently; a history page may cover many
+    // separate question batches (the per-call maximum is not a page maximum).
+    const valid = replies.flatMap((reply) => normalizeQuestionReplies([reply]) || []);
+    if (!valid.length) return;
+    setResolvedQuestionAnswers((current) => valid.every((reply) => current[reply.questionItemId] === reply.answer)
+      ? current : { ...current, ...Object.fromEntries(valid.map((reply) => [reply.questionItemId, reply.answer])) });
+  }, []);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [olderHistoryError, setOlderHistoryError] = useState(false);
@@ -1231,6 +1243,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           progress: active ? normalizeTurnProgress(state.turnProgress) : {},
         });
       }
+      rememberQuestionReplies(page.questionReplies);
+      rememberQuestionReplies(snapshot?.questionReplies);
       setNextCursor(page.nextCursor || null);
       if (cursor) setOlderHistoryError(false);
       setInitialHistoryLoaded(true);
@@ -1242,7 +1256,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     } finally {
       if (selectedRequestRef.current === requestVersion) setHistoryLoading(false);
     }
-  }, [connectionEpoch, resumeEpoch, reportTimelineError, request, updateExecution]);
+  }, [connectionEpoch, resumeEpoch, rememberQuestionReplies, reportTimelineError, request, updateExecution]);
 
   useEffect(() => {
     // An initial read can time out while mobile timers are suspended. Re-enter
@@ -1280,8 +1294,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           threadId,
           limit: 2,
           mode: 'live',
+          questionIds: visibleQuestionIdsRef.current,
         }, { signal: controller.signal });
         if (disposed || threadIdRef.current !== threadId || secureChannelRef.current !== requestChannel) return;
+        rememberQuestionReplies(page.questionReplies);
         const nextContextUsage = normalizeContextUsage(page.contextUsage);
         if (nextContextUsage) setContextUsage(nextContextUsage);
         const fingerprint = historyFingerprint(page.turns, page.turnProgress);
@@ -1365,7 +1381,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       controller.abort();
       if (timer) clearTimeout(timer);
     };
-  }, [connectionEpoch, resumeEpoch, initialHistoryLoaded, online, request, running, threadId, updateExecution]);
+  }, [connectionEpoch, resumeEpoch, initialHistoryLoaded, online, rememberQuestionReplies, request, running, threadId, updateExecution]);
 
   useEffect(() => {
     if (authenticated && online) preloadMessageBubble();
@@ -1389,6 +1405,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     setCreatingNewSession(false);
     if (nextThreadId) storeEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current, nextThreadId);
     setTimeline([]);
+    setResolvedQuestionAnswers({});
     setContextUsage(null);
     viewport.reset();
     olderHistoryLoadingRef.current = null;
@@ -2220,6 +2237,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           timeline={timeline}
           questionReplyDisabled={!online || uploading || (running && !steeringAvailable)}
           onQuestionReply={answerQuestions}
+          resolvedQuestionAnswers={resolvedQuestionAnswers}
           knownAttachments={knownAttachments}
           attachmentUrls={attachmentUrls}
           onRetryImages={retryImages}

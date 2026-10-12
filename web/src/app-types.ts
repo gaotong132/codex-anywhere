@@ -78,6 +78,7 @@ export type BridgeMessage = {
   payload?: Record<string, unknown>;
 };
 export type HistoryPage = {
+  questionReplies?: import('../../src/shared/async-questions').QuestionReply[];
   compactionStartedAt?: number | null;
   threadId: string;
   turns: Turn[];

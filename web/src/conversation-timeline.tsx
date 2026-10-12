@@ -22,6 +22,7 @@ export function preloadMessageBubble() {
 
 type ConversationTimelineProps = {
   questionReplyDisabled?: boolean;
+  resolvedQuestionAnswers?: Record<string, string>;
   onQuestionReply?: (replies: QuestionReply[]) => Promise<boolean>;
   messageListRef: RefObject<HTMLDivElement | null>;
   messageContentRef: RefObject<HTMLDivElement | null>;
@@ -51,6 +52,7 @@ type ConversationTimelineProps = {
 
 export const ConversationTimeline = memo(function ConversationTimeline({
   questionReplyDisabled = true,
+  resolvedQuestionAnswers,
   onQuestionReply,
   messageListRef,
   messageContentRef,
@@ -78,10 +80,10 @@ export const ConversationTimeline = memo(function ConversationTimeline({
   onReadPreviewImage,
 }: ConversationTimelineProps) {
   const olderHistorySentinelRef = useRef<HTMLButtonElement | null>(null);
-  const questionAnswers = useMemo(() => new Map(timeline.flatMap((item) => (
+  const questionAnswers = useMemo(() => new Map([...timeline.flatMap((item) => (
     item.kind === 'user' && (!item.transient || item.completedAt)
       ? (item.questionReplies || []).map((reply) => [reply.questionItemId, reply.answer] as const) : []
-  ))), [timeline]);
+  )), ...Object.entries(resolvedQuestionAnswers || {})]), [timeline, resolvedQuestionAnswers]);
   const resolvedItems = useMemo(() => timeline.map((item) => {
     const attachment = resolveTimelineAttachment(item, threadId, knownAttachments, environmentId);
     return {
