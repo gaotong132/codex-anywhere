@@ -14,6 +14,46 @@ const context = { kind: 'automation' as const, automationId: 'sample-check', dec
 const escapeHtml = (value: string) => value.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const escapeMarkdown = (value: string) => value.replaceAll('<', '\\<').replaceAll('_', '\\_');
 
+const openPage = '<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>';
+
+test('Desktop open-Page context is hidden across raw, escaped and forwarded user messages', () => {
+  for (const payload of [openPage, openPage.replace('null', '"page-example"')]) {
+    for (const encode of [(value: string) => value, escapeHtml, escapeMarkdown]) {
+      const raw = encode(payload);
+      assert.equal(parseUserMessage(raw).text, '');
+      const forwarded = `<codex_delegation><source_thread_id>source-task</source_thread_id><input>${raw}</input></codex_delegation>`;
+      assert.deepEqual(parseUserMessage(forwarded), {
+        text: '', contexts: [{ kind: 'delegation', sourceThreadId: 'source-task' }],
+      });
+    }
+  }
+});
+
+test('open-Page examples, assistant explanations, malformed and unknown payloads remain visible', () => {
+  for (const raw of [
+    `解释 ${openPage}`, `${openPage}\n请说明`, `> ${openPage}`, `\`${openPage}\``,
+    `\`\`\`xml\n${openPage}\n\`\`\``, `~~~xml\n${openPage}\n~~~`,
+    `## My request:\n${openPage}`,
+    openPage.replace('null', 'undefined'), openPage.replace('null', '123'),
+    openPage.replace('{"page_id":null}', '{}'),
+    openPage.replace('{"page_id":null}', '{"page_id":null,"text":"keep me"}'),
+    openPage.replace('</external_codex_apps_open_page>', ''),
+  ]) assert.equal(parseUserMessage(raw).text, raw.replace('## My request:\n', ''));
+  assert.equal(parseAssistantMessage(openPage).text, openPage);
+});
+
+test('open-Page metadata never creates a user bubble in either history path', () => {
+  const normal = '补充说明，继续开发';
+  const items = [openPage, normal].map(text => ({ type: 'userMessage', text }));
+  assert.deepEqual(historyItems(mapTurns([{ id: 'turn-page', items }])).map(item => item.text), [normal]);
+  // A newer Web client also filters metadata returned by an older Connector.
+  assert.deepEqual(historyItems([{ id: 'turn-page', items }]).map(item => item.text), [normal]);
+  const rows = rollout.mapRolloutRows([openPage, normal].map(text => ({
+    type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+  })));
+  assert.deepEqual(rows.filter(row => row.text).map(row => row.text), [normal]);
+});
+
 test('a report with appended raw, HTML-escaped or Markdown-escaped heartbeat keeps only its body', () => {
   for (const encode of [(value: string) => value, escapeHtml, escapeMarkdown]) {
     for (const parse of [parseUserMessage, parseAssistantMessage]) {

@@ -107,7 +107,10 @@ function parseMessageContent(value: unknown, role: 'user' | 'assistant'): Parsed
     return { text: '', contexts };
   }
 
-  if (role === 'user') text = stripBrowserContext(text);
+  if (role === 'user') {
+    text = stripBrowserContext(text);
+    if (isOpenPageContext(text)) return { text: '', contexts };
+  }
   const questionReplies = role === 'user' ? parseQuestionReplies(text) : undefined;
   if (questionReplies) return { text: questionReplyText(questionReplies), contexts, questionReplies };
   const request = USER_REQUEST_SECTION.exec(text);
@@ -122,6 +125,24 @@ function parseMessageContent(value: unknown, role: 'user' | 'assistant'): Parsed
 
   const content = stripAttachedHeartbeats(stripImageAttachments(text).trim(), contexts);
   return { ...content, text: normalizeBareLinks(content.text) };
+}
+
+// Desktop records its selected Page as a standalone user-role context message.
+// Match only that complete, known payload; quoted examples and prose stay visible.
+function isOpenPageContext(text: string): boolean {
+  const normalized = text
+    .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"')
+    .replace(/\\(?=<\/?external)/g, '')
+    .replace(/<[^>]+>/g, (tag) => tag.replace(/\\_/g, '_'));
+  const match = /^<external_codex_apps_open_page>([\s\S]*)<\/external_codex_apps_open_page>$/.exec(normalized);
+  if (!match) return false;
+  try {
+    const payload: unknown = JSON.parse(match[1].replace(/\\_/g, '_'));
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+    const record = payload as Record<string, unknown>;
+    return Object.keys(record).length === 1 && Object.hasOwn(record, 'page_id')
+      && (record.page_id === null || typeof record.page_id === 'string');
+  } catch { return false; }
 }
 
 // A heartbeat appended to a human-readable report is notification metadata,

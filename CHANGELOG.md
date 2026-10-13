@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Hide standalone Desktop open-Page context markers from chat history while preserving quoted examples, ordinary messages and unknown payloads.
+
 - Resolve questions answered in Codex Desktop even when summary history omits the reply or it has left the live tail. Recover answers by question ID from the incremental rollout index across paging and reconnects.
 
 - Preserve history, images and reading anchors after mobile background/resume: merge bounded live tails without deleting known messages, render commentary images, bound image transfers, retry failed reads, and discard obsolete connection reads.
