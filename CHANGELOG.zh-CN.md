@@ -6,6 +6,8 @@
 
 - 合入 DOMPurify、Hono、ip-address、Vite、Sass 和 Chrome 类型依赖升级；将 React、React DOM 及配套类型统一升级到 19.3.0，并将后续 React 更新分组，避免配套版本冲突。
 
+- 更新 MCP SDK、proxy-addr、fast-uri、source-map-js 和 Sharp 安全补丁。暂时保留 Mermaid 11，待验证 Mermaid 12 提高后的浏览器要求及默认渲染变化后再升级。
+
 - 隐藏桌面端写入历史的独立页面上下文标记，避免显示为用户气泡；保留引用示例、正常消息及无法识别的内容。
 
 - 修复桌面端已回答的问题在手机端仍显示待回答：从会话日志增量补齐问题 ID 对应的答案，支持回答已离开实时窗口、历史分页及重连，不再依赖摘要中是否包含回答。

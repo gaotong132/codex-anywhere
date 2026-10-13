@@ -6,6 +6,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 - Merge dependency updates for DOMPurify, Hono, ip-address, Vite, Sass and Chrome types; upgrade React, React DOM and both type packages together to 19.3.0, and group future React updates to prevent peer dependency conflicts.
 
+- Update the MCP SDK, proxy-addr, fast-uri, source-map-js and Sharp security fixes. Keep Mermaid 11 pending validation of Mermaid 12's higher browser requirements and changed rendering defaults.
+
 - Hide standalone Desktop open-Page context markers from chat history while preserving quoted examples, ordinary messages and unknown payloads.
 
 - Resolve questions answered in Codex Desktop even when summary history omits the reply or it has left the live tail. Recover answers by question ID from the incremental rollout index across paging and reconnects.
