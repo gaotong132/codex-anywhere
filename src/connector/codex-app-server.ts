@@ -297,7 +297,7 @@ export class CodexAppServer extends EventEmitter {
     }
     const path = this.sessionMetadata.get(String(threadId || '').trim())?.path;
     const questionReplies = ids.size && path
-      ? (await readRolloutQuestionReplies(path).catch(() => [])).filter((reply) => ids.has(reply.questionItemId))
+      ? await readRolloutQuestionReplies(path, ids).catch(() => [])
       : [];
     return { ...page, questionReplies };
   }

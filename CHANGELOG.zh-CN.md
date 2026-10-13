@@ -4,6 +4,8 @@
 
 ## 未发布
 
+- 修复超过 64 MiB 的会话日志再次遗漏早期桌面端答案：独立增量索引按块扫描历史，仅保留当前请求的问题答案，并跳过超大工具输出行。
+
 - 合入 DOMPurify、Hono、ip-address、Vite、Sass 和 Chrome 类型依赖升级；将 React、React DOM 及配套类型统一升级到 19.3.0，并将后续 React 更新分组，避免配套版本冲突。
 
 - 更新 MCP SDK、proxy-addr、fast-uri、source-map-js 和 Sharp 安全补丁。暂时保留 Mermaid 11，待验证 Mermaid 12 提高后的浏览器要求及默认渲染变化后再升级。

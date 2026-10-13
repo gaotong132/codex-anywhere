@@ -9,7 +9,8 @@ import type { ContextCompaction, ContextUsage } from '../shared/context-compacti
 import type { TimelineNotice, ToolSummaryNotice } from '../shared/timeline-notice.js';
 import type { PermissionMode } from '../shared/permission-mode.js';
 import { publicError } from '../shared/protocol.js';
-import { asyncQuestionsFromCall, buildQuestionReply, type AsyncQuestion, type QuestionReply } from '../shared/async-questions.js';
+import { asyncQuestionsFromCall, type AsyncQuestion, type QuestionReply } from '../shared/async-questions.js';
+export { readRolloutQuestionReplies } from './question-reply-index.js';
 import {
   extractPlanProgressFromToolInput,
   summarizePatchChanges,
@@ -135,14 +136,6 @@ type CachedGeneratedImages = {
 };
 const generatedImageCache = new Map<string, CachedGeneratedImages>();
 const generatedImageReads = new Map<string, Promise<RolloutItem[]>>();
-const questionReplyCache = new Map<string, QuestionReply[]>();
-
-// Reuse the incremental lightweight index: replies can be far outside the live
-// tail, while native conversation summaries omit mid-turn user input.
-export async function readRolloutQuestionReplies(filePath: string): Promise<QuestionReply[]> {
-  await readRolloutGeneratedImages(filePath);
-  return questionReplyCache.get(filePath) || [];
-}
 
 // Summary RPCs omit image items. Read only lightweight references from a bounded
 // local window instead of fetching full turns and their multi-megabyte results.
@@ -184,14 +177,6 @@ async function scanRolloutGeneratedImages(filePath: string): Promise<RolloutItem
       const references: RolloutRow[] = [];
       for (const row of window.rows) {
         const payload = row.payload || {};
-        const input = row.type === 'response_item' && payload.type === 'message' && payload.role === 'user'
-          ? extractContent(payload.content)
-          : row.type === 'event_msg' && payload.type === 'user_message' ? String(payload.message || payload.text || '') : '';
-        if (input.includes('send_user_message_question_reply')) {
-          const replies = parseUserMessage(input).questionReplies;
-          if (replies) references.push({ type: 'event_msg', timestamp: row.timestamp,
-            payload: { type: 'user_message', message: buildQuestionReply(replies), turn_id: rolloutRowTurnId(row) } });
-        }
         if (row.type !== 'event_msg') continue;
         if (payload.type === 'task_started') {
           references.push({ type: 'event_msg', payload: { type: 'task_started', turn_id: rolloutRowTurnId(row) } });
@@ -213,8 +198,6 @@ async function scanRolloutGeneratedImages(filePath: string): Promise<RolloutItem
     const indexedRows = incremental ? cached.rows.concat(rows) : rows;
     const mapped = mapRolloutRows(indexedRows);
     const items = mapped.filter((item) => item.attachment && item.turnId);
-    const replies = new Map(mapped.flatMap((item) => (item.questionReplies || []).map((reply) => [reply.questionItemId, reply] as const)));
-    questionReplyCache.set(filePath, [...replies.values()]);
     generatedImageCache.delete(filePath);
     generatedImageCache.set(filePath, {
       signature, fileIdentity, fileSize: info.size, parsedOffset, floor, rows: indexedRows, items,
@@ -223,7 +206,6 @@ async function scanRolloutGeneratedImages(filePath: string): Promise<RolloutItem
     if (generatedImageCache.size > MAX_CACHED_ROLLOUTS) {
       const oldest = generatedImageCache.keys().next().value!;
       generatedImageCache.delete(oldest);
-      questionReplyCache.delete(oldest);
     }
     return items;
   } finally { await handle.close(); }

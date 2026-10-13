@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Recover Desktop question answers in logs larger than 64 MiB using a separate incremental index; scan in bounded chunks and retain only requested answers, skipping oversized tool output rows.
+
 - Merge dependency updates for DOMPurify, Hono, ip-address, Vite, Sass and Chrome types; upgrade React, React DOM and both type packages together to 19.3.0, and group future React updates to prevent peer dependency conflicts.
 
 - Update the MCP SDK, proxy-addr, fast-uri, source-map-js and Sharp security fixes. Keep Mermaid 11 pending validation of Mermaid 12's higher browser requirements and changed rendering defaults.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, open, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createElement } from 'react';
@@ -17,6 +17,32 @@ const question = asyncQuestionsFromItem(source)![0];
 const reply = { questionItemId: question.id, question: question.title, answer: 'Repository convention' };
 const row = (payload: unknown, type = 'response_item') => JSON.stringify({ type, payload, timestamp: '2026-10-12T12:55:46.161Z' }) + '\n';
 const answerRow = () => row({ type: 'message', role: 'user', content: [{ type: 'input_text', text: buildQuestionReply([reply]) }] });
+
+test('requested answers survive beyond 64 MiB, large tool rows, append and replacement', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-large-question-index-'));
+  const path = join(directory, 'rollout.jsonl');
+  try {
+    const handle = await open(path, 'w');
+    try {
+      await handle.write(answerRow());
+      await handle.write('{"type":"response_item","payload":{"type":"function_call_output","output":"');
+      const chunk = Buffer.alloc(1024 * 1024, 'x');
+      for (let i = 0; i < 66; i++) await handle.write(chunk);
+      await handle.write('"}}\n');
+    } finally { await handle.close(); }
+    const wanted = new Set([question.id]);
+    assert.deepEqual(await readRolloutQuestionReplies(path, wanted), [reply]);
+    assert.deepEqual(await readRolloutQuestionReplies(path, new Set(['unrelated'])), []);
+    const updated = { ...reply, answer: 'Updated choice' };
+    const update = row({ type: 'user_message', message: buildQuestionReply([updated]) }, 'event_msg');
+    await appendFile(path, update.slice(0, -1));
+    assert.deepEqual(await readRolloutQuestionReplies(path, wanted), [reply]);
+    await appendFile(path, '\n');
+    assert.deepEqual(await readRolloutQuestionReplies(path, wanted), [updated]);
+    await writeFile(path, row({ type: 'user_message', message: 'New history' }, 'event_msg'));
+    assert.deepEqual(await readRolloutQuestionReplies(path, wanted), []);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 
 test('Desktop answers omitted from summaries and evicted from the live tail still resolve visible questions', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-question-recovery-'));
