@@ -43,6 +43,23 @@ test('partial refresh preserves deliberately repeated text and orders omitted me
   assert.deepEqual(partial(merged, [row('new-d', 'same', 4)]), merged);
 });
 
+test('cross-source matching requires a unique message, native turn and matching context', () => {
+  const summary = row('summary', 'same', 1, { historySource: 'appServer' });
+  const live = row('live', 'same', 2, { historySource: 'rollout' });
+  assert.equal(partial([summary], [live]).length, 1);
+  assert.equal(partial([summary], [{ ...live, historySource: 'appServer' }]).length, 2);
+  assert.equal(partial([summary], [{ ...live, historyTurnId: 'another-turn' }]).length, 2);
+  assert.equal(partial([{ ...summary, historyTurnId: 'tail:session' }], [{ ...live, historyTurnId: 'tail:session' }]).length, 2);
+  assert.equal(partial([{ ...summary, historySource: undefined }], [live]).length, 2);
+  const another = { ...summary, id: 'summary-again', completedAt: 1_800_000_003 };
+  assert.equal(partial([summary, another], [live]).length, 3, 'ambiguous summary repetitions are retained');
+  assert.equal(partial([summary], [live, { ...live, id: 'live-again', completedAt: 1_800_000_004 }]).length, 3);
+  const image = { ...summary, attachment: { path: '/first.png', name: 'first' } };
+  assert.equal(partial([image], [live]).length, 2, 'different attachments are distinct messages');
+  const contexts = [{ kind: 'delegation' as const, sourceThreadId: 'another-session' }];
+  assert.equal(partial([{ ...summary, contexts }], [live]).length, 2);
+});
+
 test('a growing progress block replaces its prefix instead of duplicating it in partial mode', () => {
   const current = [row('a', 'first update', 1, { kind: 'progress' })];
   const next = row('b', 'first update\n\nsecond update', 2, { kind: 'progress' });

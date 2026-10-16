@@ -69,6 +69,7 @@ export type TimelineItem = {
   kind: TimelineKind;
   text: string;
   historyTurnId?: string;
+  historySource?: 'appServer' | 'rollout';
   transient?: boolean;
   attachment?: ImageAttachment;
   visualization?: VisualizationArtifact;
@@ -135,7 +136,9 @@ export function attachLatestAssistantFileChanges(items: TimelineItem[], progress
   return items.map((item, index) => index === assistantIndex ? { ...item, fileChanges: files } : item);
 }
 
-export function historyItems(turns: Turn[]) {
+export function historyItems(turns: Turn[], source?: string) {
+  const historySource = source === 'appServer' ? 'appServer'
+    : source === 'rolloutTail' || source === 'rolloutPage' ? 'rollout' : undefined;
   const items: TimelineItem[] = [];
   for (const turn of [...(turns || [])].reverse()) {
     for (const [index, item] of (turn.items || []).entries()) {
@@ -191,6 +194,7 @@ export function historyItems(turns: Turn[]) {
         kind,
         text: displayText,
         historyTurnId,
+        ...(historySource ? { historySource } : {}),
         attachment,
         ...(visualization ? { visualization } : {}),
         ...(compaction ? { compaction } : {}),
@@ -311,6 +315,7 @@ export function mergeHistorySnapshot(
     .filter((item) => item.transient && item.attachment)
     .map((item) => [messageContentIdentity(item), item.attachment]));
   const optimisticUserMatches = matchOptimisticUsers(current, latest);
+  const crossSourceMatches = matchCrossSourceMessages(current, latest);
   const persistedIdentities = new Map<string, TimelineItem[]>();
   const claimedIds = new Set<string>();
   const occupiedIds = new Set([...current, ...latest].map((item) => item.id));
@@ -324,8 +329,11 @@ export function mergeHistorySnapshot(
   const hydratedLatest = latest.map((item, index) => {
     // Rollout offsets and live-tail indexes change on each read. Keep the DOM
     // identity of the same persisted message, including its loaded image.
-    let persisted = item.compaction || item.compactionProgress ? undefined
-      : persistedIdentities.get(persistedSnapshotIdentity(item))?.shift();
+    const candidates = persistedIdentities.get(persistedSnapshotIdentity(item));
+    while (candidates?.length && claimedIds.has(candidates[0].id)) candidates.shift();
+    let persisted = item.compaction || item.compactionProgress ? undefined : candidates?.shift();
+    const crossSource = crossSourceMatches.get(index);
+    if (!persisted && crossSource && !claimedIds.has(crossSource.id)) persisted = crossSource;
     if (!persisted && options.partial) {
       persisted = current.find((previous) => !claimedIds.has(previous.id) && samePersistedMessage(previous, item));
     }
@@ -506,8 +514,40 @@ function samePersistedMessage(previous: TimelineItem, next: TimelineItem) {
 export function prependHistoryPage(older: TimelineItem[], current: TimelineItem[]) {
   const ids = new Set(current.map((item) => item.id));
   const snapshots = new Set(current.map(persistedSnapshotIdentity).filter(Boolean));
-  return [...older.filter((item) => !ids.has(item.id)
+  const crossSourceMatches = matchCrossSourceMessages(current, older);
+  return [...older.filter((item, index) => !ids.has(item.id) && !crossSourceMatches.has(index)
     && !(persistedSnapshotIdentity(item) && snapshots.has(persistedSnapshotIdentity(item)))), ...current];
+}
+
+function matchCrossSourceMessages(current: TimelineItem[], latest: TimelineItem[]) {
+  // App-server summaries may use whole seconds (or the turn start), while
+  // rollout messages use their write time in milliseconds. Match only a unique
+  // message on each side of the same native turn, never text across turns or
+  // repeated messages within one source. A moving tail is not a stable ID.
+  const key = (item: TimelineItem) => !item.transient && item.historySource
+    && item.historyTurnId && !/^(tail|rollout):/.test(item.historyTurnId)
+    && (item.kind === 'user' || item.kind === 'assistant')
+    ? `${item.historyTurnId}\0${messageIdentity(item)}\0${JSON.stringify(item.contexts || [])}` : '';
+  const group = (items: TimelineItem[]) => {
+    const groups = new Map<string, number[]>();
+    items.forEach((item, index) => {
+      const identity = key(item);
+      if (!identity) return;
+      const indexes = groups.get(identity) || [];
+      indexes.push(index);
+      groups.set(identity, indexes);
+    });
+    return groups;
+  };
+  const previous = group(current);
+  const matches = new Map<number, TimelineItem>();
+  for (const [identity, indexes] of group(latest)) {
+    const candidates = previous.get(identity);
+    if (indexes.length !== 1 || candidates?.length !== 1) continue;
+    const item = current[candidates[0]];
+    if (item.historySource !== latest[indexes[0]].historySource) matches.set(indexes[0], item);
+  }
+  return matches;
 }
 
 function matchOptimisticUsers(current: TimelineItem[], latest: TimelineItem[]) {

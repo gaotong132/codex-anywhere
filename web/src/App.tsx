@@ -1318,7 +1318,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             : null,
           progress: inProgress ? normalizeTurnProgress(page.turnProgress) : {},
         }));
-        const latestItems = attachLatestAssistantFileChanges(historyItems(page.turns), page.turnProgress);
+        const latestItems = attachLatestAssistantFileChanges(historyItems(page.turns, page.source), page.turnProgress);
         if (liveHistoryHydratedThreadRef.current !== threadId) {
           const liveProgressId = latestTurnProgressItemId(latestItems);
           const liveProgress = latestItems.find((item) => item.id === liveProgressId);

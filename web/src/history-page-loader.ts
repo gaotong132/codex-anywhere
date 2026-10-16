@@ -11,10 +11,10 @@ export async function loadHistoryPage(
       'session.turns.list', { threadId, limit: 2, mode: 'live' }, { timeoutMs: 5_000 },
     ).catch(() => null),
   ]);
-  const current = attachLatestAssistantFileChanges(historyItems(page.turns), page.turnProgress);
+  const current = attachLatestAssistantFileChanges(historyItems(page.turns, page.source), page.turnProgress);
   const snapshot = live?.turns.length ? live : null;
   if (!snapshot) return { page, snapshot, items: current };
-  const latest = attachLatestAssistantFileChanges(historyItems(snapshot.turns), snapshot.turnProgress);
+  const latest = attachLatestAssistantFileChanges(historyItems(snapshot.turns, snapshot.source), snapshot.turnProgress);
   const turnIds = new Set(latest.map((item) => item.historyTurnId).filter((id): id is string => Boolean(id)));
   // A bounded live tail can omit the user's input or a final answer that the
   // summary already has. Retain those messages when adding process details.

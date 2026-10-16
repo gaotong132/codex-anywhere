@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { loadHistoryPage } from '../web/src/history-page-loader.js';
+import { historyItems, mergeHistorySnapshot, prependHistoryPage } from '../web/src/history-utils.js';
 import type { HistoryPage } from '../web/src/app-types.js';
 import type { BridgeRequest } from '../web/src/bridge-request-manager.js';
 
@@ -19,6 +20,35 @@ const live: HistoryPage = {
     { type: 'agentMessage', turnId: 'latest', phase: 'final_answer', text: 'answer' },
   ] }],
 };
+
+test('summary seconds and rollout write times merge once on load, polling and pagination', async () => {
+  const saved: HistoryPage = { source: 'appServer', turns: [{
+    id: 'native-turn', startedAt: 1_792_114_039, completedAt: 1_792_114_047, items: [
+      { type: 'userMessage', text: 'add a slide' },
+      { type: 'agentMessage', text: 'waiting for the screenshot' },
+    ],
+  }] };
+  const tail: HistoryPage = { source: 'rolloutTail', turns: [{
+    id: 'tail:session', items: [
+      { type: 'userMessage', turnId: 'native-turn', text: 'add a slide', completedAt: 1_792_114_040_022 },
+      { type: 'agentMessage', turnId: 'native-turn', text: 'waiting for the screenshot', completedAt: 1_792_114_047_004 },
+    ],
+  }] };
+  const request: BridgeRequest = (async (_action, payload) => payload.mode === 'live' ? tail : saved) as BridgeRequest;
+  const loaded = await loadHistoryPage(request, 'session', null, 6);
+  assert.equal(loaded.items.length, 2);
+  assert.deepEqual(loaded.items.map(item => item.id), historyItems(saved.turns).map(item => item.id));
+  assert.ok(loaded.items.every(item => item.historySource === 'rollout'));
+  let items = loaded.items;
+  for (let index = 0; index < 5; index++) {
+    items = mergeHistorySnapshot(items, historyItems(tail.turns, tail.source), new Set(['native-turn']), { partial: true });
+    assert.deepEqual(items, loaded.items);
+  }
+  assert.deepEqual(prependHistoryPage(historyItems(saved.turns, saved.source), items), items);
+  const paged = historyItems([{ ...tail.turns[0], id: 'rollout:session:older' }], 'rolloutPage');
+  assert.deepEqual(prependHistoryPage(paged, items), items);
+  assert.deepEqual((await loadHistoryPage(request, 'session', null, 6)).items, loaded.items);
+});
 
 test('initial history starts both reads together and publishes only after both complete', async () => {
   for (const first of ['conversation', 'live']) {

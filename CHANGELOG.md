@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Merge summary and live history messages across timestamp precision differences, without collapsing repeated messages from the same source; keep message identities stable during polling and pagination.
+
 - Recover Desktop question answers in logs larger than 64 MiB using a separate incremental index; scan in bounded chunks and retain only requested answers, skipping oversized tool output rows.
 
 - Merge dependency updates for DOMPurify, Hono, ip-address, Vite, Sass and Chrome types; upgrade React, React DOM and both type packages together to 19.3.0, and group future React updates to prevent peer dependency conflicts.
