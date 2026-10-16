@@ -1,7 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { appendFile, mkdir, open, realpath, stat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import type { Stats } from 'node:fs';
 import { tmpdir } from 'node:os';
 import {
   basename, dirname, isAbsolute, join, resolve, win32,
@@ -9,6 +8,7 @@ import {
 import { secretMatches } from '../shared/protocol.js';
 import { describeTextPreviewFile } from '../shared/text-preview.js';
 import { isPathWithinRoot } from './path-policy.js';
+import { decodePreviewText, fileSnapshot, readBoundedFile, sameFileSnapshot, type FileSnapshot } from './bounded-file.js';
 
 export const DOWNLOAD_CHUNK_BYTES = 384 * 1024;
 export const MAX_MARKDOWN_PREVIEW_BYTES = 2 * 1024 * 1024;
@@ -27,13 +27,6 @@ type DownloadManagerOptions = {
   auditPath?: string | null;
   allowedRoots?: unknown[];
   allowAnyFileDownload?: boolean;
-};
-type FileSnapshot = {
-  size: number;
-  mtimeMs: number;
-  ctimeMs: number;
-  dev: string;
-  ino: string;
 };
 type DownloadChunk = {
   offset: number;
@@ -67,6 +60,8 @@ export class DownloadManager {
   allowAnyFileDownload: boolean;
   sessions: Map<string, DownloadSession>;
   clientRates: Map<string, ClientRate>;
+  private readonly openingClients = new Set<string>();
+  private closed = false;
 
   constructor(options: DownloadManagerOptions = {}) {
     this.clock = options.clock || (() => Date.now());
@@ -88,6 +83,14 @@ export class DownloadManager {
   async open(payload: DownloadPayload, clientId: unknown) {
     const owner = requireClientId(clientId);
     if (payload?.confirmed !== true) throw new Error('download_confirmation_required');
+    if (this.closed) throw new Error('download_manager_closed');
+    if (this.openingClients.has(owner)) throw new Error('download_in_progress');
+    this.openingClients.add(owner);
+    try { return await this.#open(payload, owner); }
+    finally { this.openingClients.delete(owner); }
+  }
+
+  async #open(payload: DownloadPayload, owner: string) {
     await this.#pruneExpired();
     await this.#revokeClientSessions(owner, 'replaced');
 
@@ -104,6 +107,7 @@ export class DownloadManager {
     try {
       stats = await handle.stat();
       if (!stats.isFile()) throw new Error('download_not_a_file');
+      if (this.closed) throw new Error('download_manager_closed');
     } catch (error) {
       await handle.close().catch(() => {});
       throw error;
@@ -126,6 +130,7 @@ export class DownloadManager {
     };
     this.sessions.set(session.id, session);
     await this.#audit('opened', session);
+    if (this.closed) throw new Error('download_manager_closed');
     return {
       downloadId: session.id,
       downloadToken: session.token,
@@ -183,31 +188,8 @@ export class DownloadManager {
       throw error;
     });
     try {
-      const stats = await handle.stat();
-      if (!stats.isFile()) throw new Error(`${errorPrefix}_not_a_file`);
-      const initial = fileSnapshot(stats);
-      if (!Number.isSafeInteger(initial.size) || initial.size < 0
-        || initial.size > MAX_TEXT_PREVIEW_BYTES) {
-        throw new Error(`${errorPrefix}_too_large`);
-      }
-      const bytes = Buffer.alloc(initial.size);
-      let offset = 0;
-      while (offset < bytes.length) {
-        const result = await handle.read(bytes, offset, bytes.length - offset, offset);
-        if (!result.bytesRead) break;
-        offset += result.bytesRead;
-      }
-      const current = fileSnapshot(await handle.stat());
-      if (offset !== initial.size || !sameSnapshot(initial, current)) {
-        throw new Error(`${errorPrefix}_file_changed`);
-      }
-      let content;
-      try {
-        content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-      } catch {
-        throw new Error(`${errorPrefix}_encoding_invalid`);
-      }
-      if (content.includes('\0')) throw new Error(`${errorPrefix}_content_invalid`);
+      const bytes = await readBoundedFile(handle, MAX_TEXT_PREVIEW_BYTES, errorPrefix);
+      const content = decodePreviewText(bytes, errorPrefix);
       return { name: fileName(path), size: bytes.length, content };
     } finally {
       await handle.close().catch(() => {});
@@ -226,7 +208,7 @@ export class DownloadManager {
     }
 
     const current = fileSnapshot(await session.handle.stat());
-    if (!sameSnapshot(session.snapshot, current)) {
+    if (!sameFileSnapshot(session.snapshot, current)) {
       await this.#finish(session, 'file_changed');
       throw new Error('download_file_changed');
     }
@@ -241,6 +223,10 @@ export class DownloadManager {
 
     const buffer = Buffer.allocUnsafe(length);
     const { bytesRead } = await session.handle.read(buffer, 0, length, offset);
+    if (!sameFileSnapshot(session.snapshot, fileSnapshot(await session.handle.stat()))) {
+      await this.#finish(session, 'file_changed');
+      throw new Error('download_file_changed');
+    }
     if (bytesRead <= 0) {
       await this.#finish(session, 'read_failed');
       throw new Error('download_read_failed');
@@ -268,6 +254,7 @@ export class DownloadManager {
   }
 
   async closeAll() {
+    this.closed = true;
     await Promise.all([...this.sessions.values()].map((session) => this.#finish(session, 'shutdown')));
     this.clientRates.clear();
   }
@@ -295,7 +282,7 @@ export class DownloadManager {
 
   async #pruneExpired() {
     const now = this.clock();
-    const expired = [...this.sessions.values()].filter((session) => session.expiresAt <= now);
+    const expired = [...this.sessions.values()].filter((session) => !session.busy && session.expiresAt <= now);
     await Promise.all(expired.map((session) => this.#finish(session, 'expired')));
     for (const [clientId, rate] of this.clientRates) {
       if (now - rate.windowStartedAt >= this.rateWindowMs) this.clientRates.delete(clientId);
@@ -375,24 +362,6 @@ async function pathAllowedByRoots(path: string, roots: string[]) {
 
 function fileName(path: string) {
   return (win32.isAbsolute(path) ? win32.basename(path) : basename(path)) || 'download';
-}
-
-function fileSnapshot(stats: Stats): FileSnapshot {
-  return {
-    size: stats.size,
-    mtimeMs: stats.mtimeMs,
-    ctimeMs: stats.ctimeMs,
-    dev: String(stats.dev),
-    ino: String(stats.ino),
-  };
-}
-
-function sameSnapshot(left: FileSnapshot, right: FileSnapshot) {
-  return left.size === right.size
-    && left.mtimeMs === right.mtimeMs
-    && left.ctimeMs === right.ctimeMs
-    && left.dev === right.dev
-    && left.ino === right.ino;
 }
 
 function requireClientId(value: unknown) {

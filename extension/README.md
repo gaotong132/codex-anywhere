@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Documentation for **v0.3.0 (2026-09-12)** · [Release and upgrade](../docs/release-0.3.0.md) · [Documentation index](../docs/README.md)
+Documentation for **v0.4.1 (2026-10-16)** · [Release and upgrade](../docs/release-0.4.1.md) · [Documentation index](../docs/README.md)
 
 This extension is an **experimental add-on** for Codex Anywhere, disabled by default. It requires a separate
 build and installation plus explicit Relay configuration; page control also needs Connector and MCP setup. Normal session features do
@@ -12,7 +12,7 @@ In side panel chat, choose an execution environment (PC, ECS, or any connected n
 Session**, then authorize the current page. Continue that original Session in Anywhere to read, click, fill,
 and scroll. No replacement Session is created. The built manifest follows the root `package.json` version
 and displays `version dev (build fingerprint)`. The content fingerprint identifies the loaded artifacts;
-it is independent of the Git release tag. v0.3.0 still shows dev because the extension is an unpacked experimental build.
+it is independent of the Git release tag. v0.4.1 still shows dev because the extension is an unpacked experimental build.
 
 ## Side panel chat
 
@@ -62,7 +62,7 @@ For another computer, copy the entire generated `extension/dist` directory into 
 Git contains the source/build configuration, not this generated folder. Check the new installation’s extension ID
 and add its exact Origin to the Relay allowlist. Pair chat once on that browser profile; do not copy private identity
 files or browser profiles. For upgrades at the same path, reload the extension and preserve its existing pairing.
-See [v0.3.0 upgrade notes](../docs/release-0.3.0.md#upgrade).
+See [v0.4.1 upgrade notes](../docs/release-0.4.1.md#upgrade).
 
 
 With Node.js 22+, from the repository root:
@@ -291,7 +291,7 @@ its old code. Build output alone does not update either process.
 
 ## Verification status
 
-For v0.3.0, all 389 main and 100 extension tests, type checks and builds passed. Dated browser runs below retain their original scope; see the [release notes](../docs/release-0.3.0.md#verification-and-limits) for the release fingerprint and upgrade steps.
+For v0.4.1, all 451 main and 100 extension tests, type checks and builds passed. Dated browser runs below retain their original scope; see the [release notes](../docs/release-0.4.1.md#verification-and-limits) for the release fingerprint and upgrade steps.
 
 On 2026-09-08, native zoom passed in isolated Chrome for Testing 151 through the official MCP SDK and local Relay/E2E:
 a clipped right-hand column became readable at 80% (CSS viewport 1188 → 1485 pixels); 67%, 125% and 100% worked,

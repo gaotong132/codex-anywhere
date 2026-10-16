@@ -2,7 +2,7 @@
 
 English | [简体中文](CONTRIBUTING.zh-CN.md)
 
-Documentation for **v0.3.0 (2026-09-12)** · [Release and upgrade](release-0.3.0.md) · [Documentation index](README.md)
+Documentation for **v0.4.1 (2026-10-16)** · [Release and upgrade](release-0.4.1.md) · [Documentation index](README.md)
 
 Thanks for improving Codex Anywhere. Keep changes aligned with its purpose: a single-user, self-hosted
 mobile Web bridge for Codex running on the user's own execution nodes.
@@ -82,7 +82,7 @@ generated markup, and preserve a safe plain-text fallback.
 ## Extra checks
 Release checklist: keep root package/lockfile, source extension manifest and MCP server version aligned. Build the
 extension from the same commit and compare fingerprints across deployment hosts; generated `extension/dist` remains
-untracked. Publish an annotated tag only on the checked commit. See [release instructions](release-0.3.0.md#upgrade).
+untracked. Publish an annotated tag only on the checked commit. See [release instructions](release-0.4.1.md#upgrade).
 
 For history changes, test summary RPCs as well as complete and truncated rollout rows. Cover generated-image references,
 pagination deduplication and cache invalidation without transferring Base64 payloads. Keep dated validation reports historical.
@@ -114,3 +114,9 @@ pagination deduplication and cache invalidation without transferring Base64 payl
 Use GitHub private vulnerability reporting for security issues. Public issues, screenshots, fixtures, and
 examples must not contain credentials, real private hosts, personal project names, conversation content,
 or real local paths. Use reserved example domains and documentation IP ranges.
+
+## Resource and release checks
+
+Use `src/connector/bounded-file.ts` for bounded previews and file snapshots; keep path authorization at the caller. Use `request-replay.ts` for mutation replay state: pending work must never be evicted with completed results. Regression tests must cover cache churn/reconnect, concurrent opens, shutdown, short reads and mutation during the final chunk.
+
+`npm run check` now includes `npm run check:docs`: local Markdown links, heading anchors, current guide headers and matching package/lockfile/extension/MCP versions. Dated reports keep their original evidence. Record the current and previous deployment image IDs; after validation, inspect all containers and concurrent builds before removing exact obsolete project image references. Keep the two latest deployments and required base/container images; never use global prune or delete shared caches/volumes for release cleanup.

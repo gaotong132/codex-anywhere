@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import { readGeneratedImagePreview } from './generated-images.js';
 import { readRasterImagePreview } from './image-previews.js';
+import { fileSnapshot, readBoundedFile, sameFileSnapshot } from './bounded-file.js';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 512 * 1024;
@@ -89,7 +90,12 @@ export async function readImageAttachment(payload: ImagePayload, options: Attach
   if (!stats.isFile() || stats.isSymbolicLink() || stats.size <= 0 || stats.size > MAX_IMAGE_BYTES) {
     throw new Error('attachment_not_found');
   }
-  const bytes = await readFile(candidate);
+  const handle = await open(candidate, 'r');
+  let bytes: Buffer;
+  try {
+    if (!sameFileSnapshot(fileSnapshot(stats), fileSnapshot(await handle.stat()))) throw new Error('attachment_file_changed');
+    bytes = await readBoundedFile(handle, MAX_PREVIEW_BYTES, 'attachment', stats);
+  } finally { await handle.close(); }
   const detected = await detectImageType(bytes);
   if (!detected) throw new Error('attachment_content_mismatch');
   return {

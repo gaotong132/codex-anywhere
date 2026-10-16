@@ -1,8 +1,8 @@
-# Documentation · v0.3.0
+# Documentation · v0.4.1
 
 English | [简体中文](README.zh-CN.md)
 
-Reviewed for the 2026-09-12 release. Start with [project features](../README.md) or [release highlights and upgrade steps](release-0.3.0.md).
+Reviewed for the 2026-10-16 release. Start with [project features](../README.md) or [release highlights and upgrade steps](release-0.4.1.md).
 
 | Guide | Scope |
 | --- | --- |
@@ -12,6 +12,7 @@ Reviewed for the 2026-09-12 release. Start with [project features](../README.md)
 | [Browser extension](../extension/README.md) | Optional experimental installation, side-panel chat, page grants, screenshots, zoom and limits |
 | [Browser architecture](browser-agent.md) | MCP, trusted caller identity, encrypted routing and acceptance boundaries |
 | [Composite controls](../extension/docs/composite-controls.md) | Nested controls, native pointer validation and zoomed screenshot regression |
+| [Current code review](code-review-2026-10-16.md) | Reproduced issues, refactoring scope, validation and limits |
 | [Changelog](../CHANGELOG.md) | Published version history |
 
 The following are historical records. Their dates, version numbers, test counts and deployment statements describe those runs:
@@ -19,3 +20,6 @@ The following are historical records. Their dates, version numbers, test counts 
 - [2026-09-04 browser rollout (Chinese)](browser-rollout-2026-09-04.md)
 - [September architecture review](refactoring-2026-09.md)
 - [2026-09-09 extension review](../extension/docs/refactor-2026-09-09.md)
+
+- [2026-10-03 code review (Chinese)](code-review-2026-10-03.zh-CN.md)
+- [2026-10-03 background/history review (Chinese)](history-recovery-review-2026-10-03.zh-CN.md)

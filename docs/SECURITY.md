@@ -2,7 +2,7 @@
 
 English | [简体中文](SECURITY.zh-CN.md)
 
-Documentation for **v0.3.0 (2026-09-12)** · [Release and upgrade](release-0.3.0.md) · [Documentation index](README.md)
+Documentation for **v0.4.1 (2026-10-16)** · [Release and upgrade](release-0.4.1.md) · [Documentation index](README.md)
 
 ## Supported versions
 
@@ -212,3 +212,9 @@ The running relay reloads the registry and closes a revoked connection, normally
    and restart the relay and all connectors.
 3. Review the ECS, ingress, browser extensions, clipboard, shell history, and related infrastructure
    credentials. Do not publish forensic data that contains conversation or identity material.
+
+## Replay and file-read limits
+
+Unfinished mutating requests remain keyed by the authenticated device and request ID until settlement, independently of the 64-entry completed-result cache. At most 64 distinct mutations may be pending; excess work is rejected without executing it. Completed results remain in a bounded LRU for up to two minutes (30 minutes for file operations), measured from completion. This is process-local replay protection, not durable exactly-once execution across Connector restarts or completed-cache eviction.
+
+Preview reads allocate at most the checked file size and validate file metadata again after reading. Raster caches include file identity and change time as well as size and modification time. Downloads reserve one opening slot per device, do not expire an active read and recheck the final chunk before reporting success. These checks detect normal concurrent changes; they are not filesystem snapshots or protection against an attacker controlling the Connector OS.

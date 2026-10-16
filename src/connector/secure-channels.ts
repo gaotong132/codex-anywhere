@@ -1,6 +1,6 @@
 import type { DeviceIdentity } from '../shared/device-auth.js';
-import { LRUCache } from 'lru-cache';
 import { createHash } from 'node:crypto';
+import { RequestReplayCache } from './request-replay.js';
 import {
   SecureChannelCodec,
   acceptSecureChannelOffer,
@@ -18,8 +18,6 @@ type SecureChannelState = {
   codec: SecureChannelCodec;
   confirmed: boolean;
 };
-type CachedRequest = { fingerprint: string; response: Promise<JsonObject> };
-
 const DEFAULT_REQUEST_RESULT_TTL_MS = 2 * 60_000;
 const FILE_REQUEST_RESULT_TTL_MS = 30 * 60_000;
 
@@ -37,10 +35,7 @@ export class ConnectorSecureChannels {
   private readonly send: (frame: JsonObject) => boolean;
   private readonly handleRequest: (frame: JsonObject & { action: string }) => Promise<JsonObject>;
   private readonly channels = new Map<string, SecureChannelState>();
-  private readonly requestResults = new LRUCache<string, CachedRequest>({
-    max: 64,
-    ttl: DEFAULT_REQUEST_RESULT_TTL_MS,
-  });
+  private readonly requestResults = new RequestReplayCache<JsonObject>();
 
   constructor({
     identity,
@@ -164,6 +159,7 @@ export class ConnectorSecureChannels {
         || !requestId || requestId.length > 128) {
         throw new Error('secure_channel_frame_invalid');
       }
+      const action = request.action;
       this.send({
         type: 'secure', clientId,
         envelope: state.codec.seal({ type: 'ack', requestId }),
@@ -172,23 +168,17 @@ export class ConnectorSecureChannels {
       let responsePromise: Promise<JsonObject>;
       if (DEDUPLICATED_ACTIONS.has(request.action)) {
         const fingerprint = createHash('sha256').update(JSON.stringify(request)).digest('hex');
-        const cached = this.requestResults.get(cacheKey);
-        if (cached && cached.fingerprint !== fingerprint) {
-          throw new Error('secure_channel_request_conflict');
-        }
-        responsePromise = cached?.response
-          || this.handleRequest({
-            ...request,
-            action: request.action,
-            clientId,
-            clientDeviceId: state.acceptance.transcript.initiator.id,
-          });
-        if (!cached) {
-          this.requestResults.set(cacheKey, { fingerprint, response: responsePromise }, {
-            ttl: /^file\.(download|upload)\./.test(request.action)
-              ? FILE_REQUEST_RESULT_TTL_MS
-              : DEFAULT_REQUEST_RESULT_TTL_MS,
-          });
+        try {
+          responsePromise = this.requestResults.run(cacheKey, fingerprint,
+            /^file\.(download|upload)\./.test(request.action)
+              ? FILE_REQUEST_RESULT_TTL_MS : DEFAULT_REQUEST_RESULT_TTL_MS,
+            () => this.handleRequest({
+              ...request, action, clientId,
+              clientDeviceId: state.acceptance.transcript.initiator.id,
+            }));
+        } catch (error) {
+          if (!(error instanceof Error) || error.message !== 'connector_request_limit') throw error;
+          responsePromise = Promise.resolve({ type: 'response', requestId, ok: false, error: error.message });
         }
       } else {
         responsePromise = this.handleRequest({

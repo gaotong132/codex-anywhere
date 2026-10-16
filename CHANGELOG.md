@@ -4,6 +4,13 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+## v0.4.1 — 2026-10-16
+
+- Keep unfinished mutations outside the completed-result cache so eviction or TTL expiry cannot redispatch them on reconnect; bound pending requests.
+- Share bounded file reads and snapshot checks across text, image and visualization previews; reject changing files and invalidate same-size, same-mtime image replacements.
+- Reserve download slots before asynchronous opens, reject new capabilities during shutdown, protect active reads from expiry pruning and recheck the final chunk.
+- Align package, lockfile, extension and MCP versions; refresh bilingual guides and validate documentation links, heading anchors and release metadata.
+
 - Merge summary and live history messages across timestamp precision differences, without collapsing repeated messages from the same source; keep message identities stable during polling and pagination.
 
 - Recover Desktop question answers in logs larger than 64 MiB using a separate incremental index; scan in bounded chunks and retain only requested answers, skipping oversized tool output rows.
@@ -17,6 +24,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 - Resolve questions answered in Codex Desktop even when summary history omits the reply or it has left the live tail. Recover answers by question ID from the incremental rollout index across paging and reconnects.
 
 - Preserve history, images and reading anchors after mobile background/resume: merge bounded live tails without deleting known messages, render commentary images, bound image transfers, retry failed reads, and discard obsolete connection reads.
+
+## v0.4.0 — 2026-10-03
 
 - Recover stale Connector WebSockets after laptop sleep with active heartbeats, a silence deadline and a bounded handshake; preserve paired device identities.
 

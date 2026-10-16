@@ -1,9 +1,10 @@
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { lstat, open, realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import { LRUCache } from 'lru-cache';
 import sharp from 'sharp';
 import { isPathWithinRoot } from './path-policy.js';
+import { fileSnapshot, readBoundedFile, sameFileSnapshot } from './bounded-file.js';
 
 const MAX_IMAGE_BYTES = 32 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 512 * 1024;
@@ -43,11 +44,17 @@ export async function readRasterImagePreview({
     throw new Error(`${errorPrefix}_path_not_allowed`);
   }
 
-  const cacheKey = `${path}\0${candidateStats.size}\0${candidateStats.mtimeMs}`;
-  const cached = previewCache.get(cacheKey);
-  if (cached) return { path: requestedPath, ...cached };
-
-  const original = await readFile(path);
+  const handle = await open(path, 'r');
+  let original: Buffer;
+  let cacheKey: string;
+  try {
+    const stats = await handle.stat();
+    if (!sameFileSnapshot(fileSnapshot(candidateStats), fileSnapshot(stats))) throw new Error(`${errorPrefix}_file_changed`);
+    cacheKey = `${path}\0${JSON.stringify(fileSnapshot(stats))}`;
+    const cached = previewCache.get(cacheKey);
+    if (cached) return { path: requestedPath, ...cached };
+    original = await readBoundedFile(handle, MAX_IMAGE_BYTES, errorPrefix, stats);
+  } finally { await handle.close(); }
   const detected = await fileTypeFromBuffer(original.subarray(0, FILE_TYPE_SAMPLE_BYTES));
   if (!detected || !RASTER_IMAGE_TYPES.has(detected.mime)) {
     throw new Error(`${errorPrefix}_content_mismatch`);

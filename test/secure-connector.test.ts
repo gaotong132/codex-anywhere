@@ -11,6 +11,49 @@ import {
 } from '../src/shared/secure-channel.js';
 import { ConnectorSecureChannels } from '../src/connector/secure-channels.js';
 
+test('an unfinished mutation stays deduplicated after result-cache churn and reconnect', async () => {
+  const identity = createDeviceIdentity();
+  const sent: Record<string, any>[] = [];
+  let finish!: () => void;
+  const waiting = new Promise<void>(resolve => { finish = resolve; });
+  let starts = 0;
+  const manager = new ConnectorSecureChannels({
+    identity: createDeviceIdentity(), deviceId: 'personal-pc',
+    send: frame => { sent.push(frame); return true; },
+    handleRequest: async frame => {
+      if (frame.action === 'turn.start') { starts++; await waiting; }
+      return { type: 'response', requestId: frame.requestId, ok: true, data: {} };
+    },
+  });
+  async function connect(clientId: string) {
+    const ephemeral = createSecureChannelEphemeralKeyPair();
+    const offer = createSecureChannelOffer({ identity, routeDeviceId: 'personal-pc', ephemeralPublicKey: ephemeral.publicKey });
+    await manager.handle({ type: 'channel.offer', clientId, offer });
+    const acceptance = sent.pop()!.accept;
+    const keys = deriveSecureChannelKeys({ side: 'initiator', localSecretKey: ephemeral.secretKey,
+      peerEphemeralPublicKey: acceptance.transcript.responder.ephemeralPublicKey, transcript: acceptance.transcript });
+    const codec = new SecureChannelCodec({ channelId: offer.channelId, side: 'initiator', keys });
+    await manager.handle({ type: 'channel.confirm', clientId, channelId: offer.channelId,
+      signature: signSecureChannelTranscript(identity, acceptance.transcript) });
+    return codec;
+  }
+  const first = await connect('old-route');
+  const request = { type: 'request', requestId: 'long-start', action: 'turn.start', payload: { text: 'once' } };
+  const initial = manager.handle({ type: 'secure', clientId: 'old-route', envelope: first.seal(request) });
+  for (let index = 0; index < 70; index++) {
+    await manager.handle({ type: 'secure', clientId: 'old-route', envelope: first.seal({
+      type: 'request', requestId: `chunk-${index}`, action: 'file.upload.chunk', payload: {},
+    }) });
+  }
+  manager.clear();
+  const second = await connect('new-route');
+  const replay = manager.handle({ type: 'secure', clientId: 'new-route', envelope: second.seal(request) });
+  finish();
+  await Promise.all([initial, replay]);
+  assert.equal(starts, 1, 'a still-running turn must never be evicted and dispatched twice');
+  manager.clear();
+});
+
 test('connector secure channel authenticates, decrypts requests, and encrypts responses and events', async () => {
   const browserIdentity = createDeviceIdentity();
   const connectorIdentity = createDeviceIdentity();

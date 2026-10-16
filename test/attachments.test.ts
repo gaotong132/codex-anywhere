@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import sharp from 'sharp';
 import { cleanupAttachments, readImageAttachment, saveImageAttachment } from '../src/connector/attachments.js';
 import { MAX_VISUALIZATION_BYTES, readVisualization } from '../src/connector/visualizations.js';
 
@@ -10,6 +11,37 @@ const ONE_PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
 );
+
+test('same-size image replacement with preserved mtime invalidates preview cache', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-image-cache-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const path = join(directory, 'preview.png');
+  const replacement = join(directory, 'replacement.png');
+  const red = await sharp({ create: { width: 10, height: 10, channels: 3, background: 'red' } }).png().toBuffer();
+  const blue = await sharp({ create: { width: 10, height: 10, channels: 3, background: 'blue' } }).png().toBuffer();
+  const length = Math.max(red.length, blue.length);
+  const pad = (bytes: Buffer) => Buffer.concat([bytes, Buffer.alloc(length - bytes.length)]);
+  const time = new Date('2026-01-01T00:00:00Z');
+  await writeFile(path, pad(red));
+  await utimes(path, time, time);
+  const before = await readImageAttachment({ path, source: 'local' }, { localAllowedRoots: [directory] });
+  await writeFile(replacement, pad(blue));
+  await utimes(replacement, time, time);
+  await rename(replacement, path);
+  const after = await readImageAttachment({ path, source: 'local' }, { localAllowedRoots: [directory] });
+  assert.notEqual(after.data, before.data);
+});
+
+test('visualizations preserve the UTF-8 byte count and reject invalid encoding', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-visualization-encoding-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const path = join(directory, 'view.html');
+  await writeFile(path, '\uFEFF<main>中文🙂</main>');
+  const preview = await readVisualization({ path }, { directory });
+  assert.equal(Buffer.byteLength(preview.content), preview.size);
+  await writeFile(path, Buffer.from([0xff]));
+  await assert.rejects(readVisualization({ path }, { directory }), /visualization_encoding_invalid/);
+});
 
 test('image upload validates content and writes it to the attachment directory', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-attachment-test-'));

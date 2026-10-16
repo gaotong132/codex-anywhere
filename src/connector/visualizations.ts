@@ -4,6 +4,7 @@ import {
   basename, dirname, extname, isAbsolute, join, resolve,
 } from 'node:path';
 import { isPathWithinRoot } from './path-policy.js';
+import { decodePreviewText, readBoundedFile } from './bounded-file.js';
 
 export const MAX_VISUALIZATION_BYTES = 2 * 1024 * 1024;
 
@@ -71,9 +72,8 @@ async function readVisualizationFile(path: string, maxBytes: number, optional = 
       if (optional) return null;
       throw new Error('visualization_too_large');
     }
-    const content = await handle.readFile('utf8');
-    if (content.includes('\0')) throw new Error('visualization_content_invalid');
-    return { size: stats.size, content };
+    const bytes = await readBoundedFile(handle, maxBytes, 'visualization', stats);
+    return { size: bytes.length, content: decodePreviewText(bytes, 'visualization') };
   } finally {
     await handle.close();
   }

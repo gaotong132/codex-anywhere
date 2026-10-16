@@ -2,7 +2,7 @@
 
 English | [简体中文](composite-controls.zh-CN.md)
 
-Applies to v0.3.0. Pixel counts and browser versions below retain the original regression evidence, not a new production-console acceptance. See the [extension guide](../README.md).
+Applies to v0.4.1. Pixel counts and browser versions below retain the original regression evidence, not a new production-console acceptance. See the [extension guide](../README.md).
 
 Clicks on a dropdown or card must not activate a nested remove button. The page agent checks bounded visible points, rejects independent nested actions, and preserves ordinary button icon clicks. A control covered entirely by other actions remains unavailable; the caller can use the intended child's own snapshot ref.
 

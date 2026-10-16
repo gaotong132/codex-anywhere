@@ -2,7 +2,7 @@
 
 English | [简体中文](deployment.zh-CN.md)
 
-Documentation for **v0.3.0 (2026-09-12)** · [Release and upgrade](release-0.3.0.md) · [Documentation index](README.md)
+Documentation for **v0.4.1 (2026-10-16)** · [Release and upgrade](release-0.4.1.md) · [Documentation index](README.md)
 
 Codex Anywhere uses a small Linux relay as the meeting point for a browser and one or more Codex connector
 nodes. Codex, projects, attachments, and generated files remain on the selected node. Every connector makes
@@ -63,6 +63,10 @@ For a newly purchased ECS without a public endpoint, follow the [fresh-ECS appen
 
 No database, Redis, object storage, or public inbound port on the Windows computer is required.
 
+All nodes should use the same checked commit or release tag. A Relay-only host needs no host Node.js;
+Docker installs build dependencies inside its image. The SSH account needs the necessary Docker/Nginx/systemd
+permissions, and the host needs space for builds and rollback backups.
+
 ## 1. Start the relay
 
 On the ECS/VPS:
@@ -92,6 +96,11 @@ forwarded client-address headers. Adding a third-party ingress also adds it to t
 ## 2A. Install a Windows/Desktop connector
 
 On the computer running Codex:
+
+This section connects to an already signed-in, running Codex Desktop under the same Windows user. CLI-only
+installation does not provide Desktop delivery. Keep that computer awake, signed in and online. Install Node.js
+22+ and Git, then verify `node --version`, `npm.cmd --version` and `git --version` in a new PowerShell window.
+The launcher can discover the Codex executable bundled with Desktop.
 
 ```powershell
 git clone https://github.com/gaotong132/codex-anywhere.git
@@ -134,31 +143,51 @@ Use a stable, recognizable route when installing more than one connector:
 ## 2B. Install a 24×7 Linux/ECS connector
 
 The Linux connector runs in `headless` mode: it owns both new and resumed sessions through Codex
-app-server and never depends on Codex Desktop. First verify that the intended service account has a valid
-Codex login:
+app-server and never depends on Codex Desktop. Install Node.js 22+ and Codex CLI, then sign in as the
+actual service account; do not assume the distribution's Node version is recent enough:
 
 ```bash
+node --version
+npm --version
+npm install -g @openai/codex
+codex --version
+codex login --device-auth
 codex login status
 ```
+
+Device-code login must be enabled for the account/workspace. Complete verification in your own browser;
+otherwise follow the [official headless login instructions](https://developers.openai.com/codex/auth/#login-on-headless-devices).
+Codex login credentials are distinct from the Relay connector secret. Verify Codex works as the intended service account.
 
 When the connector runs on the same host and checkout as the relay, the installer reuses the relay's
 connector token without printing it. Choose a dedicated workspace root instead of exposing the whole
 home directory:
 
 ```bash
+# Continuing the appendix's root shell; Codex must also be signed in as root.
 mkdir -p /root/codex-workspaces
-sudo ./scripts/install-linux-connector.sh \
+./scripts/install-linux-connector.sh \
+  --user root \
   --device-id ecs \
   --label 'ECS · 24x7' \
   --allowed-root /root/codex-workspaces \
   --enable-network
 ```
 
+For a normal service account, pass `--user <account>` and use a checkout/workspace that account can read
+and write, rather than `/root`. The installer defaults to `SUDO_USER`; signing in as root does not sign in
+that other account. Ensure Node/npm/Codex executables are accessible to both the installer and service;
+systemd does not source interactive shell or nvm startup files.
+
 `--enable-network` is optional; use it only when Codex on that node should be allowed to request network
 access. The installer writes a mode-0600 environment file under `/etc/codex-anywhere`, stores the connector
 device identity under the service user's `~/.codex-anywhere`, installs a hardened systemd service, and
 starts it. For a different relay host, provide `BRIDGE_CONNECTOR_TOKEN` privately in the installer process
 environment and set `--bridge-url wss://codex.example.com/ws`.
+
+Use `--allow-full-access` separately if that node should offer full access. The installer runs `npm ci`
+and the Node build, but does not install Node/Codex or log in. Re-running it rewrites the Linux environment
+file: supply the full route, roots and permission options again instead of assuming omitted options persist.
 
 Inspect the service without exposing its environment file:
 
@@ -214,7 +243,7 @@ session on each node and confirm that returning to the other node never mixes th
 verify that the public URL uses the intended transport and that `ECS-IP:3300` is unreachable externally.
 
 ## Operate and update
-For the tagged release, follow the [v0.3.0 upgrade procedure](release-0.3.0.md#upgrade).
+For the tagged release, follow the [v0.4.1 upgrade procedure](release-0.4.1.md#upgrade).
 The `update` helper tracks `main`; it does not pin a tag or wait for all business tasks to become idle.
 Save the previous commit, image and private state first, schedule an idle window, and verify each Connector after restart.
 
@@ -245,19 +274,67 @@ and on authentication/disconnection. A running snapshot older than 15 seconds re
 (`null` connections in JSON). Clean shutdown reports offline; restart retains history and resets counts.
 The snapshot has no public endpoint and does not change pairing identities or automatically revoke devices.
 
-Keep relay and connector checkouts on the same revision. A same-checkout Linux service is restarted by
-`relay.sh update`; for a connector on another host, pull and restart `codex-anywhere-connector.service`.
-After updating the ECS, update the Windows checkout, run `npm ci`, and restart or reinstall its connector.
-Fully refresh browser tabs left open
+Keep relay and connector checkouts on the same revision. `relay.sh update` restarts the enabled same-host
+service but does not run host `npm ci` or update another checkout. Inspect the service's `WorkingDirectory`
+and `User`, update that checkout/dependencies as the service account, then let the launcher rebuild Node output.
+Other Connector hosts must be updated separately. Fully refresh browser tabs left open
 during a coordinated upgrade; a loaded tab keeps running its previous JavaScript until refreshed, and
 the strict protocol does not support mixed versions.
+
+### Windows Connector restart
+
+The launcher skips an already running Connector; re-running the installer is not a forced restart.
+The following restart assumes dependencies are already installed. If the lockfile changed, first stop this
+installation's scheduled watchdog (or login-started watchdog) and Connector after its work is idle, then run
+`npm.cmd ci` and rebuild before starting the installer. Otherwise Windows may lock loaded native modules
+(for example Sharp), and the watchdog may restart the old process during installation.
+For a build/restart with unchanged dependencies, run from its checkout and stop only its exact Node entry point:
+
+```powershell
+git pull --ff-only origin main
+if ($LASTEXITCODE -ne 0) { throw 'Git update failed' }
+npm.cmd run build:node
+if ($LASTEXITCODE -ne 0) { throw 'Connector build failed' }
+$connectorEntry = Join-Path (Get-Location).Path 'build\connector\index.js'
+$entryPattern = '(?i)(?:^|[\s"])' + [regex]::Escape($connectorEntry) + '(?=[\s"]|$)'
+Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
+  Where-Object { $_.CommandLine -match $entryPattern } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction Stop }
+.\scripts\install-connector.ps1
+```
+
+When pinning a release, replace the first step with that tag's fetch/checkout. Preserve Windows configuration
+and DPAPI identity. Check `relay.sh devices` afterward; startup errors are in
+`%USERPROFILE%\.codex-anywhere\last-start-error.log`. Do not stop Codex Desktop.
+
+### Backup and recovery
+
+| Preserve | Location or evidence |
+| --- | --- |
+| Code/image/project | `git rev-parse HEAD`, image ID of `docker compose ps -q bridge`, an image export via `docker image save`, and the actual Compose project name |
+| Relay private state | `.env`, actual Compose configuration and `/data` in the `bridge-state` volume, including registry/activity records |
+| Linux Connector | `/etc/codex-anywhere/connector.env`, systemd unit, service user's `~/.codex-anywhere`, Codex configuration/authentication/sessions |
+| Windows Connector | Current user's `%USERPROFILE%\.codex-anywhere`; DPAPI files cannot simply be moved to a different user/computer |
+| Ingress and business files | Nginx configuration, certificates/renewal, each node's workspaces, attachments and generated files |
+
+Take consistent private backups while tasks and registrations are idle; retain a protected off-host copy.
+If validation fails, restore matching code/dependencies/image, restart and repeat acceptance checks. Do not overwrite
+legitimate new registrations or revocations with an old registry. Never use `docker compose down -v`, empty `/data`,
+or recreate identities to repair an upgrade. `relay.sh update` does not implement backups, idle checks or automatic rollback.
+
+After validation, inspect all containers and concurrent builds before removing exact old project image references.
+Keep the current and previous deployment plus needed base/container images; do not prune shared caches or volumes.
 
 ## Troubleshoot
 
 | Symptom | Check |
 | --- | --- |
+| Windows remains offline | Check the same user's running Desktop, awake computer, Connector approval and `last-start-error.log`; a scheduled task alone does not prove connectivity |
+| Linux reports no login or executable | Check systemd `User`, `HOME`, executable paths and that account's `codex login status` |
+| Browser storage was cleared | Generate a new pairing link for that profile and revoke the retired device if appropriate; do not reset the whole registry |
+| HTML still shows source or relative images are missing | Refresh Web, use matching v0.4.1 nodes and check the Connector's raster-image roots |
 | Generated images are missing | Update and restart the selected Connector, refresh Web and check the original files under the Codex generated-images directory; updating Relay alone cannot fix node-side history parsing |
-| Docker exits with a package.json permission error | Rebuild from v0.3.0; the Dockerfile sets readable package metadata for the non-root runtime. Do not make private configuration public or run the service as root to bypass it |
+| Docker exits with a package.json permission error | Rebuild from v0.4.1; the Dockerfile sets readable package metadata for the non-root runtime. Do not make private configuration public or run the service as root to bypass it |
 | Container health still says starting | The reference health check runs every 30 seconds with a 10-second start period; inspect container state/logs and allow for the first probe before declaring failure |
 | A supported code link still downloads immediately | Update both checkouts, restart the connector, then fully refresh or reopen the browser tab |
 | The preview opens but reports failure | For text previews, confirm a regular UTF-8 file no larger than 2 MiB, an allowed filename/type and OS read access; workspace roots apply to raster previews, not text |
