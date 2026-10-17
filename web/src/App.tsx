@@ -2209,7 +2209,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                 onSave={saveModelConfig}
               />
               <PermissionModeControl
-                key={`${environmentId}:${threadId}`}
+                key={`permission:${environmentId}:${threadId}`}
                 config={permissionConfig}
                 loading={permissionConfigLoading}
                 disabled={!online || executionActive}

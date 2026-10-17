@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Fix permission icons accumulating when switching tasks by giving the permission control a key distinct from the adjacent browser status control.
+
 - Replace misleading disabled permission choices for desktop-managed tasks with their current access, an action to open the same task on the computer, and a persisted-permission refresh. Desktop permissions still require a change in Codex Desktop; ECS retains all three choices and explains temporary locks during execution.
 
 ## v0.4.1 — 2026-10-16
