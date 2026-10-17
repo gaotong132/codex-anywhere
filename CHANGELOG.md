@@ -2,7 +2,11 @@
 
 English | [简体中文](CHANGELOG.zh-CN.md)
 
-## Unreleased
+## v0.4.2 — 2026-10-17
+
+- Add confirmed PC session archiving through the original Desktop task identity; retain history and project files, block non-idle tasks, deduplicate retries and revoke the archived task’s browser grants. Restore through Codex Desktop.
+- Snapshot request payloads before sending so reconnect replay cannot borrow later draft edits.
+- Make same-size file rewrite tests deterministic and refresh bilingual release/deployment documentation.
 
 - Fix permission icons accumulating when switching tasks by giving the permission control a key distinct from the adjacent browser status control.
 

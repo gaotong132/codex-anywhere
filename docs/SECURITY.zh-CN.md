@@ -2,7 +2,7 @@
 
 [English](SECURITY.md) | 简体中文
 
-文档对应 **v0.4.1（2026-10-16）** · [发布与升级](release-0.4.1.zh-CN.md) · [文档索引](README.zh-CN.md)
+文档对应 **v0.4.2（2026-10-17）** · [发布与升级](release-0.4.2.zh-CN.md) · [文档索引](README.zh-CN.md)
 
 ## 支持版本
 

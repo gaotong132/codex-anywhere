@@ -198,6 +198,12 @@ export class BrowserSessionBroker {
     return {};
   }
 
+  clearSession(threadId: string) {
+    this.bindingIntents.delete(`session:${threadId}`);
+    for (const grant of this.forSession(threadId)) this.remove(grant);
+    this.contextualized.delete(threadId);
+  }
+
   clear() { this.bindingIntents.clear(); for (const grant of this.grants.values()) this.remove(grant); }
   private forSession(threadId: unknown) { return [...this.grants.values()].filter((grant) => grant.threadId === threadId); }
   private isOnline(grant: Grant) { return grant.active && this.now() - grant.seenAt < 45_000; }

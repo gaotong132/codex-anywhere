@@ -79,7 +79,8 @@ export class BridgeRequestManager {
         if (pending.timer) clearTimeout(pending.timer);
         if (onAbort) options.signal?.removeEventListener('abort', onAbort);
       };
-      const frame: RequestFrame = { type: 'request', requestId, action, payload };
+      // A replay must retain the original data even if the caller reuses its draft.
+      const frame: RequestFrame = { type: 'request', requestId, action, payload: structuredClone(payload) };
       const pending: PendingRequest = {
         resolve: (value) => { cleanup(); resolve(value as T); },
         reject: (reason) => { cleanup(); reject(reason); },

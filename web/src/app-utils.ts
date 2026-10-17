@@ -21,6 +21,10 @@ export function followLabel(state: FollowState) {
 
 export function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || t('请求失败', 'Request failed'));
+  if (message === 'session_archive_not_idle') return t('会话仍在运行、等待处理或状态未知，请确认空闲后再归档。', 'The task is running, waiting, or its status is unknown. Archive it when idle.');
+  if (message === 'session_archive_unsupported') return t('当前节点不支持归档，请更新 PC 连接器。', 'Archiving is unavailable. Update the PC connector.');
+  if (message === 'session_archive_environment_changed') return t('执行环境已切换，请关闭此窗口并重新选择会话。', 'The environment changed. Close this dialog and select the session again.');
+  if (message === 'desktop_thread_archive_failed') return t('桌面端未确认归档，请刷新会话列表后重试。', 'Desktop did not confirm the archive. Refresh the session list and retry.');
   if (message === 'connector_offline') return t('当前执行环境离线，请确认对应连接器正在运行。', 'The current environment is offline. Make sure its connector is running.');
   if (message === 'another_turn_is_active') return t('当前已有一个任务在运行，请等待完成或先停止。', 'Another task is running. Wait for it to finish or stop it first.');
   if (message === 'turn_stop_mismatch') return t('运行状态已经变化，请刷新后重试。', 'The run state changed. Refresh and try again.');

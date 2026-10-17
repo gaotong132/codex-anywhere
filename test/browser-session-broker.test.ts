@@ -27,6 +27,20 @@ test('browser broker binds only the authenticated device and one target per Sess
   assert.throws(() => broker.bind(client, 'thread-1', { ...target, tabId: 2 }), /session_already_bound/);
   assert.deepEqual(broker.status('thread-2'), { authorized: false, online: false });
 });
+
+test('archiving clears only that session grants and invalidates its pending authorization', async () => {
+  const { broker, grant } = setup();
+  const other = broker.bind(client, 'other', { ...target, tabId: 9 });
+  let release!: () => void;
+  const pending = broker.validateAndBind(client, 'thread-1', { ...target, tabId: 3 }, () => new Promise<void>(resolve => { release = resolve; }));
+  const rejected = assert.rejects(pending, /authorization_changed/);
+  broker.clearSession('thread-1');
+  release(); await rejected;
+  assert.equal(broker.status('thread-1').authorized, false);
+  assert.throws(() => broker.heartbeat(client, grant.grantId), /not_authorized/);
+  broker.heartbeat(client, other.grantId);
+  assert.equal(broker.status('other').online, true);
+});
 test('a delayed Session validation cannot overwrite newer consent or survive connector disconnect', async () => {
   for (const action of ['replace', 'disconnect'] as const) {
     const { broker } = setup();

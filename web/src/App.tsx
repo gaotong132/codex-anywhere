@@ -75,6 +75,7 @@ import { loadHistoryPage } from './history-page-loader';
 import { useConversationExecution } from './conversation-execution';
 import { SessionSidebar } from './session-sidebar';
 import { SessionRenameDialog } from './session-rename-dialog';
+import { SessionArchiveDialog } from './session-archive-dialog';
 import {
   epochMillis,
   liveEventActivity,
@@ -272,6 +273,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [creatingNewSession, setCreatingNewSession] = useState(false);
   const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<{ id: string; title: string; environment: string } | null>(null);
   const [newSessionPrompt, setNewSessionPrompt] = useState('');
   const [newSessionAttachment, setNewSessionAttachment] = useState<PendingAttachment | null>(null);
   const [newSessionError, setNewSessionError] = useState('');
@@ -513,6 +515,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const { readVisualization, readTextFile, readTurnDiff, readPreviewImage } = useFilePreviews(request, threadId);
 
   const {
+    connectorStatus,
     modelConfig,
     modelConfigLoading,
     permissionConfig,
@@ -1493,6 +1496,25 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   }, []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
+  const archiveSession = useCallback(async () => {
+    const target = archiveTarget;
+    if (!target || environmentIdRef.current !== target.environment) throw new Error('session_archive_environment_changed');
+    const result = await request<{ threadId: string; archived: boolean }>('session.archive', { threadId: target.id, confirm: true });
+    if (result.threadId !== target.id || result.archived !== true) throw new Error('session_delivery_mismatch');
+    if (loadEnvironmentValue(LAST_THREAD_KEY, target.environment) === target.id) {
+      storeEnvironmentValue(LAST_THREAD_KEY, target.environment, '');
+    }
+    if (environmentIdRef.current !== target.environment) return;
+    // Ignore a list read started before the archive completed; the next poll is authoritative.
+    sessionRefreshInFlightRef.current = null;
+    setSessions((current) => current.filter((session) => session.id !== target.id));
+    updateSessionAttention((current) => { const next = { ...current }; delete next[target.id]; return next; });
+    if (threadIdRef.current === target.id) {
+      setPrompt(''); setPendingAttachment(null); setRenameDialogOpen(false);
+      selectSession(null);
+    }
+  }, [archiveTarget, request, selectSession, updateSessionAttention]);
+
   const renameSession = useCallback(async (name: string) => {
     const targetThreadId = threadIdRef.current;
     const requestVersion = selectedRequestRef.current;
@@ -2164,6 +2186,13 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         onRename={renameSession}
       />
 
+      {archiveTarget && <SessionArchiveDialog
+        key={`${archiveTarget.environment}:${archiveTarget.id}`}
+        title={archiveTarget.title}
+        onClose={() => setArchiveTarget(null)}
+        onArchive={archiveSession}
+      />}
+
       <RunDetailsSheet
         open={runDetailsOpen && executionActive}
         state={executionState}
@@ -2200,6 +2229,15 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                 </button>
               )}
               <span>{environmentShortName(environmentId)}</span>
+              {threadId && connectorStatus?.capabilities.sessionArchive && (
+                <button type="button" className="session-rename-button" disabled={!online || executionActive}
+                  aria-label={t('归档会话', 'Archive session')} title={t('归档会话', 'Archive session')}
+                  onClick={() => setArchiveTarget({ id: threadId, title: activeSession?.title || threadId, environment: environmentId })}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                    <path d="M4 8v12h16V8M3 4h18v4H3zM9 12h6" />
+                  </svg>
+                </button>
+              )}
             </div>
             <div className="conversation-controls">
               <ModelConfigControl

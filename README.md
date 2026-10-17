@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Documentation for **v0.4.1 (2026-10-16)** · [Release and upgrade](docs/release-0.4.1.md) · [Documentation index](docs/README.md)
+Documentation for **v0.4.2 (2026-10-17)** · [Release and upgrade](docs/release-0.4.2.md) · [Documentation index](docs/README.md)
 
 [![CI](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)
@@ -29,7 +29,7 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
 - **Switch execution environments** — choose a personal computer or a 24×7 headless ECS node in the same
   browser. Sessions, unread state, recent workspaces, attachments and requests stay scoped to the selected machine.
 - **Continue real sessions** — browse, rename and resume existing Codex sessions, or start a task in a local
-  project. Markdown history opens at the latest page and loads older entries as you browse upward, preserving your position.
+  project. Archive idle PC sessions from the title bar and restore them in Codex Desktop; history and project files stay intact. Markdown history opens at the latest page and loads older entries as you browse upward, preserving your position.
 - **Follow task progress** — see running status, unread updates, progress, plans, tool purpose and elapsed time.
   Completed turns retain action summaries, configuration changes and failure or cancellation reasons; automation reports
   keep their full body while redundant notifications and internal fields stay out of the display.

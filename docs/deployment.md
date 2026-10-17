@@ -2,7 +2,7 @@
 
 English | [简体中文](deployment.zh-CN.md)
 
-Documentation for **v0.4.1 (2026-10-16)** · [Release and upgrade](release-0.4.1.md) · [Documentation index](README.md)
+Documentation for **v0.4.2 (2026-10-17)** · [Release and upgrade](release-0.4.2.md) · [Documentation index](README.md)
 
 Codex Anywhere uses a small Linux relay as the meeting point for a browser and one or more Codex connector
 nodes. Codex, projects, attachments, and generated files remain on the selected node. Every connector makes
@@ -243,7 +243,7 @@ session on each node and confirm that returning to the other node never mixes th
 verify that the public URL uses the intended transport and that `ECS-IP:3300` is unreachable externally.
 
 ## Operate and update
-For the tagged release, follow the [v0.4.1 upgrade procedure](release-0.4.1.md#upgrade).
+For the tagged release, follow the [v0.4.2 upgrade procedure](release-0.4.2.md#upgrade).
 The `update` helper tracks `main`; it does not pin a tag or wait for all business tasks to become idle.
 Save the previous commit, image and private state first, schedule an idle window, and verify each Connector after restart.
 
@@ -333,9 +333,9 @@ Keep the current and previous deployment plus needed base/container images; do n
 | Desktop permission choices are unavailable | Existing `personal-pc` tasks use Codex Desktop permissions. The access menu shows the current mode and can open the same task on the computer; change permissions there, then choose Refresh permissions. The Desktop tool API does not expose a permission setter. Headless ECS tasks keep the three editable modes. |
 | Linux reports no login or executable | Check systemd `User`, `HOME`, executable paths and that account's `codex login status` |
 | Browser storage was cleared | Generate a new pairing link for that profile and revoke the retired device if appropriate; do not reset the whole registry |
-| HTML still shows source or relative images are missing | Refresh Web, use matching v0.4.1 nodes and check the Connector's raster-image roots |
+| HTML still shows source or relative images are missing | Refresh Web, use matching v0.4.2 nodes and check the Connector's raster-image roots |
 | Generated images are missing | Update and restart the selected Connector, refresh Web and check the original files under the Codex generated-images directory; updating Relay alone cannot fix node-side history parsing |
-| Docker exits with a package.json permission error | Rebuild from v0.4.1; the Dockerfile sets readable package metadata for the non-root runtime. Do not make private configuration public or run the service as root to bypass it |
+| Docker exits with a package.json permission error | Rebuild from v0.4.2; the Dockerfile sets readable package metadata for the non-root runtime. Do not make private configuration public or run the service as root to bypass it |
 | Container health still says starting | The reference health check runs every 30 seconds with a 10-second start period; inspect container state/logs and allow for the first probe before declaring failure |
 | A supported code link still downloads immediately | Update both checkouts, restart the connector, then fully refresh or reopen the browser tab |
 | The preview opens but reports failure | For text previews, confirm a regular UTF-8 file no larger than 2 MiB, an allowed filename/type and OS read access; workspace roots apply to raster previews, not text |

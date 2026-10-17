@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Codex Anywhere Browser",
-  "version": "0.4.1",
-  "version_name": "0.4.1 dev",
+  "version": "0.4.2",
+  "version_name": "0.4.2 dev",
   "description": "Chat in the Anywhere side panel and optionally authorize the current page to your Session. Experimental add-on.",
   "minimum_chrome_version": "120",
   "permissions": ["activeTab", "tabs", "scripting", "storage", "sidePanel", "webNavigation", "debugger"],

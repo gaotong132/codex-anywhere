@@ -16,6 +16,26 @@ function captureDesktop() {
   return { desktop, calls };
 }
 
+test('archive reads the selected task status and uses the same native identity without deleting', async () => {
+  const { desktop, calls } = captureDesktop();
+  assert.deepEqual(await desktop.archiveThread({ threadId: 'archive-target' }), { threadId: 'archive-target', archived: true });
+  assert.deepEqual(calls.map(({ params }) => params.tool), ['read_thread', 'set_thread_archived']);
+  for (const { params } of calls) {
+    assert.equal(params.threadId, 'archive-target');
+    assert.equal(params.arguments.threadId, 'archive-target');
+  }
+  assert.deepEqual(calls[1].params.arguments, { threadId: 'archive-target', archived: true, source: 'codex' });
+});
+
+test('archive fails closed for running, approval-waiting and unknown Desktop states', async () => {
+  for (const state of [{ status: 'running' }, { status: 'inProgress' }, { status: 'unknown' }, { status: 'idle', waitingOnApproval: true }]) {
+    const { desktop, calls } = captureDesktop();
+    desktop.readThreadState = async () => ({ waitingOnApproval: false, ...state });
+    await assert.rejects(desktop.archiveThread({ threadId: 'target' }), /session_archive_not_idle/);
+    assert.equal(calls.length, 0);
+  }
+});
+
 test('mobile input cannot select a different source task, even with a legacy caller field', async () => {
   const { desktop, calls } = captureDesktop();
   const input = {
@@ -78,7 +98,7 @@ test('native task tools reject cross-task identities before connecting to Deskto
   const desktop = new CodexDesktopClient();
   let connections = 0;
   desktop.getClient = async () => { connections += 1; throw new Error('must_not_connect'); };
-  for (const tool of ['send_message_to_thread', 'set_thread_title', 'read_thread']) {
+  for (const tool of ['send_message_to_thread', 'set_thread_title', 'read_thread', 'set_thread_archived']) {
     for (const callerThreadId of ['another-project-thread', '', ' target-thread ']) {
       await assert.rejects(desktop.callTool({
         tool, arguments: { threadId: 'target-thread', prompt: 'hello' },

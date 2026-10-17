@@ -43,6 +43,7 @@ type DesktopGateway = {
   sendMessage(options: Payload): Promise<any>;
   renameThread(options: Payload): Promise<any>;
   openThread?(options: Payload): Promise<any>;
+  archiveThread?(options: Payload): Promise<any>;
 };
 type Dependencies = {
   browser?: BrowserSessionBroker;
@@ -145,7 +146,7 @@ async function dispatchAction({
       platform: process.platform,
       codexOnline: Boolean(codex.child),
       activeTurn: Boolean(codex.activeTurn),
-      capabilities: { networkAccess, fullAccess: allowFullAccess, ...(fileUploads ? { fileUpload: true } : {}), ...(browser ? { browserControl: true, browserGrantReplacement: true } : {}) },
+      capabilities: { networkAccess, fullAccess: allowFullAccess, ...(mode === 'desktop' && desktop?.archiveThread ? { sessionArchive: true } : {}), ...(fileUploads ? { fileUpload: true } : {}), ...(browser ? { browserControl: true, browserGrantReplacement: true } : {}) },
     };
   }
   if (action === 'sessions.list') {
@@ -161,6 +162,19 @@ async function dispatchAction({
     };
   }
   if (action === 'session.read') return codex.readSession(String(payload.threadId || ''));
+  if (action === 'session.archive') {
+    if (mode !== 'desktop' || !desktop?.archiveThread) throw new Error('session_archive_unsupported');
+    if (payload.confirm !== true) throw new Error('session_archive_confirmation_required');
+    const threadId = String(payload.threadId || '').trim();
+    if (!threadId) throw new Error('thread_id_required');
+    if ((codex.activeTurn as { threadId?: string } | null)?.threadId === threadId) {
+      throw new Error('session_archive_not_idle');
+    }
+    const result = await desktop.archiveThread({ threadId });
+    if (result.threadId !== threadId || result.archived !== true) throw new Error('session_delivery_mismatch');
+    browser?.clearSession(threadId);
+    return result;
+  }
   if (action === 'session.rename') {
     const threadId = String(payload.threadId || '');
     if (mode === 'desktop') {

@@ -64,6 +64,26 @@ function request(action, payload = {}) {
   return { action, payload, requestId: 'request-1', clientId: 'client-1' };
 }
 
+test('desktop archive requires confirmation, protects owned turns, and advertises only supported nodes', async () => {
+  const calls: string[] = [];
+  const deps = createDependencies({ desktop: { archiveThread: async ({ threadId }) => {
+    calls.push(threadId); return { threadId, archived: true };
+  } } });
+  const handler = createRequestHandler(deps);
+  assert.equal((await handler(request('connector.status'))).data.capabilities.sessionArchive, true);
+  assert.equal((await handler(request('session.archive', { threadId: 'target', confirm: 'true' }))).error, 'session_archive_confirmation_required');
+  assert.equal((await handler(request('session.archive', { confirm: true }))).error, 'thread_id_required');
+  deps.codex.activeTurn = { threadId: 'target' };
+  assert.equal((await handler(request('session.archive', { threadId: 'target', confirm: true }))).error, 'session_archive_not_idle');
+  deps.codex.activeTurn = null;
+  assert.equal((await handler(request('session.archive', { threadId: 'target', confirm: true }))).ok, true);
+  assert.deepEqual(calls, ['target']);
+  const headless = createRequestHandler({ ...deps, mode: 'headless' });
+  assert.equal((await headless(request('connector.status'))).data.capabilities.sessionArchive, undefined);
+  assert.equal((await headless(request('session.archive', { threadId: 'target', confirm: true }))).error, 'session_archive_unsupported');
+  assert.deepEqual(calls, ['target']);
+});
+
 test('file upload RPCs use the authenticated device owner and advertise support only when enabled', async () => {
   const calls: any[] = [];
   const fileUploads = Object.fromEntries(['begin', 'chunk', 'complete', 'cancel'].map((method) => [method,

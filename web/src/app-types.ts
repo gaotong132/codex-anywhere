@@ -38,7 +38,7 @@ export type ConnectorStatus = {
   platform: string;
   codexOnline: boolean;
   activeTurn: boolean;
-  capabilities: { networkAccess: boolean; fullAccess: boolean; fileUpload?: boolean };
+  capabilities: { networkAccess: boolean; fullAccess: boolean; fileUpload?: boolean; sessionArchive?: boolean };
 };
 export type SessionPermissionConfig = {
   mode: PermissionMode;

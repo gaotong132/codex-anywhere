@@ -7,7 +7,7 @@ const PIPE_PREFIX = 'codex-browser-use-';
 const MAX_FRAME_BYTES = 4 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const STATUS_ENRICHMENT_TIMEOUT_MS = 1_000;
-const TASK_SCOPED_TOOLS = new Set(['send_message_to_thread', 'set_thread_title', 'read_thread']);
+const TASK_SCOPED_TOOLS = new Set(['send_message_to_thread', 'set_thread_title', 'read_thread', 'set_thread_archived']);
 
 type JsonObject = Record<string, any>;
 type DesktopClientOptions = { timeoutMs?: number };
@@ -112,6 +112,22 @@ export class CodexDesktopClient {
     });
     if (result?.success !== true) throw new Error('desktop_thread_open_failed');
     return { threadId: targetThreadId, opened: true };
+  }
+
+  async archiveThread({ threadId }: { threadId?: unknown }) {
+    const targetThreadId = requireThreadId(threadId);
+    const state = await this.readThreadState({ threadId: targetThreadId });
+    if (state.waitingOnApproval || !['idle', 'completed', 'error', 'notLoaded'].includes(state.status)) {
+      throw new Error('session_archive_not_idle');
+    }
+    const result = await this.callTool({
+      tool: 'set_thread_archived',
+      arguments: { threadId: targetThreadId, archived: true, source: 'codex' },
+      callerThreadId: targetThreadId,
+      callId: `bridge-archive-${randomUUID()}`,
+    });
+    if (result?.success !== true) throw new Error('desktop_thread_archive_failed');
+    return { threadId: targetThreadId, archived: true };
   }
 
   async listThreads({ callerThreadId, limit = 50 }: { callerThreadId?: unknown; limit?: number } = {}) {

@@ -4,6 +4,22 @@ import { BridgeRequestManager } from '../web/src/bridge-request-manager.js';
 import { friendlyError } from '../web/src/app-utils.js';
 import type { FrameSendOptions } from '../web/src/websocket-send.js';
 
+test('reconnect replays the original nested request after the caller edits its draft', async () => {
+  const sent: any[] = [];
+  const manager = new BridgeRequestManager({ isConnected: () => true, createId: () => 'draft',
+    send: (frame) => { sent.push(JSON.parse(JSON.stringify(frame))); return true; } });
+  const payload = { threadId: 'original', input: [{ text: 'submitted' }] };
+  const response = manager.request('turn.start', payload, { timeoutMs: null });
+  payload.threadId = 'different'; payload.input[0].text = 'edited';
+  manager.replay();
+  manager.handle({ type: 'response', requestId: 'draft', ok: true, data: {} });
+  await response;
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[1], sent[0]);
+  assert.equal(sent[1].payload.threadId, 'original');
+  assert.equal(manager.size, 0);
+});
+
 test('bridge request manager owns request acknowledgement, replay, and cleanup', async () => {
   const sent: Record<string, unknown>[] = [];
   const manager = new BridgeRequestManager({
