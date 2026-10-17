@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { appendFile, mkdtemp, open, rm, truncate, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, open, rm, truncate, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -16,7 +16,12 @@ for (const change of ['grow', 'shrink', 'rewrite'] as const) {
     const stats = await handle.stat();
     if (change === 'grow') await appendFile(path, Buffer.alloc(100_000));
     if (change === 'shrink') await truncate(path, 2);
-    if (change === 'rewrite') await writeFile(path, 'modified');
+    if (change === 'rewrite') {
+      await writeFile(path, 'modified');
+      // Equal-size writes can land in the same filesystem timestamp tick.
+      // This case exercises changed metadata, not an atomic content snapshot.
+      await utimes(path, stats.atime, new Date(stats.mtimeMs + 2_000));
+    }
     let requestedBytes = 0;
     const read = handle.read.bind(handle);
     handle.read = (async (buffer: Buffer, offset: number, length: number, position: number) => {
