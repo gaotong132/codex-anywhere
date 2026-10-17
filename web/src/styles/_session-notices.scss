@@ -1,0 +1,63 @@
+@use 'interaction';
+
+.session-notice {
+  flex: 0 0 auto;
+  min-width: 0;
+  margin: 0 max(18px, calc((100% - 860px) / 2)) 8px;
+  padding: 10px 12px;
+  border: 1px solid #303849;
+  border-radius: 14px;
+  background: #131a25;
+  color: #e3e9f2;
+  font-size: 12px;
+
+  svg { width: 18px; height: 18px; flex: 0 0 auto; }
+  button { flex: 0 0 auto; min-height: 44px; border-radius: 9px; font-size: 12px; }
+}
+.session-notice-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.session-notice-icon { display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; border-radius: 10px; color: #e7ba75; background: #30291f; }
+.session-notice-copy { min-width: 0; flex: 1; }
+.session-notice-copy strong { display: block; font-size: 13px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.session-notice-copy p { margin: 2px 0 0; color: #98a5b8; font-size: 12px; line-height: 1.5; }
+.session-notice-kind { color: #98a5b8; font-size: 11px; overflow-wrap: anywhere; }
+.session-notice .session-notice-icon-button { display: grid; place-items: center; width: 44px; padding: 0; border: 0; background: transparent; color: #a1aec0; }
+.session-notice-icon-button { @include interaction.hover(':not(:disabled)') { color: #ecf2fb; background: #212c3c; } }
+.session-notice-icon-button[aria-busy='true'] svg { animation: notice-refresh 1s linear infinite; }
+.session-notice-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.session-notice-actions button { padding: 0 13px; border: 1px solid #344054; background: transparent; color: #b3bfd1; }
+.session-notice-actions button { @include interaction.hover(':not(:disabled)') { background: #202b3b; color: #edf3fc; } }
+.session-notice-actions .notice-primary { border-color: #395b89; background: #203b60; color: #d9eaff; }
+.session-notice-actions .notice-primary { @include interaction.hover(':not(:disabled)') { border-color: #5684c3; background: #2a4b76; } }
+.session-notice-summary { max-height: clamp(64px, 15dvh, 140px); overflow: auto; margin: 10px 0 0; padding: 10px; border-radius: 8px; background: #0d131d; color: #c9d2e0; font-size: 12px; line-height: 1.5; }
+.session-notice-error { margin: 8px 0 0; color: #efacb2; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; max-height: 80px; overflow-y: auto; }
+.archived-notice { padding: 6px 8px 6px 12px; }
+.archived-notice .session-notice-head { gap: 8px; }
+.archived-notice .session-notice-icon { color: #88c5a5; background: #1c302c; }
+.archived-notice .session-notice-copy strong { font-size: 12px; }
+.archived-notice-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.session-notice .notice-restore { padding: 0 10px; border: 0; background: transparent; color: #9ec4fa; font-weight: 600; }
+.notice-restore { @include interaction.hover(':not(:disabled)') { background: #20314a; color: #d9eaff; } }
+
+.new-session-overlay.archive-dialog-overlay { padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+.new-session-dialog.archive-session-dialog { width: min(400px, 100%); max-height: calc(100dvh - 48px); border: 1px solid #303b50; border-radius: 20px; background: #131a25; }
+.archive-session-dialog .new-session-dialog-head { display: flex; align-items: center; gap: 12px; padding: 20px 20px 0; border: 0; }
+.archive-session-dialog .new-session-dialog-head h2 { font-size: 17px; line-height: 1.4; }
+.archive-session-dialog .new-session-dialog-head .archive-dialog-icon { display: grid; place-items: center; flex: 0 0 36px; height: 36px; margin: 0; border-radius: 11px; background: #253143; color: #b7c9df; }
+.archive-dialog-icon svg { width: 20px; height: 20px; }
+.archive-session-dialog .new-session-dialog-body { gap: 14px; padding: 14px 20px 18px; }
+.archive-session-dialog p { margin: 0; color: #b3bfd0; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.archive-session-dialog .archive-dialog-session { padding: 9px 12px; border: 1px solid #283344; border-radius: 9px; color: #e1e7f0; background: #0e1520; }
+.archive-dialog-session > span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.archive-session-dialog .archive-dialog-caution { margin-top: 8px; color: #d9b78a; }
+.archive-session-dialog .archive-dialog-hint { margin-top: 8px; color: #8898ae; font-size: 12px; }
+.archive-session-dialog .new-session-error { color: #efacb2; }
+.archive-session-dialog .new-session-dialog-actions { padding: 0 20px 20px; border: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.archive-session-dialog .new-session-dialog-actions button { height: auto; min-height: 44px; padding: 9px; line-height: 1.4; }
+.archive-session-dialog .new-session-dialog-actions .primary-action { color: #e1edff; border-color: #395b89; background: #203b60; }
+.archive-session-dialog .new-session-dialog-actions .primary-action { @include interaction.hover(':not(:disabled)') { background: #2a4b76; border-color: #5684c3; } }
+@keyframes notice-refresh { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .session-notice-icon-button[aria-busy='true'] svg { animation: none; } }
+@media (max-width: 760px) {
+  .session-notice { margin-right: 10px; margin-left: 10px; }
+  .new-session-overlay.archive-dialog-overlay { align-items: center; }
+}

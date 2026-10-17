@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { friendlyError } from './app-utils';
 import { t } from './i18n';
+import { SessionNoticeIcon } from './session-notices';
 
 export function SessionArchiveDialog({ title, cancelPendingApproval = false, onClose, onArchive }: {
   title: string; cancelPendingApproval?: boolean; onClose: () => void; onArchive: () => Promise<void>;
@@ -16,10 +17,10 @@ export function SessionArchiveDialog({ title, cancelPendingApproval = false, onC
     return () => window.removeEventListener('keydown', escape);
   }, [onClose]);
   return (
-    <div className="new-session-overlay" role="presentation" onMouseDown={(event) => {
+    <div className="new-session-overlay archive-dialog-overlay" role="presentation" onMouseDown={(event) => {
       if (event.target === event.currentTarget && !pending.current) onClose();
     }}>
-      <form className="new-session-dialog rename-session-dialog" role="dialog" aria-modal="true" aria-labelledby="archive-session-title"
+      <form className="new-session-dialog archive-session-dialog" role="dialog" aria-modal="true" aria-labelledby="archive-session-title" aria-describedby="archive-session-description"
         onSubmit={async (event) => {
           event.preventDefault();
           if (pending.current) return;
@@ -29,13 +30,16 @@ export function SessionArchiveDialog({ title, cancelPendingApproval = false, onC
           finally { pending.current = false; setSaving(false); }
         }}>
         <header className="new-session-dialog-head">
-          <p className="eyebrow">CODEX ANYWHERE</p>
+          <span className="archive-dialog-icon"><SessionNoticeIcon kind="archive" /></span>
           <h2 id="archive-session-title">{cancelPendingApproval ? t('停止等待并归档？', 'Stop waiting and archive?') : t('归档会话？', 'Archive session?')}</h2>
-          <span>{title}</span>
         </header>
         <div className="new-session-dialog-body">
-          <p>{t('会话将从列表移除，聊天记录和项目文件保留。可在 Codex 客户端的已归档会话中恢复。', 'The session leaves the list. Chat history and project files are retained. Restore it from archived chats in Codex Desktop.')}</p>
-          {cancelPendingApproval && <p>{t('这会终止当前审批等待，不会批准或执行待批准的操作。归档后可点“恢复并打开”，回到同一会话继续发送消息。', 'This ends the approval wait without approving the pending action. After archiving, use Restore and open to continue the same session.')}</p>}
+          <p className="archive-dialog-session" title={title}><span>{title}</span></p>
+          <div id="archive-session-description">
+            <p>{t('会话将移出列表，聊天记录和项目文件保留。', 'Remove this session from the list and keep its history and project files.')}</p>
+            {cancelPendingApproval && <p className="archive-dialog-caution">{t('这会结束当前等待，不会批准或执行待批准的操作。', 'This ends the wait without approving or executing the pending action.')}</p>}
+            <p className="archive-dialog-hint">{t('归档后可恢复并打开，也可在 Codex 的已归档列表中恢复。', 'Restore and open after archiving, or use archived chats in Codex.')}</p>
+          </div>
           {error && <p className="new-session-error" role="alert">{error}</p>}
         </div>
         <footer className="new-session-dialog-actions">

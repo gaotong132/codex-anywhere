@@ -623,6 +623,8 @@ and wait for tasks to become idle before restarting services. See “Operate and
 
 When Web shows an approval owned by the computer, use Open on computer and then Refresh status. Web does not approve that request. Status failures retry automatically; unknown state is not treated as resolution.
 
+On current `main`, the compact notice uses a refresh icon (labeled **Refresh status**), **End wait…** to open the confirmation, and **Restore** in the archived notice. The confirmation still explicitly says **Stop waiting and archive**. These shorter labels do not change approval ownership or the recovery flow.
+
 To end the wait instead, confirm Stop waiting and archive. The native client ends the wait and retains the session. Use Restore and open in the notice to continue the same task. This does not run the pending command or delete chat history; browser pages need fresh consent. After dismissing the notice or refreshing the page, restore through Codex Desktop's archived list. Ordinary active turns and unknown states cannot use this entry point for forced cancellation.
 
 Update Web and the PC Connector, and actually restart the Connector. Existing pairing remains valid. Do not disable approval protection or delete the session database to clear the wait.

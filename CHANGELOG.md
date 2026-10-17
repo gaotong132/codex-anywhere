@@ -2,6 +2,10 @@
 
 English | [简体中文](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- Compact mobile approval and archive notices with clear primary actions, a labeled refresh icon, and an inline restore action. Use an inset archive confirmation dialog with bounded titles, explicit consequences, and 44 px action targets; retain full actionable command details.
+
 ## v0.4.3 — 2026-10-17
 
 - Serialize expired-attachment cleanup by directory, tolerate disappeared entries and continue scanning; prevent concurrent Windows uploads from failing on deletion races.

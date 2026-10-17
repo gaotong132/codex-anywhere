@@ -76,6 +76,7 @@ import { useConversationExecution } from './conversation-execution';
 import { SessionSidebar } from './session-sidebar';
 import { SessionRenameDialog } from './session-rename-dialog';
 import { SessionArchiveDialog } from './session-archive-dialog';
+import { ApprovalNotice, ArchivedSessionNotice } from './session-notices';
 import { createApprovalPoller, resolvedDesktopExecution } from './approval-poller';
 import {
   epochMillis,
@@ -2345,59 +2346,24 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         </div>
 
         {lastArchived?.environment === environmentId && (
-          <section className="approval-card" role="status">
-            <strong>{t('已归档：', 'Archived: ')}{lastArchived.title}</strong>
-            <p>{t('记录已保留。恢复后可继续当前会话。', 'History is retained. Restore to continue this session.')}</p>
-            {restoreError && <p role="alert">{restoreError}</p>}
-            <div className="approval-actions">
-              <button disabled={restoringSession} onClick={() => setLastArchived(null)}>{t('关闭', 'Dismiss')}</button>
-              {connectorStatus?.capabilities.sessionRestore && <button disabled={!online || restoringSession} onClick={() => void restoreArchivedSession()}>
-                {restoringSession ? t('恢复中…', 'Restoring…') : t('恢复并打开', 'Restore and open')}
-              </button>}
-            </div>
-          </section>
+          <ArchivedSessionNotice title={lastArchived.title} online={online} restoring={restoringSession} error={restoreError}
+            onDismiss={() => setLastArchived(null)}
+            onRestore={connectorStatus?.capabilities.sessionRestore ? () => void restoreArchivedSession() : undefined} />
         )}
 
         {approval && (
-          <section className="approval-card" aria-live="assertive">
-            <div>
-              <strong>{approval.actionable === false
-                ? t('需要在电脑上批准', 'Approval required on your computer')
-                : t('需要你的批准', 'Your approval is required')}</strong>
-              <span>{approval.kind}</span>
-            </div>
-            <pre>{approval.actionable === false
-              ? t(
-                '这项审批由 Codex 电脑端持有，需要在电脑端批准或拒绝。也可以停止等待并归档，再恢复会话继续发送消息；待批准的操作不会执行。',
-                'Approve or reject this Desktop-owned request on your computer. Alternatively, stop waiting and archive, then restore the session to continue. The pending action will not be approved.',
-              )
-              : approval.summary}</pre>
-            {approval.actionable !== false && (
-              <div className="approval-actions">
-                <button onClick={() => void answerApproval(false)}>{t('拒绝', 'Reject')}</button>
-                <button className="approve" onClick={() => void answerApproval(true)}>{t('批准一次', 'Approve once')}</button>
-              </div>
-            )}
-            {approval.actionable === false && (
-              <div className="approval-actions">
-                <button disabled={!online} onClick={() => {
-                  const selected = selectedRequestRef.current;
-                  void openPermissionSettingsOnDesktop().catch((error) => {
-                    if (selected === selectedRequestRef.current) setApprovalStatusError(friendlyError(error));
-                  });
-                }}>{t('在电脑端打开', 'Open on computer')}</button>
-                <button disabled={!online || refreshingApproval} onClick={() => void refreshApprovalStatus()}>
-                  {refreshingApproval ? t('查询中…', 'Checking…') : t('刷新状态', 'Refresh status')}
-                </button>
-                {threadId && connectorStatus?.capabilities.sessionArchivePendingApproval && <button disabled={!online}
-                  onClick={() => setArchiveTarget({ id: threadId, title: activeSession?.title || threadId,
-                    environment: environmentId, cancelPendingApproval: true })}>
-                  {t('停止等待并归档', 'Stop waiting and archive')}
-                </button>}
-              </div>
-            )}
-            {approvalStatusError && <p role="status">{approvalStatusError}</p>}
-          </section>
+          <ApprovalNotice approval={approval} online={online} refreshing={refreshingApproval} error={approvalStatusError}
+            onAnswer={(approved) => void answerApproval(approved)}
+            onRefresh={() => void refreshApprovalStatus()}
+            onOpen={() => {
+              const selected = selectedRequestRef.current;
+              void openPermissionSettingsOnDesktop().catch((error) => {
+                if (selected === selectedRequestRef.current) setApprovalStatusError(friendlyError(error));
+              });
+            }}
+            onArchive={threadId && connectorStatus?.capabilities.sessionArchivePendingApproval
+              ? () => setArchiveTarget({ id: threadId, title: activeSession?.title || threadId,
+                environment: environmentId, cancelPendingApproval: true }) : undefined} />
         )}
 
         {(threadId || creatingNewSession) && <footer className="composer-wrap">
