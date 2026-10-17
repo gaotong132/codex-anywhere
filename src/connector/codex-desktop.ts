@@ -114,10 +114,12 @@ export class CodexDesktopClient {
     return { threadId: targetThreadId, opened: true };
   }
 
-  async archiveThread({ threadId }: { threadId?: unknown }) {
+  async archiveThread({ threadId, cancelPendingApproval = false }: { threadId?: unknown; cancelPendingApproval?: boolean }) {
     const targetThreadId = requireThreadId(threadId);
     const state = await this.readThreadState({ threadId: targetThreadId });
-    if (state.waitingOnApproval || !['idle', 'completed', 'error', 'notLoaded'].includes(state.status)) {
+    const confirmedWaiting = cancelPendingApproval === true && state.waitingOnApproval
+      && ['active', 'running', 'inProgress', 'waiting'].includes(state.status);
+    if (!confirmedWaiting && (state.waitingOnApproval || !['idle', 'completed', 'error', 'notLoaded'].includes(state.status))) {
       throw new Error('session_archive_not_idle');
     }
     const result = await this.callTool({
@@ -128,6 +130,18 @@ export class CodexDesktopClient {
     });
     if (result?.success !== true) throw new Error('desktop_thread_archive_failed');
     return { threadId: targetThreadId, archived: true };
+  }
+
+  async restoreThread({ threadId }: { threadId?: unknown }) {
+    const targetThreadId = requireThreadId(threadId);
+    const result = await this.callTool({
+      tool: 'set_thread_archived',
+      arguments: { threadId: targetThreadId, archived: false, source: 'codex' },
+      callerThreadId: targetThreadId,
+      callId: `bridge-restore-${randomUUID()}`,
+    });
+    if (result?.success !== true) throw new Error('desktop_thread_restore_failed');
+    return { threadId: targetThreadId, archived: false };
   }
 
   async listThreads({ callerThreadId, limit = 50 }: { callerThreadId?: unknown; limit?: number } = {}) {

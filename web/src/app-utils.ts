@@ -25,6 +25,8 @@ export function friendlyError(error: unknown) {
   if (message === 'session_archive_unsupported') return t('当前节点不支持归档，请更新 PC 连接器。', 'Archiving is unavailable. Update the PC connector.');
   if (message === 'session_archive_environment_changed') return t('执行环境已切换，请关闭此窗口并重新选择会话。', 'The environment changed. Close this dialog and select the session again.');
   if (message === 'desktop_thread_archive_failed') return t('桌面端未确认归档，请刷新会话列表后重试。', 'Desktop did not confirm the archive. Refresh the session list and retry.');
+  if (message === 'desktop_thread_restore_failed') return t('电脑端未确认恢复，会话仍可从 Codex 客户端的已归档列表恢复。', 'Desktop did not confirm restoration. You can still restore from archived chats in Codex Desktop.');
+  if (message === 'session_restore_unsupported') return t('当前连接器不支持恢复，请更新 PC 连接器或在 Codex 客户端恢复。', 'Update the PC connector or restore in Codex Desktop.');
   if (message === 'connector_offline') return t('当前执行环境离线，请确认对应连接器正在运行。', 'The current environment is offline. Make sure its connector is running.');
   if (message === 'another_turn_is_active') return t('当前已有一个任务在运行，请等待完成或先停止。', 'Another task is running. Wait for it to finish or stop it first.');
   if (message === 'turn_stop_mismatch') return t('运行状态已经变化，请刷新后重试。', 'The run state changed. Refresh and try again.');

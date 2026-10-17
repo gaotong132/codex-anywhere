@@ -36,6 +36,23 @@ test('archive fails closed for running, approval-waiting and unknown Desktop sta
   }
 });
 
+test('only explicit confirmation allows archiving an actual Desktop approval wait', async () => {
+  const { desktop, calls } = captureDesktop();
+  desktop.readThreadState = async () => ({ status: 'active', waitingOnApproval: true });
+  await assert.rejects(desktop.archiveThread({ threadId: 'target' }), /session_archive_not_idle/);
+  assert.equal(calls.length, 0);
+  await desktop.archiveThread({ threadId: 'target', cancelPendingApproval: true });
+  assert.deepEqual(calls.map(({ params }) => params.tool), ['set_thread_archived']);
+  assert.equal(calls[0].params.arguments.archived, true);
+  desktop.readThreadState = async () => ({ status: 'active', waitingOnApproval: false });
+  await assert.rejects(desktop.archiveThread({ threadId: 'target', cancelPendingApproval: true }), /session_archive_not_idle/);
+  assert.equal(calls.length, 1, 'resumed work must not be cancelled using a stale confirmation');
+  await desktop.restoreThread({ threadId: 'target' });
+  assert.equal(calls[1].params.arguments.archived, false);
+  assert.equal(calls[1].params.threadId, 'target');
+  assert.equal(calls[1].params.arguments.threadId, 'target');
+});
+
 test('mobile input cannot select a different source task, even with a legacy caller field', async () => {
   const { desktop, calls } = captureDesktop();
   const input = {

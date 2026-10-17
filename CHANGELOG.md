@@ -2,6 +2,11 @@
 
 English | [简体中文](CHANGELOG.zh-CN.md)
 
+## Unreleased
+
+- Recover from Desktop-owned approval waits: open the task on the computer, refresh status, or explicitly stop waiting and archive, then restore and open the same session. Pending actions are never approved by this workflow.
+- Retry approval polling after transient failures, preserve unknown Desktop state, ignore obsolete session reads and use actual idle/completed status when a wait ends.
+
 ## v0.4.2 — 2026-10-17
 
 - Add confirmed PC session archiving through the original Desktop task identity; retain history and project files, block non-idle tasks, deduplicate retries and revoke the archived task’s browser grants. Restore through Codex Desktop.

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { friendlyError } from './app-utils';
 import { t } from './i18n';
 
-export function SessionArchiveDialog({ title, onClose, onArchive }: {
-  title: string; onClose: () => void; onArchive: () => Promise<void>;
+export function SessionArchiveDialog({ title, cancelPendingApproval = false, onClose, onArchive }: {
+  title: string; cancelPendingApproval?: boolean; onClose: () => void; onArchive: () => Promise<void>;
 }) {
   const pending = useRef(false);
   const [saving, setSaving] = useState(false);
@@ -30,16 +30,17 @@ export function SessionArchiveDialog({ title, onClose, onArchive }: {
         }}>
         <header className="new-session-dialog-head">
           <p className="eyebrow">CODEX ANYWHERE</p>
-          <h2 id="archive-session-title">{t('归档会话？', 'Archive session?')}</h2>
+          <h2 id="archive-session-title">{cancelPendingApproval ? t('停止等待并归档？', 'Stop waiting and archive?') : t('归档会话？', 'Archive session?')}</h2>
           <span>{title}</span>
         </header>
         <div className="new-session-dialog-body">
           <p>{t('会话将从列表移除，聊天记录和项目文件保留。可在 Codex 客户端的已归档会话中恢复。', 'The session leaves the list. Chat history and project files are retained. Restore it from archived chats in Codex Desktop.')}</p>
+          {cancelPendingApproval && <p>{t('这会终止当前审批等待，不会批准或执行待批准的操作。归档后可点“恢复并打开”，回到同一会话继续发送消息。', 'This ends the approval wait without approving the pending action. After archiving, use Restore and open to continue the same session.')}</p>}
           {error && <p className="new-session-error" role="alert">{error}</p>}
         </div>
         <footer className="new-session-dialog-actions">
           <button type="button" autoFocus disabled={saving} onClick={onClose}>{t('取消', 'Cancel')}</button>
-          <button type="submit" className="primary-action" disabled={saving}>{saving ? t('归档中…', 'Archiving…') : t('归档', 'Archive')}</button>
+          <button type="submit" className="primary-action" disabled={saving}>{saving ? t('归档中…', 'Archiving…') : cancelPendingApproval ? t('停止等待并归档', 'Stop waiting and archive') : t('归档', 'Archive')}</button>
         </footer>
       </form>
     </div>

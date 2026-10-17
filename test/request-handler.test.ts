@@ -710,3 +710,28 @@ test('Desktop-owned approval is reported as informational instead of an actionab
     actionable: false,
   });
 });
+
+test('unavailable Desktop status is distinct from a resolved approval', async () => {
+  const unavailable = createRequestHandler(createDependencies({
+    desktop: { readThreadState: async () => { throw new Error('desktop_timeout'); } },
+  }));
+  const result = await unavailable(request('approval.pending', { threadId: 'target' }));
+  assert.equal(result.data.desktopStatusUnavailable, true);
+  const idle = createRequestHandler(createDependencies());
+  assert.deepEqual((await idle(request('approval.pending', { threadId: 'target' }))).data.desktopState,
+    { status: 'idle', waitingOnApproval: false });
+});
+
+test('archive cancellation requires a strict boolean and restore validates response identity', async () => {
+  const inputs: any[] = [];
+  const handle = createRequestHandler(createDependencies({ desktop: {
+    archiveThread: async (value) => { inputs.push(value); return { threadId: value.threadId, archived: true }; },
+    restoreThread: async ({ threadId }) => ({ threadId: threadId === 'bad' ? 'other' : threadId, archived: false }),
+  } }));
+  for (const cancelPendingApproval of ['true', false, true]) {
+    assert.equal((await handle(request('session.archive', { threadId: 'target', confirm: true, cancelPendingApproval }))).ok, true);
+  }
+  assert.deepEqual(inputs.map(value => value.cancelPendingApproval), [false, false, true]);
+  assert.equal((await handle(request('session.restore', { threadId: 'target' }))).data.archived, false);
+  assert.equal((await handle(request('session.restore', { threadId: 'bad' }))).error, 'session_delivery_mismatch');
+});

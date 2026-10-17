@@ -44,6 +44,7 @@ type DesktopGateway = {
   renameThread(options: Payload): Promise<any>;
   openThread?(options: Payload): Promise<any>;
   archiveThread?(options: Payload): Promise<any>;
+  restoreThread?(options: Payload): Promise<any>;
 };
 type Dependencies = {
   browser?: BrowserSessionBroker;
@@ -146,7 +147,10 @@ async function dispatchAction({
       platform: process.platform,
       codexOnline: Boolean(codex.child),
       activeTurn: Boolean(codex.activeTurn),
-      capabilities: { networkAccess, fullAccess: allowFullAccess, ...(mode === 'desktop' && desktop?.archiveThread ? { sessionArchive: true } : {}), ...(fileUploads ? { fileUpload: true } : {}), ...(browser ? { browserControl: true, browserGrantReplacement: true } : {}) },
+      capabilities: { networkAccess, fullAccess: allowFullAccess,
+        ...(mode === 'desktop' && desktop?.archiveThread ? { sessionArchive: true, sessionArchivePendingApproval: true } : {}),
+        ...(mode === 'desktop' && desktop?.restoreThread ? { sessionRestore: true } : {}),
+        ...(fileUploads ? { fileUpload: true } : {}), ...(browser ? { browserControl: true, browserGrantReplacement: true } : {}) },
     };
   }
   if (action === 'sessions.list') {
@@ -170,9 +174,17 @@ async function dispatchAction({
     if ((codex.activeTurn as { threadId?: string } | null)?.threadId === threadId) {
       throw new Error('session_archive_not_idle');
     }
-    const result = await desktop.archiveThread({ threadId });
+    const result = await desktop.archiveThread({ threadId, cancelPendingApproval: payload.cancelPendingApproval === true });
     if (result.threadId !== threadId || result.archived !== true) throw new Error('session_delivery_mismatch');
     browser?.clearSession(threadId);
+    return result;
+  }
+  if (action === 'session.restore') {
+    if (mode !== 'desktop' || !desktop?.restoreThread) throw new Error('session_restore_unsupported');
+    const threadId = String(payload.threadId || '').trim();
+    if (!threadId) throw new Error('thread_id_required');
+    const result = await desktop.restoreThread({ threadId });
+    if (result.threadId !== threadId || result.archived !== false) throw new Error('session_delivery_mismatch');
     return result;
   }
   if (action === 'session.rename') {
@@ -267,6 +279,7 @@ async function dispatchAction({
       if (state.waitingOnApproval) {
         return {
           ...pending,
+          desktopState: state,
           externalApproval: {
             approvalId: '',
             threadId,
@@ -276,7 +289,11 @@ async function dispatchAction({
           },
         };
       }
-    } catch { /* absence of Desktop status must not block app-server approvals */ }
+      return { ...pending, desktopState: state };
+    } catch {
+      // Unknown is not approval resolution. Keep the last state and retry.
+      return { ...pending, desktopStatusUnavailable: true };
+    }
     return pending;
   }
   if (action === 'approval.respond') {

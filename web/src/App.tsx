@@ -76,6 +76,7 @@ import { useConversationExecution } from './conversation-execution';
 import { SessionSidebar } from './session-sidebar';
 import { SessionRenameDialog } from './session-rename-dialog';
 import { SessionArchiveDialog } from './session-archive-dialog';
+import { createApprovalPoller, resolvedDesktopExecution } from './approval-poller';
 import {
   epochMillis,
   liveEventActivity,
@@ -248,6 +249,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<ImageUploadState | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
+  const approvalRef = useRef(approval);
+  approvalRef.current = approval;
+  const approvalPollRef = useRef<ReturnType<typeof createApprovalPoller> | null>(null);
+  const [approvalStatusError, setApprovalStatusError] = useState('');
+  const [refreshingApproval, setRefreshingApproval] = useState(false);
   const [followState, setFollowState] = useState<FollowState>('idle');
   const {
     execution: {
@@ -273,7 +279,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [creatingNewSession, setCreatingNewSession] = useState(false);
   const [newSessionDialogOpen, setNewSessionDialogOpen] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
-  const [archiveTarget, setArchiveTarget] = useState<{ id: string; title: string; environment: string } | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<{ id: string; title: string; environment: string; cancelPendingApproval?: boolean } | null>(null);
+  const [lastArchived, setLastArchived] = useState<{ id: string; title: string; environment: string } | null>(null);
+  const [restoringSession, setRestoringSession] = useState(false);
+  const [restoreError, setRestoreError] = useState('');
   const [newSessionPrompt, setNewSessionPrompt] = useState('');
   const [newSessionAttachment, setNewSessionAttachment] = useState<PendingAttachment | null>(null);
   const [newSessionError, setNewSessionError] = useState('');
@@ -1499,12 +1508,15 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const archiveSession = useCallback(async () => {
     const target = archiveTarget;
     if (!target || environmentIdRef.current !== target.environment) throw new Error('session_archive_environment_changed');
-    const result = await request<{ threadId: string; archived: boolean }>('session.archive', { threadId: target.id, confirm: true });
+    const result = await request<{ threadId: string; archived: boolean }>('session.archive', {
+      threadId: target.id, confirm: true, cancelPendingApproval: target.cancelPendingApproval === true,
+    });
     if (result.threadId !== target.id || result.archived !== true) throw new Error('session_delivery_mismatch');
     if (loadEnvironmentValue(LAST_THREAD_KEY, target.environment) === target.id) {
       storeEnvironmentValue(LAST_THREAD_KEY, target.environment, '');
     }
     if (environmentIdRef.current !== target.environment) return;
+    setLastArchived(target); setRestoreError('');
     // Ignore a list read started before the archive completed; the next poll is authoritative.
     sessionRefreshInFlightRef.current = null;
     setSessions((current) => current.filter((session) => session.id !== target.id));
@@ -1514,6 +1526,22 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       selectSession(null);
     }
   }, [archiveTarget, request, selectSession, updateSessionAttention]);
+
+  const restoreArchivedSession = useCallback(async () => {
+    const target = lastArchived;
+    if (!target || restoringSession || environmentIdRef.current !== target.environment) return;
+    setRestoringSession(true); setRestoreError('');
+    try {
+      const result = await request<{ threadId: string; archived: boolean }>('session.restore', { threadId: target.id });
+      if (result.threadId !== target.id || result.archived !== false) throw new Error('session_delivery_mismatch');
+      if (environmentIdRef.current !== target.environment) return;
+      setLastArchived(null);
+      selectSession({ id: target.id, title: target.title });
+      void refreshSessions();
+    } catch (error) {
+      if (environmentIdRef.current === target.environment) setRestoreError(friendlyError(error));
+    } finally { setRestoringSession(false); }
+  }, [lastArchived, restoringSession, request, selectSession, refreshSessions]);
 
   const renameSession = useCallback(async (name: string) => {
     const targetThreadId = threadIdRef.current;
@@ -1933,16 +1961,24 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   }, [approval, reportTimelineError, request]);
 
   useEffect(() => {
+    setApprovalStatusError('');
     if (!authenticated || !online || !threadId) {
       setApproval(null);
       return;
     }
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const syncApproval = async () => {
-      try {
-        const result = await request<PendingApprovals>('approval.pending', { threadId });
-        if (disposed || threadIdRef.current !== threadId) return;
+    const targetEnvironment = environmentIdRef.current;
+    const isCurrent = () => threadIdRef.current === threadId && environmentIdRef.current === targetEnvironment;
+    const poller = createApprovalPoller({
+      read: () => request<PendingApprovals>('approval.pending', { threadId }),
+      onError: () => { if (isCurrent()) setApprovalStatusError(t('状态查询失败，正在自动重试。', 'Status check failed; retrying automatically.')); },
+      apply: (result) => {
+        if (!isCurrent()) return;
+        if (result.desktopStatusUnavailable) {
+          setApprovalStatusError(t('暂时无法确认电脑端状态，正在重试。', 'Desktop status is temporarily unavailable; retrying.'));
+          return;
+        }
+        setApprovalStatusError('');
+        const previous = approvalRef.current;
         const pending = result.approvals?.[0] || result.externalApproval || null;
         if (pending) {
           setApproval(pending);
@@ -1952,36 +1988,33 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           updateExecution((current) => ({
             running: webOwned,
             ownedTurnThreadId: ownedTurnThreadIdRef.current,
-            state: 'waiting',
-            activity: 'waiting',
-            startedAt: current.startedAt || Date.now(),
+            state: 'waiting', activity: 'waiting', startedAt: current.startedAt || Date.now(),
           }));
-          if (viewport.following) viewport.forceBottom = true;
-        } else if (approval?.actionable === false) {
+          if (!previous && viewport.following) viewport.forceBottom = true;
+        } else if (previous?.actionable === false) {
+          const state = resolvedDesktopExecution(result);
+          if (!state) return;
           setApproval(null);
           runningRef.current = false;
           ownedTurnThreadIdRef.current = null;
-          updateExecution({
-            running: false,
-            ownedTurnThreadId: null,
-            state: 'running',
-            activity: 'working',
-          });
+          updateExecution({ running: false, ownedTurnThreadId: null,
+            state, activity: 'working' });
         }
-        if (pending?.actionable === false || executionState === 'running' || executionState === 'waiting') {
-          timer = setTimeout(syncApproval, 4_000);
-        }
-      } catch { /* session history polling remains the fallback */ }
-    };
-    void syncApproval();
+      },
+    });
+    approvalPollRef.current = poller;
+    void poller.refresh();
     return () => {
-      disposed = true;
-      if (timer) clearTimeout(timer);
+      poller.stop();
+      if (approvalPollRef.current === poller) approvalPollRef.current = null;
     };
-  }, [
-    approval?.actionable, authenticated, connectionEpoch, executionState, online, request,
-    threadId, updateExecution,
-  ]);
+  }, [authenticated, connectionEpoch, environmentId, online, request, threadId, updateExecution]);
+
+  const refreshApprovalStatus = useCallback(async () => {
+    setRefreshingApproval(true);
+    try { await approvalPollRef.current?.refresh(); }
+    finally { setRefreshingApproval(false); }
+  }, []);
 
   const existingProjects = useMemo(() => {
     const seen = new Set<string>();
@@ -2189,6 +2222,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       {archiveTarget && <SessionArchiveDialog
         key={`${archiveTarget.environment}:${archiveTarget.id}`}
         title={archiveTarget.title}
+        cancelPendingApproval={archiveTarget.cancelPendingApproval}
         onClose={() => setArchiveTarget(null)}
         onArchive={archiveSession}
       />}
@@ -2230,9 +2264,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
               )}
               <span>{environmentShortName(environmentId)}</span>
               {threadId && connectorStatus?.capabilities.sessionArchive && (
-                <button type="button" className="session-rename-button" disabled={!online || executionActive}
+                <button type="button" className="session-rename-button" disabled={!online || (executionActive && !(approval?.actionable === false && connectorStatus.capabilities.sessionArchivePendingApproval))}
                   aria-label={t('归档会话', 'Archive session')} title={t('归档会话', 'Archive session')}
-                  onClick={() => setArchiveTarget({ id: threadId, title: activeSession?.title || threadId, environment: environmentId })}>
+                  onClick={() => setArchiveTarget({ id: threadId, title: activeSession?.title || threadId, environment: environmentId,
+                    cancelPendingApproval: approval?.actionable === false })}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
                     <path d="M4 8v12h16V8M3 4h18v4H3zM9 12h6" />
                   </svg>
@@ -2309,6 +2344,20 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           <DownloadIndicator download={fileDownload} onCancel={cancelFileDownload} />
         </div>
 
+        {lastArchived?.environment === environmentId && (
+          <section className="approval-card" role="status">
+            <strong>{t('已归档：', 'Archived: ')}{lastArchived.title}</strong>
+            <p>{t('记录已保留。恢复后可继续当前会话。', 'History is retained. Restore to continue this session.')}</p>
+            {restoreError && <p role="alert">{restoreError}</p>}
+            <div className="approval-actions">
+              <button disabled={restoringSession} onClick={() => setLastArchived(null)}>{t('关闭', 'Dismiss')}</button>
+              {connectorStatus?.capabilities.sessionRestore && <button disabled={!online || restoringSession} onClick={() => void restoreArchivedSession()}>
+                {restoringSession ? t('恢复中…', 'Restoring…') : t('恢复并打开', 'Restore and open')}
+              </button>}
+            </div>
+          </section>
+        )}
+
         {approval && (
           <section className="approval-card" aria-live="assertive">
             <div>
@@ -2319,8 +2368,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             </div>
             <pre>{approval.actionable === false
               ? t(
-                '这项请求已经由 Codex Desktop 持有，当前无法转交给 Web。请在电脑上处理这一次；之后从 Web 发起且由连接器持有的轮次，可以直接在这里批准或拒绝。',
-                'Codex Desktop already owns this request, so it cannot be transferred to the Web. Handle this one on your computer; later connector-owned turns started from the Web can be approved or rejected here.',
+                '这项审批由 Codex 电脑端持有，需要在电脑端批准或拒绝。也可以停止等待并归档，再恢复会话继续发送消息；待批准的操作不会执行。',
+                'Approve or reject this Desktop-owned request on your computer. Alternatively, stop waiting and archive, then restore the session to continue. The pending action will not be approved.',
               )
               : approval.summary}</pre>
             {approval.actionable !== false && (
@@ -2329,6 +2378,25 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                 <button className="approve" onClick={() => void answerApproval(true)}>{t('批准一次', 'Approve once')}</button>
               </div>
             )}
+            {approval.actionable === false && (
+              <div className="approval-actions">
+                <button disabled={!online} onClick={() => {
+                  const selected = selectedRequestRef.current;
+                  void openPermissionSettingsOnDesktop().catch((error) => {
+                    if (selected === selectedRequestRef.current) setApprovalStatusError(friendlyError(error));
+                  });
+                }}>{t('在电脑端打开', 'Open on computer')}</button>
+                <button disabled={!online || refreshingApproval} onClick={() => void refreshApprovalStatus()}>
+                  {refreshingApproval ? t('查询中…', 'Checking…') : t('刷新状态', 'Refresh status')}
+                </button>
+                {threadId && connectorStatus?.capabilities.sessionArchivePendingApproval && <button disabled={!online}
+                  onClick={() => setArchiveTarget({ id: threadId, title: activeSession?.title || threadId,
+                    environment: environmentId, cancelPendingApproval: true })}>
+                  {t('停止等待并归档', 'Stop waiting and archive')}
+                </button>}
+              </div>
+            )}
+            {approvalStatusError && <p role="status">{approvalStatusError}</p>}
           </section>
         )}
 

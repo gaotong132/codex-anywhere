@@ -38,7 +38,8 @@ export type ConnectorStatus = {
   platform: string;
   codexOnline: boolean;
   activeTurn: boolean;
-  capabilities: { networkAccess: boolean; fullAccess: boolean; fileUpload?: boolean; sessionArchive?: boolean };
+  capabilities: { networkAccess: boolean; fullAccess: boolean; fileUpload?: boolean; sessionArchive?: boolean;
+    sessionArchivePendingApproval?: boolean; sessionRestore?: boolean };
 };
 export type SessionPermissionConfig = {
   mode: PermissionMode;
@@ -65,7 +66,8 @@ export type Approval = {
   summary?: string;
   actionable?: boolean;
 };
-export type PendingApprovals = { approvals: Approval[]; externalApproval?: Approval };
+export type PendingApprovals = { approvals: Approval[]; externalApproval?: Approval;
+  desktopState?: { status: string; waitingOnApproval: boolean }; desktopStatusUnavailable?: boolean };
 export type BridgeMessage = {
   type: string;
   protocol?: ProtocolOffer | CurrentProtocol;

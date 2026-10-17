@@ -618,3 +618,11 @@ Before updates, back up the current commit, image, `.env`, the device registry i
 volume, connector configuration and identity files, Nginx configuration and `/etc/letsencrypt`.
 Restrict access to these private backups. Preserve sessions, workspaces and existing network configuration,
 and wait for tasks to become idle before restarting services. See “Operate and update” above for application upgrades.
+
+## Recovering a Desktop approval wait (main after v0.4.2)
+
+When Web shows an approval owned by the computer, use Open on computer and then Refresh status. Web does not approve that request. Status failures retry automatically; unknown state is not treated as resolution.
+
+To end the wait instead, confirm Stop waiting and archive. The native client ends the wait and retains the session. Use Restore and open in the notice to continue the same task. This does not run the pending command or delete chat history; browser pages need fresh consent. After dismissing the notice or refreshing the page, restore through Codex Desktop's archived list. Ordinary active turns and unknown states cannot use this entry point for forced cancellation.
+
+Update Web and the PC Connector, and actually restart the Connector. Existing pairing remains valid. Do not disable approval protection or delete the session database to clear the wait.
