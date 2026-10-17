@@ -24,7 +24,7 @@ type CodexGateway = {
   readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
   updateModelConfig(threadId: string, value: Payload): Promise<any>;
-  readPermissionMode(threadId: string): Promise<any>;
+  readPermissionMode(threadId: string, options?: { fresh?: boolean }): Promise<any>;
   updatePermissionMode(threadId: string, mode: unknown): Promise<any>;
   startTurn(options: Payload): Promise<Record<string, any>>;
   steerTurn(options: Payload): Promise<Record<string, any>>;
@@ -42,6 +42,7 @@ type DesktopGateway = {
   readThreadState(options: Payload): Promise<any>;
   sendMessage(options: Payload): Promise<any>;
   renameThread(options: Payload): Promise<any>;
+  openThread?(options: Payload): Promise<any>;
 };
 type Dependencies = {
   browser?: BrowserSessionBroker;
@@ -190,11 +191,16 @@ async function dispatchAction({
   }
   if (action === 'session.permissions.read') {
     return {
-      ...await codex.readPermissionMode(String(payload.threadId || '')),
+      ...await codex.readPermissionMode(String(payload.threadId || ''), { fresh: mode === 'desktop' }),
       editable: mode === 'headless',
       networkAccess,
       allowFullAccess,
+      ...(mode === 'desktop' && desktop?.openThread ? { canOpenOnDesktop: true } : {}),
     };
+  }
+  if (action === 'session.desktop.open') {
+    if (mode !== 'desktop' || !desktop?.openThread) throw new Error('desktop_app_unavailable');
+    return desktop.openThread({ threadId: payload.threadId });
   }
   if (action === 'session.permissions.update') {
     if (mode !== 'headless') throw new Error('desktop_permission_mode_managed_on_computer');

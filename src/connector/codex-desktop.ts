@@ -102,6 +102,18 @@ export class CodexDesktopClient {
     return { threadId: targetThreadId, title };
   }
 
+  async openThread({ threadId }: { threadId?: unknown }) {
+    const targetThreadId = requireThreadId(threadId);
+    const result = await this.callTool({
+      tool: 'navigate_to_codex_page',
+      arguments: { threadId: targetThreadId },
+      callerThreadId: targetThreadId,
+      callId: `bridge-open-${randomUUID()}`,
+    });
+    if (result?.success !== true) throw new Error('desktop_thread_open_failed');
+    return { threadId: targetThreadId, opened: true };
+  }
+
   async listThreads({ callerThreadId, limit = 50 }: { callerThreadId?: unknown; limit?: number } = {}) {
     const caller = String(callerThreadId || '').trim();
     if (!caller) return [];

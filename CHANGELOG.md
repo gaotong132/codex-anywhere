@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Replace misleading disabled permission choices for desktop-managed tasks with their current access, an action to open the same task on the computer, and a persisted-permission refresh. Desktop permissions still require a change in Codex Desktop; ECS retains all three choices and explains temporary locks during execution.
+
 ## v0.4.1 — 2026-10-16
 
 - Keep unfinished mutations outside the completed-result cache so eviction or TTL expiry cannot redispatch them on reconnect; bound pending requests.

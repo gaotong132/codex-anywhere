@@ -150,3 +150,16 @@ test('task isolation failures are preserved and explained without claiming deliv
   }), /desktop_thread_identity_mismatch/);
   assert.match(friendlyError(new Error('desktop_thread_identity_mismatch')), /已阻止操作.*会话身份不一致/);
 });
+
+test('opening Desktop permissions navigates only to the selected task, without changing its settings', async () => {
+  const { desktop, calls } = captureDesktop();
+  assert.deepEqual(await desktop.openThread({ threadId: 'selected-task' }), { threadId: 'selected-task', opened: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].params.tool, 'navigate_to_codex_page');
+  assert.equal(calls[0].params.threadId, 'selected-task');
+  assert.deepEqual(calls[0].params.arguments, { threadId: 'selected-task' });
+  await assert.rejects(desktop.openThread({ threadId: '' }), /thread_id_required/);
+  assert.equal(calls.length, 1);
+  desktop.callTool = async () => ({ success: false });
+  await assert.rejects(desktop.openThread({ threadId: 'selected-task' }), /desktop_thread_open_failed/);
+});

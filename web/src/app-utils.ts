@@ -37,6 +37,7 @@ export function friendlyError(error: unknown) {
   }
   if (message === 'turn_start_timeout') return t('等待原会话可写超时，消息没有发送，已恢复到输入框。', 'Timed out waiting for the session to become writable. The message was not sent and has been restored.');
   if (message === 'desktop_app_unavailable') return t('桌面 Codex 当前不可用，请打开桌面应用后重试。', 'Codex Desktop is unavailable. Open it and try again.');
+  if (message === 'desktop_thread_open_failed') return t('未能在电脑端打开此会话，请确认 Codex 桌面应用可用后重试。', 'Could not open this task on the computer. Make sure Codex Desktop is available and try again.');
   if (message === 'desktop_thread_identity_mismatch') return t('已阻止操作：会话身份不一致。请更新 PC 连接器后重试，消息不会转发到其他会话。', 'Operation blocked: task identities do not match. Update the PC connector and retry; the message will not be forwarded to another task.');
   if (message === 'session_name_required') return t('请输入会话名称。', 'Enter a session name.');
   if (message === 'session_name_too_long') return t('会话名称不能超过 100 个字符。', 'Session names cannot exceed 100 characters.');

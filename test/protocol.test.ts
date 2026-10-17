@@ -2983,6 +2983,12 @@ test('rollout permission mode follows the latest persisted thread settings', asy
       },
     })}\n`);
     assert.equal(await readRolloutPermissionMode(filePath), 'full');
+    const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
+    codex.ensureStarted = async () => {};
+    codex.sessionMetadata.set('thread-1', { cwd: process.cwd(), path: filePath, canAcceptDirectInput: true });
+    codex.sessionPermissionModes.set('thread-1', 'ask');
+    assert.deepEqual(await codex.readPermissionMode('thread-1'), { mode: 'ask' });
+    assert.deepEqual(await codex.readPermissionMode('thread-1', { fresh: true }), { mode: 'full' });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

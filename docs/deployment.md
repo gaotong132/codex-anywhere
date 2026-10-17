@@ -330,6 +330,7 @@ Keep the current and previous deployment plus needed base/container images; do n
 | Symptom | Check |
 | --- | --- |
 | Windows remains offline | Check the same user's running Desktop, awake computer, Connector approval and `last-start-error.log`; a scheduled task alone does not prove connectivity |
+| Desktop permission choices are unavailable | Existing `personal-pc` tasks use Codex Desktop permissions. The access menu shows the current mode and can open the same task on the computer; change permissions there, then choose Refresh permissions. The Desktop tool API does not expose a permission setter. Headless ECS tasks keep the three editable modes. |
 | Linux reports no login or executable | Check systemd `User`, `HOME`, executable paths and that account's `codex login status` |
 | Browser storage was cleared | Generate a new pairing link for that profile and revoke the retired device if appropriate; do not reset the whole registry |
 | HTML still shows source or relative images are missing | Refresh Web, use matching v0.4.1 nodes and check the Connector's raster-image roots |

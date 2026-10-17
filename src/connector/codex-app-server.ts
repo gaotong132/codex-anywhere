@@ -580,12 +580,12 @@ export class CodexAppServer extends EventEmitter {
     return { ...settings, fastMode, models };
   }
 
-  async readPermissionMode(threadId: unknown) {
+  async readPermissionMode(threadId: unknown, { fresh = false }: { fresh?: boolean } = {}) {
     await this.ensureStarted();
     const resolvedThreadId = String(threadId || '').trim();
     if (!resolvedThreadId) throw new Error('thread_id_required');
     const remembered = this.sessionPermissionModes.get(resolvedThreadId);
-    if (remembered) return { mode: remembered };
+    if (remembered && !fresh) return { mode: remembered };
     let metadata = this.sessionMetadata.get(resolvedThreadId);
     if (!metadata?.path) {
       await this.listSessions();

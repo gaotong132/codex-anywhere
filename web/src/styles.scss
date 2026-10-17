@@ -499,6 +499,15 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   > .permission-mode-note { color: #738198; }
 }
 .permission-mode-options { display: grid; gap: 6px; }
+.permission-mode-summary small { font-size: inherit; }
+.permission-mode-desktop {
+  display: grid; gap: 10px; font-size: 11px; line-height: 1.5;
+  p { margin: 0; }
+  strong { color: #e5ebf5; }
+  > div { display: flex; flex-wrap: wrap; gap: 8px; }
+  button { padding: 7px 10px; border: 1px solid #344660; border-radius: 8px; background: #142037; color: #c2d5f6; cursor: pointer; font-size: 11px; }
+  button:disabled { opacity: .6; cursor: default; }
+}
 .permission-mode-options > button {
   width: 100%; display: grid; grid-template-columns: 25px minmax(0, 1fr) 16px; align-items: center; gap: 9px; padding: 10px; border: 1px solid transparent; border-radius: 10px; color: #aeb9ca; background: #0d141f; text-align: left; cursor: pointer;
   > span:nth-child(2) { min-width: 0; display: grid; gap: 2px; }

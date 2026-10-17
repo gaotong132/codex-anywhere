@@ -38,6 +38,8 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
 - **Choose models and permissions** — select the model, reasoning effort, fast mode and approval mode, including
   GPT-6 Astra, Max and Ultra when offered by the selected node. Headless nodes support user approval, Codex auto-review
   and explicitly enabled full access; settings and new-task defaults stay scoped to each environment.
+  Existing Desktop tasks show their current permissions, with actions to open the same task on the computer and refresh
+  its permissions; permission changes still happen in Codex Desktop.
 - **Answer task questions** — choose suggested answers or enter your own in question cards, including those from
   `request_user_input_async`. Answered state syncs with Desktop and full exchanges remain expandable; answering preserves
   the chat draft, and preselected options are never submitted automatically.

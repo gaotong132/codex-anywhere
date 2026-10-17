@@ -45,6 +45,7 @@ export type SessionPermissionConfig = {
   editable: boolean;
   networkAccess: boolean;
   allowFullAccess: boolean;
+  canOpenOnDesktop?: boolean;
 };
 
 export type FollowState = 'idle' | 'checking' | 'following' | 'synced' | 'error';

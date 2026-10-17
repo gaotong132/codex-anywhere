@@ -246,6 +246,28 @@ test('Desktop permission modes remain owned by the computer', async () => {
   assert.equal(updates, 0);
 });
 
+test('Desktop permissions refresh persisted state and expose navigation only for a capable Desktop connector', async () => {
+  const calls: any[] = [];
+  const dependencies = createDependencies({
+    codex: { readPermissionMode: async (...args) => { calls.push(args); return { mode: 'full' }; } },
+    desktop: { openThread: async (args) => { calls.push(args); return { opened: true }; } },
+  });
+  const handle = createRequestHandler(dependencies);
+  const read = await handle(request('session.permissions.read', { threadId: 'thread-1' }));
+  assert.equal(read.data.editable, false);
+  assert.equal(read.data.canOpenOnDesktop, true);
+  assert.deepEqual(calls[0], ['thread-1', { fresh: true }]);
+  const opened = await handle(request('session.desktop.open', { threadId: 'thread-1', hostId: 'elsewhere' }));
+  assert.equal(opened.ok, true);
+  assert.deepEqual(calls[1], { threadId: 'thread-1' });
+  for (const candidate of [createDependencies(), { ...dependencies, mode: 'headless' as const }]) {
+    const unavailable = createRequestHandler(candidate);
+    assert.equal((await unavailable(request('session.permissions.read', { threadId: 'thread-1' }))).data.canOpenOnDesktop, undefined);
+    assert.equal((await unavailable(request('session.desktop.open', { threadId: 'thread-1' }))).error, 'desktop_app_unavailable');
+  }
+  assert.equal(calls.length, 3, 'only permission read reaches the headless gateway');
+});
+
 test('session rename stays inside the selected execution environment', async () => {
   const desktopCalls = [];
   const desktopHandle = createRequestHandler(createDependencies({

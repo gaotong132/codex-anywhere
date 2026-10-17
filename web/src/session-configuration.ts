@@ -32,6 +32,7 @@ export function useSessionConfiguration({
   const [connectorState, setConnectorState] = useState<KeyedValue<ConnectorStatus | null> | null>(null);
   const [permissionState, setPermissionState] = useState<KeyedValue<SessionPermissionConfig | null> | null>(null);
   const [permissionLoadingKey, setPermissionLoadingKey] = useState<string | null>(null);
+  const permissionRequestRef = useRef(0);
   const selectionKey = `${environmentId}\0${threadId || ''}`;
   const selectionKeyRef = useRef(selectionKey);
   selectionKeyRef.current = selectionKey;
@@ -64,9 +65,10 @@ export function useSessionConfiguration({
     return () => { disposed = true; };
   }, [environmentId, online, request]);
 
-  useEffect(() => {
+  const refreshPermissionConfig = useCallback(async () => {
+    const requestNumber = ++permissionRequestRef.current;
     if (!online || !connectorStatus) {
-      return undefined;
+      return;
     }
     if (!threadId) {
       setPermissionState({
@@ -79,29 +81,35 @@ export function useSessionConfiguration({
         },
       });
       setPermissionLoadingKey(null);
-      return undefined;
+      return;
     }
-    let disposed = false;
     const targetKey = selectionKey;
+    const isCurrent = () => permissionRequestRef.current === requestNumber && selectionKeyRef.current === targetKey;
     setPermissionLoadingKey(targetKey);
-    void request<SessionPermissionConfig>('session.permissions.read', { threadId })
-      .then((config) => {
-        if (!disposed && selectionKeyRef.current === targetKey) {
-          setPermissionState({ key: targetKey, value: config });
-        }
-      })
-      .catch(() => {
-        if (!disposed && selectionKeyRef.current === targetKey) {
-          setPermissionState({ key: targetKey, value: null });
-        }
-      })
-      .finally(() => {
-        if (!disposed && selectionKeyRef.current === targetKey) setPermissionLoadingKey(null);
-      });
-    return () => { disposed = true; };
+    try {
+      const config = await request<SessionPermissionConfig>('session.permissions.read', { threadId });
+      if (isCurrent()) setPermissionState({ key: targetKey, value: config });
+    } catch (error) {
+      if (isCurrent()) setPermissionState((previous) => previous?.key === targetKey ? previous : { key: targetKey, value: null });
+      throw error;
+    } finally {
+      if (isCurrent()) setPermissionLoadingKey(null);
+    }
   }, [connectorStatus, environmentId, online, request, selectionKey, threadId]);
 
+  useEffect(() => {
+    void refreshPermissionConfig().catch(() => {});
+    return () => { permissionRequestRef.current += 1; };
+  }, [refreshPermissionConfig]);
+
+  const openPermissionSettingsOnDesktop = useCallback(async () => {
+    if (!threadId) throw new Error('thread_id_required');
+    await request('session.desktop.open', { threadId });
+  }, [request, threadId]);
+
   const savePermissionMode = useCallback(async (mode: PermissionMode) => {
+    permissionRequestRef.current += 1;
+    setPermissionLoadingKey(null);
     const targetKey = selectionKeyRef.current;
     const targetThreadId = threadId;
     let nextConfig: SessionPermissionConfig;
@@ -170,6 +178,8 @@ export function useSessionConfiguration({
     modelConfigLoading,
     permissionConfig,
     permissionConfigLoading,
+    refreshPermissionConfig,
+    openPermissionSettingsOnDesktop,
     saveModelConfig,
     savePermissionMode,
   };

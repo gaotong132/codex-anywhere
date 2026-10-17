@@ -519,6 +519,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     permissionConfigLoading,
     saveModelConfig,
     savePermissionMode,
+    refreshPermissionConfig,
+    openPermissionSettingsOnDesktop,
   } = useSessionConfiguration({ environmentId, online, threadId, request });
 
   const replayPendingRequests = useCallback(() => {
@@ -2207,10 +2209,13 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                 onSave={saveModelConfig}
               />
               <PermissionModeControl
+                key={`${environmentId}:${threadId}`}
                 config={permissionConfig}
                 loading={permissionConfigLoading}
                 disabled={!online || executionActive}
                 onChange={savePermissionMode}
+                onRefresh={refreshPermissionConfig}
+                onOpenDesktop={openPermissionSettingsOnDesktop}
               />
               <BrowserSessionStatus key={`${environmentId}:${threadId}`} environmentId={environmentId} threadId={threadId} online={online} request={request} />
             </div>
