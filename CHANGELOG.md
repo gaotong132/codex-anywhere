@@ -2,7 +2,13 @@
 
 English | [简体中文](CHANGELOG.zh-CN.md)
 
-## Unreleased
+## v0.4.3 — 2026-10-17
+
+- Serialize expired-attachment cleanup by directory, tolerate disappeared entries and continue scanning; prevent concurrent Windows uploads from failing on deletion races.
+- Validate partial-upload file identity and timestamps before appending and finalizing, detecting same-size external changes rather than returning a checksum for different bytes.
+- Extract shared attachment cleanup without pulling image-preview dependencies into generic uploads. Update file-type, Zod, Vite and Sass within their current major versions.
+- Refresh bilingual guides and release metadata; retain Mermaid 11 pending a separate browser-compatibility migration.
+
 
 - Recover from Desktop-owned approval waits: open the task on the computer, refresh status, or explicitly stop waiting and archive, then restore and open the same session. Pending actions are never approved by this workflow.
 - Retry approval polling after transient failures, preserve unknown Desktop state, ignore obsolete session reads and use actual idle/completed status when a wait ends.

@@ -2,7 +2,7 @@
 
 English | [简体中文](SECURITY.zh-CN.md)
 
-Documentation for **v0.4.2 (2026-10-17)** · [Release and upgrade](release-0.4.2.md) · [Documentation index](README.md)
+Documentation for **v0.4.3 (2026-10-17)** · [Release and upgrade](release-0.4.3.md) · [Documentation index](README.md)
 
 ## Supported versions
 
@@ -218,3 +218,5 @@ The running relay reloads the registry and closes a revoked connection, normally
 Unfinished mutating requests remain keyed by the authenticated device and request ID until settlement, independently of the 64-entry completed-result cache. At most 64 distinct mutations may be pending; excess work is rejected without executing it. Completed results remain in a bounded LRU for up to two minutes (30 minutes for file operations), measured from completion. This is process-local replay protection, not durable exactly-once execution across Connector restarts or completed-cache eviction.
 
 Preview reads allocate at most the checked file size and validate file metadata again after reading. Raster caches include file identity and change time as well as size and modification time. Downloads reserve one opening slot per device, do not expire an active read and recheck the final chunk before reporting success. These checks detect normal concurrent changes; they are not filesystem snapshots or protection against an attacker controlling the Connector OS.
+
+Uploads also compare the partial file’s identity, size and timestamps before each append and completion. This detects ordinary external edits, including same-size changes; it does not provide atomic isolation against a process that controls the host filesystem.

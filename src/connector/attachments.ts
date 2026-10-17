@@ -1,15 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, open, readdir, unlink, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import { readGeneratedImagePreview } from './generated-images.js';
 import { readRasterImagePreview } from './image-previews.js';
 import { fileSnapshot, readBoundedFile, sameFileSnapshot } from './bounded-file.js';
+import { ATTACHMENT_MAX_AGE_MS, cleanupAttachments } from './attachment-cleanup.js';
+export { cleanupAttachments } from './attachment-cleanup.js';
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 512 * 1024;
-const ATTACHMENT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ATTACHMENT_DIRECTORY = join(tmpdir(), 'personal-codex-bridge', 'attachments');
 
 const IMAGE_EXTENSIONS = new Map([
@@ -141,19 +142,6 @@ async function readablePreviewPath(path: string) {
     return null;
   }
   return candidate;
-}
-
-export async function cleanupAttachments(directory: string, now = Date.now(), maxAgeMs = ATTACHMENT_MAX_AGE_MS) {
-  const root = resolve(directory);
-  const entries = await readdir(root, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isFile() || entry.isSymbolicLink()) continue;
-    const path = resolve(root, entry.name);
-    if (dirname(path) !== root) continue;
-    const stats = await lstat(path);
-    if (!stats.isFile() || stats.isSymbolicLink() || now - stats.mtimeMs <= maxAgeMs) continue;
-    await unlink(path);
-  }
 }
 
 async function ensureSafeDirectory(directory: string) {

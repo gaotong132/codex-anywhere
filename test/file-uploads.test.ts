@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import test from 'node:test';
@@ -127,5 +127,22 @@ test('file links persist in history with escaped filenames and arbitrary extensi
   assert.equal(localFilePathFromHref(href), file.path);
   assert.ok(new TextEncoder().encode(safeUploadName('测'.repeat(200))).length <= 160);
   assert.equal(safeUploadName(''), 'attachment.bin');
+});
+
+test('same-size changes to a partial upload cannot publish bytes with an incorrect checksum', async (t) => {
+  for (const stage of ['chunk', 'complete'] as const) {
+    const manager = await fixture(t);
+    const opened = await manager.begin({ name: 'snapshot.bin', size: stage === 'chunk' ? 4 : 2 }, 'a');
+    await manager.chunk({ ...opened, offset: 0, data: 'YWI=' }, 'a');
+    const path = join(manager.directory, `${opened.uploadId}.part`);
+    await writeFile(path, 'xx');
+    const changed = new Date(Date.now() + 5_000);
+    await utimes(path, changed, changed);
+    await assert.rejects(stage === 'chunk'
+      ? manager.chunk({ ...opened, offset: 2, data: 'Y2Q=' }, 'a')
+      : manager.complete(opened, 'a'), /file_upload_changed/);
+    await manager.cancel(opened, 'a');
+    assert.deepEqual(await readdir(manager.directory), []);
+  }
 });
 

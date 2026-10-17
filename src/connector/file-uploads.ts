@@ -3,7 +3,8 @@ import { lstat, mkdir, open, rename, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { MAX_UPLOAD_BYTES, UPLOAD_CHUNK_BYTES, safeUploadName } from '../shared/file-upload.js';
-import { cleanupAttachments } from './attachments.js';
+import { cleanupAttachments } from './attachment-cleanup.js';
+import { fileSnapshot, sameFileSnapshot, type FileSnapshot } from './bounded-file.js';
 
 export const UPLOAD_DIRECTORY = join(tmpdir(), 'personal-codex-bridge', 'files');
 const UPLOAD_TTL_MS = 30 * 60_000;
@@ -11,6 +12,7 @@ const FILE_TTL_MS = 24 * 60 * 60_000;
 type Upload = {
   owner: string; path: string; name: string; size: number; offset: number;
   hash: Hash; touchedAt: number; busy: boolean;
+  snapshot?: FileSnapshot;
 };
 type Payload = Record<string, unknown>;
 
@@ -50,11 +52,9 @@ export class FileUploadManager {
       await mkdir(this.directory, { recursive: true, mode: 0o700 });
       const stats = await lstat(this.directory);
       if (!stats.isDirectory() || stats.isSymbolicLink()) throw new Error('attachment_directory_invalid');
-      await cleanupAttachments(this.directory, this.now(), FILE_TTL_MS).catch((error: NodeJS.ErrnoException) => {
-        // Another upload can finish or cancel between the cleanup scan and stat.
-        if (error.code !== 'ENOENT') throw error;
-      });
+      await cleanupAttachments(this.directory, this.now(), FILE_TTL_MS);
       await writeFile(upload.path, '', { flag: 'wx', mode: 0o600 });
+      upload.snapshot = fileSnapshot(await lstat(upload.path));
       upload.busy = false;
       return { uploadId, chunkBytes: UPLOAD_CHUNK_BYTES };
     } catch (error) {
@@ -71,6 +71,12 @@ export class FileUploadManager {
     return upload;
   }
 
+  private async checkSnapshot(upload: Upload) {
+    const stats = await lstat(upload.path);
+    if (!stats.isFile() || stats.isSymbolicLink() || !upload.snapshot
+      || !sameFileSnapshot(upload.snapshot, fileSnapshot(stats))) throw new Error('file_upload_changed');
+  }
+
   async chunk(payload: Payload, owner = '') {
     const upload = this.get(payload, owner);
     if (payload.offset !== upload.offset) throw new Error('file_upload_offset_mismatch');
@@ -82,16 +88,19 @@ export class FileUploadManager {
       || upload.offset + bytes.length > upload.size) throw new Error('attachment_size_mismatch');
     upload.busy = true;
     try {
-      const stats = await lstat(upload.path);
-      if (!stats.isFile() || stats.isSymbolicLink() || stats.size !== upload.offset) throw new Error('file_upload_changed');
+      await this.checkSnapshot(upload);
       const handle = await open(upload.path, 'r+');
       try {
+        if (!sameFileSnapshot(upload.snapshot!, fileSnapshot(await handle.stat()))) throw new Error('file_upload_changed');
         let written = 0;
         while (written < bytes.length) {
           const result = await handle.write(bytes, written, bytes.length - written, upload.offset + written);
           if (!result.bytesWritten) throw new Error('file_upload_write_failed');
           written += result.bytesWritten;
         }
+        const snapshot = fileSnapshot(await handle.stat());
+        if (snapshot.size !== upload.offset + bytes.length) throw new Error('file_upload_changed');
+        upload.snapshot = snapshot;
       } finally { await handle.close(); }
       upload.hash.update(bytes);
       upload.offset += bytes.length;
@@ -109,8 +118,7 @@ export class FileUploadManager {
     if (upload.offset !== upload.size) throw new Error('attachment_size_mismatch');
     upload.busy = true;
     try {
-      const stats = await lstat(upload.path);
-      if (!stats.isFile() || stats.isSymbolicLink() || stats.size !== upload.size) throw new Error('file_upload_changed');
+      await this.checkSnapshot(upload);
       const path = join(this.directory, `${randomUUID()}-${upload.name}`);
       await rename(upload.path, path);
       this.uploads.delete(String(payload.uploadId));

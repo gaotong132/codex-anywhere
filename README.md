@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Documentation for **v0.4.2 (2026-10-17)** · [Release and upgrade](docs/release-0.4.2.md) · [Documentation index](docs/README.md)
+Documentation for **v0.4.3 (2026-10-17)** · [Release and upgrade](docs/release-0.4.3.md) · [Documentation index](docs/README.md)
 
 [![CI](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)
@@ -44,7 +44,7 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
   `request_user_input_async`. Answered state syncs with Desktop and full exchanges remain expandable; answering preserves
   the chat draft, and preselected options are never submitted automatically.
 - **Handle task approvals** — approve or reject requests for connector-owned turns from Web.
-  Approvals already owned by Codex Desktop remain on the computer, preserving ownership across clients.
+  Approvals owned by Codex Desktop can be opened on the computer and refreshed. To abandon a wait, confirm Stop waiting and archive, then Restore and open the same task; pending actions are never approved.
 - **Upload files and paste screenshots** — use “+” in chat or a new task to attach one file per message.
   General files (including ZIP, PDF, Office documents and binaries) support up to 100 MB, chunked transfer with progress,
   unchanged bytes on the selected execution node, and persistent message links. PNG, JPEG and WebP retain image processing,

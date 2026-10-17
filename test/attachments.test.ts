@@ -235,3 +235,29 @@ test('attachment cleanup deletes only expired regular files', async (t) => {
   assert.equal((await stat(current)).isFile(), true);
   assert.equal((await stat(nested)).isDirectory(), true);
 });
+
+test('concurrent attachment cleanup tolerates files removed by another upload', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'bridge-cleanup-race-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const old = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  for (let i = 0; i < 30; i++) {
+    const path = join(directory, `${i}.png`);
+    await writeFile(path, ONE_PIXEL_PNG);
+    await utimes(path, old, old);
+  }
+  const results = await Promise.allSettled(Array.from({ length: 4 }, () => cleanupAttachments(directory)));
+  assert.deepEqual(results.map(result => result.status), Array(4).fill('fulfilled'),
+    JSON.stringify(results.filter(result => result.status === 'rejected')));
+  // Cleanup must finish scanning, rather than swallowing the first missing file.
+  const { readdir } = await import('node:fs/promises');
+  assert.deepEqual(await readdir(directory), []);
+});
+
+test('a failed cleanup does not poison the next scan of the directory', async (t) => {
+  const parent = await mkdtemp(join(tmpdir(), 'bridge-cleanup-retry-'));
+  t.after(() => rm(parent, { recursive: true, force: true }));
+  const directory = join(parent, 'attachments');
+  await assert.rejects(cleanupAttachments(directory), /ENOENT/);
+  await mkdir(directory);
+  await cleanupAttachments(directory);
+});

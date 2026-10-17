@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-文档对应 **v0.4.2（2026-10-17）** · [发布与升级](docs/release-0.4.2.zh-CN.md) · [文档索引](docs/README.zh-CN.md)
+文档对应 **v0.4.3（2026-10-17）** · [发布与升级](docs/release-0.4.3.zh-CN.md) · [文档索引](docs/README.zh-CN.md)
 
 [![CI](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)
@@ -38,7 +38,7 @@ Codex Anywhere 专注个人使用场景，会话保存在执行节点上；不�
 - **回答任务提问**：通过问题卡片选择建议答案或填写自己的回答，支持 `request_user_input_async`。
   已回答状态与 Desktop 同步，完整问答可展开查看；回答不会清空聊天草稿，预选答案也不会自动提交。
 - **处理任务审批**：在 Web 批准或拒绝连接器持有轮次中的审批请求。
-  已由 Codex Desktop 持有的审批仍在电脑上处理，避免跨端误操作。
+  电脑端持有的审批可在电脑端打开并刷新状态；如需放弃等待，可确认“停止等待并归档”，再“恢复并打开”同一会话，不会批准待执行操作。
 - **上传文件与粘贴截图**：在聊天框或新任务中通过“＋”选择文件，每条消息支持一个附件。
   通用文件（如 ZIP、PDF、Office 文档和二进制文件）最大 100 MB，分块传输、原样保存到所选执行端，显示上传进度并在会话中保留文件链接。
   PNG、JPEG、WebP 保留发送前预览和图片处理，也支持 Ctrl+V / ⌘+V 粘贴截图。上传文件不会自动执行，临时附件超过 24 小时后可在后续上传时清理。

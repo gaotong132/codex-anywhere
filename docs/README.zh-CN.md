@@ -1,8 +1,8 @@
-# 文档索引 · v0.4.2
+# 文档索引 · v0.4.3
 
 [English](README.md) | 简体中文
 
-按 2026-10-17 发布版本核对。可从[项目功能](../README.zh-CN.md)或[发布变化与升级步骤](release-0.4.2.zh-CN.md)开始。
+按 2026-10-17 发布版本核对。可从[项目功能](../README.zh-CN.md)或[发布变化与升级步骤](release-0.4.3.zh-CN.md)开始。
 
 | 指南 | 内容 |
 | --- | --- |
@@ -12,7 +12,7 @@
 | [浏览器插件](../extension/README.zh-CN.md) | 可选实验插件的安装、侧栏聊天、页面授权、截图、缩放和限制 |
 | [浏览器架构](browser-agent.zh-CN.md) | MCP、可信调用者身份、加密路由与验收边界 |
 | [复合控件](../extension/docs/composite-controls.zh-CN.md) | 内嵌控件、原生鼠标校验与缩放截图回归 |
-| [本轮代码审视](code-review-2026-10-17.zh-CN.md) | 已复现的问题、重构范围、验证和保留边界 |
+| [本轮代码审视](code-review-0.4.3.zh-CN.md) | 已复现的问题、重构范围、验证和保留边界 |
 | [更新日志](../CHANGELOG.zh-CN.md) | 已发布版本历史 |
 
 以下为历史记录，日期、版本、测试数量和部署说明均对应当时的执行情况：
@@ -25,3 +25,5 @@
 - [2026-10-03 后台恢复与图片检查](history-recovery-review-2026-10-03.zh-CN.md)
 
 - [2026-10-16 review](code-review-2026-10-16.md) · [中文](code-review-2026-10-16.zh-CN.md)
+
+- [v0.4.2 review](code-review-2026-10-17.md) · [中文](code-review-2026-10-17.zh-CN.md)
