@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Compact the PC/ECS buttons to a single 40 px row with a status dot; retain selected state, status tooltips and screen-reader labels. Refresh the README preview.
+
 ## v0.4.4 — 2026-10-18
 
 - Share attachment preparation across both editors; reject obsolete images/errors after replacement, removal, dialog closure or environment changes, and release unused preview URLs.

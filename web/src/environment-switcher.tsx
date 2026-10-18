@@ -23,8 +23,8 @@ export function EnvironmentSwitcher({ value, environmentIds, onlineEnvironmentId
         return <button type="button" key={id} className="environment-shortcut" aria-pressed={value === id}
           title={`${environmentDisplayName(id)} · ${status}`}
           onClick={() => { if (id !== value) onChange(id); }}>
+          <span className="environment-shortcut-status"><span className={`environment-status-dot ${available ? 'online' : 'offline'}`} aria-hidden="true" /><span className="visually-hidden">{status}</span></span>
           <strong>{environmentShortName(id)}</strong>
-          <span className="environment-shortcut-status"><span className={`environment-status-dot ${available ? 'online' : 'offline'}`} aria-hidden="true" />{status}</span>
         </button>;
       })}
     </div> : <CustomSelect className="environment-picker-select" value={value} options={options} onChange={onChange}
