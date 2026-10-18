@@ -245,7 +245,7 @@ session on each node and confirm that returning to the other node never mixes th
 verify that the public URL uses the intended transport and that `ECS-IP:3300` is unreachable externally.
 
 ## Operate and update
-For the tagged release, follow the [v0.4.3 upgrade procedure](release-0.4.4.md#upgrade).
+For the tagged release, follow the [v0.4.4 upgrade procedure](release-0.4.4.md#upgrade).
 The `update` helper tracks `main`; it does not pin a tag or wait for all business tasks to become idle.
 Save the previous commit, image and private state first, schedule an idle window, and verify each Connector after restart.
 

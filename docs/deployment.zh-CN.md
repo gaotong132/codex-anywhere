@@ -234,7 +234,7 @@ journalctl -u codex-anywhere-connector -n 50 --no-pager
 构建、加载插件，配置精确扩展 Origin 白名单及节点 MCP；普通 Web 配对成功并不代表这些附加步骤也已完成。
 
 ## 日常管理与升级
-固定使用发布版本时，按 [v0.4.3 升级步骤](release-0.4.4.zh-CN.md#升级)操作。
+固定使用发布版本时，按 [v0.4.4 升级步骤](release-0.4.4.zh-CN.md#升级)操作。
 `update` 脚本跟随 `main`，不会锁定 tag，也不会等待全部业务任务空闲。升级前先保留旧提交、镜像和私有状态，
 选择空闲窗口，并在重启后逐个验证 Connector。
 
