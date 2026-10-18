@@ -8,8 +8,8 @@ import {
 } from './app-utils';
 import type { ExecutionState, Session } from './app-types';
 import { t } from './i18n';
-import { CustomSelect, SidebarIcon } from './ui-components';
-import { environmentDisplayName } from './execution-environments';
+import { SidebarIcon } from './ui-components';
+import { EnvironmentSwitcher } from './environment-switcher';
 
 type SessionSidebarProps = {
   open: boolean;
@@ -61,16 +61,6 @@ export const SessionSidebar = memo(function SessionSidebar({
     return [...matches]
       .sort((left, right) => sessionUpdatedAt(right.updatedAt) - sessionUpdatedAt(left.updatedAt));
   }, [search, sessions]);
-  const environmentOptions = useMemo(() => environmentIds.map((id) => {
-    const online = onlineEnvironmentIds.includes(id);
-    return {
-      value: id,
-      label: environmentDisplayName(id),
-      description: online ? t('在线', 'Online') : t('离线', 'Offline'),
-      leading: <span className={`environment-status-dot ${online ? 'online' : 'offline'}`} />,
-    };
-  }), [environmentIds, onlineEnvironmentIds]);
-  const selectedEnvironmentOnline = onlineEnvironmentIds.includes(environmentId);
 
   return (
     <aside className={`sidebar ${open ? 'open' : ''}`} aria-label={t('会话列表', 'Session list')}>
@@ -96,23 +86,8 @@ export const SessionSidebar = memo(function SessionSidebar({
           </button>
         </div>
       </div>
-      <div className="environment-picker">
-        <span className="environment-picker-label">{t('执行环境', 'Execution environment')}</span>
-        <CustomSelect
-          className="environment-picker-select"
-          value={environmentId}
-          options={environmentOptions}
-          onChange={onEnvironmentChange}
-          ariaLabel={t('切换执行环境', 'Switch execution environment')}
-          triggerContent={(
-            <>
-              <span className={`environment-status-dot ${selectedEnvironmentOnline ? 'online' : 'offline'}`} aria-hidden="true" />
-              <strong>{environmentDisplayName(environmentId)}</strong>
-              <small>{selectedEnvironmentOnline ? t('在线', 'Online') : t('离线', 'Offline')}</small>
-            </>
-          )}
-        />
-      </div>
+      <EnvironmentSwitcher value={environmentId} environmentIds={environmentIds}
+        onlineEnvironmentIds={onlineEnvironmentIds} onChange={onEnvironmentChange} />
       {searchOpen && (
         <label className="compact-search session-search-panel">
           <span className="compact-search-icon"><SidebarIcon name="search" /></span>

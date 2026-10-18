@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-文档对应 **v0.4.3（2026-10-17）** · [发布与升级](docs/release-0.4.3.zh-CN.md) · [文档索引](docs/README.zh-CN.md)
+文档对应 **v0.4.4（2026-10-18）** · [发布与升级](docs/release-0.4.4.zh-CN.md) · [文档索引](docs/README.zh-CN.md)
 
 [![CI](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)
@@ -24,7 +24,7 @@ Codex Anywhere 专注个人使用场景，会话保存在执行节点上；不�
 
 ## 功能与亮点
 
-- **切换执行环境**：在同一个浏览器里选择个人电脑或 24×7 无头 ECS 节点。会话、未读状态、最近工作目录、
+- **切换执行环境**：个人电脑与 24×7 无头 ECS 节点并排显示，一次点击即可切换；超过两个环境时使用下拉选择。切换后侧栏保持展开，选定会话再收起。会话、未读状态、最近工作目录、
   附件和请求按环境隔离，操作始终发送到当前选择的机器。
 - **继续真实会话**：浏览、重命名和继续已有 Codex 会话，也可以在本机项目中新建任务。PC 空闲会话可从标题栏归档，
   在 Codex 客户端恢复；保留聊天记录和项目文件。历史支持 Markdown，长会话先显示最新内容，向上浏览时加载更早记录，并保持阅读位置。

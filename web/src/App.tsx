@@ -36,7 +36,8 @@ import {
   getClipboardImage,
   type UploadedImage,
 } from './image-utils';
-import { buildFileMessage, prepareAttachment, uploadFile } from './file-upload';
+import { buildFileMessage, uploadFile } from './file-upload';
+import { useAttachmentDraft } from './attachment-draft';
 import { useFileTransfer } from './file-transfer';
 import { useFilePreviews } from './file-preview-client';
 import { t } from './i18n';
@@ -156,7 +157,6 @@ import type {
   BridgeMessage,
   FollowState,
   HistoryPage,
-  PendingAttachment,
   PendingApprovals,
   Session,
   TurnStartResult,
@@ -245,7 +245,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [initialHistoryLoaded, setInitialHistoryLoaded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
-  const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null);
+  const { attachment: pendingAttachment, setAttachment: setPendingAttachment, choose: prepareMessageAttachment, invalidate: invalidateMessageAttachment } = useAttachmentDraft();
   const [knownAttachments, setKnownAttachments] = useState<Record<string, KnownAttachment>>(loadKnownAttachments);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<ImageUploadState | null>(null);
@@ -285,7 +285,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [restoringSession, setRestoringSession] = useState(false);
   const [restoreError, setRestoreError] = useState('');
   const [newSessionPrompt, setNewSessionPrompt] = useState('');
-  const [newSessionAttachment, setNewSessionAttachment] = useState<PendingAttachment | null>(null);
+  const { attachment: newSessionAttachment, setAttachment: setNewSessionAttachment, choose: prepareNewSessionAttachment } = useAttachmentDraft();
+  const closeNewSessionDialog = useCallback(() => {
+    setNewSessionDialogOpen(false);
+    setNewSessionAttachment(null);
+  }, [setNewSessionAttachment]);
   const [newSessionError, setNewSessionError] = useState('');
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const [resumeEpoch, setResumeEpoch] = useState(0);
@@ -380,20 +384,14 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       });
     }
   }, [executionState, threadId, updateSessionAttention]);
-  useEffect(() => () => {
-    if (pendingAttachment) URL.revokeObjectURL(pendingAttachment.previewUrl);
-  }, [pendingAttachment]);
-  useEffect(() => () => {
-    if (newSessionAttachment) URL.revokeObjectURL(newSessionAttachment.previewUrl);
-  }, [newSessionAttachment]);
   useEffect(() => {
     if (!newSessionDialogOpen) return undefined;
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setNewSessionDialogOpen(false);
+      if (event.key === 'Escape') closeNewSessionDialog();
     };
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
-  }, [newSessionDialogOpen]);
+  }, [newSessionDialogOpen, closeNewSessionDialog]);
 
 
   useEffect(() => {
@@ -1402,17 +1400,18 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     if (authenticated && online) preloadMessageBubble();
   }, [authenticated, online]);
 
-  const selectSession = useCallback((session: Session | null) => {
+  const selectSession = useCallback((session: Session | null, { closeDrawer = true }: { closeDrawer?: boolean } = {}) => {
     const nextThreadId = session?.id || null;
     if (nextThreadId) {
       updateSessionAttention((current) => markSessionAttentionRead(current, nextThreadId));
     }
     if (nextThreadId && nextThreadId === threadIdRef.current) {
-      setDrawerOpen(false);
+      if (closeDrawer) setDrawerOpen(false);
       return;
     }
     cancelFileDownload();
     optimisticRestoreRef.current = null;
+    invalidateMessageAttachment();
     selectedRequestRef.current += 1;
     const requestVersion = selectedRequestRef.current;
     setThreadId(nextThreadId);
@@ -1439,17 +1438,16 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     viewport.following = true;
     streamItemRef.current = null;
     activeTurnIdRef.current = '';
-    setDrawerOpen(false);
+    if (closeDrawer) setDrawerOpen(false);
     if (nextThreadId) {
       preloadMessageBubble();
       void loadHistory(nextThreadId, null, requestVersion);
     }
-  }, [cancelFileDownload, loadHistory, resetExecutionPresentation, updateSessionAttention]);
+  }, [cancelFileDownload, invalidateMessageAttachment, loadHistory, resetExecutionPresentation, updateSessionAttention]);
 
   const selectEnvironment = useCallback((value: string) => {
     const nextEnvironmentId = normalizeEnvironmentId(value);
     if (!nextEnvironmentId || nextEnvironmentId === environmentIdRef.current) {
-      setDrawerOpen(false);
       return;
     }
 
@@ -1462,6 +1460,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     runningRef.current = false;
     ownedTurnThreadIdRef.current = null;
     setOnline(false);
+    setPendingAttachment(null);
     setEnvironmentId(nextEnvironmentId);
     environmentIdRef.current = nextEnvironmentId;
     storeSelectedEnvironmentId(nextEnvironmentId);
@@ -1477,13 +1476,13 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     setSessionsInitialized(false);
     setSessionSearch('');
     setSearchOpen(false);
-    setNewSessionDialogOpen(false);
+    closeNewSessionDialog();
     setRenameDialogOpen(false);
     setNewSessionCwd(() => {
       const stored = loadEnvironmentValue(NEW_SESSION_CWD_KEY, nextEnvironmentId) || '';
       return isTemporaryProjectPath(stored) ? '' : stored;
     });
-    selectSession(null);
+    selectSession(null, { closeDrawer: false });
     resetExecution();
 
     const connectorAvailable = onlineEnvironmentIdsRef.current.includes(nextEnvironmentId);
@@ -1493,7 +1492,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     } else {
       setStatusText(environmentOfflineLabel(nextEnvironmentId));
     }
-  }, [beginSecureChannel, cancelFileDownload, rejectPendingRequests, resetExecution, selectSession]);
+  }, [beginSecureChannel, cancelFileDownload, closeNewSessionDialog, rejectPendingRequests, resetExecution, selectSession, setPendingAttachment]);
 
   const beginNewSession = useCallback(() => {
     setNewSessionPrompt('');
@@ -1564,7 +1563,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     if (!authenticated || !online || !connectionEpoch || creatingNewSession || threadId) return;
     const previousThreadId = loadEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current);
     if (!previousThreadId) return;
-    selectSession({ id: previousThreadId, title: '' });
+    selectSession({ id: previousThreadId, title: '' }, { closeDrawer: false });
     optimisticRestoreRef.current = previousThreadId;
   }, [authenticated, connectionEpoch, creatingNewSession, online, selectSession, threadId]);
 
@@ -1573,14 +1572,14 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     if (!restoredThreadId || !sessions.length || threadId !== restoredThreadId) return;
     optimisticRestoreRef.current = null;
     const restoredSession = sessions.find((session) => session.id === restoredThreadId);
-    if (!restoredSession) selectSession(sessions[0]);
+    if (!restoredSession) selectSession(sessions[0], { closeDrawer: false });
   }, [selectSession, sessions, threadId]);
 
   useEffect(() => {
     if (!authenticated || creatingNewSession || threadId || !sessions.length) return;
     const previousThreadId = loadEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current);
     const initialSession = sessions.find((session) => session.id === previousThreadId) || sessions[0];
-    selectSession(initialSession);
+    selectSession(initialSession, { closeDrawer: false });
   }, [authenticated, creatingNewSession, selectSession, sessions, threadId]);
 
   useEffect(() => {
@@ -1622,31 +1621,18 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     )) loadOlder();
   }, [historyLoading, initialHistoryLoaded, loadOlder, nextCursor]);
 
-  const chooseAttachment = useCallback(async (file?: File) => {
-    if (!file) return;
+  const chooseAttachment = useCallback((file?: File) => {
     const selectionVersion = selectedRequestRef.current;
-    try {
-      const prepared = await prepareAttachment(file);
-      if (selectionVersion !== selectedRequestRef.current) {
-        if (prepared.previewUrl) URL.revokeObjectURL(prepared.previewUrl);
-        return;
-      }
-      setPendingAttachment(prepared);
-    } catch (error) {
-      if (selectionVersion === selectedRequestRef.current) reportTimelineError(error);
-    }
-  }, [reportTimelineError]);
+    return prepareMessageAttachment(file, reportTimelineError,
+      () => selectionVersion === selectedRequestRef.current);
+  }, [prepareMessageAttachment, reportTimelineError]);
 
   const chooseNewSessionAttachment = useCallback(async (file?: File) => {
-    if (!file) return;
-    try {
-      const prepared = await prepareAttachment(file);
-      setNewSessionAttachment(prepared);
-      setNewSessionError('');
-    } catch (error) {
-      setNewSessionError(friendlyError(error));
-    }
-  }, []);
+    setNewSessionError('');
+    const environment = environmentIdRef.current;
+    await prepareNewSessionAttachment(file, error => setNewSessionError(friendlyError(error)),
+      () => environment === environmentIdRef.current);
+  }, [prepareNewSessionAttachment]);
 
   const submitNewSession = useCallback(() => {
     const projectCwd = newSessionCwd.trim();
@@ -1670,11 +1656,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     setPrompt(text);
     setPendingAttachment(transferredAttachment);
     setNewSessionPrompt('');
-    setNewSessionAttachment(null);
     setNewSessionError('');
-    setNewSessionDialogOpen(false);
+    closeNewSessionDialog();
     newSessionAutoSendRef.current = true;
-  }, [newSessionCwd, newSessionAttachment, newSessionPrompt, selectSession]);
+  }, [closeNewSessionDialog, newSessionCwd, newSessionAttachment, newSessionPrompt, selectSession, setNewSessionAttachment, setPendingAttachment]);
 
   const sendTurn = useCallback(async (questionReplies?: QuestionReply[]) => {
     // A question response is independent of the message/attachment draft.
@@ -2112,7 +2097,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           className="new-session-overlay"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setNewSessionDialogOpen(false);
+            if (event.target === event.currentTarget) closeNewSessionDialog();
           }}
         >
           <section className="new-session-dialog" role="dialog" aria-modal="true" aria-labelledby="new-session-title">
@@ -2199,7 +2184,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
               {newSessionError && <p className="new-session-error" role="alert">{newSessionError}</p>}
             </div>
             <footer className="new-session-dialog-actions">
-              <button type="button" onClick={() => setNewSessionDialogOpen(false)}>{t('取消', 'Cancel')}</button>
+              <button type="button" onClick={() => closeNewSessionDialog()}>{t('取消', 'Cancel')}</button>
               <button
                 className="primary-action"
                 type="button"

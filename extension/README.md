@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Documentation for **v0.4.3 (2026-10-17)** · [Release and upgrade](../docs/release-0.4.3.md) · [Documentation index](../docs/README.md)
+Documentation for **v0.4.4 (2026-10-18)** · [Release and upgrade](../docs/release-0.4.4.md) · [Documentation index](../docs/README.md)
 
 This extension is an **experimental add-on** for Codex Anywhere, disabled by default. It requires a separate
 build and installation plus explicit Relay configuration; page control also needs Connector and MCP setup. Normal session features do
@@ -62,7 +62,7 @@ For another computer, copy the entire generated `extension/dist` directory into 
 Git contains the source/build configuration, not this generated folder. Check the new installation’s extension ID
 and add its exact Origin to the Relay allowlist. Pair chat once on that browser profile; do not copy private identity
 files or browser profiles. For upgrades at the same path, reload the extension and preserve its existing pairing.
-See [v0.4.3 upgrade notes](../docs/release-0.4.3.md#upgrade).
+See [v0.4.3 upgrade notes](../docs/release-0.4.4.md#upgrade).
 
 
 With Node.js 22+, from the repository root:
@@ -291,7 +291,7 @@ its old code. Build output alone does not update either process.
 
 ## Verification status
 
-For v0.4.3, all 451 main and 100 extension tests, type checks and builds passed. Dated browser runs below retain their original scope; see the [release notes](../docs/release-0.4.3.md#verification-and-limits) for the release fingerprint and upgrade steps.
+For v0.4.3, all 451 main and 100 extension tests, type checks and builds passed. Dated browser runs below retain their original scope; see the [release notes](../docs/release-0.4.4.md#verification-and-limits) for the release fingerprint and upgrade steps.
 
 On 2026-09-08, native zoom passed in isolated Chrome for Testing 151 through the official MCP SDK and local Relay/E2E:
 a clipped right-hand column became readable at 80% (CSS viewport 1188 → 1485 pixels); 67%, 125% and 100% worked,

@@ -2,7 +2,7 @@
 
 English | [简体中文](deployment.zh-CN.md)
 
-Documentation for **v0.4.3 (2026-10-17)** · [Release and upgrade](release-0.4.3.md) · [Documentation index](README.md)
+Documentation for **v0.4.4 (2026-10-18)** · [Release and upgrade](release-0.4.4.md) · [Documentation index](README.md)
 
 Codex Anywhere uses a small Linux relay as the meeting point for a browser and one or more Codex connector
 nodes. Codex, projects, attachments, and generated files remain on the selected node. Every connector makes
@@ -237,13 +237,15 @@ For a long session, browse upward once and confirm that the older-history indica
 reading position does not jump, and a failed request offers retry. For a connector-owned test run, open
 the running-status strip and verify that Stop interrupts only that run; Desktop-owned work should instead
 explain that it must be stopped on the computer.
+With one or two known environments, the sidebar shows direct buttons with separate selection and online states. More environments use the full selector. Switching keeps the drawer open until a session is chosen, restores the last session for that environment, and clears attachment drafts to avoid sending files to the wrong node.
+
 When multiple connectors are approved, open the sidebar, switch execution environments, and confirm that
 the top-bar badge, session list, remembered workspace, and online state change together. Start one harmless
 session on each node and confirm that returning to the other node never mixes their history or files. Also
 verify that the public URL uses the intended transport and that `ECS-IP:3300` is unreachable externally.
 
 ## Operate and update
-For the tagged release, follow the [v0.4.3 upgrade procedure](release-0.4.3.md#upgrade).
+For the tagged release, follow the [v0.4.3 upgrade procedure](release-0.4.4.md#upgrade).
 The `update` helper tracks `main`; it does not pin a tag or wait for all business tasks to become idle.
 Save the previous commit, image and private state first, schedule an idle window, and verify each Connector after restart.
 

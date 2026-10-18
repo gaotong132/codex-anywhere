@@ -4,6 +4,13 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+## v0.4.4 — 2026-10-18
+
+- Share attachment preparation across both editors; reject obsolete images/errors after replacement, removal, dialog closure or environment changes, and release unused preview URLs.
+- Show direct PC/ECS environment buttons for up to two routes; preserve the mobile drawer while switching and restoring sessions. Keep the selector for larger inventories.
+- Refresh bilingual guides, review evidence and the README screenshot; align package, extension and MCP metadata at 0.4.4.
+
+
 - Compact mobile approval and archive notices with clear primary actions, a labeled refresh icon, and an inline restore action. Use an inset archive confirmation dialog with bounded titles, explicit consequences, and 44 px action targets; retain full actionable command details.
 
 ## v0.4.3 — 2026-10-17

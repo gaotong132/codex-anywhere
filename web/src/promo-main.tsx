@@ -2,7 +2,8 @@ import { createRoot } from 'react-dom/client';
 import { MessageBubble } from './message-bubble';
 import type { TimelineItem } from './history-utils';
 import { PresenceIndicator } from './presence-indicator';
-import { CustomSelect, SidebarIcon } from './ui-components';
+import { SidebarIcon } from './ui-components';
+import { EnvironmentSwitcher } from './environment-switcher';
 import './styles.scss';
 import './promo.scss';
 
@@ -180,26 +181,8 @@ function SessionDrawerPreview() {
             <button className="sidebar-tool mobile-only" type="button" tabIndex={-1}><SidebarIcon name="panel-close" /></button>
           </div>
         </div>
-        <div className="environment-picker">
-          <span className="environment-picker-label">Execution environment</span>
-          <CustomSelect
-            className="environment-picker-select"
-            value="ecs"
-            onChange={() => {}}
-            ariaLabel="Execution environment"
-            options={[{
-              value: 'ecs', label: 'ECS · 24×7', description: 'Online',
-              leading: <span className="environment-status-dot online" />,
-            }]}
-            triggerContent={(
-              <>
-                <span className="environment-status-dot online" aria-hidden="true" />
-                <strong>ECS · 24×7</strong>
-                <small>Online</small>
-              </>
-            )}
-          />
-        </div>
+        <EnvironmentSwitcher value="ecs" environmentIds={['personal-pc', 'ecs']}
+          onlineEnvironmentIds={['personal-pc', 'ecs']} onChange={() => {}} />
         <nav className="session-list">
           {sessions.map((session) => (
             <button

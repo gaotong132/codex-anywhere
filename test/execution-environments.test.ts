@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { parseHTML } from 'linkedom';
+import { EnvironmentSwitcher } from '../web/src/environment-switcher.js';
 import {
   DEFAULT_ENVIRONMENT_ID,
   environmentDisplayName,
@@ -22,6 +26,29 @@ class MemoryStorage {
   getItem(key: string) { return this.values.get(key) ?? null; }
   setItem(key: string, value: string) { this.values.set(key, value); }
 }
+
+test('two environments have direct controls with stable positions and an accessible offline choice', () => {
+  const { document } = parseHTML(renderToStaticMarkup(createElement(EnvironmentSwitcher, {
+    value: 'ecs', environmentIds: ['ecs', 'personal-pc'], onlineEnvironmentIds: ['ecs'], onChange: () => {},
+  })));
+  const buttons = [...document.querySelectorAll('button')];
+  assert.deepEqual(buttons.map(button => button.querySelector('strong')?.textContent), ['我的电脑', 'ECS']);
+  assert.deepEqual(buttons.map(button => button.getAttribute('aria-pressed')), ['false', 'true']);
+  assert.equal(buttons[0].hasAttribute('disabled'), false, 'offline environments remain selectable');
+  assert.match(buttons[0].textContent || '', /离线/);
+  assert.match(buttons[1].textContent || '', /在线/);
+  assert.equal(document.querySelector('[aria-haspopup]'), null);
+});
+
+test('larger environment inventories retain an accessible selector for every route', () => {
+  const { document } = parseHTML(renderToStaticMarkup(createElement(EnvironmentSwitcher, {
+    value: 'lab', environmentIds: ['ecs', 'personal-pc', 'lab'], onlineEnvironmentIds: ['lab'], onChange: () => {},
+  })));
+  const trigger = document.querySelector('button[aria-haspopup="listbox"]');
+  assert(trigger);
+  assert.match(trigger.textContent || '', /lab/);
+  assert.equal(trigger.getAttribute('aria-label'), '切换执行环境');
+});
 
 test('execution environment inventory is normalized, stable, and keeps the local default', () => {
   assert.deepEqual(normalizeEnvironmentIds([' ecs ', 'personal-pc', 'ecs', '', null]), ['ecs', 'personal-pc']);

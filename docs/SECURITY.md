@@ -2,7 +2,7 @@
 
 English | [简体中文](SECURITY.zh-CN.md)
 
-Documentation for **v0.4.3 (2026-10-17)** · [Release and upgrade](release-0.4.3.md) · [Documentation index](README.md)
+Documentation for **v0.4.4 (2026-10-18)** · [Release and upgrade](release-0.4.4.md) · [Documentation index](README.md)
 
 ## Supported versions
 

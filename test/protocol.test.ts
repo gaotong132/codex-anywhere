@@ -295,9 +295,10 @@ test('session sidebar sorts recent sessions and renders current execution state 
   assert.ok(markup.indexOf('Current task') < markup.indexOf('Older task'));
   assert.match(markup, /session-card active running/);
   assert.match(markup, />beta</);
-  assert.match(markup, /environment-picker-select/);
-  assert.match(markup, /aria-haspopup="listbox"/);
-  assert.match(markup, /ECS · 24×7/);
+  assert.match(markup, /environment-shortcuts/);
+  assert.match(markup, /aria-pressed="true"/);
+  assert.doesNotMatch(markup, /aria-haspopup="listbox"/);
+  assert.match(markup, />ECS</);
   assert.match(markup, />在线</);
   assert.doesNotMatch(markup, /<select/);
 });
