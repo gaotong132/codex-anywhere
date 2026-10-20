@@ -2,6 +2,7 @@ import { publicError } from '../shared/protocol.js';
 import type { DesktopControls } from './desktop-controls.js';
 import type { FileUploadManager } from './file-uploads.js';
 import type { BrowserSessionBroker } from '../browser-control/session-broker.js';
+import { SESSION_STATUS_MAX_AGE_MS, type SessionStatusSnapshot } from '../shared/session-status.js';
 import {
   mergeDesktopSessionStatuses,
   type DesktopThreadStatus,
@@ -51,6 +52,7 @@ type DesktopGateway = {
   restoreThread?(options: Payload): Promise<any>;
 };
 type Dependencies = {
+  onSessionStatuses?(snapshot: SessionStatusSnapshot): void;
   browser?: BrowserSessionBroker;
   codex: CodexGateway;
   desktop?: DesktopGateway | null;
@@ -75,29 +77,37 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
   requestId?: string;
   clientId?: string;
   clientDeviceId?: string;
-  getDesktopThreads(): DesktopThreadStatus[];
+  getDesktopStatuses(): SessionStatusSnapshot | null;
   refreshDesktopThreads(callerThreadId: unknown): void;
 };
 
-const DESKTOP_STATUS_CACHE_MS = 15_000;
+const DESKTOP_STATUS_REFRESH_MS = 6_000;
 
 export function createRequestHandler({
   codex, desktop, attachments, fileUploads, visualizations, downloads, deviceId, browser,
   deviceLabel = deviceId, mode = desktop ? 'desktop' : 'headless',
-  networkAccess = false, allowFullAccess = false,
+  networkAccess = false, allowFullAccess = false, onSessionStatuses,
 }: Dependencies) {
-  let desktopStatusCache: { threads: DesktopThreadStatus[]; updatedAt: number } | null = null;
+  let desktopStatusCache: (SessionStatusSnapshot & { updatedAt: number }) | null = null;
   let desktopStatusRefresh: Promise<void> | null = null;
-  const getDesktopThreads = () => (
-    desktopStatusCache && Date.now() - desktopStatusCache.updatedAt <= DESKTOP_STATUS_CACHE_MS
-      ? desktopStatusCache.threads : []
+  let lastRefreshStarted = -Infinity;
+  let revision = 0;
+  const getDesktopStatuses = () => (
+    desktopStatusCache && Date.now() - desktopStatusCache.updatedAt <= SESSION_STATUS_MAX_AGE_MS
+      ? { revision: desktopStatusCache.revision, threads: desktopStatusCache.threads } : null
   );
   const refreshDesktopThreads = (callerThreadId: unknown) => {
     const caller = String(callerThreadId || '').trim();
-    if (mode !== 'desktop' || !desktop || !caller || desktopStatusRefresh) return;
+    if (mode !== 'desktop' || !desktop || !caller || desktopStatusRefresh
+      || Date.now() - lastRefreshStarted < DESKTOP_STATUS_REFRESH_MS) return;
+    lastRefreshStarted = Date.now();
     desktopStatusRefresh = desktop.listThreads({ callerThreadId: caller, limit: 50 })
       .then((threads) => {
-        desktopStatusCache = { threads: Array.isArray(threads) ? threads : [], updatedAt: Date.now() };
+        const rows = (Array.isArray(threads) ? threads : []).slice().sort((a, b) => a.id.localeCompare(b.id));
+        const changed = !desktopStatusCache || Date.now() - desktopStatusCache.updatedAt > SESSION_STATUS_MAX_AGE_MS
+          || JSON.stringify(rows) !== JSON.stringify(desktopStatusCache.threads);
+        desktopStatusCache = { threads: rows, updatedAt: Date.now(), revision: ++revision };
+        if (changed) onSessionStatuses?.({ revision, threads: rows });
       })
       .catch(() => { /* app-server status remains the fallback when Desktop is unavailable */ })
       .finally(() => { desktopStatusRefresh = null; });
@@ -110,7 +120,7 @@ export function createRequestHandler({
       const data = await dispatchAction({
         action, payload, requestId, clientId, clientDeviceId,
         codex, desktop, attachments, fileUploads, visualizations, downloads, deviceId, deviceLabel, mode, browser,
-        networkAccess, allowFullAccess, getDesktopThreads, refreshDesktopThreads,
+        networkAccess, allowFullAccess, getDesktopStatuses, refreshDesktopThreads,
       });
       return { type: 'response', clientId, requestId, ok: true, data };
     } catch (error) {
@@ -122,7 +132,7 @@ export function createRequestHandler({
 async function dispatchAction({
   action, payload, requestId, clientId, clientDeviceId,
   codex, desktop, attachments, fileUploads, visualizations, downloads, deviceId, deviceLabel, mode, browser,
-  networkAccess, allowFullAccess, getDesktopThreads, refreshDesktopThreads,
+  networkAccess, allowFullAccess, getDesktopStatuses, refreshDesktopThreads,
 }: DispatchContext) {
   if (action.startsWith('browser.')) {
     if (!browser) throw new Error('browser_control_not_enabled_on_connector');
@@ -163,14 +173,15 @@ async function dispatchAction({
   }
   if (action === 'sessions.list') {
     const sessions = await codex.listSessions({ cwd: payload.cwd });
-    const desktopThreads = getDesktopThreads();
+    const desktopStatuses = getDesktopStatuses();
     refreshDesktopThreads(sessions[0]?.id);
     return {
       sessions: mergeDesktopSessionStatuses(
         sessions,
-        desktopThreads,
+        desktopStatuses?.threads || [],
         String((codex.activeTurn as { threadId?: unknown } | null)?.threadId || ''),
       ),
+      desktopStatuses,
     };
   }
   if (action === 'session.read') return codex.readSession(String(payload.threadId || ''));

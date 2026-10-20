@@ -476,10 +476,12 @@ test('desktop task list status overrides stale app-server session status', () =>
   ]);
 });
 
-test('desktop task status enrichment cannot block the session list startup path', async () => {
+test('background Desktop status lookup respects the native limit with a bounded cold-start budget', async () => {
   const desktop = new CodexDesktopClient();
   let options;
-  desktop.callTool = async (_request, callOptions) => {
+  let limit;
+  desktop.callTool = async (request, callOptions) => {
+    limit = request.arguments.limit;
     options = callOptions;
     return {
       success: true,
@@ -487,7 +489,8 @@ test('desktop task status enrichment cannot block the session list startup path'
     };
   };
   assert.deepEqual(await desktop.listThreads({ callerThreadId: 'controller-thread' }), []);
-  assert.equal(options.timeoutMs, 1_000);
+  assert.equal(limit, 50);
+  assert.ok(options.timeoutMs > 1_000 && options.timeoutMs <= 15_000);
 });
 
 test('desktop thread state exposes waiting approval without loading conversation history', async () => {

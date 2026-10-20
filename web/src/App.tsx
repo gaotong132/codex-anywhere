@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { SessionStatusOverlay, type SessionStatusSnapshot } from '../../src/shared/session-status';
 import {
   attachLatestAssistantFileChanges,
   appendStreamedMessageText,
@@ -320,6 +321,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const onlineEnvironmentIdsRef = useRef<string[]>([]);
   const connectorOnlineRef = useRef(false);
   const secureChannelRef = useRef<BrowserSecureChannel | null>(null);
+  const sessionStatusesRef = useRef(new SessionStatusOverlay());
   const messageHandlerRef = useRef<(message: BridgeMessage) => void>(() => {});
   const lastServerActivityRef = useRef(0);
   const scheduleReconnectRef = useRef<(immediate?: boolean) => void>(() => {});
@@ -584,19 +586,14 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       && sessionRefreshInFlightRef.current?.channel === refresh.channel) return [];
     sessionRefreshInFlightRef.current = refresh;
     try {
-      const data = await request<{ sessions: Session[] }>('sessions.list', {});
+      const data = await request<{ sessions: Session[]; desktopStatuses?: SessionStatusSnapshot | null }>('sessions.list', {});
       if (sessionRefreshInFlightRef.current !== refresh || environmentIdRef.current !== refresh.environment
         || secureChannelRef.current !== refresh.channel) return [];
-      const nextSessions = data.sessions || [];
+      sessionStatusesRef.current.accept(data.desktopStatuses);
+      const nextSessions = sessionStatusesRef.current.apply(data.sessions || [],
+        runningRef.current ? ownedTurnThreadIdRef.current || '' : '');
       setSessions(nextSessions);
       setSessionsInitialized(true);
-      const currentThreadId = threadIdRef.current;
-      updateSessionAttention((current) => reconcileSessionAttention(
-        current,
-        nextSessions,
-        currentThreadId,
-        runningRef.current ? ownedTurnThreadIdRef.current : null,
-      ));
       return nextSessions;
     } catch {
       // Session refreshes are background synchronization. Connection status and
@@ -607,10 +604,17 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     }
   }, [request, updateSessionAttention]);
 
+  useEffect(() => {
+    if (!sessionsInitialized) return;
+    updateSessionAttention(current => reconcileSessionAttention(current, sessions, threadIdRef.current,
+      runningRef.current ? ownedTurnThreadIdRef.current : null));
+  }, [sessions, sessionsInitialized, updateSessionAttention]);
+
   const beginSecureChannel = useCallback((routeDeviceId = environmentIdRef.current) => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     secureChannelRef.current?.clear();
+    sessionStatusesRef.current = new SessionStatusOverlay();
     const channel = new BrowserSecureChannel({
       identity: loadOrCreateBrowserDeviceIdentity(),
       routeDeviceId,
@@ -732,6 +736,13 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     }
     if (message.type !== 'event') return;
     const payload = message.payload || {};
+    if (message.event === 'sessions.status') {
+      if (sessionStatusesRef.current.accept(payload as SessionStatusSnapshot)) {
+        setSessions(current => sessionStatusesRef.current.apply(current,
+          runningRef.current ? ownedTurnThreadIdRef.current || '' : ''));
+      }
+      return;
+    }
     const eventThreadId = String(payload.threadId || '');
     if (message.event === 'desktop.state') {
       if (eventThreadId === threadIdRef.current) setNativeState({ environmentId: environmentIdRef.current, value: payload as NativeDesktopState });

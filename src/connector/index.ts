@@ -63,6 +63,7 @@ const browser = process.env.BRIDGE_BROWSER_ENDPOINT_FILE
 const browserEndpoint = browser
   ? await startBrowserEndpoint(browser, process.env.BRIDGE_BROWSER_ENDPOINT_FILE!) : undefined;
 const handleRequest = createRequestHandler({
+  onSessionStatuses: snapshot => secureChannels.sendEvent({ type: 'event', event: 'sessions.status', payload: snapshot }),
   browser,
   codex,
   desktop,

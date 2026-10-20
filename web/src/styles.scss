@@ -212,7 +212,14 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   text-transform: uppercase;
 }
 .environment-picker-heading { display: flex; align-items: center; justify-content: space-between; }
-.environment-picker-heading .sidebar-tool { width: 24px; height: 24px; min-height: 24px; padding: 4px; }
+.environment-rename-trigger {
+  min-height: 28px; padding: 3px 6px; border: 0; border-radius: 5px;
+  background: transparent; color: #8e9cb1; font-size: 11px; line-height: 1.4;
+  @media (hover: hover) and (pointer: fine) {
+    &:hover { color: #c7d9f6; background: #ffffff08; }
+  }
+  &:focus-visible { outline: 2px solid #6497ef; outline-offset: 1px; }
+}
 .environment-rename {
   display: grid; gap: 7px; padding: 8px 3px 3px;
   label { display: grid; gap: 5px; font-size: 12px; }

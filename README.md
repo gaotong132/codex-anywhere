@@ -101,8 +101,11 @@ sessions keep Desktop ownership, subscribe to bounded live operational state, an
 mode and owns new and resumed sessions through its app-server, so work can continue without a desktop
 login. Connector-owned runs support native events, steering, stopping, Web approvals, and per-task
 permission modes. Desktop activity is optional status enrichment: session listing returns from app-server
-data immediately, then merges a short-lived Desktop status cache on a later poll so an unavailable Desktop
-bridge cannot hold up startup. Codex Anywhere does not implement ACP.
+data immediately, then pushes changed Desktop statuses as soon as the background batch completes.
+Browsers share at most one batch per six seconds, covering the latest 50 tasks plus pinned tasks;
+the 15-second cache and revision checks prevent stale responses from overriding newer status.
+No per-task history reads are needed, and an unavailable Desktop bridge cannot hold up startup.
+Codex Anywhere does not implement ACP.
 
 ## Security at a glance
 

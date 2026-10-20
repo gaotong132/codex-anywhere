@@ -54,6 +54,7 @@ function createDependencies(overrides = {}) {
       ...overrides.downloads,
     },
     deviceId: 'personal-pc',
+    onSessionStatuses: overrides.onSessionStatuses,
     deviceLabel: overrides.deviceLabel || 'My computer',
     mode: overrides.mode || 'desktop',
     networkAccess: overrides.networkAccess || false,
@@ -504,6 +505,62 @@ test('session listing coalesces Desktop status refreshes while one is in flight'
   resolveDesktopStatus([{ id: 'thread-1', status: 'active' }]);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal((await handle(request('sessions.list'))).data.sessions[0].status, 'active');
+  assert.equal(desktopCalls, 1, 'completed refreshes are also shared across browser clients');
+});
+
+test('Desktop status changes push immediately without another list request; unchanged rows do not push', async context => {
+  context.mock.timers.enable({ apis: ['Date'], now: 100_000 });
+  const updates: any[] = [];
+  let calls = 0;
+  let status = 'active';
+  const handler = createRequestHandler(createDependencies({
+    onSessionStatuses: snapshot => updates.push(snapshot),
+    codex: { listSessions: async () => [{ id: 'thread-1', status: 'notLoaded' }] },
+    desktop: { listThreads: async options => {
+      assert.equal(options.limit, 50);
+      calls++;
+      return [{ id: 'thread-1', status }];
+    } },
+  }));
+  const first = await handler(request('sessions.list'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(first.data.desktopStatuses, null);
+  assert.deepEqual(updates, [{ revision: 1, threads: [{ id: 'thread-1', status: 'active' }] }]);
+  await Promise.all(Array.from({ length: 20 }, () => handler(request('sessions.list'))));
+  assert.equal(calls, 1);
+  context.mock.timers.tick(6_000);
+  await handler(request('sessions.list'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(updates.length, 1, 'identical status suppresses broadcasts');
+  status = 'idle';
+  context.mock.timers.tick(6_000);
+  await handler(request('sessions.list'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(updates[1].threads[0].status, 'idle');
+  assert.equal(updates[1].revision, 3);
+});
+
+test('Desktop failures are throttled and expired status does not persist as running', async context => {
+  context.mock.timers.enable({ apis: ['Date'], now: 100_000 });
+  let calls = 0;
+  const handler = createRequestHandler(createDependencies({
+    codex: { listSessions: async () => [{ id: 'thread-1', status: 'notLoaded' }] },
+    desktop: { listThreads: async () => {
+      if (++calls > 1) throw new Error('timeout');
+      return [{ id: 'thread-1', status: 'active' }];
+    } },
+  }));
+  await handler(request('sessions.list'));
+  await new Promise(resolve => setImmediate(resolve));
+  context.mock.timers.tick(6_000);
+  await handler(request('sessions.list'));
+  await new Promise(resolve => setImmediate(resolve));
+  await handler(request('sessions.list'));
+  assert.equal(calls, 2);
+  context.mock.timers.tick(10_000);
+  const expired = await handler(request('sessions.list'));
+  assert.equal(expired.data.desktopStatuses, null);
+  assert.equal(expired.data.sessions[0].status, 'notLoaded');
 });
 
 test('existing sessions are always delivered through Desktop without bridge takeover', async () => {

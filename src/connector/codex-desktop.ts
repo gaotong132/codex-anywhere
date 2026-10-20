@@ -129,12 +129,14 @@ export class CodexDesktopClient {
   async listThreads({ callerThreadId, limit = 50 }: { callerThreadId?: unknown; limit?: number } = {}) {
     const caller = String(callerThreadId || '').trim();
     if (!caller) return [];
+    // Background enrichment must tolerate a cold Desktop list without delaying
+    // the session response. Capability probes still use the shorter deadline.
     const result = await this.callTool({
       tool: 'list_threads',
       arguments: { limit: Math.min(50, Math.max(1, Number(limit) || 50)) },
       callerThreadId: caller,
       callId: `bridge-list-${randomUUID()}`,
-    }, { timeoutMs: STATUS_ENRICHMENT_TIMEOUT_MS });
+    }, { timeoutMs: DEFAULT_TIMEOUT_MS });
     if (result?.success !== true) throw new Error('desktop_thread_list_failed');
     const payload = parseToolPayload(result);
     const rows = [

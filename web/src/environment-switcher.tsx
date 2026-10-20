@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CustomSelect, SidebarIcon } from './ui-components';
+import { CustomSelect } from './ui-components';
 import { environmentDisplayName, environmentShortName, type EnvironmentLabels } from './execution-environments';
 import { t } from './i18n';
 
@@ -26,9 +26,9 @@ export function EnvironmentSwitcher({ value, environmentIds, onlineEnvironmentId
   return <div className={`environment-picker${environmentIds.length <= 2 ? ' environment-picker-direct' : ''}`}>
     <div className="environment-picker-heading">
       <span className="environment-picker-label">{t('执行环境', 'Execution environment')}</span>
-      {onRename && environmentIds.includes(value) && <button type="button" className="sidebar-tool" disabled={saving}
+      {onRename && environmentIds.includes(value) && <button type="button" className="environment-rename-trigger" disabled={saving}
         aria-label={t('重命名设备', 'Rename device')} title={t('重命名设备', 'Rename device')}
-        onClick={() => { setName(displayName(value)); setError(''); setEditing(true); }}><SidebarIcon name="edit" /></button>}
+        onClick={() => { setName(displayName(value)); setError(''); setEditing(true); }}>{t('改名', 'Rename')}</button>}
     </div>
     {environmentIds.length <= 2 ? <div className="environment-shortcuts" role="group" aria-label={t('切换执行环境', 'Switch execution environment')}>
       {shortcuts.map(id => {
