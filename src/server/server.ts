@@ -219,7 +219,12 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       deviceActivity.disconnected(socket);
       const meta = socketMeta.get(socket);
       if (!meta) return;
-      if (meta.role === 'client') clients.delete(meta.id);
+      if (meta.role === 'client') {
+        clients.delete(meta.id);
+        for (const connector of connectors.values()) {
+          safeSend(connector, { type: 'client.disconnected', clientId: meta.id });
+        }
+      }
       if (meta.role === 'connector' && connectors.get(meta.deviceId) === socket) connectors.delete(meta.deviceId);
       broadcastPresence(clients, connectors, deviceRegistry);
     });

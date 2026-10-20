@@ -8,6 +8,19 @@ import { NativeRequestError } from '../src/connector/desktop-native-pipe.js';
 
 const models = [{ model: 'astra', supportedReasoningEfforts: [{ reasoningEffort: 'high' }, { reasoningEffort: 'low' }],
   serviceTiers: [{ id: 'priority', name: 'Fast' }], defaultServiceTier: null }];
+
+test('text patches copy only changed branches and remain atomic on invalid paths', () => {
+  const old = { history: { saved: [{ text: 'large unchanged history' }] }, turns: [{ items: ['a', 'b'] }] };
+  const patches = [{ op: 'replace', path: ['turns', 0, 'items', 0], value: 'c' },
+    { op: 'add', path: ['turns', 0, 'items', 1], value: 'd' },
+    { op: 'remove', path: ['turns', 0, 'items', 2] }];
+  const next = applyDesktopPatches(old, patches);
+  assert.deepEqual(next.turns[0].items, ['c', 'd']);
+  assert.deepEqual(old.turns[0].items, ['a', 'b']);
+  assert.equal(next.history, old.history, 'history is not cloned for each streamed token');
+  assert.throws(() => applyDesktopPatches(old, [...patches, { op: 'remove', path: ['missing', 'key'] }]));
+  assert.deepEqual(old.turns[0].items, ['a', 'b']);
+});
 function initial(): Record<string, any> { return { id: 'fixture', latestModel: 'astra', latestReasoningEffort: 'high',
   latestThreadSettings: { model: 'astra', effort: 'high', serviceTier: 'default' }, requests: [], turns: [],
   threadRuntimeStatus: { type: 'idle' }, turnHistory: { history: { entitiesByKey: {} } } }; }
@@ -37,8 +50,26 @@ class FakePipe extends DesktopInputPipe {
     return { result: { ok: true } };
   }
 }
-function fixture(t: any) { const pipe = new FakePipe(), input = new DesktopUserInput(async () => assert.fail('must not open'), 1000, pipe);
+function fixture(t: any) { const pipe = new FakePipe(), input = new DesktopUserInput(async () => assert.fail('must not open'), 1000, pipe, pipe);
   t.after(() => input.close()); return { pipe, input, controls: new DesktopControls(input) }; }
+
+test('unreadable snapshots back off while concurrent reads share a single follow', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  const pipe = new FakePipe(), state = new DesktopState(pipe);
+  t.after(() => state.close());
+  let calls = 0;
+  pipe.follow = async () => { calls++; throw new Error('snapshot unavailable'); };
+  await Promise.all([
+    assert.rejects(state.read('fixture', 'owner', 100)),
+    assert.rejects(state.read('fixture', 'owner', 100)),
+  ]);
+  assert.equal(calls, 1);
+  await assert.rejects(state.read('fixture', 'owner', 100), /desktop_state_unavailable/);
+  assert.equal(calls, 1);
+  t.mock.timers.tick(30_001);
+  await assert.rejects(state.read('fixture', 'owner', 100));
+  assert.equal(calls, 2);
+});
 
 test('native model/Fast update uses conditional owner settings and restores standard when catalog lists only Fast', async t => {
   const { pipe, controls } = fixture(t);
@@ -84,7 +115,7 @@ test('effective effort follows native collaboration and thread settings when the
   const input = new DesktopUserInput(async id => {
     assert.equal(id, 'fixture');
     opened++;
-  }, 1000, pipe);
+  }, 1000, pipe, pipe);
   t.after(() => input.close());
   // Cold and oversized are independent conditions and may occur together.
   input.state.read = async () => { throw new Error('desktop_state_unavailable'); };

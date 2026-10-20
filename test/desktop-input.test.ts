@@ -40,6 +40,32 @@ function standard(r: any, socket: net.Socket) {
 }
 const message = { threadId: 'fixture', text: '真实用户输入', requestId: 'one' };
 
+test('an oversized follower snapshot cannot abort a concurrent native message or model read', async () => {
+  await host((r, socket) => {
+    if (standard(r, socket)) return;
+    if (r.method === 'thread-stream-following-changed') {
+      if (r.params.following) {
+        const header = Buffer.alloc(4); header.writeUInt32LE(MAX_FRAME_BYTES + 1);
+        socket.write(header);
+      }
+    } else if (r.method === 'thread-follower-steer-turn') {
+      setTimeout(() => reply(socket, r, { result: { turnId: 'still-delivered' } }), 30);
+    }
+  }, async pipe => {
+    let disconnected = 0;
+    pipe.on('disconnected', () => disconnected++);
+    const input = new DesktopUserInput(async () => assert.fail(), 1000, pipe);
+    try {
+      await Promise.all([
+        assert.rejects(input.state.read('fixture', 'owner', 1000), /desktop_state_unavailable/),
+        input.send(message),
+      ]);
+      assert.equal((await input.owner('fixture', false)).settings.model, 'gpt-6-astra');
+      assert.equal(disconnected, 0);
+    } finally { input.close(); }
+  });
+});
+
 test('native image inputs carry a localImage part for both running and idle delivery', async () => {
   const sent: any[] = [];
   await host((r, socket) => {

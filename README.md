@@ -105,6 +105,9 @@ data immediately, then pushes changed Desktop statuses as soon as the background
 Browsers share at most one batch per six seconds, covering the latest 50 tasks plus pinned tasks;
 the 15-second cache and revision checks prevent stale responses from overriding newer status.
 No per-task history reads are needed, and an unavailable Desktop bridge cannot hold up startup.
+Desktop snapshot streams use a separate IPC connection from message delivery and model settings;
+oversized snapshots cannot close the command connection. Concurrent snapshot reads are coalesced,
+failed reads back off for 30 seconds, and incremental patches copy only changed branches.
 Codex Anywhere does not implement ACP.
 
 ## Security at a glance

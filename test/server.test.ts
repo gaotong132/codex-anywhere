@@ -22,6 +22,21 @@ const TOKEN = 'test-token-that-is-longer-than-32-characters';
 const CONNECTOR_TOKEN = 'connector-token-that-is-longer-than-32-characters';
 const nextJson = (socket) => once(socket, 'message').then(([data]) => JSON.parse(data.toString()));
 
+test('Relay releases a disconnected browser identity at each connector', async t => {
+  const server = createBridgeServer({ connectorToken: TOKEN });
+  t.after(() => server.close());
+  const address = await server.listen(0, '127.0.0.1');
+  const url = `ws://127.0.0.1:${address!.port}/ws`;
+  const node = await authenticateSocket({ url, role: 'connector', token: TOKEN, deviceId: 'pc', registry: server.deviceRegistry });
+  const browser = await authenticateSocket({ url, role: 'client', registry: server.deviceRegistry });
+  const released = nextJson(node.socket);
+  browser.socket.close();
+  const frame = await released;
+  assert.equal(frame.type, 'client.disconnected');
+  assert.equal(frame.clientId, browser.auth.clientId);
+  node.socket.close();
+});
+
 test('Relay exposes approved offline names, renames across clients, and rejects another identity using an occupied route', async t => {
   const server = createBridgeServer({ connectorToken: TOKEN });
   t.after(() => server.close());

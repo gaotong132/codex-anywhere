@@ -2,20 +2,28 @@ import { EventEmitter } from 'node:events';
 import { DesktopInputPipe } from './desktop-input-pipe.js';
 
 type ObjectValue = Record<string, any>;
-type Entry = { owner: string; revision: number; state: ObjectValue | null; touched: number };
+type Entry = { owner: string; revision: number; state: ObjectValue | null; touched: number;
+  pending?: Promise<ObjectValue>; retryAfter?: number };
 const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype']);
 
 // Immer's wire patches have array paths. Reject unsafe keys and broken sequences;
 // never merge Desktop state into Connector configuration or forward raw snapshots.
 export function applyDesktopPatches(state: ObjectValue, patches: unknown): ObjectValue {
   if (!Array.isArray(patches) || patches.length > 20_000) throw new Error('desktop_state_invalid_patch');
-  const next = structuredClone(state);
+  const next = { ...state };
+  const copied = new WeakSet<object>([next]);
   for (const patch of patches) {
     if (!Array.isArray(patch?.path) || !patch.path.length || !['add', 'remove', 'replace'].includes(patch.op)
       || patch.path.some((part: unknown) => (typeof part !== 'string' && typeof part !== 'number') || FORBIDDEN.has(String(part)))) throw new Error('desktop_state_invalid_patch');
     let parent: any = next;
     for (const part of patch.path.slice(0, -1)) {
       if (!parent || typeof parent !== 'object' || !Object.hasOwn(parent, part)) throw new Error('desktop_state_invalid_patch');
+      const child = parent[part];
+      if (!child || typeof child !== 'object') throw new Error('desktop_state_invalid_patch');
+      if (!copied.has(child)) {
+        parent[part] = Array.isArray(child) ? child.slice() : { ...child };
+        copied.add(parent[part]);
+      }
       parent = parent[part];
     }
     if (!parent || typeof parent !== 'object') throw new Error('desktop_state_invalid_patch');
@@ -55,9 +63,11 @@ export class DesktopState extends EventEmitter {
       entry = { owner, revision: -1, state: null, touched: Date.now() }; this.entries.set(threadId, entry);
     }
     entry.touched = Date.now();
+    if (entry.pending) return entry.pending;
+    if ((entry.retryAfter || 0) > Date.now()) throw new Error('desktop_state_unavailable');
     if (entry.state && !fresh) return entry.state;
     const selected = entry;
-    return new Promise((resolve, reject) => {
+    const reading = new Promise<ObjectValue>((resolve, reject) => {
       const done = (error?: Error, state?: ObjectValue) => {
         clearTimeout(timer); this.off('snapshot', received); this.off('invalidated', invalidated);
         error ? reject(error) : resolve(state!);
@@ -68,6 +78,13 @@ export class DesktopState extends EventEmitter {
       this.on('snapshot', received); this.on('invalidated', invalidated);
       void this.pipe.follow(threadId, owner, true, timeoutMs).catch(error => done(error));
     });
+    selected.pending = reading.catch(error => {
+      // Unreadable snapshots must not cause an immediate resubscribe loop from
+      // model/approval polling. Small model settings remain independently usable.
+      selected.retryAfter = Date.now() + 30_000;
+      throw error;
+    }).finally(() => { selected.pending = undefined; });
+    return selected.pending;
   }
 
   private receive(message: ObjectValue) {

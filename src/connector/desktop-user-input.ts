@@ -9,10 +9,17 @@ export type UserInput = { threadId: string; text: string; requestId: unknown; mo
 export class DesktopUserInput {
   readonly pipe: DesktopInputPipe;
   readonly state: DesktopState;
+  private readonly statePipe: DesktopInputPipe;
   private queues = new Map<string, Promise<unknown>>();
 
   constructor(private openThread: (threadId: string) => Promise<unknown>, private timeoutMs: number,
-    pipe = new DesktopInputPipe()) { this.pipe = pipe; this.state = new DesktopState(pipe); }
+    pipe = new DesktopInputPipe(), statePipe = new DesktopInputPipe(pipe.path)) {
+    this.pipe = pipe;
+    // Large follower snapshots must never disconnect in-flight user input or
+    // small owner/model requests. Both connections still use the same owner.
+    this.statePipe = statePipe;
+    this.state = new DesktopState(statePipe);
+  }
 
   send(input: UserInput): Promise<void> {
     const snapshot = { ...input };
@@ -93,7 +100,7 @@ export class DesktopUserInput {
     }
   }
 
-  close() { this.state.close(); this.pipe.close(); }
+  close() { this.state.close(); this.statePipe.close(); this.pipe.close(); }
 }
 
 export function classifyDesktopError(error: unknown, mutation: boolean): Error {

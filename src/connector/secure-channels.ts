@@ -17,6 +17,7 @@ type SecureChannelState = {
   acceptance: SecureChannelAcceptance;
   codec: SecureChannelCodec;
   confirmed: boolean;
+  lastActivity: number;
 };
 const DEFAULT_REQUEST_RESULT_TTL_MS = 2 * 60_000;
 const FILE_REQUEST_RESULT_TTL_MS = 30 * 60_000;
@@ -56,6 +57,12 @@ export class ConnectorSecureChannels {
   }
 
   async handle(frame: JsonObject) {
+    if (frame.type === 'client.disconnected') {
+      const clientId = String(frame.clientId || '');
+      this.channels.get(clientId)?.codec.destroy();
+      this.channels.delete(clientId);
+      return true;
+    }
     if (frame.type === 'channel.offer') {
       this.accept(String(frame.clientId || ''), frame.offer as SecureChannelOffer);
       return true;
@@ -87,6 +94,16 @@ export class ConnectorSecureChannels {
       this.fail(clientId, state.acceptance.transcript.channelId);
     }
     return true;
+  }
+
+  // Only explicitly shared operational metadata uses this path. Turn output,
+  // approval responses and other targeted events keep sendEvent's isolation.
+  broadcastEvent(frame: JsonObject) {
+    for (const [clientId, state] of this.channels) {
+      if (state.confirmed && Date.now() - state.lastActivity <= 30_000) {
+        this.sendEvent({ ...frame, clientId });
+      }
+    }
   }
 
   clear() {
@@ -123,6 +140,7 @@ export class ConnectorSecureChannels {
           keys,
         }),
         confirmed: false,
+        lastActivity: Date.now(),
       });
       keys.sendKey.fill(0);
       keys.receiveKey.fill(0);
@@ -161,6 +179,7 @@ export class ConnectorSecureChannels {
         throw new Error('secure_channel_frame_invalid');
       }
       const action = request.action;
+      state.lastActivity = Date.now();
       this.send({
         type: 'secure', clientId,
         envelope: state.codec.seal({ type: 'ack', requestId }),

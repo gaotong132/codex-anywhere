@@ -11,6 +11,49 @@ import {
 } from '../src/shared/secure-channel.js';
 import { ConnectorSecureChannels } from '../src/connector/secure-channels.js';
 
+test('operational status broadcasts reach active confirmed clients and release disconnected channels', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  const sent: any[] = [];
+  const manager = new ConnectorSecureChannels({
+    identity: createDeviceIdentity(), deviceId: 'pc', send: frame => { sent.push(frame); return true; },
+    handleRequest: async frame => ({ type: 'response', requestId: frame.requestId, ok: true }),
+  });
+  t.after(() => manager.clear());
+  async function connect(clientId: string, confirm = true) {
+    const identity = createDeviceIdentity(), ephemeral = createSecureChannelEphemeralKeyPair();
+    const offer = createSecureChannelOffer({ identity, routeDeviceId: 'pc', ephemeralPublicKey: ephemeral.publicKey });
+    await manager.handle({ type: 'channel.offer', clientId, offer });
+    const acceptance = sent.pop().accept;
+    const keys = deriveSecureChannelKeys({ side: 'initiator', localSecretKey: ephemeral.secretKey,
+      peerEphemeralPublicKey: acceptance.transcript.responder.ephemeralPublicKey, transcript: acceptance.transcript });
+    const codec = new SecureChannelCodec({ channelId: offer.channelId, side: 'initiator', keys });
+    if (confirm) {
+      await manager.handle({ type: 'channel.confirm', clientId, channelId: offer.channelId,
+        signature: signSecureChannelTranscript(identity, acceptance.transcript) });
+      sent.pop();
+    }
+    return codec;
+  }
+  const a = await connect('a'), b = await connect('b');
+  await connect('unconfirmed', false);
+  const event = { type: 'event', event: 'sessions.status', payload: { revision: 1, threads: [{ id: 't', status: 'active' }] } };
+  manager.broadcastEvent(event);
+  assert.deepEqual(sent.map(frame => frame.clientId), ['a', 'b']);
+  assert.deepEqual(a.open(sent.shift().envelope), event);
+  assert.deepEqual(b.open(sent.shift().envelope), event);
+  await manager.handle({ type: 'client.disconnected', clientId: 'a' });
+  manager.broadcastEvent(event);
+  assert.deepEqual(sent.map(frame => frame.clientId), ['b']); b.open(sent.shift().envelope);
+  t.mock.timers.tick(30_001);
+  manager.broadcastEvent(event); assert.equal(sent.length, 0);
+  await manager.handle({ type: 'secure', clientId: 'b', envelope: b.seal({
+    type: 'request', requestId: 'refresh', action: 'sessions.list', payload: {},
+  }) });
+  for (const frame of sent.splice(0)) b.open(frame.envelope);
+  manager.broadcastEvent(event);
+  assert.deepEqual(b.open(sent.shift().envelope), event);
+});
+
 test('an unfinished mutation stays deduplicated after result-cache churn and reconnect', async () => {
   const identity = createDeviceIdentity();
   const sent: Record<string, any>[] = [];

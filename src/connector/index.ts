@@ -63,7 +63,7 @@ const browser = process.env.BRIDGE_BROWSER_ENDPOINT_FILE
 const browserEndpoint = browser
   ? await startBrowserEndpoint(browser, process.env.BRIDGE_BROWSER_ENDPOINT_FILE!) : undefined;
 const handleRequest = createRequestHandler({
-  onSessionStatuses: snapshot => secureChannels.sendEvent({ type: 'event', event: 'sessions.status', payload: snapshot }),
+  onSessionStatuses: snapshot => secureChannels.broadcastEvent({ type: 'event', event: 'sessions.status', payload: snapshot }),
   browser,
   codex,
   desktop,
@@ -99,21 +99,27 @@ codex.on('turn-event', (message) => {
 // Project only operational state; raw Desktop snapshots can contain private context.
 const desktopUpdates = new Map<string, NodeJS.Timeout>();
 const desktopSummaries = new Map<string, ReturnType<typeof desktopSummary>>();
+const desktopPending = new Map<string, { state: Record<string, any>; owner: string }>();
 desktop?.userInput.state.on('changed', (threadId: string, state: Record<string, any>, owner: string) => {
-  const summary = desktopSummary(state, owner);
-  if (JSON.stringify(summary) === JSON.stringify(desktopSummaries.get(threadId))) return;
-  desktopSummaries.set(threadId, summary);
+  desktopPending.set(threadId, { state, owner });
   if (desktopUpdates.has(threadId)) return;
   const timer = setTimeout(() => {
     desktopUpdates.delete(threadId);
-    secureChannels.sendEvent({ type: 'event', event: 'desktop.state', payload: desktopSummaries.get(threadId) });
+    const latest = desktopPending.get(threadId);
+    desktopPending.delete(threadId);
+    if (!latest) return;
+    const summary = desktopSummary(latest.state, latest.owner);
+    if (JSON.stringify(summary) === JSON.stringify(desktopSummaries.get(threadId))) return;
+    desktopSummaries.set(threadId, summary);
+    secureChannels.broadcastEvent({ type: 'event', event: 'desktop.state', payload: summary });
   }, 100);
   timer.unref(); desktopUpdates.set(threadId, timer);
 });
 desktop?.userInput.state.on('invalidated', (threadId: string) => {
   clearTimeout(desktopUpdates.get(threadId)); desktopUpdates.delete(threadId);
   desktopSummaries.delete(threadId);
-  secureChannels.sendEvent({ type: 'event', event: 'desktop.state', payload: { threadId, status: 'unknown', canStop: false, turnId: null } });
+  desktopPending.delete(threadId);
+  secureChannels.broadcastEvent({ type: 'event', event: 'desktop.state', payload: { threadId, status: 'unknown', canStop: false, turnId: null } });
 });
 
 function connect() {
