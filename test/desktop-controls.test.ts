@@ -62,6 +62,30 @@ test('model and effort remain readable when a long conversation snapshot is unav
   await assert.rejects(controls.modelConfig('fixture', models), /desktop_model_unavailable/);
 });
 
+test('model read loads a cold thread through Desktop without sending or changing settings', async t => {
+  const pipe = new FakePipe();
+  let opened = 0;
+  const request = pipe.request.bind(pipe);
+  pipe.request = async (...args: Parameters<FakePipe['request']>) => {
+    if (args[0] === 'thread-owner-discovery' && !opened) {
+      throw new NativeRequestError('no-client-found', true, 'desktop_host_error');
+    }
+    return request(...args);
+  };
+  const input = new DesktopUserInput(async id => {
+    assert.equal(id, 'fixture');
+    opened++;
+  }, 1000, pipe);
+  t.after(() => input.close());
+  // Cold and oversized are independent conditions and may occur together.
+  input.state.read = async () => { throw new Error('desktop_state_unavailable'); };
+  const controls = new DesktopControls(input);
+  assert.equal((await controls.modelConfig('fixture', models)).model, 'astra');
+  assert.equal((await controls.modelConfig('fixture', models)).reasoningEffort, 'high');
+  assert.equal(opened, 1);
+  assert.equal(pipe.writes.length, 0);
+});
+
 test('native model changes fail on concurrent settings or an active turn', async t => {
   const { pipe, controls } = fixture(t); pipe.noEffect = true;
   await assert.rejects(controls.updateModel('fixture', { model: 'astra', reasoningEffort: 'low' }, models), /desktop_settings_changed/);

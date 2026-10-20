@@ -56,7 +56,9 @@ export class DesktopControls {
   async modelConfig(threadId: string, models: Value[]) {
     // Model settings are a small native response. A long thread's full state
     // can exceed the stream frame limit without making these settings invalid.
-    const owner = await this.input.owner(threadId, false);
+    // Selecting a cold conversation in Web must let Desktop load its settings.
+    // Only Desktop resumes it; this does not submit a message or start a turn.
+    const owner = await this.input.owner(threadId, true);
     let summary: ReturnType<typeof desktopSummary>;
     try {
       summary = desktopSummary(await this.input.state.read(threadId, owner.id, 5000), owner.id);

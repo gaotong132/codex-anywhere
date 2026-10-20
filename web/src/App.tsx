@@ -41,7 +41,7 @@ import { useAttachmentDraft } from './attachment-draft';
 import { useFileTransfer } from './file-transfer';
 import { useFilePreviews } from './file-preview-client';
 import { t } from './i18n';
-import { adoptDeliveryThread, confirmedDelivery, visibleDelivery, type MessageDelivery } from './message-delivery';
+import { adoptDeliveryThread, confirmedDelivery, useDeliveryNotice, visibleDelivery, type MessageDelivery } from './message-delivery';
 import {
   buildQuestionReply, normalizeAsyncQuestions, normalizeQuestionReplies, questionReplyText, type QuestionReply,
 } from '../../src/shared/async-questions';
@@ -2086,6 +2086,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     running, ownedTurnThreadId, threadId || (creatingNewSession ? NEW_TURN_KEY : null),
   ) || Boolean(desktopState?.canStop);
   const executionActive = executionState === 'running' || executionState === 'waiting';
+  const deliveryReceipt = useDeliveryNotice(
+    visibleDelivery(messageDelivery, environmentId, threadId, selectedRequestRef.current),
+    JSON.stringify([executionState, liveActivity, toolPurpose, activityDetail, turnProgress]),
+  );
   const liveProgressItemId = useMemo(
     () => executionActive ? latestTurnProgressItemId(timeline) : null,
     [executionActive, timeline],
@@ -2128,8 +2132,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       </main>
     );
   }
-
-  const deliveryReceipt = visibleDelivery(messageDelivery, environmentId, threadId, selectedRequestRef.current);
 
   return (
     <main className="app-shell">

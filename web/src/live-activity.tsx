@@ -86,14 +86,13 @@ export function LiveActivityStatus({
       title={onOpenDetails ? t('查看运行详情', 'View run details') : label}
     >
       <div className="activity-content">
-        {notice}
         {active && purpose && (
           <div className="activity-line activity-purpose-line">
             <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
           </div>
         )}
-        {active && <div className="activity-line activity-detail-line">
-          <ToolActivityDetail detail={detail} kind={kind} />
+        {(active || notice) && <div className="activity-line activity-detail-line">
+          {notice || <ToolActivityDetail detail={detail} kind={kind} />}
         </div>}
         {hasMetrics && (
           <div className="activity-line activity-secondary">

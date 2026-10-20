@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from 'react';
+
 export type MessageDelivery = {
   id: string;
   environmentId: string;
@@ -5,6 +7,26 @@ export type MessageDelivery = {
   threadId: string | null;
   status: 'sending' | 'confirmed' | 'unconfirmed';
 };
+
+// Delivery is a transient activity, not a permanent extra status row.
+export function useDeliveryNotice(receipt: MessageDelivery | null, activityKey: string) {
+  const [dismissedId, setDismissedId] = useState<string | null>(null);
+  const previous = useRef<{ id?: string; status?: string; activityKey: string }>({ activityKey });
+  const id = receipt?.id, status = receipt?.status;
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = { id, status, activityKey };
+    if (!id || status !== 'confirmed') return;
+    if (before.id === id && before.status === status && before.activityKey !== activityKey) {
+      setDismissedId(id);
+      return;
+    }
+    // Very short turns may finish before the acknowledgement arrives.
+    const timer = setTimeout(() => setDismissedId(id), 5000);
+    return () => clearTimeout(timer);
+  }, [id, status, activityKey]);
+  return status === 'confirmed' && id === dismissedId ? null : receipt;
+}
 
 export function adoptDeliveryThread(
   receipt: MessageDelivery | null, environmentId: string, selectionVersion: number, threadId: string,

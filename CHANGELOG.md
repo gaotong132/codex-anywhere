@@ -4,9 +4,9 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
-- Keep Desktop model and reasoning labels readable through native model settings when a long conversation exceeds the full-state frame limit. Leave unconfirmed full settings read-only, and replace misleading automatic/default labels after read failures with a retry action.
+- Load a selected cold conversation through Desktop before reading its native model settings, without sending a message. Keep model and reasoning labels readable when a long conversation exceeds the full-state frame limit. Leave unconfirmed full settings read-only, and replace misleading automatic/default labels after read failures with a retry action.
 
-- Confirm message delivery in the existing status box above the Web composer only after the selected computer or ECS accepts it, without browser-closing instructions. Distinguish pending and unconfirmed delivery, bind receipts to the selected conversation, and keep new-session receipts visible when creation events arrive before the response.
+- Confirm message delivery in the existing detail line above the Web composer only after the selected computer or ECS accepts it, without an extra row or browser-closing instructions. The next activity replaces the receipt; otherwise it expires after five seconds. Distinguish pending and unconfirmed delivery, bind receipts to the selected conversation, and handle creation events arriving before the response.
 
 - Deliver Web messages to existing Windows threads through native Desktop owner/follower input, preserving user-message semantics and running-turn steering. Keep uncertain submissions from being resent or downgraded to inter-chat delegation; expose native-input connection health separately.
 
