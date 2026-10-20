@@ -269,6 +269,8 @@ Relay 在设备注册表旁单独写入私有 `devices.json.activity.json`，每
 
 ### Windows 连接器实际重启
 
+如果桌面应用已打开，但 Web 发送仍报“桌面 Codex 当前不可用”，检查 Windows Connector 是否已更新并实际重启。新版桌面将应用工具移到了 `codex-app-tools-*` 命名管道；Connector 优先探测该通道，并按工具能力回退到旧版 `codex-browser-use-*` 通道。只更新 ECS 无法修复电脑端的旧进程，不需要重新配对。
+
 启动器会跳过已经运行的 Connector，**重新运行安装器不是强制重启**。下面适用于依赖已经安装的情况。
 若 lockfile 改变，先等待任务空闲，停止本安装的计划任务守护器（或登录启动的守护器）和 Connector，
 再执行 `npm.cmd ci`、构建并运行安装器。否则 Windows 可能锁住已加载的原生模块（如 Sharp），

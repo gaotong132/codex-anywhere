@@ -3,7 +3,9 @@ import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 import { normalizeSessionName } from '../shared/session-name.js';
 
-const PIPE_PREFIX = 'codex-browser-use-';
+// Desktop split app tools from browser control in newer builds. Prefer the
+// dedicated host, but retain capability-checked discovery for older versions.
+const PIPE_PREFIXES = ['codex-app-tools-', 'codex-browser-use-'];
 const MAX_FRAME_BYTES = 4 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const STATUS_ENRICHMENT_TIMEOUT_MS = 1_000;
@@ -232,17 +234,13 @@ export class CodexDesktopClient {
     if (process.platform !== 'win32') throw new Error('desktop_app_unavailable');
     let names;
     try {
-      names = (await readdir('\\\\.\\pipe\\')).filter((name) => name.startsWith(PIPE_PREFIX));
+      names = await readdir('\\\\.\\pipe\\');
     } catch {
       throw new Error('desktop_app_unavailable');
     }
-    const candidates = await Promise.all(names.map((name) => probePipe(
+    const client = await discoverDesktopClient(names, (name) => probePipe(
       `\\\\.\\pipe\\${name}`, Math.min(timeoutMs, 5_000),
-    )));
-    const client = candidates.find(Boolean);
-    for (const candidate of candidates) {
-      if (candidate && candidate !== client) candidate.close();
-    }
+    ));
     if (!client) throw new Error('desktop_app_unavailable');
     this.client = client;
     return client;
@@ -252,6 +250,20 @@ export class CodexDesktopClient {
     this.client?.close();
     this.client = null;
   }
+}
+
+async function discoverDesktopClient<T extends { close(): void }>(
+  names: string[], probe: (name: string) => Promise<T | null>,
+): Promise<T | null> {
+  for (const prefix of PIPE_PREFIXES) {
+    const candidates = await Promise.all(names.filter(name => name.startsWith(prefix)).map(probe));
+    const client = candidates.find(Boolean);
+    for (const candidate of candidates) {
+      if (candidate && candidate !== client) candidate.close();
+    }
+    if (client) return client;
+  }
+  return null;
 }
 
 function requireThreadId(value: unknown): string {
@@ -420,4 +432,4 @@ export function mergeDesktopSessionStatuses<T extends { id: string; status?: str
   });
 }
 
-export const internals = { encodeNativeFrame, parseToolPayload };
+export const internals = { encodeNativeFrame, parseToolPayload, discoverDesktopClient };

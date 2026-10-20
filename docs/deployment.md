@@ -309,6 +309,8 @@ When pinning a release, replace the first step with that tag's fetch/checkout. P
 and DPAPI identity. Check `relay.sh devices` afterward; startup errors are in
 `%USERPROFILE%\.codex-anywhere\last-start-error.log`. Do not stop Codex Desktop.
 
+If Web sends report “Codex Desktop is unavailable” while the app is open, update and actually restart the Windows Connector. Newer Desktop builds expose app tools through `codex-app-tools-*` named pipes; the Connector prefers these and falls back to capability-checked legacy `codex-browser-use-*` hosts. Updating ECS alone cannot replace the old process on the computer. Pairing does not need to be repeated.
+
 ### Backup and recovery
 
 | Preserve | Location or evidence |

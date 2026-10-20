@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Discover the dedicated Codex Desktop app-tools pipe used by newer clients, with capability-checked fallback for older releases. Fix Web messages incorrectly failing with “Codex Desktop is unavailable” while the app is running.
+
 - Compact the PC/ECS buttons to a single 40 px row with a status dot; retain selected state, status tooltips and screen-reader labels. Refresh the README preview.
 
 ## v0.4.4 — 2026-10-18
