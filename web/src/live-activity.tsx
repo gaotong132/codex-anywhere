@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { t } from './i18n';
 import { TypewriterText } from './ui-components';
 import type { ExecutionState, LiveActivityKind } from './app-types';
@@ -55,7 +55,7 @@ export function elapsedLabel(startedAt: number | null, now: number) {
 }
 
 export function LiveActivityStatus({
-  kind, purpose, detail, progress, startedAt, onOpenDetails,
+  kind, purpose, detail, progress, startedAt, onOpenDetails, active = true, notice,
 }: {
   kind: LiveActivityKind;
   purpose: string;
@@ -63,17 +63,19 @@ export function LiveActivityStatus({
   progress: TurnProgress;
   startedAt: number | null;
   onOpenDetails?: () => void;
+  active?: boolean;
+  notice?: ReactNode;
 }) {
   const [clock, setClock] = useState(Date.now());
   const elapsed = elapsedLabel(startedAt, clock);
-  const hasMetrics = Boolean(progress.plan || progress.files);
+  const hasMetrics = active && Boolean(progress.plan || progress.files);
   useEffect(() => {
-    if (!startedAt) return;
+    if (!active || !startedAt) return;
     setClock(Date.now());
     const timer = setInterval(() => setClock(Date.now()), 1_000);
     return () => clearInterval(timer);
-  }, [startedAt]);
-  const label = [purpose, detail || activityLabel(kind), elapsed].filter(Boolean).join(' · ');
+  }, [active, startedAt]);
+  const label = active ? [purpose, detail || activityLabel(kind), elapsed].filter(Boolean).join(' · ') : undefined;
   return (
     <button
       className={`tool-purpose${purpose ? ' has-purpose' : ''}${hasMetrics ? ' has-metrics' : ''}${onOpenDetails ? ' interactive' : ''}`}
@@ -84,14 +86,15 @@ export function LiveActivityStatus({
       title={onOpenDetails ? t('查看运行详情', 'View run details') : label}
     >
       <div className="activity-content">
-        {purpose && (
+        {notice}
+        {active && purpose && (
           <div className="activity-line activity-purpose-line">
             <TypewriterText active as="strong" className="status-change" key={purpose} text={purpose} />
           </div>
         )}
-        <div className="activity-line activity-detail-line">
+        {active && <div className="activity-line activity-detail-line">
           <ToolActivityDetail detail={detail} kind={kind} />
-        </div>
+        </div>}
         {hasMetrics && (
           <div className="activity-line activity-secondary">
             <span className="activity-metrics">
@@ -125,7 +128,7 @@ export function LiveActivityStatus({
           </div>
         )}
       </div>
-      {startedAt && <time className="activity-elapsed">{elapsed}</time>}
+      {active && startedAt && <time className="activity-elapsed">{elapsed}</time>}
       {onOpenDetails && (
         <svg className="activity-details-chevron" viewBox="0 0 24 24" aria-hidden="true">
           <path d="m9 6 6 6-6 6" />

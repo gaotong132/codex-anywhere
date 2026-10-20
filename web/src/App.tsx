@@ -2380,14 +2380,23 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           onReadPreviewImage={readPreviewImage}
         />
         <div className="execution-strip">
-          {!compactionStartedAt && (executionState === 'running' || executionState === 'waiting') && (
+          {(deliveryReceipt || (!compactionStartedAt && executionActive)) && (
             <LiveActivityStatus
+              active={!compactionStartedAt && executionActive}
               kind={liveActivity}
               purpose={toolPurpose}
               detail={activityDetail}
               progress={turnProgress}
               startedAt={activityStartedAt}
-              onOpenDetails={() => setRunDetailsOpen(true)}
+              onOpenDetails={!compactionStartedAt && executionActive ? () => setRunDetailsOpen(true) : undefined}
+              notice={deliveryReceipt && <div className={`message-delivery ${deliveryReceipt.status}`} role="status" aria-live="polite" aria-atomic="true">
+                {deliveryReceipt.status === 'confirmed'
+                  ? t(`✓ 上一条消息已送达${environmentDisplayName(deliveryReceipt.environmentId)}`,
+                    `✓ Last message delivered to ${environmentDisplayName(deliveryReceipt.environmentId)}`)
+                  : deliveryReceipt.status === 'sending'
+                    ? t('正在投递消息…', 'Delivering your message…')
+                    : t('未确认送达，请检查会话后再重试。', 'Delivery not confirmed. Check the conversation before retrying.')}
+              </div>}
             />
           )}
           <DownloadIndicator download={fileDownload} onCancel={cancelFileDownload} />
@@ -2494,16 +2503,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Zm3 7h13" /></svg>
               </button>
             </div>
-          </div>
-          <div className={`message-delivery${deliveryReceipt ? ` ${deliveryReceipt.status}` : ''}`} role="status" aria-live="polite" aria-atomic="true">
-            {deliveryReceipt?.status === 'confirmed'
-              ? t(`✓ 上一条消息已送达${environmentDisplayName(deliveryReceipt.environmentId)}，可以关闭浏览器。`,
-                `✓ Last message delivered to ${environmentDisplayName(deliveryReceipt.environmentId)}. You can close this browser.`)
-              : deliveryReceipt?.status === 'sending'
-                ? t('正在投递消息，请暂勿关闭浏览器…', 'Delivering your message. Keep this browser open…')
-                : deliveryReceipt?.status === 'unconfirmed'
-                  ? t('未确认送达，请检查会话后再重试。', 'Delivery not confirmed. Check the conversation before retrying.')
-                  : null}
           </div>
           <small>{steeringAvailable
             ? t('运行中可继续追加文字指令', 'You can steer this run with another text instruction')

@@ -1274,7 +1274,7 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   }
 }
 .image-input { display: none; }
-.message-delivery { max-width: $content-width; margin: 6px auto 0; color: #aeb9c9; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.message-delivery { color: #aeb9c9; line-height: 1.5; overflow-wrap: anywhere; }
 .message-delivery:empty { display: none; }
 .message-delivery.confirmed { color: #75d9b0; }
 .message-delivery.unconfirmed { color: #efbb78; }
