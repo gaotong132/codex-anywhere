@@ -531,6 +531,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     connectorStatus,
     modelConfig,
     modelConfigLoading,
+    refreshModelConfig,
     permissionConfig,
     permissionConfigLoading,
     saveModelConfig,
@@ -2323,6 +2324,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             <div className="conversation-controls">
               <ModelConfigControl
                 config={modelConfig}
+                hasSession={Boolean(threadId)}
+                onRefresh={refreshModelConfig}
                 loading={modelConfigLoading}
                 disabled={!online || executionActive}
                 onSave={saveModelConfig}

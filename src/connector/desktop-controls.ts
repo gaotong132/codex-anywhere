@@ -54,7 +54,17 @@ export class DesktopControls {
   async read(threadId: string, open = false) { return (await this.snapshot(threadId, false, open)).summary; }
 
   async modelConfig(threadId: string, models: Value[]) {
-    const { summary } = await this.snapshot(threadId, false, false);
+    // Model settings are a small native response. A long thread's full state
+    // can exceed the stream frame limit without making these settings invalid.
+    const owner = await this.input.owner(threadId, false);
+    let summary: ReturnType<typeof desktopSummary>;
+    try {
+      summary = desktopSummary(await this.input.state.read(threadId, owner.id, 5000), owner.id);
+    } catch {
+      if (typeof owner.settings.model !== 'string' || !owner.settings.model) throw new Error('desktop_model_unavailable');
+      return { model: owner.settings.model, reasoningEffort: owner.settings.reasoningEffort || '',
+        serviceTier: null, fastMode: false, readOnly: true, models };
+    }
     const tier = models.find(m => m.model === summary.model)?.serviceTiers?.find((t: Value) => t.id === summary.serviceTier);
     return { model: summary.model, reasoningEffort: summary.reasoningEffort, serviceTier: summary.serviceTier,
       fastMode: /fast|priority/i.test(`${summary.serviceTier} ${tier?.name || ''}`), models };

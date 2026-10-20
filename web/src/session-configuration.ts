@@ -32,6 +32,8 @@ export function useSessionConfiguration({
 }) {
   const [modelState, setModelState] = useState<KeyedValue<SessionModelConfig | null> | null>(null);
   const [modelLoadingKey, setModelLoadingKey] = useState<string | null>(null);
+  const [modelReadAttempt, setModelReadAttempt] = useState(0);
+  const refreshModelConfig = useCallback(() => setModelReadAttempt(value => value + 1), []);
   const [connectorState, setConnectorState] = useState<KeyedValue<ConnectorStatus | null> | null>(null);
   const [permissionState, setPermissionState] = useState<KeyedValue<SessionPermissionConfig | null> | null>(null);
   const [permissionLoadingKey, setPermissionLoadingKey] = useState<string | null>(null);
@@ -161,7 +163,7 @@ export function useSessionConfiguration({
         if (!disposed && selectionKeyRef.current === targetKey) setModelLoadingKey(null);
       });
     return () => { disposed = true; };
-  }, [online, request, selectionKey, threadId]);
+  }, [online, request, selectionKey, threadId, modelReadAttempt]);
 
   const saveModelConfig = useCallback(async (draft: ModelConfigDraft) => {
     const targetKey = selectionKeyRef.current;
@@ -181,9 +183,9 @@ export function useSessionConfiguration({
       if (previous?.key !== selectionKey || !previous.value) return previous;
       const tier = desktopState.serviceTier || 'default';
       const option = previous.value.models.find(model => model.model === desktopState.model)?.serviceTiers.find(value => value.id === tier);
-      if (previous.value.model === desktopState.model && previous.value.reasoningEffort === desktopState.reasoningEffort
+      if (!previous.value.readOnly && previous.value.model === desktopState.model && previous.value.reasoningEffort === desktopState.reasoningEffort
         && previous.value.serviceTier === tier) return previous;
-      return { key: selectionKey, value: { ...previous.value, model: desktopState.model!,
+      return { key: selectionKey, value: { ...previous.value, readOnly: false, model: desktopState.model!,
         reasoningEffort: desktopState.reasoningEffort || '', serviceTier: tier,
         fastMode: /fast|priority/i.test(`${tier} ${option?.name || ''}`) } };
     });
@@ -193,6 +195,7 @@ export function useSessionConfiguration({
     connectorStatus,
     modelConfig,
     modelConfigLoading,
+    refreshModelConfig,
     permissionConfig,
     permissionConfigLoading,
     refreshPermissionConfig,

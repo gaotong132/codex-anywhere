@@ -12,12 +12,14 @@ function fastTierAvailable(model: ModelOption | undefined) {
 }
 
 export function ModelConfigControl({
-  config, loading, disabled, onSave,
+  config, loading, disabled, onSave, hasSession = false, onRefresh,
 }: {
   config: SessionModelConfig | null;
   loading: boolean;
   disabled: boolean;
   onSave: (draft: ModelConfigDraft) => Promise<void>;
+  hasSession?: boolean;
+  onRefresh?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,19 +71,23 @@ export function ModelConfigControl({
     }
   };
 
-  const displayModel = selectedModel?.displayName || config?.model || t('自动选择', 'Automatic');
+  const unavailable = hasSession && !config && !loading;
+  const displayModel = selectedModel?.displayName || config?.model
+    || (unavailable ? t('模型读取失败', 'Model unavailable') : t('自动选择', 'Automatic'));
   return (
     <div className={`model-config${open ? ' open' : ''}`} ref={rootRef}>
       <button
         className="model-config-summary"
         type="button"
-        disabled={!config || loading}
-        onClick={() => setOpen((current) => !current)}
+        disabled={loading || Boolean(config?.readOnly) || (!config && !(unavailable && onRefresh))}
+        onClick={() => unavailable ? onRefresh?.() : setOpen((current) => !current)}
         aria-expanded={open}
-        title={disabled ? t('会话执行中，可预选并在结束后保存', 'Preselect now and save after the task finishes') : t('配置后续轮次', 'Configure subsequent turns')}
+        title={config?.readOnly ? t('已读取当前模型；完整设置暂不可用，请在桌面修改', 'Current model is available; edit settings on Desktop while full settings are unavailable')
+          : unavailable ? t('重新读取当前模型', 'Retry reading the current model')
+          : disabled ? t('会话执行中，可预选并在结束后保存', 'Preselect now and save after the task finishes') : t('配置后续轮次', 'Configure subsequent turns')}
       >
         <span className="model-config-model">{loading ? t('读取模型…', 'Loading model…') : displayModel}</span>
-        <span>{config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort) : t('默认思考', 'Default reasoning')}</span>
+        <span>{unavailable ? t('点击重试', 'Retry') : config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort) : t('默认思考', 'Default reasoning')}</span>
         {config?.fastMode && (
           <span className="fast active" title={t('快速模式', 'Fast mode')}>
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.2 1.8 4.7 10h4.8l-.8 8.2 6.6-9.6h-4.8l.7-6.8Z" /></svg>

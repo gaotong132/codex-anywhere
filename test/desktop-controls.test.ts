@@ -19,7 +19,8 @@ class FakePipe extends DesktopInputPipe {
   }); }
   async request(method: any, params: any, _timeout?: number, target?: string): Promise<any> {
     if (method === 'thread-owner-discovery') return { handledByClientId: this.owner };
-    if (method === 'thread-follower-read-model-settings') return { result: { settings: { resumeState: 'resumed' } } };
+    if (method === 'thread-follower-read-model-settings') return { result: { settings: { resumeState: 'resumed',
+      model: this.state.latestModel, reasoningEffort: this.state.latestReasoningEffort } } };
     this.writes.push({ method, params, target });
     if (method === 'thread-follower-update-thread-settings') {
       if (this.noEffect) return { result: { applied: false } };
@@ -48,6 +49,19 @@ test('native model/Fast update uses conditional owner settings and restores stan
   const restored = await controls.updateModel('fixture', { model: 'astra', reasoningEffort: 'high', fastMode: false }, models);
   assert.equal(restored.serviceTier, 'default'); assert.equal(restored.fastMode, false);
 });
+test('model and effort remain readable when a long conversation snapshot is unavailable', async t => {
+  const { pipe, controls } = fixture(t);
+  controls.input.state.read = async () => { throw new Error('desktop_state_unavailable'); };
+  const config = await controls.modelConfig('fixture', models);
+  assert.equal(config.model, 'astra');
+  assert.equal(config.reasoningEffort, 'high');
+  assert.equal(config.serviceTier, null);
+  assert.equal(config.readOnly, true);
+  assert.equal(pipe.writes.length, 0);
+  pipe.state.latestModel = '';
+  await assert.rejects(controls.modelConfig('fixture', models), /desktop_model_unavailable/);
+});
+
 test('native model changes fail on concurrent settings or an active turn', async t => {
   const { pipe, controls } = fixture(t); pipe.noEffect = true;
   await assert.rejects(controls.updateModel('fixture', { model: 'astra', reasoningEffort: 'low' }, models), /desktop_settings_changed/);

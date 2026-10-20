@@ -24,6 +24,7 @@ export type ModelOption = {
   isDefault: boolean;
 };
 export type SessionModelConfig = {
+  readOnly?: boolean;
   model: string;
   reasoningEffort: string;
   serviceTier: string;
