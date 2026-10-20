@@ -97,7 +97,10 @@ export class DesktopControls {
     for (let i = 0; i < 12; i++) {
       const after = await this.snapshot(threadId, true, false).catch(() => { throw new Error('desktop_stop_unconfirmed'); });
       if (after.owner !== before.owner) throw new Error('desktop_stop_unconfirmed');
-      if (after.summary.turnId !== expectedTurnId) return { stopped: true, turnId: expectedTurnId };
+      const turns: Value[] = [...(after.state.turns || []), ...Object.values(after.state.turnHistory?.history?.entitiesByKey || {})];
+      if (after.summary.turnId !== expectedTurnId && turns.some(turn => turn.turnId === expectedTurnId
+        && ['interrupted', 'aborted', 'cancelled'].includes(turn.status))) return { stopped: true, turnId: expectedTurnId };
+      if (turns.some(turn => turn.turnId === expectedTurnId && turn.status === 'completed')) throw new Error('desktop_turn_changed');
       await delay(200);
     }
     throw new Error('desktop_stop_unconfirmed');

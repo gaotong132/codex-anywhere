@@ -29,6 +29,7 @@ class FakePipe extends DesktopInputPipe {
     }
     if (method === 'thread-follower-interrupt-turn') {
       this.state.threadRuntimeStatus.type = 'idle';
+      this.state.turnHistory.history.entitiesByKey['turn:' + params.expectedTurnId].status = 'interrupted';
       return { result: { ok: true, interruptedTurnId: params.expectedTurnId } };
     }
     if (!this.noEffect) this.state.requests = [];

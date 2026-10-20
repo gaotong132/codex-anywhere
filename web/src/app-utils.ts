@@ -171,6 +171,10 @@ export function canStopOwnedTurn(running: boolean, ownedThreadId: string | null,
   return running && Boolean(ownedThreadId) && ownedThreadId === selectedThreadId;
 }
 
+export function ownsPendingSubmission(existingSession: boolean, mode: 'desktop' | 'headless' | undefined) {
+  return !existingSession || mode === 'headless';
+}
+
 export function canSteerOwnedTurn(
   running: boolean,
   state: ExecutionState,

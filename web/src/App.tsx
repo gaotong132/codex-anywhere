@@ -49,6 +49,7 @@ import {
   canSendToActiveDesktopTurn,
   canSteerOwnedTurn,
   canStopOwnedTurn,
+  ownsPendingSubmission,
   initialBootstrapReady,
   isConnectionInterruption,
   isCurrentSessionRequest,
@@ -1777,10 +1778,13 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       streamItemRef.current = null;
       if (!steering) activeTurnIdRef.current = '';
       if (!steering) {
-        runningRef.current = true;
-        ownedTurnThreadIdRef.current = targetThreadId || NEW_TURN_KEY;
+        // Desktop delivery must never temporarily claim app-server ownership:
+        // stop is enabled only after native state identifies the actual turn.
+        const owned = ownsPendingSubmission(isExistingSession, connectorStatus?.mode);
+        runningRef.current = owned;
+        ownedTurnThreadIdRef.current = owned ? targetThreadId || NEW_TURN_KEY : null;
         updateExecution({
-          running: true,
+          running: owned,
           ownedTurnThreadId: ownedTurnThreadIdRef.current,
           state: 'running',
           activity: 'starting',
@@ -1932,8 +1936,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     setStopping(true);
     try {
       const native = !ownedTurnThreadIdRef.current && desktopState?.threadId === targetThreadId ? desktopState : null;
-      await request('turn.stop', targetThreadId ? { threadId: targetThreadId,
+      if (!ownedTurnThreadIdRef.current && !native?.canStop) throw new Error('desktop_turn_changed');
+      const result = await request<{ stopped: boolean }>('turn.stop', targetThreadId ? { threadId: targetThreadId,
         ...(native ? { source: 'desktop', expectedTurnId: native.turnId } : {}) } : {});
+      if (!result.stopped) throw new Error('desktop_turn_changed');
     } catch (error) {
       if (selectionVersion === selectedRequestRef.current) reportTimelineError(error);
       setStopping(false);
