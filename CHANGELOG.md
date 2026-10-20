@@ -4,6 +4,9 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Generate unique persistent routes for new Windows/Linux installations while retaining existing routes and pairing. Reject conflicting registrations and route takeover, show approved offline nodes without a 24-device cutoff, and synchronize editable device names across browsers and the relay CLI.
+- Read effective reasoning effort from Desktop collaboration/thread settings when the legacy field is empty, preventing an incorrect default-reasoning label.
+
 - Load a selected cold conversation through Desktop before reading its native model settings, without sending a message. Keep model and reasoning labels readable when a long conversation exceeds the full-state frame limit. Leave unconfirmed full settings read-only, and replace misleading automatic/default labels after read failures with a retry action.
 
 - Confirm message delivery in the existing detail line above the Web composer only after the selected computer or ECS accepts it, without an extra row or browser-closing instructions. The next activity replaces the receipt; otherwise it expires after five seconds. Distinguish pending and unconfirmed delivery, bind receipts to the selected conversation, and handle creation events arriving before the response.

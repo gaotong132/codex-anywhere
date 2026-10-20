@@ -3,6 +3,7 @@ param(
     [Security.SecureString] $ConnectorToken,
     [string] $BridgeUrl,
     [string] $DeviceId,
+    [string] $DeviceLabel,
     [string[]] $AllowedRoots,
     [switch] $AllowAnyFileDownload,
     [switch] $EnableNetworkAccess,
@@ -27,6 +28,15 @@ $shortcutPath = Join-Path $startupDirectory 'Codex Anywhere Connector.lnk'
 $legacyShortcutPath = Join-Path $startupDirectory 'Personal Codex Bridge Connector.lnk'
 $taskName = 'Codex Anywhere Connector'
 
+# Load migrated settings before choosing an ID, so upgrades keep their route.
+New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
+foreach ($stateFileName in @('connector-token.dpapi', 'connector-device-key.dpapi', 'connector.json')) {
+    $legacyStatePath = Join-Path $legacyStateDirectory $stateFileName
+    $currentStatePath = Join-Path $stateDirectory $stateFileName
+    if (-not [IO.File]::Exists($currentStatePath) -and [IO.File]::Exists($legacyStatePath)) {
+        [IO.File]::Copy($legacyStatePath, $currentStatePath, $false)
+    }
+}
 $existingConfig = $null
 if (Test-Path -LiteralPath $configPath -PathType Leaf) {
     try {
@@ -59,8 +69,13 @@ $effectiveDeviceId = if ($PSBoundParameters.ContainsKey('DeviceId')) {
     $DeviceId
 }
 else {
-    [string] (Get-ExistingSetting -Name 'deviceId' -DefaultValue 'personal-pc')
+    [string] (Get-ExistingSetting -Name 'deviceId' -DefaultValue $(if ($existingConfig) { 'personal-pc' } else { 'pc-' + [Guid]::NewGuid().ToString('N') }))
 }
+$effectiveDeviceLabel = if ($PSBoundParameters.ContainsKey('DeviceLabel')) { $DeviceLabel } else {
+    [string] (Get-ExistingSetting -Name 'deviceLabel' -DefaultValue $env:COMPUTERNAME)
+}
+if ($effectiveDeviceId -notmatch '^[A-Za-z0-9._-]{1,128}$') { throw 'DeviceId must be 1-128 letters, numbers, dot, underscore, or dash.' }
+if ([string]::IsNullOrWhiteSpace($effectiveDeviceLabel) -or $effectiveDeviceLabel.Length -gt 80 -or $effectiveDeviceLabel -match '[\x00-\x1f\x7f-\x9f]') { throw 'DeviceLabel must be 1-80 characters on one line.' }
 
 $bridgeUri = $null
 if (-not [Uri]::TryCreate($effectiveBridgeUrl, [UriKind]::Absolute, [ref] $bridgeUri) -or $bridgeUri.Scheme -notin @('ws', 'wss')) {
@@ -70,21 +85,6 @@ if (-not [string]::IsNullOrEmpty($bridgeUri.UserInfo) -or -not [string]::IsNullO
     throw 'BridgeUrl must not contain credentials, query parameters, or a fragment.'
 }
 New-Item -ItemType Directory -Path $stateDirectory -Force | Out-Null
-
-# Files created from a packaged desktop app can be redirected into an app-specific
-# LocalAppData view that a normal Windows background task cannot see. Keep the
-# DPAPI user boundary, but migrate known state into a shared per-user directory.
-foreach ($stateFileName in @(
-    'connector-token.dpapi',
-    'connector-device-key.dpapi',
-    'connector.json'
-)) {
-    $legacyStatePath = Join-Path $legacyStateDirectory $stateFileName
-    $currentStatePath = Join-Path $stateDirectory $stateFileName
-    if (-not [IO.File]::Exists($currentStatePath) -and [IO.File]::Exists($legacyStatePath)) {
-        [IO.File]::Copy($legacyStatePath, $currentStatePath, $false)
-    }
-}
 
 function Save-ProtectedCredential {
     param(
@@ -152,6 +152,7 @@ else {
 $connectorConfig = [ordered]@{
     bridgeUrl = $bridgeUri.AbsoluteUri
     deviceId = $effectiveDeviceId
+    deviceLabel = $effectiveDeviceLabel.Trim()
     allowedRoots = $resolvedAllowedRoots
     allowAnyFileDownload = $effectiveAllowAnyFileDownload
     networkAccess = $effectiveNetworkAccess

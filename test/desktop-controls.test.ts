@@ -70,6 +70,15 @@ test('model read loads a cold thread through Desktop without sending or changing
     if (args[0] === 'thread-owner-discovery' && !opened) {
       throw new NativeRequestError('no-client-found', true, 'desktop_host_error');
     }
+
+test('effective effort follows native collaboration and thread settings when the legacy field is empty', () => {
+  const state = initial();
+  state.latestReasoningEffort = null;
+  state.latestThreadSettings.effort = 'high';
+  assert.equal(desktopSummary(state, 'owner').reasoningEffort, 'high');
+  state.latestCollaborationMode = { settings: { reasoning_effort: 'xhigh' } };
+  assert.equal(desktopSummary(state, 'owner').reasoningEffort, 'xhigh');
+});
     return request(...args);
   };
   const input = new DesktopUserInput(async id => {

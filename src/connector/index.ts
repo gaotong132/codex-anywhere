@@ -137,7 +137,7 @@ function connect() {
           role: 'connector',
           routeDeviceId: deviceId,
           authProof: proof,
-        }, `Connector · ${deviceId}`);
+        }, deviceLabel);
         safeSend(current, {
           type: 'auth.connector', role: 'connector', proof, deviceId, device, protocol,
         });
@@ -156,8 +156,9 @@ function connect() {
     }
     if (await secureChannels.handle(message)) return;
   });
-  current.on('close', () => {
+  current.on('close', (code, reason) => {
     if (socket !== current) return;
+    if (code === 4409) console.error(`Connector route rejected (${deviceId}): ${reason.toString()}. Use a unique device ID and approve its registration.`);
     socket = undefined;
     scheduleReconnect();
   });

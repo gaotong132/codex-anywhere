@@ -10,11 +10,14 @@ import type { ExecutionState, Session } from './app-types';
 import { t } from './i18n';
 import { SidebarIcon } from './ui-components';
 import { EnvironmentSwitcher } from './environment-switcher';
+import type { EnvironmentLabels } from './execution-environments';
 
 type SessionSidebarProps = {
   open: boolean;
   environmentId: string;
   environmentIds: string[];
+  environmentLabels?: EnvironmentLabels;
+  onEnvironmentRename?: (id: string, label: string) => Promise<void>;
   onlineEnvironmentIds: string[];
   sessions: Session[];
   selectedThreadId: string | null;
@@ -38,6 +41,8 @@ export const SessionSidebar = memo(function SessionSidebar({
   open,
   environmentId,
   environmentIds,
+  environmentLabels,
+  onEnvironmentRename,
   onlineEnvironmentIds,
   sessions,
   selectedThreadId,
@@ -87,6 +92,7 @@ export const SessionSidebar = memo(function SessionSidebar({
         </div>
       </div>
       <EnvironmentSwitcher value={environmentId} environmentIds={environmentIds}
+        labels={environmentLabels} onRename={onEnvironmentRename}
         onlineEnvironmentIds={onlineEnvironmentIds} onChange={onEnvironmentChange} />
       {searchOpen && (
         <label className="compact-search session-search-panel">

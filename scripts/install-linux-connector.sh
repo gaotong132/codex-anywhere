@@ -4,8 +4,8 @@ set -eu
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 SERVICE_NAME=codex-anywhere-connector.service
-DEVICE_ID=ecs
-DEVICE_LABEL='ECS · 24x7'
+DEVICE_ID=
+DEVICE_LABEL=
 BRIDGE_URL=ws://127.0.0.1:3300/ws
 SERVICE_USER=${SUDO_USER:-$(id -un)}
 NETWORK_ACCESS=0
@@ -22,7 +22,7 @@ show_help() {
   cat <<'EOF'
 Usage: sudo ./scripts/install-linux-connector.sh [options]
 
-  --device-id <id>       Stable relay route (default: ecs)
+  --device-id <id>       Stable relay route (default: reuse existing or generate unique ID)
   --label <name>         Human-readable connector label
   --bridge-url <url>     Relay WebSocket URL (default: ws://127.0.0.1:3300/ws)
   --user <name>          Linux account that owns Codex login and workspaces
@@ -91,6 +91,9 @@ command -v getent >/dev/null 2>&1 || die 'getent is required.'
 command -v node >/dev/null 2>&1 || die 'Node.js 22 or newer is required.'
 command -v npm >/dev/null 2>&1 || die 'npm is required.'
 command -v codex >/dev/null 2>&1 || die 'Codex CLI is required.'
+REGISTRATION=$(node "$ROOT_DIR/scripts/connector-registration.mjs" /etc/codex-anywhere/connector.env "$DEVICE_ID" "$DEVICE_LABEL")
+DEVICE_ID=$(printf '%s\n' "$REGISTRATION" | sed -n '1p')
+DEVICE_LABEL=$(printf '%s\n' "$REGISTRATION" | sed -n '2p')
 [ "$SERVICE_USER" = "$(id -un)" ] || command -v runuser >/dev/null 2>&1 \
   || die 'runuser is required when installing for another Linux account.'
 

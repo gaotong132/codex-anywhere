@@ -22,6 +22,39 @@ const TOKEN = 'test-token-that-is-longer-than-32-characters';
 const CONNECTOR_TOKEN = 'connector-token-that-is-longer-than-32-characters';
 const nextJson = (socket) => once(socket, 'message').then(([data]) => JSON.parse(data.toString()));
 
+test('Relay exposes approved offline names, renames across clients, and rejects another identity using an occupied route', async t => {
+  const server = createBridgeServer({ connectorToken: TOKEN });
+  t.after(() => server.close());
+  const address = await server.listen(0, '127.0.0.1');
+  const url = `ws://127.0.0.1:${address!.port}/ws`;
+  const pc = await authenticateSocket({ url, role: 'connector', token: TOKEN, deviceId: 'pc', registry: server.deviceRegistry });
+  const other = await authenticateSocket({ url, role: 'connector', token: TOKEN, deviceId: 'other', registry: server.deviceRegistry });
+  other.socket.close(); await once(other.socket, 'close');
+  const browser = await authenticateSocket({ url, role: 'client', registry: server.deviceRegistry });
+  assert.deepEqual(browser.auth.devices, ['pc']);
+  assert.deepEqual(browser.auth.environments.map(entry => [entry.id, entry.online]), [['other', false], ['pc', true]]);
+  assert.equal(browser.auth.environments[0].publicKey, undefined);
+  const secondBrowser = await authenticateSocket({ url, role: 'client', registry: server.deviceRegistry });
+  const waitFrame = (socket: WebSocket, predicate: (frame: any) => boolean) => new Promise<any>(resolve => {
+    const listener = (data) => { const frame = JSON.parse(String(data)); if (predicate(frame)) { socket.off('message', listener); resolve(frame); } };
+    socket.on('message', listener);
+  });
+  const renamed = waitFrame(browser.socket, frame => frame.type === 'relay.response' && frame.requestId === 'rename');
+  const broadcast = waitFrame(secondBrowser.socket, frame => frame.type === 'presence'
+    && frame.environments.some(entry => entry.label === '家里电脑'));
+  browser.socket.send(JSON.stringify({ type: 'relay.request', requestId: 'rename', action: 'device.rename', payload: { deviceId: 'pc', label: '家里电脑' } }));
+  assert.equal((await renamed).ok, true);
+  await broadcast;
+  assert.equal(server.deviceRegistry.listApproved().find(entry => entry.routeDeviceId === 'pc')?.label, '家里电脑');
+  const impostor = await authenticateSocket({ url, role: 'connector', token: TOKEN, deviceId: 'pc',
+    identity: other.identity, registry: server.deviceRegistry });
+  assert.equal(impostor.auth.error, 'device_route_mismatch');
+  assert.equal(pc.socket.readyState, WebSocket.OPEN);
+  const pong = waitFrame(pc.socket, frame => frame.type === 'pong');
+  pc.socket.send('{"type":"ping"}'); await pong;
+  pc.socket.close(); browser.socket.close(); secondBrowser.socket.close(); impostor.socket.close();
+});
+
 test('server requires only the connector bootstrap credential', () => {
   assert.throws(
     () => createBridgeServer({ connectorToken: 'short' }),

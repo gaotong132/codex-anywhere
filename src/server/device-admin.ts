@@ -151,6 +151,11 @@ export async function runDeviceAdmin(options: DeviceAdminOptions = {}) {
     close: () => readline!.close(),
   };
   try {
+    if (args[0] === 'rename') {
+      const renamed = registry.renameConnector(args[1] || '', args.slice(2).join(' '));
+      operator.write(`${isChinese ? '设备已重命名' : 'Device renamed'}: ${renamed.id} · ${renamed.label}\n`);
+      return 'renamed';
+    }
     if (args[0] === 'pair') {
       const publicUrl = normalizePublicUrl(args[1] || process.env.BRIDGE_PUBLIC_URL);
       const pairing = registry.createBrowserPairing();

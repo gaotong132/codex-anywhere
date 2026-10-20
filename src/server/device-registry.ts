@@ -185,6 +185,29 @@ export class DeviceRegistry {
     return this.state.approved.map((entry) => ({ ...entry }));
   }
 
+  assertConnectorRoute(device: Pick<DeviceAuthProof, 'id' | 'publicKey'>, routeDeviceId: string) {
+    this.refresh();
+    const approved = this.state.approved.find(entry => entry.role === 'connector'
+      && entry.id === device.id && entry.publicKey === device.publicKey);
+    if (!approved) throw new Error('device_not_approved');
+    if (approved.routeDeviceId && approved.routeDeviceId !== routeDeviceId) throw new Error('device_route_mismatch');
+    if (this.state.approved.some(entry => entry.role === 'connector' && entry.routeDeviceId === routeDeviceId
+      && (entry.id !== device.id || entry.publicKey !== device.publicKey))) throw new Error('device_route_conflict');
+    // Bind legacy registrations once without replacing their identity.
+    if (!approved.routeDeviceId) { approved.routeDeviceId = routeDeviceId; this.persist(); }
+  }
+
+  renameConnector(routeDeviceId: string, label: unknown) {
+    this.refresh();
+    if (typeof label !== 'string' || !label.trim() || label.trim().length > 80
+      || /[\u0000-\u001f\u007f-\u009f]/.test(label)) throw new Error('invalid_device_label');
+    const matches = this.state.approved.filter(entry => entry.role === 'connector' && entry.routeDeviceId === routeDeviceId);
+    if (matches.length !== 1) throw new Error(matches.length ? 'device_route_conflict' : 'device_not_found');
+    matches[0].label = label.trim();
+    this.persist();
+    return { id: routeDeviceId, label: matches[0].label };
+  }
+
   createBrowserPairing(now = Date.now()) {
     this.refresh();
     this.prune(false, now);
@@ -248,7 +271,14 @@ export class DeviceRegistry {
     this.prune(false);
     const index = this.state.pending.findIndex((entry) => entry.requestId === requestId);
     if (index < 0) return null;
-    const [pending] = this.state.pending.splice(index, 1);
+    const pending = this.state.pending[index];
+    if (pending.role === 'connector' && pending.routeDeviceId && this.state.approved.some(entry =>
+      entry.role === 'connector' && entry.routeDeviceId === pending.routeDeviceId
+      && (entry.id !== pending.id || entry.publicKey !== pending.publicKey))) throw new Error('device_route_conflict');
+    const existing = this.state.approved.find(entry => entry.role === pending.role && entry.id === pending.id);
+    if (existing && (existing.publicKey !== pending.publicKey
+      || (pending.role === 'connector' && existing.routeDeviceId !== pending.routeDeviceId))) throw new Error('device_identity_conflict');
+    this.state.pending.splice(index, 1);
     const approved: ApprovedDevice = {
       id: pending.id,
       publicKey: pending.publicKey,

@@ -211,6 +211,17 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   letter-spacing: .09em;
   text-transform: uppercase;
 }
+.environment-picker-heading { display: flex; align-items: center; justify-content: space-between; }
+.environment-picker-heading .sidebar-tool { width: 24px; height: 24px; min-height: 24px; padding: 4px; }
+.environment-rename {
+  display: grid; gap: 7px; padding: 8px 3px 3px;
+  label { display: grid; gap: 5px; font-size: 12px; }
+  input { width: 100%; min-width: 0; }
+  small { color: #8e9cb1; overflow-wrap: anywhere; }
+  > div { display: flex; gap: 6px; }
+  button { padding: 5px 10px; }
+  p { color: #efbb78; font-size: 12px; margin: 0; }
+}
 .environment-picker-direct { padding: 7px; gap: 6px; background: #101722; }
 .environment-shortcuts { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 5px; }
 .environment-shortcut {

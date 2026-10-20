@@ -81,6 +81,7 @@ export type BridgeMessage = {
   error?: string;
   data?: unknown;
   devices?: string[];
+  environments?: Array<{ id: string; label: string; online: boolean }>;
   event?: string;
   payload?: Record<string, unknown>;
 };

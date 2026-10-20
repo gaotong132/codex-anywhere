@@ -76,6 +76,7 @@ Usage: ./scripts/relay.sh <command>
   pending            List pending devices
   pair <public-url>  Create a ten-minute, single-use browser pairing link
   devices [--json]   List approved devices with connection activity
+  rename <id> <name> Rename a connector without changing its ID or pairing
   revoke             Select and revoke an approved device
   update             Pull main, rebuild, restart, and verify the relay
   help               Show this help
@@ -86,6 +87,10 @@ command_name=${1:-help}
 if [ "$#" -gt 0 ]; then shift; fi
 
 case "$command_name" in
+  rename)
+    [ "$#" -eq 2 ] || die 'Usage: ./scripts/relay.sh rename <device-id> \"<name>\"'
+    run_admin rename "$@"
+    ;;
   setup)
     [ "$#" -eq 0 ] || die 'setup does not accept arguments.'
     require_compose

@@ -26,8 +26,8 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
 
 ## What it does
 
-- **Switch execution environments** — use direct buttons for a personal computer and a 24×7 headless ECS node;
-  larger inventories use a selector. The sidebar stays open until you choose a session. Sessions, unread state,
+- **Switch execution environments** — connect multiple computers and ECS nodes with unique persistent device IDs and editable names.
+  Approved offline nodes remain visible; two nodes use direct buttons and larger inventories use a selector. The sidebar stays open until you choose a session. Sessions, unread state,
   recent workspaces, attachments and requests stay scoped to the selected machine.
 - **Continue real sessions** — browse, rename and resume existing Codex sessions, or start a task in a local
   project. Archive idle PC sessions from the title bar and restore them in Codex Desktop; history and project files stay intact. Markdown history opens at the latest page and loads older entries as you browse upward, preserving your position.

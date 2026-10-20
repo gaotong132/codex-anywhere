@@ -35,7 +35,9 @@ export function desktopSummary(state: Value, owner: string) {
   return { threadId: state.id, status, turnId, canStop: Boolean(turnId) && state.threadGoal?.status !== 'active',
     waitingOnApproval: (state.requests || []).length > 0, approvals,
     model: state.latestCollaborationMode?.settings?.model || state.latestModel || '',
-    reasoningEffort: state.latestReasoningEffort || '',
+    reasoningEffort: state.latestCollaborationMode?.settings?.reasoning_effort
+      ?? state.latestThreadSettings?.collaborationMode?.settings?.reasoning_effort
+      ?? state.latestThreadSettings?.effort ?? state.latestReasoningEffort ?? '',
     serviceTier: state.latestThreadSettings?.serviceTier ?? state.latestServiceTier ?? 'default' };
 }
 

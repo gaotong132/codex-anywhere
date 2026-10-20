@@ -103,6 +103,8 @@ import { ImageUploadProgress, type ImageUploadState } from './image-upload-progr
 import {
   DEFAULT_ENVIRONMENT_ID,
   environmentDisplayName,
+  readEnvironmentInventory,
+  type EnvironmentLabels,
   environmentOfflineLabel,
   environmentOnlineLabel,
   environmentShortName,
@@ -207,6 +209,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     loadKnownEnvironmentIds(), [], initialEnvironmentIdRef.current,
   ));
   const [onlineEnvironmentIds, setOnlineEnvironmentIds] = useState<string[]>([]);
+  const [environmentLabels, setEnvironmentLabels] = useState<EnvironmentLabels>({});
+  const [hasEnvironmentInventory, setHasEnvironmentInventory] = useState(false);
+  const environmentLabelsRef = useRef(environmentLabels);
+  environmentLabelsRef.current = environmentLabels;
   const [newSessionCwd, setNewSessionCwd] = useState(() => {
     const stored = loadEnvironmentValue(NEW_SESSION_CWD_KEY, initialEnvironmentIdRef.current) || '';
     return isTemporaryProjectPath(stored) ? '' : stored;
@@ -341,6 +347,15 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const ownedTurnThreadIdRef = useRef(ownedTurnThreadId);
   const sessionAttentionRef = useRef(sessionAttention);
   const requestManagerRef = useRef<BridgeRequestManager | null>(null);
+  const relayRequestsRef = useRef<BridgeRequestManager | null>(null);
+  if (!relayRequestsRef.current) relayRequestsRef.current = new BridgeRequestManager({
+    isConnected: () => Boolean(socketAuthenticatedRef.current && socketRef.current?.readyState === WebSocket.OPEN),
+    send: frame => {
+      if (socketRef.current?.readyState !== WebSocket.OPEN) return false;
+      socketRef.current.send(JSON.stringify({ ...frame, type: 'relay.request' }));
+      return true;
+    },
+  });
   if (!requestManagerRef.current) {
     requestManagerRef.current = new BridgeRequestManager({
       isConnected: () => socketRef.current?.readyState === WebSocket.OPEN,
@@ -609,7 +624,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         connectorOnlineRef.current = true;
         setConnectionEpoch((current) => current + 1);
         setOnline(true);
-        setStatusText(environmentOnlineLabel(routeDeviceId));
+        setStatusText(environmentOnlineLabel(routeDeviceId, environmentLabelsRef.current));
         replayPendingRequests();
         void refreshSessions();
       },
@@ -651,8 +666,12 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       const devices = normalizeEnvironmentIds(message.devices);
       onlineEnvironmentIdsRef.current = devices;
       setOnlineEnvironmentIds(devices);
+      const inventory = readEnvironmentInventory(message.environments);
+      setHasEnvironmentInventory(Boolean(inventory));
+      environmentLabelsRef.current = inventory?.labels || {};
+      setEnvironmentLabels(environmentLabelsRef.current);
       setEnvironmentIds((current) => {
-        const next = mergeKnownEnvironmentIds(current, devices, environmentIdRef.current);
+        const next = inventory?.ids ?? mergeKnownEnvironmentIds(current, devices, environmentIdRef.current);
         storeKnownEnvironmentIds(next);
         return next;
       });
@@ -668,9 +687,13 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         secureChannelRef.current = null;
         connectorOnlineRef.current = false;
         setOnline(false);
-        setStatusText(environmentOfflineLabel(routeDeviceId));
+        setStatusText(environmentOfflineLabel(routeDeviceId, environmentLabelsRef.current));
         finishInitialBootstrap();
       }
+      return;
+    }
+    if (message.type === 'relay.response') {
+      relayRequestsRef.current!.handle({ ...message, type: 'response' });
       return;
     }
     if (message.type === 'pong') return;
@@ -679,8 +702,12 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       const devices = normalizeEnvironmentIds(message.devices);
       onlineEnvironmentIdsRef.current = devices;
       setOnlineEnvironmentIds(devices);
+      const inventory = readEnvironmentInventory(message.environments);
+      setHasEnvironmentInventory(Boolean(inventory));
+      environmentLabelsRef.current = inventory?.labels || {};
+      setEnvironmentLabels(environmentLabelsRef.current);
       setEnvironmentIds((current) => {
-        const next = mergeKnownEnvironmentIds(current, devices, environmentIdRef.current);
+        const next = inventory?.ids ?? mergeKnownEnvironmentIds(current, devices, environmentIdRef.current);
         storeKnownEnvironmentIds(next);
         return next;
       });
@@ -691,7 +718,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         secureChannelRef.current = null;
         connectorOnlineRef.current = false;
         setOnline(false);
-        setStatusText(environmentOfflineLabel(routeDeviceId));
+        setStatusText(environmentOfflineLabel(routeDeviceId, environmentLabelsRef.current));
         finishInitialBootstrap();
       } else {
         if (!secureChannelRef.current?.isReady()) {
@@ -887,6 +914,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
 
   const rejectPendingRequests = useCallback((message: string) => {
     requestManagerRef.current!.rejectAll(message);
+    relayRequestsRef.current!.rejectAll(message);
   }, []);
 
   const clearReconnectTimer = useCallback(() => {
@@ -1503,9 +1531,18 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       setStatusText(t('正在建立安全通道…', 'Establishing secure channel…'));
       beginSecureChannel(nextEnvironmentId);
     } else {
-      setStatusText(environmentOfflineLabel(nextEnvironmentId));
+      setStatusText(environmentOfflineLabel(nextEnvironmentId, environmentLabelsRef.current));
     }
   }, [beginSecureChannel, cancelFileDownload, closeNewSessionDialog, rejectPendingRequests, resetExecution, selectSession, setPendingAttachment]);
+
+  useEffect(() => {
+    if (authenticated && hasEnvironmentInventory && environmentIds.length && !environmentIds.includes(environmentId)) {
+      selectEnvironment(environmentIds.find(id => onlineEnvironmentIds.includes(id)) || environmentIds[0]);
+    }
+  }, [authenticated, hasEnvironmentInventory, environmentIds, environmentId, onlineEnvironmentIds, selectEnvironment]);
+  const renameEnvironment = useCallback(async (deviceId: string, label: string) => {
+    await relayRequestsRef.current!.request('device.rename', { deviceId, label }, { timeoutMs: 15000 });
+  }, []);
 
   const beginNewSession = useCallback(() => {
     setNewSessionPrompt('');
@@ -2140,6 +2177,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         open={drawerOpen}
         environmentId={environmentId}
         environmentIds={environmentIds}
+        environmentLabels={environmentLabels}
+        onEnvironmentRename={hasEnvironmentInventory ? renameEnvironment : undefined}
         onlineEnvironmentIds={onlineEnvironmentIds}
         sessions={sessions}
         selectedThreadId={threadId}
@@ -2284,7 +2323,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         detail={compactionStartedAt ? '' : activityDetail}
         progress={turnProgress}
         startedAt={activityStartedAt}
-        environment={environmentDisplayName(environmentId)}
+        environment={environmentDisplayName(environmentId, environmentLabels)}
         canStop={stopAvailable}
         stopping={stopping}
         onClose={() => setRunDetailsOpen(false)}
@@ -2311,7 +2350,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                   <SidebarIcon name="edit" />
                 </button>
               )}
-              <span>{environmentShortName(environmentId)}</span>
+              <span>{environmentShortName(environmentId, environmentLabels)}</span>
               {threadId && connectorStatus?.capabilities.sessionArchive && (
                 <button type="button" className="session-rename-button" disabled={!online || (executionActive && !(approval?.actionable === false && connectorStatus.capabilities.sessionArchivePendingApproval))}
                   aria-label={t('归档会话', 'Archive session')} title={t('归档会话', 'Archive session')}
@@ -2393,8 +2432,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
               onOpenDetails={!compactionStartedAt && executionActive ? () => setRunDetailsOpen(true) : undefined}
               notice={deliveryReceipt && <div className={`message-delivery ${deliveryReceipt.status}`} role="status" aria-live="polite" aria-atomic="true">
                 {deliveryReceipt.status === 'confirmed'
-                  ? t(`✓ 上一条消息已送达${environmentDisplayName(deliveryReceipt.environmentId)}`,
-                    `✓ Last message delivered to ${environmentDisplayName(deliveryReceipt.environmentId)}`)
+                  ? t(`✓ 上一条消息已送达${environmentDisplayName(deliveryReceipt.environmentId, environmentLabels)}`,
+                    `✓ Last message delivered to ${environmentDisplayName(deliveryReceipt.environmentId, environmentLabels)}`)
                   : deliveryReceipt.status === 'sending'
                     ? t('正在投递消息…', 'Delivering your message…')
                     : t('未确认送达，请检查会话后再重试。', 'Delivery not confirmed. Check the conversation before retrying.')}

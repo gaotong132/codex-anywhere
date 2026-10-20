@@ -136,7 +136,7 @@ Use a stable, recognizable route when installing more than one connector:
 
 ```powershell
 .\scripts\install-connector.ps1 `
-  -DeviceId 'personal-pc' `
+  -DeviceLabel 'Work PC' `
   -AllowedRoots 'D:\project'
 ```
 
@@ -168,7 +168,6 @@ home directory:
 mkdir -p /root/codex-workspaces
 ./scripts/install-linux-connector.sh \
   --user root \
-  --device-id ecs \
   --label 'ECS · 24x7' \
   --allowed-root /root/codex-workspaces \
   --enable-network
@@ -363,6 +362,23 @@ Keep the current and previous deployment plus needed base/container images; do n
 Preview access and download access are separate. `-AllowAnyFileDownload` affects only the confirmed
 download path. Text-based previews already accept any readable absolute path; raster image previews retain their root checks.
 
+## Multiple devices and custom names
+
+Windows and Linux installers generate and persist a unique ID for new devices and retain it on reinstall. Existing `personal-pc` and `ecs` routes keep working without re-pairing. Install and approve each new machine separately; do not clone identity files, DPAPI files or private configurations. Manual Connector launches should explicitly configure an independent `BRIDGE_DEVICE_ID`.
+
+Use the edit button beside Execution environment in the Web sidebar to rename the selected device (up to 80 characters). The relay stores names and synchronizes them across approved browsers, including offline devices. Names may repeat; dropdown options also show route IDs. Renaming leaves routing, identity, sessions and pairing intact. Once registered, the relay name takes precedence over installer labels.
+
+Operators can also run:
+
+```sh
+./scripts/relay.sh devices
+./scripts/relay.sh rename personal-pc "Work PC"
+```
+
+The same identity can reconnect and replace its old socket. Another identity cannot be approved on an occupied route, and approved identities cannot switch routes. For `device_route_conflict` or `device_route_mismatch`, inspect configuration and registrations, choose a separate ID for the new device and request approval again. Do not revoke a needed existing machine to make room. Legacy duplicate routes require an operator to retain the correct identity and revoke conflicting records.
+
+The inventory includes every approved connector, including offline nodes, without the former 24-device truncation. More than two nodes use a dropdown. Revocation updates the list on the next presence broadcast.
+
 ## Supported configuration
 
 Relay `.env`:
@@ -379,7 +395,8 @@ Connector installer options:
 | Option | Default | Purpose |
 | --- | --- | --- |
 | `-BridgeUrl` | `ws://127.0.0.1:3300/ws` | Relay WebSocket endpoint |
-| `-DeviceId` / `--device-id` | `personal-pc` on Windows, `ecs` on Linux | Stable execution-environment route shown in the browser |
+| `-DeviceId` / `--device-id` | Unique generated ID on first install; reused on reinstall | Stable route separate from its display name; do not reuse across machines |
+| `-DeviceLabel` / `--label` | Hostname on first install; reused on reinstall | Initial registration name; rename later through Web or the relay |
 | `-AllowedRoots` | connector checkout | Local roots for new sessions, raster image previews and normal downloads; does not restrict text-based previews |
 | `-AllowAnyFileDownload` | off | Allow confirmed downloads outside configured roots; does not change preview policy |
 | `-EnableNetworkAccess` | off | Allow connector-owned Codex turns to request network access |
@@ -389,7 +406,7 @@ Connector runtime environment:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `BRIDGE_DEVICE_LABEL` | device id | Human-readable connector label used in diagnostics |
+| `BRIDGE_DEVICE_LABEL` | device id | Initial connector label; approved display names are stored on the relay |
 | `CODEX_CONNECTOR_MODE` | `desktop` on Windows, `headless` elsewhere | Preserve Desktop ownership or let a headless app-server own resumed sessions |
 | `CODEX_ALLOW_FULL_ACCESS` | `0` | Server-side gate for the Web full-access permission mode |
 | `BRIDGE_DEVICE_IDENTITY_FILE` | installer-managed | Mode-0600 Ed25519 connector identity file on Linux |

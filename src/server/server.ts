@@ -181,11 +181,24 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
             deviceActivity.connected(socket, identity.role, identity.device.id);
             sessionTimer = setTimeout(() => socket.close(4005, 'authentication expired'), sessionMaxAgeMs);
             sessionTimer.unref?.();
-            broadcastPresence(clients, connectors);
+            broadcastPresence(clients, connectors, deviceRegistry);
           }
           return;
         }
         deviceActivity.seen(socket);
+        if (message.type === 'relay.request' && meta.role === 'client') {
+          const requestId = String(message.requestId || '').slice(0, 128);
+          try {
+            if (!deviceRegistry.isApproved('client', meta.device)) throw new Error('device_not_approved');
+            if (message.action !== 'device.rename') throw new Error('unsupported_relay_action');
+            const data = deviceRegistry.renameConnector(String(message.payload?.deviceId || ''), message.payload?.label);
+            safeSend(socket, { type: 'relay.response', requestId, ok: true, data });
+            broadcastPresence(clients, connectors, deviceRegistry);
+          } catch (error) {
+            safeSend(socket, { type: 'relay.response', requestId, ok: false, error: publicError(error) });
+          }
+          return;
+        }
         if (message.type === 'ping') {
           safeSend(socket, { type: 'pong', at: Date.now() });
           return;
@@ -208,7 +221,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       if (!meta) return;
       if (meta.role === 'client') clients.delete(meta.id);
       if (meta.role === 'connector' && connectors.get(meta.deviceId) === socket) connectors.delete(meta.deviceId);
-      broadcastPresence(clients, connectors);
+      broadcastPresence(clients, connectors, deviceRegistry);
     });
     safeSend(socket, {
       type: 'auth.challenge', challenge: authChallenge, protocol: createProtocolOffer(),
@@ -230,6 +243,7 @@ export function createBridgeServer(options: BridgeServerOptions = {}) {
       socket.isAlive = false;
       socket.ping();
     }
+    broadcastPresence(clients, connectors, deviceRegistry);
   }, heartbeatIntervalMs);
   heartbeat.unref?.();
 
@@ -404,7 +418,18 @@ function authenticateSocket({
   }
   clearTimeout(authTimer);
   if (role === 'connector') {
+    try { deviceRegistry.assertConnectorRoute(device, deviceId); }
+    catch (error) {
+      safeSend(socket, { type: 'error', error: publicError(error) });
+      socket.close(4409, (error as Error).message);
+      return false;
+    }
     const previous = connectors.get(deviceId);
+    const previousMeta = previous && socketMeta.get(previous);
+    if (previousMeta && (previousMeta.device.id !== device.id || previousMeta.device.publicKey !== device.publicKey)) {
+      socket.close(4409, 'device_route_conflict');
+      return false;
+    }
     if (previous && previous !== socket) previous.close(4004, 'connector replaced');
     connectors.set(deviceId, socket);
     socketMeta.set(socket, {
@@ -421,6 +446,7 @@ function authenticateSocket({
   safeSend(socket, {
     type: 'auth.ok', role, clientId: id,
     devices: [...connectors.keys()].sort(),
+    environments: connectorInventory(deviceRegistry, connectors),
     protocol,
     authMode,
   });
@@ -513,12 +539,23 @@ function isSecureConnectorFrame(type: unknown) {
 function broadcastPresence(
   clients: Map<string, AliveWebSocket>,
   connectors: Map<string, AliveWebSocket>,
+  registry: DeviceRegistry,
 ) {
   const payload = {
     type: 'presence',
     devices: [...connectors.keys()].sort(),
+    environments: connectorInventory(registry, connectors),
   };
   for (const socket of clients.values()) safeSend(socket, payload);
+}
+
+function connectorInventory(registry: DeviceRegistry, connectors: Map<string, AliveWebSocket>) {
+  const inventory = new Map<string, { id: string; label: string; online: boolean }>();
+  for (const entry of registry.listApproved()) {
+    if (entry.role !== 'connector' || !entry.routeDeviceId || inventory.has(entry.routeDeviceId)) continue;
+    inventory.set(entry.routeDeviceId, { id: entry.routeDeviceId, label: entry.label, online: connectors.has(entry.routeDeviceId) });
+  }
+  return [...inventory.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
 

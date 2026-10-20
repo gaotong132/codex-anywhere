@@ -13,6 +13,31 @@ test('device approval command uses the local registry unless a deployment path i
   assert.equal(resolveDeviceAdminRegistryPath('  custom/devices.json  '), resolve('custom/devices.json'));
 });
 
+test('connector routes bind to an approved identity, including offline registrations', async () => {
+  const registry = new DeviceRegistry();
+  const first = createDeviceIdentity(), second = createDeviceIdentity();
+  const pending = (identity, routeDeviceId) => registry.requestPairing({
+    role: 'connector', routeDeviceId, device: { ...identity, signature: '0'.repeat(128), label: '电脑' }, address: 'test',
+  });
+  registry.approve(pending(first, 'pc').requestId);
+  const conflicting = pending(second, 'pc');
+  assert.throws(() => registry.approve(conflicting.requestId), /device_route_conflict/);
+  assert.ok(registry.list().pending.some(entry => entry.requestId === conflicting.requestId));
+  registry.reject(conflicting.requestId);
+  registry.approve(pending(second, 'ecs').requestId);
+  assert.doesNotThrow(() => registry.assertConnectorRoute(first, 'pc'));
+  assert.throws(() => registry.assertConnectorRoute(second, 'pc'), /device_route_mismatch/);
+  assert.throws(() => registry.assertConnectorRoute(first, 'another-pc'), /device_route_mismatch/);
+  assert.equal(registry.renameConnector('pc', '工作电脑').label, '工作电脑');
+  assert.equal(registry.listApproved().find(entry => entry.id === first.id)?.publicKey, first.publicKey);
+  assert.throws(() => registry.renameConnector('pc', '\ninvalid'), /invalid_device_label/);
+  assert.throws(() => registry.renameConnector('missing', '名称'), /device_not_found/);
+  const output: string[] = [];
+  assert.equal(await runDeviceAdmin({ registry, args: ['rename', 'pc', '开发笔记本'],
+    io: { question: async () => assert.fail(), write: text => output.push(text) } }), 'renamed');
+  assert.match(output.join(''), /开发笔记本/);
+});
+
 test('device registry persists public trust records and reloads external approvals', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'codex-anywhere-devices-'));
   const filePath = join(directory, 'devices.json');

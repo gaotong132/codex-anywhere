@@ -123,7 +123,7 @@ Markdown、SVG、源代码、配置和文本预览支持连接器账号可读的
 
 ```powershell
 .\scripts\install-connector.ps1 `
-  -DeviceId 'personal-pc' `
+  -DeviceLabel '工作电脑' `
   -AllowedRoots 'D:\project'
 ```
 
@@ -154,7 +154,6 @@ codex login status
 mkdir -p /root/codex-workspaces
 ./scripts/install-linux-connector.sh \
   --user root \
-  --device-id ecs \
   --label 'ECS · 24x7' \
   --allowed-root /root/codex-workspaces \
   --enable-network
@@ -348,6 +347,23 @@ Compose 镜像标签，再启动 Relay/Connector，重新执行上述验收。�
 
 预览权限和下载权限相互独立。文本类文件不限根目录；位图仍受根目录限制。`-AllowAnyFileDownload` 只影响确认下载。
 
+## 多设备与自定义名称
+
+Windows 与 Linux 安装器会为新设备生成并保存唯一 ID，重新安装保留原 ID。已有 `personal-pc`、`ecs` 继续使用，无需重新配对。每台新机器独立安装并批准，不要复制另一台机器的身份文件、DPAPI 文件或整份私有配置。手动运行连接器时应显式配置独立的 `BRIDGE_DEVICE_ID`。
+
+Web 侧边栏“执行环境”旁的编辑按钮可修改当前设备名称，最多 80 个字符。名称保存到 Relay 并同步给其他已授权浏览器；离线设备也可改名。名称可以重复，下拉选项同时显示 ID 便于区分。改名不改变路由、身份、会话和配对。已经注册的设备以 Relay 名称为准，修改安装参数不会覆盖它。
+
+服务端也可以执行：
+
+```sh
+./scripts/relay.sh devices
+./scripts/relay.sh rename personal-pc "工作电脑"
+```
+
+相同身份断线重连仍会替换旧连接；不同身份使用已注册 ID 会被拒绝批准，已批准身份也不能改用其他路由。遇到 `device_route_conflict` 或 `device_route_mismatch`，检查安装配置和设备列表，给新设备分配独立 ID 后重新申请批准；不要为接入新机器撤销仍需使用的旧机器。已有注册记录存在重复路由时，需要管理员保留正确身份并撤销冲突记录。
+
+设备列表包含全部已批准的连接器（含离线设备），不再截断为 24 台。超过两台使用下拉选择，撤销设备后列表随下一次状态广播更新。
+
 ## 支持的配置
 
 转发服务 `.env`：
@@ -365,7 +381,8 @@ Compose 镜像标签，再启动 Relay/Connector，重新执行上述验收。�
 | 参数 | 默认值 | 用途 |
 | --- | --- | --- |
 | `-BridgeUrl` | `ws://127.0.0.1:3300/ws` | 转发服务 WebSocket 地址 |
-| `-DeviceId` / `--device-id` | Windows 为 `personal-pc`，Linux 为 `ecs` | 浏览器显示的稳定执行环境路由 |
+| `-DeviceId` / `--device-id` | 首次安装自动生成唯一 ID；重新安装沿用原值 | 稳定路由，与名称分离；不要在不同设备上复用 |
+| `-DeviceLabel` / `--label` | 新设备为主机名；重新安装沿用原值 | 首次注册名称，之后可在 Web 或服务端改名 |
 | `-AllowedRoots` | 连接器仓库 | 新会话、位图预览和普通下载可使用的本机项目根目录；不限制文本类预览 |
 | `-AllowAnyFileDownload` | 关闭 | 确认后允许下载配置根目录外的文件；不改变预览策略 |
 | `-EnableNetworkAccess` | 关闭 | 允许连接器持有的 Codex 轮次申请网络访问 |
@@ -375,7 +392,7 @@ Compose 镜像标签，再启动 Relay/Connector，重新执行上述验收。�
 
 | 变量 | 默认值 | 用途 |
 | --- | --- | --- |
-| `BRIDGE_DEVICE_LABEL` | 设备 ID | 诊断信息使用的连接器名称 |
+| `BRIDGE_DEVICE_LABEL` | 设备 ID | 首次注册的连接器名称；已批准设备的显示名由 Relay 保存 |
 | `CODEX_CONNECTOR_MODE` | Windows 为 `desktop`，其他平台为 `headless` | 保留 Desktop 会话所有权，或让无头 app-server 管理恢复的会话 |
 | `CODEX_ALLOW_FULL_ACCESS` | `0` | Web“完全访问权限”的服务端总开关 |
 | `BRIDGE_DEVICE_IDENTITY_FILE` | 安装器管理 | Linux 上权限为 0600 的 Ed25519 连接器身份文件 |

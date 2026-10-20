@@ -16,6 +16,7 @@ import {
   loadSelectedEnvironmentId,
   mergeKnownEnvironmentIds,
   normalizeEnvironmentIds,
+  readEnvironmentInventory,
   storeEnvironmentValue,
   storeKnownEnvironmentIds,
   storeSelectedEnvironmentId,
@@ -50,11 +51,11 @@ test('larger environment inventories retain an accessible selector for every rou
   assert.equal(trigger.getAttribute('aria-label'), '切换执行环境');
 });
 
-test('execution environment inventory is normalized, stable, and keeps the local default', () => {
+test('execution environment inventory is normalized without injecting a phantom PC', () => {
   assert.deepEqual(normalizeEnvironmentIds([' ecs ', 'personal-pc', 'ecs', '', null]), ['ecs', 'personal-pc']);
   assert.deepEqual(
     mergeKnownEnvironmentIds(['studio'], ['ecs', 'studio'], 'offline-lab'),
-    ['ecs', 'offline-lab', 'personal-pc', 'studio'],
+    ['ecs', 'offline-lab', 'studio'],
   );
 });
 
@@ -71,12 +72,26 @@ test('selected and known execution environments persist without trusting malform
   assert.equal(loadSelectedEnvironmentId(storage), DEFAULT_ENVIRONMENT_ID);
   assert.equal(storeSelectedEnvironmentId(' ecs ', storage), 'ecs');
   assert.equal(loadSelectedEnvironmentId(storage), 'ecs');
-  assert.deepEqual(storeKnownEnvironmentIds(['ecs', 'lab', 'ecs'], storage), ['ecs', 'lab', 'personal-pc']);
-  assert.deepEqual(loadKnownEnvironmentIds(storage), ['ecs', 'lab', 'personal-pc']);
+  assert.deepEqual(storeKnownEnvironmentIds(['ecs', 'lab', 'ecs'], storage), ['ecs', 'lab']);
+  assert.deepEqual(loadKnownEnvironmentIds(storage), ['ecs', 'lab']);
   storage.values.set('bridge.knownEnvironments.v1', '{bad json');
-  assert.deepEqual(loadKnownEnvironmentIds(storage), [DEFAULT_ENVIRONMENT_ID]);
+  assert.deepEqual(loadKnownEnvironmentIds(storage), []);
 });
 
+test('approved offline devices and custom names survive inventories larger than 24', () => {
+  const rows = Array.from({ length: 40 }, (_, index) => ({ id: `node-${index}`, label: `电脑 ${index}`, online: false }));
+  const inventory = readEnvironmentInventory(rows)!;
+  assert.equal(inventory.ids.length, 40);
+  assert.ok(inventory.ids.includes('node-39'));
+  assert.equal(environmentDisplayName('node-39', inventory.labels), '电脑 39');
+  assert.equal(environmentShortName('ecs', { ecs: '生产服务器' }), '生产服务器');
+  assert.equal(readEnvironmentInventory(undefined), null);
+  assert.deepEqual(readEnvironmentInventory([])?.ids, []);
+  const { document } = parseHTML(renderToStaticMarkup(createElement(EnvironmentSwitcher, {
+    value: 'node-39', environmentIds: inventory.ids, labels: inventory.labels, onlineEnvironmentIds: [], onChange: () => {},
+  })));
+  assert.match(document.querySelector('button')!.textContent!, /电脑 39/);
+});
 test('connector-scoped storage migrates the legacy local-computer value only', () => {
   const storage = new MemoryStorage();
   storage.setItem('bridge.lastThreadId', 'legacy-thread');
