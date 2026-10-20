@@ -213,8 +213,9 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
 }
 .environment-picker-heading { display: flex; align-items: center; justify-content: space-between; }
 .environment-rename-trigger {
-  min-height: 28px; padding: 3px 6px; border: 0; border-radius: 5px;
-  background: transparent; color: #8e9cb1; font-size: 11px; line-height: 1.4;
+  display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px;
+  padding: 6px; border: 0; border-radius: 5px; background: transparent; color: #8e9cb1;
+  .sidebar-tool-icon { width: 15px; height: 15px; stroke-width: 1.6; }
   @media (hover: hover) and (pointer: fine) {
     &:hover { color: #c7d9f6; background: #ffffff08; }
   }
