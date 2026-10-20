@@ -225,7 +225,7 @@ test('request handler keeps connector routing independent from process startup',
     data: {
       deviceId: 'personal-pc', deviceLabel: 'My computer', mode: 'desktop',
       platform: process.platform, codexOnline: true, activeTurn: false,
-      desktopOnline: true, desktopTools: ['send_message_to_thread', 'read_thread', 'set_thread_archived', 'navigate_to_codex_page'],
+      desktopOnline: true, desktopInputOnline: false, desktopTools: ['send_message_to_thread', 'read_thread', 'set_thread_archived', 'navigate_to_codex_page'],
       capabilities: { networkAccess: false, fullAccess: false },
     },
   });

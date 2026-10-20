@@ -45,6 +45,8 @@ export function friendlyError(error: unknown) {
   if (message === 'desktop_delivery_unknown' || message === 'desktop_delivery_timeout') return t('消息可能已经送达，但桌面 Codex 的确认丢失。请先查看会话中的消息和回复，确认未送达后再重试，避免重复发送。', 'The message may have arrived, but confirmation from Codex Desktop was lost. Check the conversation before retrying to avoid sending it twice.');
   if (message.startsWith('desktop_tool_unavailable:')) return t('当前桌面 Codex 不支持此操作，请更新桌面应用后重试。', 'This Codex Desktop host does not support this action. Update the desktop app and try again.');
   if (message === 'desktop_request_too_large') return t('消息超过桌面通道大小限制，尚未发送。请缩短内容后重试。', 'The message exceeds the desktop channel size limit and was not sent. Shorten it and try again.');
+  if (message === 'desktop_input_unavailable') return t('桌面原生输入通道尚未就绪。请打开目标会话并确认 Codex 已更新后重试。', 'Desktop native input is not ready. Open the target chat and check your Codex version before retrying.');
+  if (message === 'desktop_input_settings_failed') return t('未能同步桌面会话的模型设置，消息尚未发送。请刷新会话后重试。', 'Could not synchronize Desktop model settings. The message was not sent. Refresh the chat and try again.');
   if (message === 'desktop_app_unavailable') return t('桌面 Codex 当前不可用，请打开桌面应用后重试。', 'Codex Desktop is unavailable. Open it and try again.');
   if (message === 'desktop_thread_open_failed') return t('未能在电脑端打开此会话，请确认 Codex 桌面应用可用后重试。', 'Could not open this task on the computer. Make sure Codex Desktop is available and try again.');
   if (message === 'desktop_thread_identity_mismatch') return t('已阻止操作：会话身份不一致。请更新 PC 连接器后重试，消息不会转发到其他会话。', 'Operation blocked: task identities do not match. Update the PC connector and retry; the message will not be forwarded to another task.');

@@ -69,7 +69,7 @@ test('concurrent discovery shares one client; closing during discovery disposes 
   assert.equal(desktop.client, null);
 });
 
-test('business RPC failure does not cancel a simultaneous send', async () => {
+test('business RPC failure does not cancel a simultaneous app-tools request', async () => {
   let sending: { socket: net.Socket; id: number } | undefined;
   await host((request, socket) => {
     if (request.params.tool === 'send_message_to_thread') sending = { socket, id: request.id };
@@ -79,10 +79,10 @@ test('business RPC failure does not cancel a simultaneous send', async () => {
     }
   }, async client => {
     const desktop = desktopFor(client);
-    const send = desktop.sendMessage({ threadId: 'fixture', text: 'one', requestId: 'one' });
+    const send = desktop.callTool({ tool: 'send_message_to_thread', arguments: { threadId: 'fixture', prompt: 'one' }, callerThreadId: 'fixture', callId: 'test' });
     const read = desktop.readThreadState({ threadId: 'fixture' });
     await assert.rejects(read, /read rejected/);
-    assert.equal((await send).delivery, 'desktop');
+    assert.equal((await send).success, true);
     assert.equal(client.connected, true);
   });
 });
@@ -103,7 +103,7 @@ test('individual timeout and its late response leave another request usable', as
 });
 
 for (const mode of ['close', 'disconnect', 'timeout'] as const) {
-  test(`send ${mode} after dispatch reports unknown delivery without retry`, async () => {
+  test(`app-tools ${mode} after dispatch reports transport uncertainty without retry`, async () => {
     let received = 0;
     let accepted!: () => void;
     const acceptance = new Promise<void>(resolve => { accepted = resolve; });
@@ -113,8 +113,8 @@ for (const mode of ['close', 'disconnect', 'timeout'] as const) {
       if (mode === 'disconnect') socket.destroy();
     }, async client => {
       const desktop = desktopFor(client);
-      const send = desktop.sendMessage({ threadId: 'fixture', text: 'one', requestId: 'one' });
-      const rejected = assert.rejects(send, /desktop_delivery_unknown/);
+      const send = desktop.callTool({ tool: 'send_message_to_thread', arguments: { threadId: 'fixture', prompt: 'one' }, callerThreadId: 'fixture', callId: 'test' });
+      const rejected = assert.rejects(send, error => error instanceof NativeRequestError && error.dispatched);
       await acceptance;
       if (mode === 'close') client.close();
       // Explicit close should settle promptly, not after the request timeout.
@@ -137,8 +137,8 @@ test('closing a connecting pipe rejects immediately and cannot resurrect it', as
 
 test('failure before dispatch is unavailable, not unknown delivery', async () => {
   const desktop = new CodexDesktopClient();
-  desktop.getClient = async () => { throw new NativeRequestError('connect timeout', false); };
-  await assert.rejects(desktop.sendMessage({ threadId: 'fixture', text: 'one', requestId: 'one' }), /^Error: desktop_app_unavailable$/);
+  desktop.userInput.pipe.request = async () => { throw new NativeRequestError('connect timeout', false); };
+  await assert.rejects(desktop.sendMessage({ threadId: 'fixture', text: 'one', requestId: 'one' }), /^Error: desktop_input_unavailable$/);
 });
 
 test('probe requires the correct namespace and operation dispatch checks cached capabilities', async () => {
@@ -154,7 +154,8 @@ test('probe requires the correct namespace and operation dispatch checks cached 
     assert.ok(client);
     try {
       const desktop = desktopFor(client);
-      assert.deepEqual(await desktop.getCapabilities(), { available: true, tools: ['send_message_to_thread'] });
+      desktop.userInput.pipe.connect = async () => {};
+      assert.deepEqual(await desktop.getCapabilities(), { available: true, tools: ['send_message_to_thread'], inputAvailable: true });
       await assert.rejects(desktop.readThreadState({ threadId: 'fixture' }), /desktop_tool_unavailable:read_thread/);
       assert.equal(calls, 2, 'unsupported operation never reaches the host');
     } finally { client.close(); }

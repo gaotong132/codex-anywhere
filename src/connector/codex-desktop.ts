@@ -1,6 +1,7 @@
+import { DesktopUserInput } from './desktop-user-input.js';
 import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { NativePipeClient, NativeRequestError, encodeNativeFrame } from './desktop-native-pipe.js';
+import { NativePipeClient, encodeNativeFrame } from './desktop-native-pipe.js';
 import { normalizeSessionName } from '../shared/session-name.js';
 
 // Desktop split app tools from browser control in newer builds. Prefer the
@@ -28,48 +29,23 @@ export class CodexDesktopClient {
   client: NativePipeClient | null;
   private discovery: Promise<NativePipeClient> | null = null;
   private generation = 0;
+  readonly userInput: DesktopUserInput;
 
   constructor(options: DesktopClientOptions = {}) {
     this.timeoutMs = Number.isFinite(options.timeoutMs)
       ? Math.max(1_000, Number(options.timeoutMs)) : DEFAULT_TIMEOUT_MS;
     this.client = null;
+    this.userInput = new DesktopUserInput(threadId => this.openThread({ threadId }), this.timeoutMs);
   }
 
   async sendMessage({ threadId, text, requestId, model, thinking }: DesktopMessage) {
     const targetThreadId = requireThreadId(threadId);
     const prompt = String(text || '').trim();
     if (!prompt) throw new Error('message_required');
-    let result: JsonObject;
-    try {
-      result = await this.callTool({
-        tool: 'send_message_to_thread',
-        arguments: {
-          threadId: targetThreadId,
-          prompt,
-          ...(String(model || '').trim() ? { model: String(model).trim() } : {}),
-          ...(String(thinking || '').trim() ? { thinking: String(thinking).trim() } : {}),
-        },
-        // Desktop persists this caller as source_thread_id. A mobile user's
-        // input must never masquerade as a delegation from another task.
-        callerThreadId: targetThreadId,
-        callId: `bridge-${requestId}`,
-      });
-    } catch (error) {
-      const desktopError = error as DesktopHostError;
-      if (desktopError?.message === 'desktop_thread_identity_mismatch') throw error;
-      if (desktopError?.message.startsWith('desktop_tool_unavailable:') || desktopError?.message === 'desktop_request_too_large') throw error;
-      if (error instanceof NativeRequestError && error.dispatched && error.code !== 'desktop_host_error') {
-        throw new Error('desktop_delivery_unknown');
-      }
-      if (desktopError?.code === 'desktop_host_error') {
-        throw new Error(`desktop_delivery_failed:${desktopError.message || 'unknown error'}`);
-      }
-      throw new Error('desktop_app_unavailable');
-    }
-    if (result?.success !== true) {
-      const message = result?.contentItems?.map((item: JsonObject) => item?.text).filter(Boolean).join('\n');
-      throw new Error(`desktop_delivery_failed:${message || 'unknown error'}`);
-    }
+    await this.userInput.send({ threadId: targetThreadId, text: prompt, requestId,
+      model: String(model || '').trim() || undefined,
+      thinking: String(thinking || '').trim() || undefined,
+    });
     return { threadId: targetThreadId, delivery: 'desktop' };
   }
 
@@ -253,13 +229,19 @@ export class CodexDesktopClient {
   }
 
   async getCapabilities() {
-    try {
-      const client = await this.getClient(STATUS_ENRICHMENT_TIMEOUT_MS);
-      return { available: true, tools: [...client.tools] };
-    } catch { return { available: false, tools: [] as string[] }; }
+    const [appTools, input] = await Promise.allSettled([
+      this.getClient(STATUS_ENRICHMENT_TIMEOUT_MS),
+      this.userInput.pipe.connect(STATUS_ENRICHMENT_TIMEOUT_MS),
+    ]);
+    return {
+      available: appTools.status === 'fulfilled',
+      tools: appTools.status === 'fulfilled' ? [...appTools.value.tools] : [],
+      inputAvailable: input.status === 'fulfilled',
+    };
   }
 
   close() {
+    this.userInput.close();
     this.generation++;
     this.discovery = null;
     this.client?.close();

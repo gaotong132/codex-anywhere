@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Deliver Web messages to existing Windows threads through native Desktop owner/follower input, preserving user-message semantics and running-turn steering. Keep uncertain submissions from being resent or downgraded to inter-chat delegation; expose native-input connection health separately.
+
 - Discover the dedicated Codex Desktop app-tools pipe used by newer clients, with capability-checked fallback for older releases. Fix Web messages incorrectly failing with “Codex Desktop is unavailable” while the app is running.
 
 - Compact the PC/ECS buttons to a single 40 px row with a status dot; retain selected state, status tooltips and screen-reader labels. Refresh the README preview.

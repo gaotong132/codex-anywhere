@@ -309,11 +309,15 @@ When pinning a release, replace the first step with that tag's fetch/checkout. P
 and DPAPI identity. Check `relay.sh devices` afterward; startup errors are in
 `%USERPROFILE%\.codex-anywhere\last-start-error.log`. Do not stop Codex Desktop.
 
-If Web sends report “Codex Desktop is unavailable” while the app is open, update and actually restart the Windows Connector. Newer Desktop builds expose app tools through `codex-app-tools-*` named pipes; the Connector prefers these and falls back to capability-checked legacy `codex-browser-use-*` hosts. Updating ECS alone cannot replace the old process on the computer. Pairing does not need to be repeated.
+Web messages for existing Windows sessions use Desktop's `codex-ipc` native input channel and the instance that owns the thread. Idle input starts a turn; running input steers the existing turn. Desktop permissions, working directory and thread settings are inherited; model choices supplied by Web are synchronized first. Messages are normal user input, no longer `send_message_to_thread` delegations. Existing history is not rewritten.
 
-Concurrent Desktop requests share one discovery operation. A tool error or individual timeout does not close the connection used by other requests. Each connection caches capabilities in the `codex_app` namespace and checks each send, read, rename, archive, and navigation operation before dispatch. `connector.status` exposes `desktopOnline` and `desktopTools` separately from the app-server’s `codexOnline`. Native request and response payloads are bounded at 8 MiB.
+A cold thread is opened in Desktop first, which may change the selected desktop chat. This integration uses an internal owner/follower protocol, verified with client 26.1013.4894.0, rather than a stable public API. Incompatible protocols or unavailable owners fail explicitly, without creating a second writer or falling back to delegation. Desktop's gated experimental user-message admission feature is not enabled by this bridge.
 
-A Web warning that a message may have arrived means the request was written to the channel but its confirmation was lost through timeout, disconnection, or closure. Web reloads the selected conversation and preserves the draft for comparison; it never automatically resends an uncertain delivery. Check the conversation before retrying. Missing host tools are reported as unsupported operations rather than as an unavailable desktop.
+If Web reports that native input is not ready, open the target thread in Desktop under the same Windows user, then update and actually restart the Windows Connector. Updating ECS alone cannot replace the old PC process. Pairing is preserved. Metadata operations (read, rename, archive and navigate) still discover `codex-app-tools-*`, with capability-checked compatibility for legacy `codex-browser-use-*` hosts.
+
+Concurrent connection/initialization requests are shared; one timeout does not close other in-flight requests. Frames are bounded at 8 MiB, requests are bound to the target thread and owner, and the Connector never advertises ownership. `connector.status` exposes `desktopOnline` / `desktopTools` for app tools and `desktopInputOnline` for native input initialization; these do not imply every thread is loaded and are separate from app-server `codexOnline`.
+
+A warning that a message may have arrived means the submission outcome is uncertain. Web reloads the conversation and preserves the draft; it never resends automatically or switches channels. Only the owner's explicit precondition error that the active turn already ended permits trying a new turn. Check history and replies before retrying.
 
 ### Backup and recovery
 

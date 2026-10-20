@@ -38,7 +38,7 @@ type CodexGateway = {
   needsDesktopPermissionRecovery(threadId: string): Promise<boolean>;
 };
 type DesktopGateway = {
-  getCapabilities?(): Promise<{ available: boolean; tools: string[] }>;
+  getCapabilities?(): Promise<{ available: boolean; tools: string[]; inputAvailable?: boolean }>;
   listThreads(options: Payload): Promise<DesktopThreadStatus[]>;
   readThreadState(options: Payload): Promise<any>;
   sendMessage(options: Payload): Promise<any>;
@@ -149,7 +149,7 @@ async function dispatchAction({
       mode,
       platform: process.platform,
       codexOnline: Boolean(codex.child),
-      ...(mode === 'desktop' ? { desktopOnline: desktopState?.available === true, desktopTools: desktopState?.tools || [] } : {}),
+      ...(mode === 'desktop' ? { desktopOnline: desktopState?.available === true, desktopTools: desktopState?.tools || [], desktopInputOnline: desktopState?.inputAvailable === true } : {}),
       activeTurn: Boolean(codex.activeTurn),
       capabilities: { networkAccess, fullAccess: allowFullAccess,
         ...(mode === 'desktop' && desktop?.archiveThread && supports('read_thread', 'set_thread_archived') ? { sessionArchive: true, sessionArchivePendingApproval: true } : {}),

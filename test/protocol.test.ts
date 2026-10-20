@@ -423,27 +423,13 @@ test('desktop native pipe frames use a little-endian length prefix', () => {
   assert.deepEqual(JSON.parse(frame.subarray(4).toString('utf8')), message);
 });
 
-test('desktop follow-up binds the native caller to the destination task', async () => {
+test('desktop follow-up delivers native user input with the selected settings', async () => {
   const desktop = new CodexDesktopClient();
-  let call;
-  desktop.getClient = async () => ({
-    tools: new Set(['send_message_to_thread', 'set_thread_title', 'read_thread', 'set_thread_archived', 'navigate_to_codex_page', 'list_threads']),
-    request: async (method, params) => {
-      call = { method, params };
-      return { success: true };
-    },
-    close: () => {},
-  });
-  assert.deepEqual(await desktop.sendMessage({
-    threadId: 'target-thread', text: '普通用户消息', requestId: 'request-1',
-    model: 'gpt-5.6-sol', thinking: 'high',
-  }), { threadId: 'target-thread', delivery: 'desktop' });
-  assert.equal(call.method, 'tools/call');
-  assert.equal(call.params.arguments.threadId, 'target-thread');
-  assert.equal(call.params.arguments.prompt, '普通用户消息');
-  assert.equal(call.params.arguments.model, 'gpt-5.6-sol');
-  assert.equal(call.params.arguments.thinking, 'high');
-  assert.equal(call.params.threadId, 'target-thread');
+  let input;
+  desktop.userInput.send = async value => { input = value; };
+  assert.deepEqual(await desktop.sendMessage({ threadId: 'target-thread', text: '普通用户消息', requestId: 'request-1',
+    model: 'gpt-6-astra', thinking: 'high' }), { threadId: 'target-thread', delivery: 'desktop' });
+  assert.deepEqual(input, { threadId: 'target-thread', text: '普通用户消息', requestId: 'request-1', model: 'gpt-6-astra', thinking: 'high' });
 });
 
 test('desktop session rename uses the native task title tool', async () => {

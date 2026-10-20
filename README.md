@@ -34,7 +34,7 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
 - **Follow task progress** — see running status, unread updates, progress, plans, tool purpose and elapsed time.
   Completed turns retain action summaries, configuration changes and failure or cancellation reasons; automation reports
   keep their full body while redundant notifications and internal fields stay out of the display.
-- **Add instructions during a run** — steer active tasks with text, using Desktop delivery for existing sessions
+- **Add instructions during a run** — steer active tasks with text; existing Windows sessions use native Desktop user input without an inter-chat forwarding label
   when supported. Stop a turn from Web when the selected connector owns it; messages are sent directly without a Web queue.
 - **Choose models and permissions** — select the model, reasoning effort, fast mode and approval mode, including
   GPT-6 Astra, Max and Ultra when offered by the selected node. Headless nodes support user approval, Codex auto-review

@@ -54,51 +54,27 @@ test('only explicit confirmation allows archiving an actual Desktop approval wai
   assert.equal(calls[1].params.arguments.threadId, 'target');
 });
 
-test('mobile input cannot select a different source task, even with a legacy caller field', async () => {
+test('user input snapshots only the selected destination and explicit model overrides', async () => {
   const { desktop, calls } = captureDesktop();
-  const input = {
-    threadId: 'project-a-thread', text: 'Continue here', requestId: 'request-a',
-    callerThreadId: 'production-thread',
-  };
-  await desktop.sendMessage(input);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].params.threadId, input.threadId);
-  assert.equal(calls[0].params.arguments.threadId, input.threadId);
-  assert.equal(calls[0].params.arguments.prompt, input.text);
-  assert.doesNotMatch(JSON.stringify(calls), /production-thread/);
+  const inputs: any[] = [];
+  desktop.userInput.send = async input => { inputs.push(input); };
+  const input = { threadId: 'thread-a', text: 'Message A', requestId: 'a', callerThreadId: 'unrelated-thread' };
+  await Promise.all([desktop.sendMessage(input), desktop.sendMessage({ threadId: 'thread-b', text: 'Message B', requestId: 'b', model: 'gpt-6-astra', thinking: 'high' })]);
+  assert.deepEqual(inputs, [
+    { threadId: 'thread-a', text: 'Message A', requestId: 'a', model: undefined, thinking: undefined },
+    { threadId: 'thread-b', text: 'Message B', requestId: 'b', model: 'gpt-6-astra', thinking: 'high' },
+  ]);
+  assert.equal(calls.length, 0, 'user input never invokes an app tool');
 });
 
-test('concurrent sends keep each task source, destination, text and request id together', async () => {
+test('metadata app calls still identify the Codex caller required by Desktop', async () => {
   const { desktop, calls } = captureDesktop();
-  await Promise.all(['thread-a', 'thread-b'].map((threadId) => desktop.sendMessage({
-    threadId, text: `Message for ${threadId}`, requestId: `request-${threadId}`,
-  })));
-  assert.equal(calls.length, 2);
-  for (const { params } of calls) {
-    assert.equal(params.arguments.threadId, params.threadId);
-    assert.equal(params.arguments.prompt, `Message for ${params.threadId}`);
-    assert.equal(params.callId, `bridge-request-${params.threadId}`);
-  }
-});
-
-test('all native app calls identify the Codex caller required by newer Desktop hosts', async () => {
-  const { desktop, calls } = captureDesktop();
-  // Browser-supplied metadata cannot change the task's backing kind.
-  const input = {
-    threadId: 'thread-a', text: 'hello', requestId: 'compatibility', callerSource: 'chatgpt',
-  };
-  await desktop.sendMessage(input);
   await desktop.renameThread({ threadId: 'thread-a', name: 'title' });
   await desktop.readThreadState({ threadId: 'thread-a' });
   await desktop.listThreads({ callerThreadId: 'thread-a' });
-  assert.deepEqual(calls.map(({ params }) => params.tool), [
-    'send_message_to_thread', 'set_thread_title', 'read_thread', 'list_threads',
-  ]);
   for (const { method, params } of calls) {
-    assert.equal(method, 'tools/call');
-    assert.equal(params.callerSource, 'codex');
-    assert.equal(params.namespace, 'codex_app');
-    assert.equal(params.threadId, 'thread-a');
+    assert.equal(method, 'tools/call'); assert.equal(params.callerSource, 'codex');
+    assert.equal(params.namespace, 'codex_app'); assert.equal(params.threadId, 'thread-a');
   }
 });
 
@@ -160,32 +136,12 @@ test('a native call snapshots its validated target before waiting for the pipe',
   assert.deepEqual(calls[0].params.arguments, { threadId: 'thread-a', prompt: 'Original input' });
 });
 
-test('a Desktop rejection makes exactly one attempt and never substitutes another caller', async () => {
+test('user input failure is preserved without falling back to a delegation tool', async () => {
   const { desktop, calls } = captureDesktop();
-  const getClient = desktop.getClient.bind(desktop);
-  desktop.getClient = async () => {
-    const client = await getClient();
-    return {
-      ...client,
-      request: async (method, params) => {
-        await client.request(method, params);
-        return { success: false, contentItems: [{ text: 'self delivery unsupported' }] };
-      },
-    };
-  };
-  await assert.rejects(desktop.sendMessage({
-    threadId: 'target-thread', text: 'hello', requestId: 'test',
-  }), /desktop_delivery_failed/);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].params.threadId, 'target-thread');
-});
-
-test('task isolation failures are preserved and explained without claiming delivery', async () => {
-  const desktop = new CodexDesktopClient();
-  desktop.callTool = async () => { throw new Error('desktop_thread_identity_mismatch'); };
-  await assert.rejects(desktop.sendMessage({
-    threadId: 'target-thread', text: 'hello', requestId: 'test',
-  }), /desktop_thread_identity_mismatch/);
+  let attempts = 0;
+  desktop.userInput.send = async () => { attempts++; throw new Error('desktop_delivery_unknown'); };
+  await assert.rejects(desktop.sendMessage({ threadId: 'target', text: 'hello', requestId: 'test' }), /desktop_delivery_unknown/);
+  assert.equal(attempts, 1); assert.equal(calls.length, 0);
   assert.match(friendlyError(new Error('desktop_thread_identity_mismatch')), /已阻止操作.*会话身份不一致/);
 });
 
