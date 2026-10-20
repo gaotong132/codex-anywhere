@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Confirm message delivery below the Web composer only after the selected computer or ECS accepts it. Distinguish pending and unconfirmed delivery, bind receipts to the selected conversation, and keep new-session receipts visible when creation events arrive before the response.
+
 - Deliver Web messages to existing Windows threads through native Desktop owner/follower input, preserving user-message semantics and running-turn steering. Keep uncertain submissions from being resent or downgraded to inter-chat delegation; expose native-input connection health separately.
 
 - Discover the dedicated Codex Desktop app-tools pipe used by newer clients, with capability-checked fallback for older releases. Fix Web messages incorrectly failing with “Codex Desktop is unavailable” while the app is running.

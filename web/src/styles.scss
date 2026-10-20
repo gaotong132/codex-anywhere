@@ -1274,6 +1274,10 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   }
 }
 .image-input { display: none; }
+.message-delivery { max-width: $content-width; margin: 6px auto 0; color: #aeb9c9; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.message-delivery:empty { display: none; }
+.message-delivery.confirmed { color: #75d9b0; }
+.message-delivery.unconfirmed { color: #efbb78; }
 .attach-button { width: 36px; height: 40px; padding: 0; border: 0; border-radius: 10px; color: #aeb9c9; background: transparent; font-size: 26px; font-weight: 300; }
   .attach-button { @include interaction.hover { color: #dce6f8; background: #1c2534; } }
   .attach-button:disabled, .image-preview button:disabled { opacity: .45; }

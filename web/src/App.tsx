@@ -41,6 +41,7 @@ import { useAttachmentDraft } from './attachment-draft';
 import { useFileTransfer } from './file-transfer';
 import { useFilePreviews } from './file-preview-client';
 import { t } from './i18n';
+import { adoptDeliveryThread, confirmedDelivery, visibleDelivery, type MessageDelivery } from './message-delivery';
 import {
   buildQuestionReply, normalizeAsyncQuestions, normalizeQuestionReplies, questionReplyText, type QuestionReply,
 } from '../../src/shared/async-questions';
@@ -59,7 +60,6 @@ import {
   markSessionAttentionRead,
   projectLabel,
   reconcileSessionAttention,
-  sessionDeliveryMatchesTarget,
   shouldAdoptStartedThread,
   shouldLoadOlderHistory,
   type SessionAttentionState,
@@ -251,6 +251,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [knownAttachments, setKnownAttachments] = useState<Record<string, KnownAttachment>>(loadKnownAttachments);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<ImageUploadState | null>(null);
+  const [messageDelivery, setMessageDelivery] = useState<MessageDelivery | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
   const [nativeState, setNativeState] = useState<{ environmentId: string; value: NativeDesktopState } | null>(null);
   const desktopState = online && nativeState?.environmentId === environmentId && nativeState.value.threadId === threadId ? nativeState.value : null;
@@ -755,6 +756,9 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         ...(nextThreadId ? { state: 'running' as const } : {}),
       });
       if (nextThreadId) {
+        const deliveryEnvironment = environmentIdRef.current;
+        const deliverySelection = selectedRequestRef.current;
+        setMessageDelivery((current) => adoptDeliveryThread(current, deliveryEnvironment, deliverySelection, nextThreadId));
         setThreadId(nextThreadId);
         threadIdRef.current = nextThreadId;
         storeEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current, nextThreadId);
@@ -1699,6 +1703,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       storeEnvironmentValue(NEW_SESSION_CWD_KEY, environmentIdRef.current, projectCwd);
     }
     sendingRef.current = true;
+    const delivery: MessageDelivery = {
+      id: makeId(), environmentId: environmentIdRef.current, selectionVersion, threadId: targetThreadId, status: 'sending',
+    };
+    setMessageDelivery(delivery);
     let turnText = text;
     let visibleText = questionReplies ? questionReplyText(questionReplies) : text;
     let timelineAttachment: ImageAttachment | undefined;
@@ -1812,12 +1820,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           ? { ...item, completedAt: sentAt }
           : item));
       }
-      if (isExistingSession && !sessionDeliveryMatchesTarget(targetThreadId, data.threadId)) {
-        throw new Error('session_delivery_mismatch');
-      }
+      const receipt = confirmedDelivery(delivery, data.threadId);
       const selectionStillCurrent = isCurrentSessionRequest(
         targetThreadId, threadIdRef.current, selectionVersion, selectedRequestRef.current,
-      );
+      ) || Boolean(visibleDelivery(receipt, environmentIdRef.current, threadIdRef.current, selectedRequestRef.current));
+      if (selectionStillCurrent) setMessageDelivery(receipt);
       if (data.threadId) {
         if (!isExistingSession) {
           const createdSession = {
@@ -1869,6 +1876,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       }
       return true;
     } catch (error) {
+      setMessageDelivery((current) => current?.id === delivery.id ? { ...current, status: 'unconfirmed' } : current);
       setUploading(false);
       const selectionStillCurrent = isCurrentSessionRequest(
         targetThreadId, threadIdRef.current, selectionVersion, selectedRequestRef.current,
@@ -2119,6 +2127,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       </main>
     );
   }
+
+  const deliveryReceipt = visibleDelivery(messageDelivery, environmentId, threadId, selectedRequestRef.current);
 
   return (
     <main className="app-shell">
@@ -2481,6 +2491,16 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 5 16 7-16 7 3-7-3-7Zm3 7h13" /></svg>
               </button>
             </div>
+          </div>
+          <div className={`message-delivery${deliveryReceipt ? ` ${deliveryReceipt.status}` : ''}`} role="status" aria-live="polite" aria-atomic="true">
+            {deliveryReceipt?.status === 'confirmed'
+              ? t(`✓ 上一条消息已送达${environmentDisplayName(deliveryReceipt.environmentId)}，可以关闭浏览器。`,
+                `✓ Last message delivered to ${environmentDisplayName(deliveryReceipt.environmentId)}. You can close this browser.`)
+              : deliveryReceipt?.status === 'sending'
+                ? t('正在投递消息，请暂勿关闭浏览器…', 'Delivering your message. Keep this browser open…')
+                : deliveryReceipt?.status === 'unconfirmed'
+                  ? t('未确认送达，请检查会话后再重试。', 'Delivery not confirmed. Check the conversation before retrying.')
+                  : null}
           </div>
           <small>{steeringAvailable
             ? t('运行中可继续追加文字指令', 'You can steer this run with another text instruction')

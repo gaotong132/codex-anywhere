@@ -36,6 +36,8 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
   keep their full body while redundant notifications and internal fields stay out of the display.
 - **Add instructions during a run** — steer active tasks with text; existing Windows sessions use native Desktop user input without an inter-chat forwarding label
   when supported. Stop connector-owned turns or confirmed Desktop turns from Web; messages are sent directly without a Web queue.
+  The composer confirms delivery only after Codex on the selected computer or ECS accepts the message; you can then close
+  the browser. This confirms receipt, not task completion; the execution node must stay running. Pending or uncertain delivery never shows a success confirmation.
 - **Choose models and permissions** — select the model, reasoning effort, fast mode and approval mode, including
   GPT-6 Astra, Max and Ultra when offered by the selected node. Headless nodes support user approval, Codex auto-review
   and explicitly enabled full access; settings and new-task defaults stay scoped to each environment.
