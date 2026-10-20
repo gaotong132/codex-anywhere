@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { encodeNativeFrame, MAX_FRAME_BYTES, NativeRequestError } from './desktop-native-pipe.js';
@@ -13,10 +14,14 @@ const versions = {
   'thread-follower-update-thread-settings': 2,
   'thread-follower-start-turn': 2,
   'thread-follower-steer-turn': 1,
+  'thread-follower-interrupt-turn': 4,
+  'thread-follower-command-approval-decision': 1,
+  'thread-follower-file-approval-decision': 1,
+  'thread-follower-permissions-request-approval-response': 1,
 } as const;
 export type InputMethod = keyof typeof versions;
 
-export class DesktopInputPipe {
+export class DesktopInputPipe extends EventEmitter {
   private socket: net.Socket | null = null;
   private ready: Promise<void> | null = null;
   private clientId = '';
@@ -25,7 +30,7 @@ export class DesktopInputPipe {
   private pending = new Map<string, Pending>();
   private cancelConnect: (() => void) | null = null;
 
-  constructor(readonly path = '\\\\.\\pipe\\codex-ipc') {}
+  constructor(readonly path = '\\\\.\\pipe\\codex-ipc') { super(); }
 
   async request(method: InputMethod, params: Message, timeoutMs: number, targetClientId?: string): Promise<Message> {
     // Snapshot and bound input before any asynchronous connection/initialization.
@@ -34,6 +39,15 @@ export class DesktopInputPipe {
       method, version: versions[method], params: snapshot, targetClientId });
     await this.connect(timeoutMs);
     return this.dispatch(method, versions[method], snapshot, timeoutMs, targetClientId);
+  }
+
+  async follow(conversationId: string, owner: string, following: boolean, timeoutMs: number) {
+    await this.connect(timeoutMs);
+    const socket = this.socket;
+    if (!socket || socket.destroyed) throw new NativeRequestError('desktop input pipe closed', false);
+    socket.write(encodeNativeFrame({ type: 'broadcast', sourceClientId: this.clientId,
+      method: 'thread-stream-following-changed', version: 1, targetClientIds: [owner],
+      params: { conversationId, hostId: 'local', following } }), error => { if (error) this.disconnect(socket, error); });
   }
 
   connect(timeoutMs: number): Promise<void> {
@@ -118,6 +132,7 @@ export class DesktopInputPipe {
           response: { canHandle: false } }), error => { if (error) this.disconnect(socket, error); });
         continue;
       }
+      if (message.type === 'broadcast') { this.emit('broadcast', message); continue; }
       if (message.type !== 'response') continue;
       const pending = this.pending.get(message.requestId);
       if (!pending) continue;
@@ -144,6 +159,7 @@ export class DesktopInputPipe {
     }
     this.pending.clear();
     socket.destroy();
+    this.emit('disconnected');
   }
 
   close() {

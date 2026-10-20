@@ -153,6 +153,7 @@ import {
 import { PAIRING_TIMEOUT_MS, PENDING_PAIRING_KEY, pairingFailureMessage, takePairingInput } from './pairing-input';
 import type {
   Approval,
+  NativeDesktopState,
   AwaitingDesktopTurn,
   BridgeMessage,
   FollowState,
@@ -250,6 +251,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<ImageUploadState | null>(null);
   const [approval, setApproval] = useState<Approval | null>(null);
+  const [nativeState, setNativeState] = useState<{ environmentId: string; value: NativeDesktopState } | null>(null);
+  const desktopState = online && nativeState?.environmentId === environmentId && nativeState.value.threadId === threadId ? nativeState.value : null;
   const approvalRef = useRef(approval);
   approvalRef.current = approval;
   const approvalPollRef = useRef<ReturnType<typeof createApprovalPoller> | null>(null);
@@ -532,7 +535,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     savePermissionMode,
     refreshPermissionConfig,
     openPermissionSettingsOnDesktop,
-  } = useSessionConfiguration({ environmentId, online, threadId, request });
+  } = useSessionConfiguration({ environmentId, online, threadId, request, desktopState });
 
   const replayPendingRequests = useCallback(() => {
     if (!secureChannelRef.current?.isReady()) return 0;
@@ -700,6 +703,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     if (message.type !== 'event') return;
     const payload = message.payload || {};
     const eventThreadId = String(payload.threadId || '');
+    if (message.event === 'desktop.state') {
+      if (eventThreadId === threadIdRef.current) setNativeState({ environmentId: environmentIdRef.current, value: payload as NativeDesktopState });
+      return;
+    }
     if (
       message.event !== 'turn.started'
       && !isEventForSelectedThread(eventThreadId, threadIdRef.current, ownedTurnThreadIdRef.current)
@@ -1694,6 +1701,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     let turnText = text;
     let visibleText = questionReplies ? questionReplyText(questionReplies) : text;
     let timelineAttachment: ImageAttachment | undefined;
+    let nativeImage: { path: string } | undefined;
     let uploadedPreviewUrl = '';
     let optimisticItemId = '';
     let composerCleared = false;
@@ -1737,6 +1745,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         const imageMessage = buildImageMessage(text, uploaded);
         turnText = imageMessage.turnText;
         visibleText = imageMessage.visibleText;
+        if (isExistingSession && !steering && connectorStatus?.capabilities.desktopNativeImages) {
+          nativeImage = { path: uploaded.path };
+          turnText = text || t('请查看这张图片。', 'Please inspect this image.');
+          visibleText = turnText;
+        }
         timelineAttachment = { path: uploaded.path, name: uploaded.name };
         uploadedPreviewUrl = attachment.transferPreview
           ? `data:${attachment.transferPreview.type};base64,${previewEncoded}`
@@ -1781,6 +1794,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         : normalizePermissionMode(loadEnvironmentValue(SESSION_PERMISSION_MODE_KEY, environmentIdRef.current));
       const data = await request<TurnStartResult>(action, {
         text: turnText,
+        ...(nativeImage ? { image: nativeImage } : {}),
         threadId: targetThreadId,
         ...(steering ? {} : {
           cwd: isExistingSession ? '' : projectCwd,
@@ -1896,7 +1910,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       if (attachment) setUploadProgress(null);
     }
   }, [
-    addTimeline, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingAttachment,
+    addTimeline, connectorStatus, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingAttachment,
     permissionConfig, prompt, threadId,
     loadHistory, refreshSessions, rememberAttachment, rememberImage, reportTimelineError, request, resetExecution, running,
     updateExecution, updateSessionAttention, uploading,
@@ -1917,7 +1931,9 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     const targetThreadId = ownedTurnThreadIdRef.current || threadIdRef.current;
     setStopping(true);
     try {
-      await request('turn.stop', targetThreadId ? { threadId: targetThreadId } : {});
+      const native = !ownedTurnThreadIdRef.current && desktopState?.threadId === targetThreadId ? desktopState : null;
+      await request('turn.stop', targetThreadId ? { threadId: targetThreadId,
+        ...(native ? { source: 'desktop', expectedTurnId: native.turnId } : {}) } : {});
     } catch (error) {
       if (selectionVersion === selectedRequestRef.current) reportTimelineError(error);
       setStopping(false);
@@ -1931,7 +1947,27 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     setApproval(null);
     setRunDetailsOpen(false);
     resetExecution();
-  }, [reportTimelineError, request, resetExecution]);
+  }, [desktopState, reportTimelineError, request, resetExecution]);
+
+  useEffect(() => {
+    setNativeState(null);
+  }, [online, environmentId, threadId]);
+
+  useEffect(() => {
+    if (!desktopState || ownedTurnThreadIdRef.current) return;
+    if (desktopState.status === 'unknown') {
+      setApproval(current => current?.source === 'desktop' ? { ...current, actionable: false } : current);
+      return;
+    }
+    const pending = desktopState.approvals?.[0];
+    if (pending) setApproval(pending);
+    else if (desktopState.waitingOnApproval) setApproval({ approvalId: '', threadId: desktopState.threadId,
+      kind: 'desktop', source: 'desktop', actionable: false });
+    else if (approvalRef.current?.source === 'desktop') setApproval(null);
+    const state = desktopState.waitingOnApproval ? 'waiting' : desktopState.status === 'active' ? 'running'
+      : desktopState.status === 'idle' ? 'completed' : null;
+    if (state) updateExecution({ running: false, ownedTurnThreadId: null, state });
+  }, [desktopState, updateExecution]);
 
   const answerApproval = useCallback(async (approved: boolean) => {
     if (!approval || approval.actionable === false) return;
@@ -1966,15 +2002,17 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       apply: (result) => {
         if (!isCurrent()) return;
         if (result.desktopStatusUnavailable) {
+          setNativeState(null);
           setApprovalStatusError(t('暂时无法确认电脑端状态，正在重试。', 'Desktop status is temporarily unavailable; retrying.'));
           return;
         }
         setApprovalStatusError('');
+        if (result.desktopState?.threadId) setNativeState({ environmentId: targetEnvironment, value: result.desktopState as NativeDesktopState });
         const previous = approvalRef.current;
         const pending = result.approvals?.[0] || result.externalApproval || null;
         if (pending) {
           setApproval(pending);
-          const webOwned = pending.actionable !== false;
+          const webOwned = pending.actionable !== false && pending.source !== 'desktop';
           runningRef.current = webOwned;
           ownedTurnThreadIdRef.current = webOwned ? (pending.threadId || threadId) : null;
           updateExecution((current) => ({
@@ -1983,7 +2021,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             state: 'waiting', activity: 'waiting', startedAt: current.startedAt || Date.now(),
           }));
           if (!previous && viewport.following) viewport.forceBottom = true;
-        } else if (previous?.actionable === false) {
+        } else if (previous?.actionable === false || previous?.source === 'desktop') {
           const state = resolvedDesktopExecution(result);
           if (!state) return;
           setApproval(null);
@@ -2031,7 +2069,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   );
   const stopAvailable = canStopOwnedTurn(
     running, ownedTurnThreadId, threadId || (creatingNewSession ? NEW_TURN_KEY : null),
-  );
+  ) || Boolean(desktopState?.canStop);
   const executionActive = executionState === 'running' || executionState === 'waiting';
   const liveProgressItemId = useMemo(
     () => executionActive ? latestTurnProgressItemId(timeline) : null,

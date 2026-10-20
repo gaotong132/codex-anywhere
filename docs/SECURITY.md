@@ -146,11 +146,9 @@ results through summary RPCs. A displayed reference never bypasses canonical-pat
   and context totals. Raw reasoning, tool arguments and output, encrypted compaction content, and rate-limit
   payloads are not rendered. Completed approval markers use a reduced action summary instead of replaying
   the full approval request.
-- The Web UI can act only on approvals owned by connector-started turns. An approval already owned by
-  Codex Desktop stays on the computer and is shown as non-actionable in the Web UI.
-- The Web stop control is limited to the matching turn owned by the selected connector and uses the
-  app-server interrupt operation. Desktop-owned work remains controlled on the computer; stopping never
-  falls back to killing a process or archiving a task.
+- Web can approve once or reject connector requests and supported Desktop command/file/permission requests. Native decisions bind the owner, request ID and contents; pending state is rechecked before execution and resolution verified afterwards. Unsupported or oversized requests remain on Desktop.
+- Stop uses the connector interrupt or a native Desktop interrupt bound to the confirmed turn ID. Active Desktop goals remain on the computer; stopping never falls back to killing a process or archiving a task.
+- Desktop stream snapshots are bounded to 8 MiB and four recently read chats, with a 60-second lease. Only operational projections reach Web; owner/version/revision mismatches invalidate controls. Native image input accepts only validated uploaded originals, never arbitrary browser paths.
 - Headless tasks expose user approval and Codex auto-review modes. Full access is available only when the
   connector operator explicitly enables it; selecting it requires a second browser confirmation and sends
   `never` plus `dangerFullAccess` to Codex. This controls the Codex sandbox independently of file-preview policy.

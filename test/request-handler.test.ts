@@ -65,6 +65,37 @@ function request(action, payload = {}) {
   return { action, payload, requestId: 'request-1', clientId: 'client-1' };
 }
 
+test('Desktop controls route native models, exact-turn stop and request-scoped approval without app-server mutations', async () => {
+  const calls: any[] = [];
+  const native = { read: async id => ({ threadId: id, approvals: [], waitingOnApproval: false }),
+    modelConfig: async (id, models) => ({ model: models[0].model, threadId: id }),
+    updateModel: async (...args) => { calls.push(['model', ...args]); return { model: 'native' }; },
+    stop: async (...args) => { calls.push(['stop', ...args]); return { stopped: true }; },
+    respond: async (...args) => { calls.push(['approval', ...args]); return { resolved: true }; } };
+  const handle = createRequestHandler(createDependencies({ codex: { listModels: async () => [{ model: 'native' }],
+    readModelConfig: async () => assert.fail(), updateModelConfig: async () => assert.fail(),
+    stopTurn: async () => assert.fail(), respondApproval: async () => assert.fail() }, desktop: { controls: native } }));
+  assert.equal((await handle(request('session.model-config.read', { threadId: 'selected' }))).data.model, 'native');
+  await handle(request('session.model-config.update', { threadId: 'selected', model: 'native' }));
+  await handle(request('turn.stop', { threadId: 'selected', source: 'desktop', expectedTurnId: 't1' }));
+  await handle(request('approval.respond', { threadId: 'selected', approvalId: 'desktop:id', approved: true }));
+  assert.deepEqual(calls[1], ['stop', 'selected', 't1']);
+  assert.deepEqual(calls[2], ['approval', 'selected', 'desktop:id', true]);
+  const unsupported = createRequestHandler(createDependencies());
+  assert.equal((await unsupported(request('session.model-config.update', { threadId: 'selected' }))).error, 'desktop_input_unsupported');
+});
+
+test('native images are validated before delivery and never resolve arbitrary browser paths', async () => {
+  let sent: any;
+  const handle = createRequestHandler(createDependencies({ attachments: { nativeInput: async image => {
+    if (image.path !== 'uploaded') throw new Error('attachment_path_not_allowed'); return 'validated.png';
+  } }, desktop: { sendMessage: async message => { sent = message; return { threadId: message.threadId }; } } }));
+  assert.equal((await handle(request('turn.start', { threadId: 'selected', text: 'image', image: { path: 'secret' } }))).error, 'attachment_path_not_allowed');
+  assert.equal(sent, undefined);
+  assert.equal((await handle(request('turn.start', { threadId: 'selected', text: 'image', image: { path: 'uploaded' } }))).ok, true);
+  assert.equal(sent.imagePath, 'validated.png');
+});
+
 test('desktop archive requires confirmation, protects owned turns, and advertises only supported nodes', async () => {
   const calls: string[] = [];
   const deps = createDependencies({ desktop: { archiveThread: async ({ threadId }) => {
@@ -397,9 +428,10 @@ test('turn diffs route through the bounded session and turn lookup', async () =>
   assert.equal(response.data.content, 'diff');
 });
 
-test('session model configuration stays on the connector control path', async () => {
+test('headless model configuration stays on the app-server control path', async () => {
   const calls = [];
   const handle = createRequestHandler(createDependencies({
+    mode: 'headless',
     codex: {
       readModelConfig: async (threadId) => {
         calls.push({ action: 'read', threadId });
@@ -533,16 +565,15 @@ test('browser fields and model settings cannot override the Desktop destination 
   assert.equal(response.ok, true);
   assert.deepEqual(sent, {
     threadId: 'selected-thread', text: 'User input', requestId: 'request-1',
-    model: 'gpt-5.6-sol', thinking: 'high',
   });
 });
 
-test('delayed model resolution cannot move a message to a later selected session', async () => {
+test('delayed runtime preparation cannot move a message to a later selected session', async () => {
   let resolveFirst;
   const firstSettings = new Promise((resolve) => { resolveFirst = resolve; });
   const sent = [];
   const handle = createRequestHandler(createDependencies({
-    codex: { getDesktopTurnOverrides: (id) => id === 'thread-a' ? firstSettings : {} },
+    codex: { prepareDesktopTurn: (() => { let count = 0; return () => ++count === 1 ? firstSettings : Promise.resolve(); })() },
     desktop: { sendMessage: async (message) => { sent.push(message); return { threadId: message.threadId }; } },
   }));
   const first = handle(request('turn.start', { threadId: 'thread-a', text: 'A' }));
@@ -568,7 +599,7 @@ test('turn stop stays bound to the selected connector-owned thread', async () =>
   assert.deepEqual(response.data, { stopped: true });
 });
 
-test('an explicit model choice is applied to the next Desktop-owned turn', async () => {
+test('Desktop delivery inherits native settings instead of applying stale Connector overrides', async () => {
   let delivered;
   const handle = createRequestHandler(createDependencies({
     codex: {
@@ -585,7 +616,6 @@ test('an explicit model choice is applied to the next Desktop-owned turn', async
   }));
   assert.deepEqual(delivered, {
     threadId: 'target-thread', text: 'continue', requestId: 'request-1',
-    model: 'gpt-5.6-sol', thinking: 'xhigh',
   });
   assert.equal(response.ok, true);
 });
@@ -607,7 +637,7 @@ test('active Web-owned sessions steer the in-flight app-server turn', async () =
   });
 });
 
-test('existing sessions preserve configured Desktop turn overrides', async () => {
+test('existing sessions do not replay stored Desktop turn overrides', async () => {
   let sent;
   let appServerCalls = 0;
   const handle = createRequestHandler(createDependencies({
@@ -623,7 +653,6 @@ test('existing sessions preserve configured Desktop turn overrides', async () =>
   const response = await handle(request('turn.start', { threadId: 'target-thread', text: 'continue' }));
   assert.deepEqual(sent, {
     threadId: 'target-thread', text: 'continue', requestId: 'request-1',
-    model: 'gpt-5.6-sol', thinking: 'high',
   });
   assert.equal(response.data.delivery, 'desktop');
   assert.equal(appServerCalls, 0);

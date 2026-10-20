@@ -46,6 +46,12 @@ export function friendlyError(error: unknown) {
   if (message.startsWith('desktop_tool_unavailable:')) return t('当前桌面 Codex 不支持此操作，请更新桌面应用后重试。', 'This Codex Desktop host does not support this action. Update the desktop app and try again.');
   if (message === 'desktop_request_too_large') return t('消息超过桌面通道大小限制，尚未发送。请缩短内容后重试。', 'The message exceeds the desktop channel size limit and was not sent. Shorten it and try again.');
   if (message === 'desktop_input_unavailable') return t('桌面原生输入通道尚未就绪。请打开目标会话并确认 Codex 已更新后重试。', 'Desktop native input is not ready. Open the target chat and check your Codex version before retrying.');
+  if (message === 'desktop_input_unsupported') return t('当前 Codex 版本不支持此原生操作，需要更新 Connector 的协议适配。', 'This Codex version does not support this native operation. Update the Connector protocol adapter.');
+  if (message === 'desktop_input_not_ready' || message.startsWith('desktop_state_')) return t('暂时无法读取桌面会话状态，请在电脑上打开该会话后重试。', 'Desktop chat state is unavailable. Open the chat on your computer and retry.');
+  if (message === 'desktop_settings_changed') return t('桌面设置已变化，未能确认本次修改。请刷新后检查设置。', 'Desktop settings changed. Refresh and check the current settings.');
+  if (message === 'desktop_turn_changed' || message === 'desktop_turn_id_required') return t('当前轮次已变化，请刷新状态后再停止。', 'The active turn changed. Refresh its state before stopping.');
+  if (message === 'desktop_approval_expired') return t('此审批已失效或已在电脑上处理，请刷新当前请求。', 'This approval expired or was handled on your computer. Refresh the pending request.');
+  if (['desktop_operation_unknown', 'desktop_settings_unconfirmed', 'desktop_approval_unconfirmed', 'desktop_stop_unconfirmed'].includes(message)) return t('操作可能已执行，但尚未确认结果。请刷新状态后检查，勿重复操作。', 'The operation may have executed but is not yet confirmed. Refresh and check its result before retrying.');
   if (message === 'desktop_input_settings_failed') return t('未能同步桌面会话的模型设置，消息尚未发送。请刷新会话后重试。', 'Could not synchronize Desktop model settings. The message was not sent. Refresh the chat and try again.');
   if (message === 'desktop_app_unavailable') return t('桌面 Codex 当前不可用，请打开桌面应用后重试。', 'Codex Desktop is unavailable. Open it and try again.');
   if (message === 'desktop_thread_open_failed') return t('未能在电脑端打开此会话，请确认 Codex 桌面应用可用后重试。', 'Could not open this task on the computer. Make sure Codex Desktop is available and try again.');

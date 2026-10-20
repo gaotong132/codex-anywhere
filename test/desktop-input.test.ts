@@ -40,6 +40,22 @@ function standard(r: any, socket: net.Socket) {
 }
 const message = { threadId: 'fixture', text: '真实用户输入', requestId: 'one' };
 
+test('native image inputs carry a localImage part for both running and idle delivery', async () => {
+  const sent: any[] = [];
+  await host((r, socket) => {
+    if (standard(r, socket)) return;
+    sent.push(r);
+    if (r.method === 'thread-follower-steer-turn') fail(socket, r, 'Cannot steer conversation fixture because its active turn already ended');
+    else reply(socket, r, { result: { turn: { id: 'image-turn' } } });
+  }, async pipe => {
+    const input = new DesktopUserInput(async () => assert.fail(), 1000, pipe);
+    await input.send({ ...message, imagePath: 'C:/uploads/validated.png' });
+    assert.deepEqual(sent[0].params.input.at(-1), { type: 'localImage', path: 'C:/uploads/validated.png' });
+    assert.deepEqual(sent[1].params.turnStart.request.input, sent[0].params.input);
+    input.close();
+  });
+});
+
 test('idle input uses the existing owner and normal input, without toolOutput or a second writer', async () => {
   const writes: any[] = [];
   await host((r, socket) => {

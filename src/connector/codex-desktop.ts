@@ -1,3 +1,4 @@
+import { DesktopControls } from './desktop-controls.js';
 import { DesktopUserInput } from './desktop-user-input.js';
 import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -19,6 +20,7 @@ type DesktopMessage = {
   requestId: unknown;
   model?: unknown;
   thinking?: unknown;
+  imagePath?: string;
 };
 export type DesktopThreadStatus = { id: string; status: string };
 type ToolCall = { tool: string; arguments: JsonObject; callerThreadId: string; callId: string };
@@ -30,19 +32,21 @@ export class CodexDesktopClient {
   private discovery: Promise<NativePipeClient> | null = null;
   private generation = 0;
   readonly userInput: DesktopUserInput;
+  readonly controls: DesktopControls;
 
   constructor(options: DesktopClientOptions = {}) {
     this.timeoutMs = Number.isFinite(options.timeoutMs)
       ? Math.max(1_000, Number(options.timeoutMs)) : DEFAULT_TIMEOUT_MS;
     this.client = null;
     this.userInput = new DesktopUserInput(threadId => this.openThread({ threadId }), this.timeoutMs);
+    this.controls = new DesktopControls(this.userInput);
   }
 
-  async sendMessage({ threadId, text, requestId, model, thinking }: DesktopMessage) {
+  async sendMessage({ threadId, text, requestId, model, thinking, imagePath }: DesktopMessage) {
     const targetThreadId = requireThreadId(threadId);
     const prompt = String(text || '').trim();
     if (!prompt) throw new Error('message_required');
-    await this.userInput.send({ threadId: targetThreadId, text: prompt, requestId,
+    await this.userInput.send({ threadId: targetThreadId, text: prompt, requestId, ...(imagePath ? { imagePath } : {}),
       model: String(model || '').trim() || undefined,
       thinking: String(thinking || '').trim() || undefined,
     });

@@ -235,8 +235,7 @@ reports context accounting, confirm that the top-right activity ring shows usage
 details on hover or tap; a session that has compacted should keep a compaction marker in its timeline.
 For a long session, browse upward once and confirm that the older-history indicator appears, the current
 reading position does not jump, and a failed request offers retry. For a connector-owned test run, open
-the running-status strip and verify that Stop interrupts only that run; Desktop-owned work should instead
-explain that it must be stopped on the computer.
+the running-status strip and verify that Stop interrupts only that run. Repeat with an isolated Desktop turn: Web must use its confirmed turn ID. Active goals still require Desktop stop, since stopping one turn does not pause a goal.
 With one or two known environments, the sidebar shows direct buttons with separate selection and online states. More environments use the full selector. Switching keeps the drawer open until a session is chosen, restores the last session for that environment, and clears attachment drafts to avoid sending files to the wrong node.
 
 When multiple connectors are approved, open the sidebar, switch execution environments, and confirm that
@@ -309,7 +308,7 @@ When pinning a release, replace the first step with that tag's fetch/checkout. P
 and DPAPI identity. Check `relay.sh devices` afterward; startup errors are in
 `%USERPROFILE%\.codex-anywhere\last-start-error.log`. Do not stop Codex Desktop.
 
-Web messages for existing Windows sessions use Desktop's `codex-ipc` native input channel and the instance that owns the thread. Idle input starts a turn; running input steers the existing turn. Desktop permissions, working directory and thread settings are inherited; model choices supplied by Web are synchronized first. Messages are normal user input, no longer `send_message_to_thread` delegations. Existing history is not rewritten.
+Web messages for existing Windows sessions use Desktop's `codex-ipc` native input channel and the instance that owns the thread. Idle input starts a turn; running input steers the existing turn. Desktop permissions, working directory and thread settings are inherited. Web model, reasoning and Fast updates use the native owner with a conditional update and read-back verification; sending never replays stale Connector model overrides. Messages are normal user input, no longer `send_message_to_thread` delegations. Existing history is not rewritten.
 
 A cold thread is opened in Desktop first, which may change the selected desktop chat. This integration uses an internal owner/follower protocol, verified with client 26.1013.4894.0, rather than a stable public API. Incompatible protocols or unavailable owners fail explicitly, without creating a second writer or falling back to delegation. Desktop's gated experimental user-message admission feature is not enabled by this bridge.
 
@@ -357,7 +356,7 @@ Keep the current and previous deployment plus needed base/container images; do n
 | Older history does not load | Scroll away from the latest edge and continue upward; automatic paging is intentionally disabled until the user starts browsing older content. Use the visible retry control after a request failure |
 | The session list opens before a running Desktop badge appears | This is expected: app-server sessions return immediately and Desktop activity is merged asynchronously on a later poll |
 | Mobile input appears to come from an unrelated task, or task identity validation blocks delivery | Stop sending, update and restart the Windows connector too (not just ECS), and review affected history. Native caller and destination must be the same task; never work around a failure by borrowing another task |
-| Stop is unavailable for a running task | Only the exact turn owned by the selected connector can be interrupted from Web. Desktop-owned work must be stopped on the computer |
+| Stop is unavailable for a running task | Web stops a connector-owned turn or a confirmed Desktop turn. Unknown state, incompatible protocols and active goals require handling on the computer |
 | An expected environment is missing | Confirm its systemd/Windows connector is running and approved, then wait for relay presence to refresh |
 | A Linux session cannot continue after its first turn | Confirm `CODEX_CONNECTOR_MODE=headless`, update the checkout, and restart the systemd service |
 
@@ -640,3 +639,10 @@ On current `main`, the compact notice uses a refresh icon (labeled **Refresh sta
 To end the wait instead, confirm Stop waiting and archive. The native client ends the wait and retains the session. Use Restore and open in the notice to continue the same task. This does not run the pending command or delete chat history; browser pages need fresh consent. After dismissing the notice or refreshing the page, restore through Codex Desktop's archived list. Ordinary active turns and unknown states cannot use this entry point for forced cancellation.
 
 Update Web and the PC Connector, and actually restart the Connector. Existing pairing remains valid. Do not disable approval protection or delete the session database to clear the wait.
+
+
+### Native Desktop controls (2026-10-20)
+
+Native operational state is subscribed only for recently viewed chats (at most four; released after 60 seconds without reads). Owner identity and revision continuity are checked; gaps or disconnects invalidate controls and require a fresh snapshot. Raw snapshots never reach Web. History remains bounded and paginated. Uploaded originals are validated before becoming `localImage` input; arbitrary browser-provided paths are rejected. Supported command/file/permission approvals bind owner, request ID and request contents, verify pending state before acting, and verify removal afterwards. Oversized or unsupported requests stay on Desktop. No permanent approval rule is added. Protocol rejection is distinguished from uncertain delivery; uncertain mutations are never automatically retried.
+
+Acceptance: use an isolated real chat to change reasoning/Fast and restore them, send an image and verify a tool-free visual answer, approve a harmless print command, reject a separate request, and stop a long-running test by its exact turn ID. Verify Web refresh preserves the message and image. Update both the PC Connector and Relay Web assets; no re-pairing is needed.

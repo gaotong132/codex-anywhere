@@ -1,4 +1,5 @@
 import { publicError } from '../shared/protocol.js';
+import type { DesktopControls } from './desktop-controls.js';
 import type { FileUploadManager } from './file-uploads.js';
 import type { BrowserSessionBroker } from '../browser-control/session-broker.js';
 import {
@@ -23,6 +24,7 @@ type CodexGateway = {
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
   readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
+  listModels?(): Promise<any[]>;
   updateModelConfig(threadId: string, value: Payload): Promise<any>;
   readPermissionMode(threadId: string, options?: { fresh?: boolean }): Promise<any>;
   updatePermissionMode(threadId: string, mode: unknown): Promise<any>;
@@ -38,6 +40,7 @@ type CodexGateway = {
   needsDesktopPermissionRecovery(threadId: string): Promise<boolean>;
 };
 type DesktopGateway = {
+  controls?: Pick<DesktopControls, 'read' | 'modelConfig' | 'updateModel' | 'stop' | 'respond'>;
   getCapabilities?(): Promise<{ available: boolean; tools: string[]; inputAvailable?: boolean }>;
   listThreads(options: Payload): Promise<DesktopThreadStatus[]>;
   readThreadState(options: Payload): Promise<any>;
@@ -51,7 +54,7 @@ type Dependencies = {
   browser?: BrowserSessionBroker;
   codex: CodexGateway;
   desktop?: DesktopGateway | null;
-  attachments: { save(payload: Payload): Promise<any>; read(payload: Payload): Promise<any> };
+  attachments: { save(payload: Payload): Promise<any>; read(payload: Payload): Promise<any>; nativeInput?(payload: Payload): Promise<string> };
   fileUploads?: Pick<FileUploadManager, 'begin' | 'chunk' | 'complete' | 'cancel'>;
   visualizations: { read(payload: Payload): Promise<any> };
   downloads: {
@@ -152,6 +155,7 @@ async function dispatchAction({
       ...(mode === 'desktop' ? { desktopOnline: desktopState?.available === true, desktopTools: desktopState?.tools || [], desktopInputOnline: desktopState?.inputAvailable === true } : {}),
       activeTurn: Boolean(codex.activeTurn),
       capabilities: { networkAccess, fullAccess: allowFullAccess,
+        ...(mode === 'desktop' && desktop?.controls && desktopState?.inputAvailable ? { desktopNativeState: true, desktopNativeImages: Boolean(attachments.nativeInput) } : {}),
         ...(mode === 'desktop' && desktop?.archiveThread && supports('read_thread', 'set_thread_archived') ? { sessionArchive: true, sessionArchivePendingApproval: true } : {}),
         ...(mode === 'desktop' && desktop?.restoreThread && supports('set_thread_archived') ? { sessionRestore: true } : {}),
         ...(fileUploads ? { fileUpload: true } : {}), ...(browser ? { browserControl: true, browserGrantReplacement: true } : {}) },
@@ -214,9 +218,17 @@ async function dispatchAction({
     return codex.readTurnDiff(String(payload.threadId || ''), String(payload.turnId || ''));
   }
   if (action === 'session.model-config.read') {
+    if (mode === 'desktop') {
+      if (!desktop?.controls || !codex.listModels) throw new Error('desktop_input_unsupported');
+      return desktop.controls.modelConfig(String(payload.threadId || ''), await codex.listModels());
+    }
     return codex.readModelConfig(String(payload.threadId || ''));
   }
   if (action === 'session.model-config.update') {
+    if (mode === 'desktop') {
+      if (!desktop?.controls || !codex.listModels) throw new Error('desktop_input_unsupported');
+      return desktop.controls.updateModel(String(payload.threadId || ''), payload, await codex.listModels());
+    }
     return codex.updateModelConfig(String(payload.threadId || ''), payload);
   }
   if (action === 'session.permissions.read') {
@@ -261,7 +273,7 @@ async function dispatchAction({
   if (action === 'file.markdown.read') return downloads.readMarkdown(payload);
   if (action === 'file.text.read') return downloads.readText(payload);
   if (action === 'turn.start') return startTurn({
-    codex, desktop, mode, payload, clientId, requestId, browser,
+    codex, desktop, mode, payload, clientId, requestId, browser, attachments,
   });
   if (action === 'turn.steer') {
     return {
@@ -270,7 +282,17 @@ async function dispatchAction({
       delivery: 'appServer',
     };
   }
-  if (action === 'turn.stop') return codex.stopTurn(payload.threadId);
+  if (action === 'session.desktop.state') {
+    if (mode !== 'desktop' || !desktop?.controls) throw new Error('desktop_input_unsupported');
+    return desktop.controls.read(String(payload.threadId || ''));
+  }
+  if (action === 'turn.stop') {
+    if (payload.source === 'desktop') {
+      if (mode !== 'desktop' || !desktop?.controls) throw new Error('desktop_input_unsupported');
+      return desktop.controls.stop(String(payload.threadId || ''), payload.expectedTurnId);
+    }
+    return codex.stopTurn(payload.threadId);
+  }
   if (action === 'approval.pending') {
     const pending = await codex.listApprovals(payload.threadId, clientId);
     if (pending.approvals?.length) return pending;
@@ -278,6 +300,13 @@ async function dispatchAction({
     if (!threadId) return pending;
     if (mode !== 'desktop' || !desktop) return pending;
     try {
+      if (desktop.controls) {
+        const state = await desktop.controls.read(threadId);
+        return { ...pending, approvals: state.approvals, desktopState: state,
+          ...(state.waitingOnApproval && !state.approvals.length ? { externalApproval: {
+            approvalId: '', threadId, kind: 'desktop', source: 'desktop', actionable: false,
+          } } : {}) };
+      }
       const state = await desktop.readThreadState({
         threadId,
       });
@@ -302,14 +331,19 @@ async function dispatchAction({
     return pending;
   }
   if (action === 'approval.respond') {
+    if (String(payload.approvalId || '').startsWith('desktop:')) {
+      if (mode !== 'desktop' || !desktop?.controls) throw new Error('desktop_input_unsupported');
+      if (typeof payload.approved !== 'boolean') throw new Error('approval_decision_required');
+      return desktop.controls.respond(String(payload.threadId || ''), payload.approvalId, payload.approved);
+    }
     return codex.respondApproval(payload.approvalId, payload.approved === true, payload.threadId);
   }
   throw new Error('unsupported_action');
 }
 
 async function startTurn({
-  codex, desktop, mode, payload, clientId, requestId, browser,
-}: Pick<DispatchContext, 'codex' | 'desktop' | 'mode' | 'payload' | 'clientId' | 'requestId' | 'browser'>) {
+  codex, desktop, mode, payload, clientId, requestId, browser, attachments,
+}: Pick<DispatchContext, 'codex' | 'desktop' | 'mode' | 'payload' | 'clientId' | 'requestId' | 'browser' | 'attachments'>) {
   const threadId = String(payload.threadId || '').trim();
   if (!threadId || mode === 'headless') {
     return { ...await sendWithBrowserContext(browser, threadId, payload.text,
@@ -319,14 +353,14 @@ async function startTurn({
   // resuming them through the bridge's app-server creates a second writer and
   // makes later Desktop delivery fail with "already has an active writer".
   if (!desktop) throw new Error('desktop_app_unavailable');
+  const imagePath = payload.image && attachments.nativeInput ? await attachments.nativeInput(payload.image) : undefined;
+  if (payload.image && !imagePath) throw new Error('desktop_image_unsupported');
   await codex.prepareDesktopTurn?.();
-  const { model, thinking } = await codex.getDesktopTurnOverrides(threadId);
   return sendWithBrowserContext(browser, threadId, payload.text, (text) => desktop.sendMessage({
     threadId,
     text,
     requestId,
-    ...(model ? { model } : {}),
-    ...(thinking ? { thinking } : {}),
+    ...(imagePath ? { imagePath } : {}),
   }));
 }
 

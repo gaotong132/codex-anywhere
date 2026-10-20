@@ -39,7 +39,7 @@ export type ConnectorStatus = {
   codexOnline: boolean;
   activeTurn: boolean;
   capabilities: { networkAccess: boolean; fullAccess: boolean; fileUpload?: boolean; sessionArchive?: boolean;
-    sessionArchivePendingApproval?: boolean; sessionRestore?: boolean };
+    sessionArchivePendingApproval?: boolean; sessionRestore?: boolean; desktopNativeImages?: boolean; desktopNativeState?: boolean };
 };
 export type SessionPermissionConfig = {
   mode: PermissionMode;
@@ -60,14 +60,17 @@ export type AwaitingDesktopTurn = {
   seen: boolean;
 };
 export type Approval = {
+  source?: 'desktop';
   approvalId: string;
   threadId: string;
   kind?: string;
   summary?: string;
   actionable?: boolean;
 };
+export type NativeDesktopState = { threadId: string; status: string; turnId: string | null; canStop: boolean;
+  waitingOnApproval?: boolean; approvals?: Approval[]; model?: string; reasoningEffort?: string; serviceTier?: string };
 export type PendingApprovals = { approvals: Approval[]; externalApproval?: Approval;
-  desktopState?: { status: string; waitingOnApproval: boolean }; desktopStatusUnavailable?: boolean };
+  desktopState?: { status: string; waitingOnApproval: boolean } & Partial<NativeDesktopState>; desktopStatusUnavailable?: boolean };
 export type BridgeMessage = {
   type: string;
   protocol?: ProtocolOffer | CurrentProtocol;

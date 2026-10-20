@@ -667,6 +667,7 @@ export class CodexAppServer extends EventEmitter {
     if (this.modelCatalogCache && this.modelCatalogCache.expiresAt > Date.now()) {
       return this.modelCatalogCache.models;
     }
+    await this.ensureStarted();
     const result = await this.rpcRaw('model/list', { limit: 100, includeHidden: false });
     const models = (Array.isArray(result?.data) ? result.data : []).map((model: JsonObject) => ({
       model: String(model.model || model.id || ''),

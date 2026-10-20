@@ -1,4 +1,5 @@
 import { open } from 'node:fs/promises';
+import { userImageAttachment } from '../shared/user-image.js';
 import type { FileHandle } from 'node:fs/promises';
 import {
   normalizeToolPurpose, parseAssistantMessage, parseInjectedUserMessage, parseUserMessage,
@@ -64,7 +65,7 @@ type RolloutItem = {
   name?: string;
   input?: string;
   output?: string;
-  attachment?: GeneratedImageAttachment;
+  attachment?: GeneratedImageAttachment | { path: string; name: string };
   fileChanges?: TurnFileProgress;
   compaction?: ContextCompaction;
   notice?: TimelineNotice;
@@ -1143,6 +1144,7 @@ function mapRolloutRowsWithState(
       if (payload.role === 'user') {
         pushText(items, {
           type: 'userMessage', ...parseUserMessage(extractContent(payload.content)), ...turn, ...timing,
+          attachment: userImageAttachment(payload.content),
         });
       } else if (payload.role === 'assistant') {
         const content = parseAssistantMessage(extractContent(payload.content));

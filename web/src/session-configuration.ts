@@ -7,6 +7,7 @@ import { normalizePermissionMode, type PermissionMode } from '../../src/shared/p
 import type { BridgeRequest } from './bridge-request-manager';
 import type {
   ConnectorStatus,
+  NativeDesktopState,
   ModelConfigDraft,
   SessionModelConfig,
   SessionPermissionConfig,
@@ -21,11 +22,13 @@ export function useSessionConfiguration({
   online,
   threadId,
   request,
+  desktopState,
 }: {
   environmentId: string;
   online: boolean;
   threadId: string | null;
   request: BridgeRequest;
+  desktopState?: NativeDesktopState | null;
 }) {
   const [modelState, setModelState] = useState<KeyedValue<SessionModelConfig | null> | null>(null);
   const [modelLoadingKey, setModelLoadingKey] = useState<string | null>(null);
@@ -171,6 +174,20 @@ export function useSessionConfiguration({
       setModelState({ key: targetKey, value: config });
     }
   }, [request, threadId]);
+
+  useEffect(() => {
+    if (!desktopState?.model || desktopState.threadId !== threadId) return;
+    setModelState(previous => {
+      if (previous?.key !== selectionKey || !previous.value) return previous;
+      const tier = desktopState.serviceTier || 'default';
+      const option = previous.value.models.find(model => model.model === desktopState.model)?.serviceTiers.find(value => value.id === tier);
+      if (previous.value.model === desktopState.model && previous.value.reasoningEffort === desktopState.reasoningEffort
+        && previous.value.serviceTier === tier) return previous;
+      return { key: selectionKey, value: { ...previous.value, model: desktopState.model!,
+        reasoningEffort: desktopState.reasoningEffort || '', serviceTier: tier,
+        fastMode: /fast|priority/i.test(`${tier} ${option?.name || ''}`) } };
+    });
+  }, [desktopState, selectionKey, threadId]);
 
   return {
     connectorStatus,

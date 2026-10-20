@@ -3,7 +3,8 @@ import { BrowserSessionBroker } from '../browser-control/session-broker.js';
 import { startBrowserEndpoint } from '../browser-control/local-endpoint.js';
 import { CodexAppServer } from './codex-app-server.js';
 import { CodexDesktopClient } from './codex-desktop.js';
-import { readImageAttachment, saveImageAttachment } from './attachments.js';
+import { readImageAttachment, saveImageAttachment, resolveNativeImageAttachment } from './attachments.js';
+import { desktopSummary } from './desktop-controls.js';
 import { FileUploadManager, UPLOAD_DIRECTORY } from './file-uploads.js';
 import { loadConnectorConfig } from './config.js';
 import { DownloadManager } from './file-downloads.js';
@@ -68,6 +69,7 @@ const handleRequest = createRequestHandler({
   fileUploads: new FileUploadManager(),
   attachments: {
     save: saveImageAttachment,
+    nativeInput: resolveNativeImageAttachment,
     read: (payload) => readImageAttachment(payload, { localAllowedRoots: allowedRoots }),
   },
   visualizations: { read: readVisualization },
@@ -92,6 +94,25 @@ let stopped = false;
 codex.on('turn-event', (message) => {
   const frame = { type: 'event', ...message };
   secureChannels.sendEvent(frame);
+});
+// Project only operational state; raw Desktop snapshots can contain private context.
+const desktopUpdates = new Map<string, NodeJS.Timeout>();
+const desktopSummaries = new Map<string, ReturnType<typeof desktopSummary>>();
+desktop?.userInput.state.on('changed', (threadId: string, state: Record<string, any>, owner: string) => {
+  const summary = desktopSummary(state, owner);
+  if (JSON.stringify(summary) === JSON.stringify(desktopSummaries.get(threadId))) return;
+  desktopSummaries.set(threadId, summary);
+  if (desktopUpdates.has(threadId)) return;
+  const timer = setTimeout(() => {
+    desktopUpdates.delete(threadId);
+    secureChannels.sendEvent({ type: 'event', event: 'desktop.state', payload: desktopSummaries.get(threadId) });
+  }, 100);
+  timer.unref(); desktopUpdates.set(threadId, timer);
+});
+desktop?.userInput.state.on('invalidated', (threadId: string) => {
+  clearTimeout(desktopUpdates.get(threadId)); desktopUpdates.delete(threadId);
+  desktopSummaries.delete(threadId);
+  secureChannels.sendEvent({ type: 'event', event: 'desktop.state', payload: { threadId, status: 'unknown', canStop: false, turnId: null } });
 });
 
 function connect() {

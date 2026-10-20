@@ -5,6 +5,7 @@ import {
 import { publicError } from '../shared/protocol.js';
 import { asyncQuestionsFromItem } from '../shared/async-questions.js';
 import { extractGeneratedImageAttachment } from './generated-images.js';
+import { userImageAttachment } from '../shared/user-image.js';
 
 type JsonObject = Record<string, any>;
 
@@ -67,6 +68,7 @@ export function mapTurns(turns: unknown) {
           phase: item.phase || '',
           status: item.status || '',
           ...content,
+          ...(userMessage ? { attachment: userImageAttachment(item.content) } : {}),
           ...(questions ? { questions } : {}),
           ...timing,
         };

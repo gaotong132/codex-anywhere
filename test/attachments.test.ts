@@ -4,13 +4,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import sharp from 'sharp';
-import { cleanupAttachments, readImageAttachment, saveImageAttachment } from '../src/connector/attachments.js';
+import { cleanupAttachments, readImageAttachment, saveImageAttachment, resolveNativeImageAttachment } from '../src/connector/attachments.js';
 import { MAX_VISUALIZATION_BYTES, readVisualization } from '../src/connector/visualizations.js';
 
 const ONE_PIXEL_PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
 );
+
+test('native image input accepts validated originals but rejects arbitrary paths, preview files and replaced content', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'native-image-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const image = await saveImageAttachment({ name: 'test.png', mimeType: 'image/png', size: ONE_PIXEL_PNG.length, data: ONE_PIXEL_PNG.toString('base64') }, { directory });
+  assert.equal(await resolveNativeImageAttachment(image, { directory }), image.path);
+  await assert.rejects(resolveNativeImageAttachment({ path: join(directory, '..', 'secret.png') }, { directory }), /attachment_path_not_allowed/);
+  await assert.rejects(resolveNativeImageAttachment({ path: image.path + '.preview' }, { directory }), /attachment_path_not_allowed/);
+  await writeFile(image.path, 'This is not an image');
+  await assert.rejects(resolveNativeImageAttachment(image, { directory }), /attachment_content_mismatch/);
+});
 
 test('same-size image replacement with preserved mtime invalidates preview cache', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-image-cache-'));

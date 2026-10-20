@@ -1,16 +1,18 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+import { DesktopState } from './desktop-state.js';
 import { DesktopInputPipe } from './desktop-input-pipe.js';
 import { NativeRequestError } from './desktop-native-pipe.js';
 
-export type UserInput = { threadId: string; text: string; requestId: unknown; model?: string; thinking?: string };
+export type UserInput = { threadId: string; text: string; requestId: unknown; model?: string; thinking?: string; imagePath?: string };
 
 export class DesktopUserInput {
   readonly pipe: DesktopInputPipe;
+  readonly state: DesktopState;
   private queues = new Map<string, Promise<unknown>>();
 
   constructor(private openThread: (threadId: string) => Promise<unknown>, private timeoutMs: number,
-    pipe = new DesktopInputPipe()) { this.pipe = pipe; }
+    pipe = new DesktopInputPipe()) { this.pipe = pipe; this.state = new DesktopState(pipe); }
 
   send(input: UserInput): Promise<void> {
     const snapshot = { ...input };
@@ -23,7 +25,7 @@ export class DesktopUserInput {
     return sending;
   }
 
-  private async owner(threadId: string) {
+  async owner(threadId: string, open = true) {
     const deadline = Date.now() + this.timeoutMs;
     let opened = false;
     while (true) {
@@ -35,18 +37,19 @@ export class DesktopUserInput {
         if (!(error instanceof NativeRequestError) || error.code !== 'desktop_host_error' || !error.message.includes('no-client-found')) throw error;
       }
       // Only Desktop may resume/own the thread. Opening a cold thread can focus its window.
+      if (!open) throw new Error('desktop_input_not_ready');
       if (!opened) { await this.openThread(threadId); opened = true; }
       if (Date.now() >= deadline) throw new Error('desktop_input_not_ready');
       await delay(250);
     }
   }
 
-  private async deliver({ threadId, text, requestId, model, thinking }: UserInput) {
+  private async deliver({ threadId, text, requestId, model, thinking, imagePath }: UserInput) {
     let owner: Awaited<ReturnType<DesktopUserInput['owner']>>;
     try { owner = await this.owner(threadId); }
     catch (error) {
       if ((error as Error).message === 'desktop_request_too_large') throw error;
-      throw new Error('desktop_input_unavailable');
+      throw classifyDesktopError(error, false);
     }
     if (model || thinking) {
       try {
@@ -58,7 +61,8 @@ export class DesktopUserInput {
       } catch { throw new Error('desktop_input_settings_failed'); }
     }
     const id = createHash('sha256').update(JSON.stringify([threadId, String(requestId || randomUUID())])).digest('hex');
-    const input = [{ type: 'text', text, text_elements: [] }];
+    const input: Record<string, any>[] = [{ type: 'text', text, text_elements: [] }];
+    if (imagePath) input.push({ type: 'localImage', path: imagePath });
     const restoreMessage = { id, text, createdAt: Date.now(), context: {
       prompt: text, addedFiles: [], fileAttachments: [], imageAttachments: [], ideContext: null,
     } };
@@ -85,10 +89,18 @@ export class DesktopUserInput {
       if (!response.result?.result?.turn?.id && !response.result?.result?.turnId) throw new NativeRequestError('desktop input invalid acknowledgement', true);
     } catch (error) {
       if ((error as Error).message === 'desktop_request_too_large') throw error;
-      if (error instanceof NativeRequestError && error.dispatched) throw new Error('desktop_delivery_unknown');
-      throw new Error('desktop_input_unavailable');
+      throw classifyDesktopError(error, true);
     }
   }
 
-  close() { this.pipe.close(); }
+  close() { this.state.close(); this.pipe.close(); }
+}
+
+export function classifyDesktopError(error: unknown, mutation: boolean): Error {
+  if (error instanceof NativeRequestError && error.code === 'desktop_host_error') {
+    if (['request-version-mismatch', 'no-handler-for-request'].includes(error.message)) return new Error('desktop_input_unsupported');
+    if (error.message === 'no-client-found') return new Error('desktop_input_not_ready');
+  }
+  if ((error as Error)?.message === 'desktop_input_not_ready') return error as Error;
+  return new Error(mutation && error instanceof NativeRequestError && error.dispatched ? 'desktop_delivery_unknown' : 'desktop_input_unavailable');
 }

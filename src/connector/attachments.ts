@@ -107,6 +107,23 @@ export async function readImageAttachment(payload: ImagePayload, options: Attach
   };
 }
 
+/** Only originals already accepted by attachment.upload can enter native input. */
+export async function resolveNativeImageAttachment(payload: ImagePayload, options: AttachmentOptions = {}): Promise<string> {
+  const directory = resolve(options.directory || DEFAULT_ATTACHMENT_DIRECTORY);
+  await ensureSafeDirectory(directory);
+  const path = resolve(String(payload?.path || ''));
+  if (dirname(path) !== directory || !/^[\da-f-]{36}\.(png|jpg|webp)$/i.test(path.slice(directory.length + 1))) throw new Error('attachment_path_not_allowed');
+  const stats = await lstat(path);
+  if (!stats.isFile() || stats.isSymbolicLink() || stats.size <= 0 || stats.size > MAX_IMAGE_BYTES) throw new Error('attachment_not_found');
+  const handle = await open(path, 'r');
+  try {
+    if (!sameFileSnapshot(fileSnapshot(stats), fileSnapshot(await handle.stat()))) throw new Error('attachment_file_changed');
+    const bytes = await readBoundedFile(handle, MAX_IMAGE_BYTES, 'attachment', stats);
+    if (!await detectImageType(bytes)) throw new Error('attachment_content_mismatch');
+  } finally { await handle.close(); }
+  return path;
+}
+
 async function decodeImagePayload(payload: ImagePayload, maxBytes: number) {
   const mimeType = String(payload?.mimeType || '').trim().toLocaleLowerCase();
   const extension = IMAGE_EXTENSIONS.get(mimeType);

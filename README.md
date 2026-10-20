@@ -35,21 +35,21 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
   Completed turns retain action summaries, configuration changes and failure or cancellation reasons; automation reports
   keep their full body while redundant notifications and internal fields stay out of the display.
 - **Add instructions during a run** — steer active tasks with text; existing Windows sessions use native Desktop user input without an inter-chat forwarding label
-  when supported. Stop a turn from Web when the selected connector owns it; messages are sent directly without a Web queue.
+  when supported. Stop connector-owned turns or confirmed Desktop turns from Web; messages are sent directly without a Web queue.
 - **Choose models and permissions** — select the model, reasoning effort, fast mode and approval mode, including
   GPT-6 Astra, Max and Ultra when offered by the selected node. Headless nodes support user approval, Codex auto-review
   and explicitly enabled full access; settings and new-task defaults stay scoped to each environment.
+  Desktop model, reasoning and Fast choices are read and updated through the native owner, and live changes sync back to Web.
   Existing Desktop tasks show their current permissions, with actions to open the same task on the computer and refresh
   its permissions; permission changes still happen in Codex Desktop.
 - **Answer task questions** — choose suggested answers or enter your own in question cards, including those from
   `request_user_input_async`. Answered state syncs with Desktop and full exchanges remain expandable; answering preserves
   the chat draft, and preselected options are never submitted automatically.
-- **Handle task approvals** — approve or reject requests for connector-owned turns from Web.
-  Approvals owned by Codex Desktop can be opened on the computer and refreshed. To abandon a wait, confirm Stop waiting and archive, then Restore and open the same task; pending actions are never approved.
+- **Handle task approvals** — approve once or reject connector-owned requests and supported Desktop command, file and permission requests from Web. Decisions are bound to the current request and owner; expired requests cannot approve later actions. Unsupported requests remain on Desktop.
 - **Upload files and paste screenshots** — use “+” in chat or a new task to attach one file per message.
   General files (including ZIP, PDF, Office documents and binaries) support up to 100 MB, chunked transfer with progress,
   unchanged bytes on the selected execution node, and persistent message links. PNG, JPEG and WebP retain image processing,
-  previews and Ctrl+V / ⌘+V screenshot pasting. Uploading never executes a file; temporary attachments older than 24 hours
+  previews and Ctrl+V / ⌘+V screenshot pasting. Existing Desktop sessions receive native image inputs. Uploading never executes a file; temporary attachments older than 24 hours
   may be cleaned up by later uploads.
 - **Preview images and local files** — enlarge sent or generated images and open linked Markdown, source, config,
   logs and SVG with syntax highlighting, Mermaid diagrams and isolated visualizations. HTML offers page/source views,
@@ -93,7 +93,7 @@ file chunks stay on that channel; the relay authenticates devices and routes cip
 conversation database.
 
 Each connector starts its own Codex app-server. A Windows connector uses `desktop` mode: existing Desktop
-sessions keep Desktop delivery and bounded adaptive history polling. A Linux/ECS connector uses `headless`
+sessions keep Desktop ownership, subscribe to bounded live operational state, and read history through paginated adaptive polling. A Linux/ECS connector uses `headless`
 mode and owns new and resumed sessions through its app-server, so work can continue without a desktop
 login. Connector-owned runs support native events, steering, stopping, Web approvals, and per-task
 permission modes. Desktop activity is optional status enrichment: session listing returns from app-server
