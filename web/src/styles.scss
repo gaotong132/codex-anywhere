@@ -222,12 +222,23 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   &:focus-visible { outline: 2px solid #6497ef; outline-offset: 1px; }
 }
 .environment-rename {
-  display: grid; gap: 7px; padding: 8px 3px 3px;
-  label { display: grid; gap: 5px; font-size: 12px; }
-  input { width: 100%; min-width: 0; }
-  small { color: #8e9cb1; overflow-wrap: anywhere; }
-  > div { display: flex; gap: 6px; }
-  button { padding: 5px 10px; }
+  display: grid; gap: 9px; margin-top: 4px; padding: 12px 3px 3px; border-top: 1px solid #253044;
+  label { display: grid; gap: 7px; color: #aab8cb; font-size: 11px; }
+  input {
+    width: 100%; min-width: 0; height: 36px; padding: 0 10px;
+    border: 1px solid #303d53; border-radius: 8px; color: #e8edf7; background: #0c1320; font-size: 12px;
+  }
+  small { color: #78879d; font-size: 10px; overflow-wrap: anywhere; }
+  .environment-rename-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 3px; }
+  button {
+    min-width: 68px; height: 36px; padding: 0 14px; border: 1px solid #303d53; border-radius: 8px;
+    color: #b9c7da; background: #182233; font-size: 12px; font-weight: 600; line-height: 1;
+    @include interaction.hover(':not(:disabled)') { color: #edf3fc; border-color: #435470; background: #202e43; }
+  }
+  .environment-rename-save {
+    border-color: #3970dc; color: #fff; background: #3267d8;
+    @include interaction.hover(':not(:disabled)') { border-color: #5689ef; background: #3c74e4; }
+  }
   p { color: #efbb78; font-size: 12px; margin: 0; }
 }
 .environment-picker-direct { padding: 7px; gap: 6px; background: #101722; }

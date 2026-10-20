@@ -58,8 +58,10 @@ export function EnvironmentSwitcher({ value, environmentIds, onlineEnvironmentId
       <label>{t('设备名称', 'Device name')}<input autoFocus value={name} maxLength={80} disabled={saving}
         onChange={event => setName(event.target.value)} /></label>
       <small>{value}</small>
-      <div><button type="submit" disabled={saving || !name.trim()}>{t('保存', 'Save')}</button>
-        <button type="button" disabled={saving} onClick={() => setEditing(false)}>{t('取消', 'Cancel')}</button></div>
+      <div className="environment-rename-actions">
+        <button type="button" disabled={saving} onClick={() => setEditing(false)}>{t('取消', 'Cancel')}</button>
+        <button type="submit" className="environment-rename-save" disabled={saving || !name.trim()}>{t('保存', 'Save')}</button>
+      </div>
       {error && <p role="alert">{error}</p>}
     </form>}
   </div>;
