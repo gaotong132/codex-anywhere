@@ -427,6 +427,7 @@ test('desktop follow-up binds the native caller to the destination task', async 
   const desktop = new CodexDesktopClient();
   let call;
   desktop.getClient = async () => ({
+    tools: new Set(['send_message_to_thread', 'set_thread_title', 'read_thread', 'set_thread_archived', 'navigate_to_codex_page', 'list_threads']),
     request: async (method, params) => {
       call = { method, params };
       return { success: true };
@@ -501,7 +502,6 @@ test('desktop task status enrichment cannot block the session list startup path'
   };
   assert.deepEqual(await desktop.listThreads({ callerThreadId: 'controller-thread' }), []);
   assert.equal(options.timeoutMs, 1_000);
-  assert.equal(options.resetOnError, false);
 });
 
 test('desktop thread state exposes waiting approval without loading conversation history', async () => {

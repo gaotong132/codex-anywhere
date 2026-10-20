@@ -1,12 +1,11 @@
 import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import net from 'node:net';
+import { NativePipeClient, NativeRequestError, encodeNativeFrame } from './desktop-native-pipe.js';
 import { normalizeSessionName } from '../shared/session-name.js';
 
 // Desktop split app tools from browser control in newer builds. Prefer the
 // dedicated host, but retain capability-checked discovery for older versions.
 const PIPE_PREFIXES = ['codex-app-tools-', 'codex-browser-use-'];
-const MAX_FRAME_BYTES = 4 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 15_000;
 const STATUS_ENRICHMENT_TIMEOUT_MS = 1_000;
 const TASK_SCOPED_TOOLS = new Set(['send_message_to_thread', 'set_thread_title', 'read_thread', 'set_thread_archived']);
@@ -22,16 +21,13 @@ type DesktopMessage = {
 };
 export type DesktopThreadStatus = { id: string; status: string };
 type ToolCall = { tool: string; arguments: JsonObject; callerThreadId: string; callId: string };
-type PendingNativeRequest = {
-  resolve: (value: any) => void;
-  reject: (reason: Error) => void;
-  timer: NodeJS.Timeout;
-};
 type DesktopHostError = Error & { code?: string };
 
 export class CodexDesktopClient {
   timeoutMs: number;
   client: NativePipeClient | null;
+  private discovery: Promise<NativePipeClient> | null = null;
+  private generation = 0;
 
   constructor(options: DesktopClientOptions = {}) {
     this.timeoutMs = Number.isFinite(options.timeoutMs)
@@ -61,7 +57,10 @@ export class CodexDesktopClient {
     } catch (error) {
       const desktopError = error as DesktopHostError;
       if (desktopError?.message === 'desktop_thread_identity_mismatch') throw error;
-      if (/timeout/i.test(String(desktopError?.message || error))) throw new Error('desktop_delivery_timeout');
+      if (desktopError?.message.startsWith('desktop_tool_unavailable:') || desktopError?.message === 'desktop_request_too_large') throw error;
+      if (error instanceof NativeRequestError && error.dispatched && error.code !== 'desktop_host_error') {
+        throw new Error('desktop_delivery_unknown');
+      }
       if (desktopError?.code === 'desktop_host_error') {
         throw new Error(`desktop_delivery_failed:${desktopError.message || 'unknown error'}`);
       }
@@ -91,6 +90,7 @@ export class CodexDesktopClient {
     } catch (error) {
       const desktopError = error as DesktopHostError;
       if (desktopError?.message === 'desktop_thread_identity_mismatch') throw error;
+      if (desktopError?.message.startsWith('desktop_tool_unavailable:')) throw error;
       if (/timeout/i.test(String(desktopError?.message || error))) throw new Error('desktop_rename_timeout');
       if (desktopError?.code === 'desktop_host_error') {
         throw new Error(`desktop_rename_failed:${desktopError.message || 'unknown error'}`);
@@ -154,7 +154,7 @@ export class CodexDesktopClient {
       arguments: { limit: Math.min(50, Math.max(1, Number(limit) || 50)) },
       callerThreadId: caller,
       callId: `bridge-list-${randomUUID()}`,
-    }, { timeoutMs: STATUS_ENRICHMENT_TIMEOUT_MS, resetOnError: false });
+    }, { timeoutMs: STATUS_ENRICHMENT_TIMEOUT_MS });
     if (result?.success !== true) throw new Error('desktop_thread_list_failed');
     const payload = parseToolPayload(result);
     const rows = [
@@ -192,7 +192,7 @@ export class CodexDesktopClient {
 
   async callTool(
     { tool, arguments: toolArguments, callerThreadId, callId }: ToolCall,
-    options: { timeoutMs?: number; resetOnError?: boolean } = {},
+    options: { timeoutMs?: number } = {},
   ): Promise<JsonObject> {
     // Snapshot before the asynchronous pipe lookup, so the validated target
     // cannot be replaced while a connection is being established.
@@ -208,45 +208,60 @@ export class CodexDesktopClient {
     const timeoutMs = Number.isFinite(options.timeoutMs)
       ? Math.max(250, Number(options.timeoutMs)) : this.timeoutMs;
     const client = await this.getClient(timeoutMs);
-    try {
-      return await client.request('tools/call', {
-        arguments: argumentsSnapshot,
-        // Newer Desktop hosts require the caller's backing kind. This bridge
-        // only delivers to Codex tasks, so never take it from browser input.
-        callerSource: 'codex',
-        callId,
-        namespace: 'codex_app',
-        threadId: callerThreadId,
-        tool,
-        turnId: callId,
-      }, timeoutMs);
-    } catch (error) {
-      if (options.resetOnError !== false) {
-        client.close();
-        if (this.client === client) this.client = null;
-      }
-      throw error;
-    }
+    if (!client.tools.has(tool)) throw new Error(`desktop_tool_unavailable:${tool}`);
+    return client.request('tools/call', {
+      arguments: argumentsSnapshot,
+      // Newer Desktop hosts require the caller's backing kind. This bridge
+      // only delivers to Codex tasks, so never take it from browser input.
+      callerSource: 'codex',
+      callId,
+      namespace: 'codex_app',
+      threadId: callerThreadId,
+      tool,
+      turnId: callId,
+    }, timeoutMs);
   }
 
   async getClient(timeoutMs = this.timeoutMs): Promise<NativePipeClient> {
     if (this.client?.connected) return this.client;
+    if (this.discovery) return this.discovery;
+    const generation = this.generation;
+    const discovery = this.discoverClient(timeoutMs).then(client => {
+      if (generation !== this.generation) {
+        client?.close();
+        throw new Error('desktop_app_unavailable');
+      }
+      if (!client) throw new Error('desktop_app_unavailable');
+      this.client?.close();
+      this.client = client;
+      return client;
+    }).finally(() => {
+      if (this.discovery === discovery) this.discovery = null;
+    });
+    this.discovery = discovery;
+    return discovery;
+  }
+
+  async discoverClient(timeoutMs: number): Promise<NativePipeClient | null> {
     if (process.platform !== 'win32') throw new Error('desktop_app_unavailable');
     let names;
-    try {
-      names = await readdir('\\\\.\\pipe\\');
-    } catch {
-      throw new Error('desktop_app_unavailable');
-    }
-    const client = await discoverDesktopClient(names, (name) => probePipe(
+    try { names = await readdir('\\\\.\\pipe\\'); }
+    catch { throw new Error('desktop_app_unavailable'); }
+    return discoverDesktopClient(names, name => probePipe(
       `\\\\.\\pipe\\${name}`, Math.min(timeoutMs, 5_000),
     ));
-    if (!client) throw new Error('desktop_app_unavailable');
-    this.client = client;
-    return client;
+  }
+
+  async getCapabilities() {
+    try {
+      const client = await this.getClient(STATUS_ENRICHMENT_TIMEOUT_MS);
+      return { available: true, tools: [...client.tools] };
+    } catch { return { available: false, tools: [] as string[] }; }
   }
 
   close() {
+    this.generation++;
+    this.discovery = null;
     this.client?.close();
     this.client = null;
   }
@@ -277,7 +292,10 @@ async function probePipe(pipePath: string, timeoutMs: number): Promise<NativePip
   const client = new NativePipeClient(pipePath);
   try {
     const result = await client.request('tools/list', { threadStartKind: 'all' }, timeoutMs);
-    if (!result?.tools?.some((tool: JsonObject) => tool.name === 'send_message_to_thread')) {
+    client.tools = new Set((Array.isArray(result?.tools) ? result.tools : [])
+      .filter((tool: JsonObject) => tool.namespace === 'codex_app' && typeof tool.name === 'string')
+      .map((tool: JsonObject) => tool.name));
+    if (!client.tools.has('send_message_to_thread')) {
       client.close();
       return null;
     }
@@ -286,123 +304,6 @@ async function probePipe(pipePath: string, timeoutMs: number): Promise<NativePip
     client.close();
     return null;
   }
-}
-
-class NativePipeClient {
-  pipePath: string;
-  socket: net.Socket | null;
-  connected: boolean;
-  connecting: Promise<void> | null;
-  nextId: number;
-  pending: Map<number, PendingNativeRequest>;
-  pendingData: Buffer;
-
-  constructor(pipePath: string) {
-    this.pipePath = pipePath;
-    this.socket = null;
-    this.connected = false;
-    this.connecting = null;
-    this.nextId = 0;
-    this.pending = new Map();
-    this.pendingData = Buffer.alloc(0);
-  }
-
-  async request(method: string, params: JsonObject, timeoutMs: number): Promise<any> {
-    await this.connect(timeoutMs);
-    const id = ++this.nextId;
-    return new Promise<any>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`${method} timeout`));
-      }, timeoutMs);
-      timer.unref?.();
-      this.pending.set(id, { resolve, reject, timer });
-      this.socket!.write(encodeNativeFrame({ jsonrpc: '2.0', id, method, params }));
-    });
-  }
-
-  connect(timeoutMs: number): Promise<void> {
-    if (this.connected && this.socket && !this.socket.destroyed) return Promise.resolve();
-    if (this.connecting) return this.connecting;
-    this.connecting = new Promise<void>((resolveConnect, rejectConnect) => {
-      const socket = net.createConnection(this.pipePath);
-      const timer = setTimeout(() => {
-        socket.destroy();
-        rejectConnect(new Error('desktop pipe connect timeout'));
-      }, timeoutMs);
-      timer.unref?.();
-      const fail = (error: Error) => {
-        clearTimeout(timer);
-        socket.destroy();
-        rejectConnect(error);
-      };
-      socket.once('error', fail);
-      socket.once('connect', () => {
-        clearTimeout(timer);
-        socket.off('error', fail);
-        this.socket = socket;
-        this.connected = true;
-        socket.on('data', (chunk) => this.onData(socket, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-        socket.on('error', (error) => this.onDisconnect(socket, error));
-        socket.on('close', () => this.onDisconnect(socket, new Error('desktop pipe closed')));
-        resolveConnect();
-      });
-    }).finally(() => { this.connecting = null; });
-    return this.connecting;
-  }
-
-  onData(socket: net.Socket, chunk: Buffer) {
-    if (socket !== this.socket) return;
-    this.pendingData = Buffer.concat([this.pendingData, chunk]);
-    while (this.pendingData.length >= 4) {
-      const length = this.pendingData.readUInt32LE(0);
-      if (length > MAX_FRAME_BYTES) {
-        this.onDisconnect(socket, new Error('desktop response too large'));
-        socket.destroy();
-        return;
-      }
-      if (this.pendingData.length < length + 4) return;
-      const payload = this.pendingData.subarray(4, length + 4);
-      this.pendingData = this.pendingData.subarray(length + 4);
-      let response: JsonObject;
-      try { response = JSON.parse(payload.toString('utf8')); } catch { continue; }
-      const pending = this.pending.get(Number(response.id));
-      if (!pending) continue;
-      this.pending.delete(Number(response.id));
-      clearTimeout(pending.timer);
-      if (response.error) {
-        const error = new Error(response.error.message || 'desktop request failed') as DesktopHostError;
-        error.code = 'desktop_host_error';
-        pending.reject(error);
-      } else pending.resolve(response.result);
-    }
-  }
-
-  onDisconnect(socket: net.Socket, error: Error) {
-    if (socket !== this.socket) return;
-    this.socket = null;
-    this.connected = false;
-    this.pendingData = Buffer.alloc(0);
-    for (const pending of this.pending.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(error);
-    }
-    this.pending.clear();
-  }
-
-  close() {
-    this.socket?.destroy();
-    this.socket = null;
-    this.connected = false;
-  }
-}
-
-function encodeNativeFrame(message: JsonObject) {
-  const payload = Buffer.from(JSON.stringify(message), 'utf8');
-  const frame = Buffer.alloc(payload.length + 4);
-  frame.writeUInt32LE(payload.length, 0);
-  payload.copy(frame, 4);
-  return frame;
 }
 
 function parseToolPayload(result: JsonObject): JsonObject {
@@ -432,4 +333,4 @@ export function mergeDesktopSessionStatuses<T extends { id: string; status?: str
   });
 }
 
-export const internals = { encodeNativeFrame, parseToolPayload, discoverDesktopClient };
+export const internals = { encodeNativeFrame, parseToolPayload, discoverDesktopClient, probePipe };

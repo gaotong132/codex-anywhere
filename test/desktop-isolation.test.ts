@@ -7,6 +7,7 @@ function captureDesktop() {
   const desktop = new CodexDesktopClient();
   const calls: Array<{ method: string; params: Record<string, any> }> = [];
   desktop.getClient = async () => ({
+    tools: new Set(['send_message_to_thread', 'set_thread_title', 'read_thread', 'set_thread_archived', 'navigate_to_codex_page', 'list_threads']),
     request: async (method, params) => {
       calls.push({ method, params });
       return { success: true, contentItems: [{ text: JSON.stringify({ thread: { status: 'idle' } }) }] };

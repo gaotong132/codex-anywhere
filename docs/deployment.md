@@ -311,6 +311,10 @@ and DPAPI identity. Check `relay.sh devices` afterward; startup errors are in
 
 If Web sends report “Codex Desktop is unavailable” while the app is open, update and actually restart the Windows Connector. Newer Desktop builds expose app tools through `codex-app-tools-*` named pipes; the Connector prefers these and falls back to capability-checked legacy `codex-browser-use-*` hosts. Updating ECS alone cannot replace the old process on the computer. Pairing does not need to be repeated.
 
+Concurrent Desktop requests share one discovery operation. A tool error or individual timeout does not close the connection used by other requests. Each connection caches capabilities in the `codex_app` namespace and checks each send, read, rename, archive, and navigation operation before dispatch. `connector.status` exposes `desktopOnline` and `desktopTools` separately from the app-server’s `codexOnline`. Native request and response payloads are bounded at 8 MiB.
+
+A Web warning that a message may have arrived means the request was written to the channel but its confirmation was lost through timeout, disconnection, or closure. Web reloads the selected conversation and preserves the draft for comparison; it never automatically resends an uncertain delivery. Check the conversation before retrying. Missing host tools are reported as unsupported operations rather than as an unavailable desktop.
+
 ### Backup and recovery
 
 | Preserve | Location or evidence |

@@ -1884,6 +1884,12 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       if (error instanceof Error && error.message === 'turn_cancelled') {
         return;
       }
+      if (error instanceof Error && ['desktop_delivery_unknown', 'desktop_delivery_timeout'].includes(error.message) && targetThreadId) {
+        // Reconcile from persisted history; never automatically resend an uncertain delivery.
+        await loadHistory(targetThreadId, null, selectionVersion);
+        void refreshSessions();
+        if (!isCurrentSessionRequest(targetThreadId, threadIdRef.current, selectionVersion, selectedRequestRef.current)) return;
+      }
       reportTimelineError(error);
     } finally {
       sendingRef.current = false;
@@ -1892,7 +1898,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   }, [
     addTimeline, executionState, modelConfig, newSessionCwd, ownedTurnThreadId, pendingAttachment,
     permissionConfig, prompt, threadId,
-    refreshSessions, rememberAttachment, rememberImage, reportTimelineError, request, resetExecution, running,
+    loadHistory, refreshSessions, rememberAttachment, rememberImage, reportTimelineError, request, resetExecution, running,
     updateExecution, updateSessionAttention, uploading,
   ]);
 

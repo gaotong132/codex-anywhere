@@ -29,6 +29,7 @@ function createDependencies(overrides = {}) {
       ...overrides.codex,
     },
     desktop: {
+      getCapabilities: async () => ({ available: true, tools: ['send_message_to_thread', 'read_thread', 'set_thread_archived', 'navigate_to_codex_page'] }),
       listThreads: async () => [],
       readThreadState: async () => ({ status: 'idle', waitingOnApproval: false }),
       sendMessage: async ({ threadId }) => ({ threadId, delivery: 'desktop' }),
@@ -224,6 +225,7 @@ test('request handler keeps connector routing independent from process startup',
     data: {
       deviceId: 'personal-pc', deviceLabel: 'My computer', mode: 'desktop',
       platform: process.platform, codexOnline: true, activeTurn: false,
+      desktopOnline: true, desktopTools: ['send_message_to_thread', 'read_thread', 'set_thread_archived', 'navigate_to_codex_page'],
       capabilities: { networkAccess: false, fullAccess: false },
     },
   });
@@ -453,6 +455,7 @@ test('session listing coalesces Desktop status refreshes while one is in flight'
   const handle = createRequestHandler(createDependencies({
     codex: { listSessions: async () => sessions },
     desktop: {
+      getCapabilities: async () => ({ available: true, tools: ['send_message_to_thread', 'read_thread', 'set_thread_archived', 'navigate_to_codex_page'] }),
       listThreads: () => {
         desktopCalls += 1;
         return new Promise((resolve) => { resolveDesktopStatus = resolve; });
@@ -734,4 +737,28 @@ test('archive cancellation requires a strict boolean and restore validates respo
   assert.deepEqual(inputs.map(value => value.cancelPendingApproval), [false, false, true]);
   assert.equal((await handle(request('session.restore', { threadId: 'target' }))).data.archived, false);
   assert.equal((await handle(request('session.restore', { threadId: 'bad' }))).error, 'session_delivery_mismatch');
+});
+
+
+test('Desktop controls follow host capabilities independently of app-server health', async () => {
+  for (const state of [
+    { available: false, tools: [] },
+    { available: true, tools: ['send_message_to_thread'] },
+    { available: true, tools: ['set_thread_archived'] },
+  ]) {
+    const handle = createRequestHandler(createDependencies({ desktop: {
+      getCapabilities: async () => state,
+      archiveThread: async () => ({}), restoreThread: async () => ({}), openThread: async () => ({}),
+    } }));
+    const status = (await handle(request('connector.status'))).data;
+    assert.equal(status.codexOnline, true);
+    assert.equal(status.desktopOnline, state.available);
+    assert.equal(status.capabilities.sessionArchive, undefined, 'archive also requires read_thread');
+    assert.equal(status.capabilities.sessionRestore, state.tools.includes('set_thread_archived') ? true : undefined);
+    assert.equal((await handle(request('session.permissions.read', { threadId: 'fixture' }))).data.canOpenOnDesktop, undefined);
+  }
+  const headless = createRequestHandler(createDependencies({ mode: 'headless', desktop: {
+    getCapabilities: async () => { throw new Error('headless must not probe Desktop'); },
+  } }));
+  assert.equal((await headless(request('connector.status'))).ok, true);
 });

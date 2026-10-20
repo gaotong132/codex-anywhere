@@ -38,6 +38,7 @@ type CodexGateway = {
   needsDesktopPermissionRecovery(threadId: string): Promise<boolean>;
 };
 type DesktopGateway = {
+  getCapabilities?(): Promise<{ available: boolean; tools: string[] }>;
   listThreads(options: Payload): Promise<DesktopThreadStatus[]>;
   readThreadState(options: Payload): Promise<any>;
   sendMessage(options: Payload): Promise<any>;
@@ -140,16 +141,19 @@ async function dispatchAction({
     throw new Error('browser_unknown_action');
   }
   if (action === 'connector.status') {
+    const desktopState = mode === 'desktop' ? await desktop?.getCapabilities?.() : undefined;
+    const supports = (...tools: string[]) => desktopState?.available === true && tools.every(tool => desktopState.tools.includes(tool));
     return {
       deviceId,
       deviceLabel,
       mode,
       platform: process.platform,
       codexOnline: Boolean(codex.child),
+      ...(mode === 'desktop' ? { desktopOnline: desktopState?.available === true, desktopTools: desktopState?.tools || [] } : {}),
       activeTurn: Boolean(codex.activeTurn),
       capabilities: { networkAccess, fullAccess: allowFullAccess,
-        ...(mode === 'desktop' && desktop?.archiveThread ? { sessionArchive: true, sessionArchivePendingApproval: true } : {}),
-        ...(mode === 'desktop' && desktop?.restoreThread ? { sessionRestore: true } : {}),
+        ...(mode === 'desktop' && desktop?.archiveThread && supports('read_thread', 'set_thread_archived') ? { sessionArchive: true, sessionArchivePendingApproval: true } : {}),
+        ...(mode === 'desktop' && desktop?.restoreThread && supports('set_thread_archived') ? { sessionRestore: true } : {}),
         ...(fileUploads ? { fileUpload: true } : {}), ...(browser ? { browserControl: true, browserGrantReplacement: true } : {}) },
     };
   }
@@ -216,12 +220,13 @@ async function dispatchAction({
     return codex.updateModelConfig(String(payload.threadId || ''), payload);
   }
   if (action === 'session.permissions.read') {
+    const desktopState = mode === 'desktop' ? await desktop?.getCapabilities?.() : undefined;
     return {
       ...await codex.readPermissionMode(String(payload.threadId || ''), { fresh: mode === 'desktop' }),
       editable: mode === 'headless',
       networkAccess,
       allowFullAccess,
-      ...(mode === 'desktop' && desktop?.openThread ? { canOpenOnDesktop: true } : {}),
+      ...(mode === 'desktop' && desktop?.openThread && desktopState?.available && desktopState.tools.includes('navigate_to_codex_page') ? { canOpenOnDesktop: true } : {}),
     };
   }
   if (action === 'session.desktop.open') {

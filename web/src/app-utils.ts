@@ -42,6 +42,9 @@ export function friendlyError(error: unknown) {
     return t('请求超时，请稍后重试。', 'The request timed out. Try again shortly.');
   }
   if (message === 'turn_start_timeout') return t('等待原会话可写超时，消息没有发送，已恢复到输入框。', 'Timed out waiting for the session to become writable. The message was not sent and has been restored.');
+  if (message === 'desktop_delivery_unknown' || message === 'desktop_delivery_timeout') return t('消息可能已经送达，但桌面 Codex 的确认丢失。请先查看会话中的消息和回复，确认未送达后再重试，避免重复发送。', 'The message may have arrived, but confirmation from Codex Desktop was lost. Check the conversation before retrying to avoid sending it twice.');
+  if (message.startsWith('desktop_tool_unavailable:')) return t('当前桌面 Codex 不支持此操作，请更新桌面应用后重试。', 'This Codex Desktop host does not support this action. Update the desktop app and try again.');
+  if (message === 'desktop_request_too_large') return t('消息超过桌面通道大小限制，尚未发送。请缩短内容后重试。', 'The message exceeds the desktop channel size limit and was not sent. Shorten it and try again.');
   if (message === 'desktop_app_unavailable') return t('桌面 Codex 当前不可用，请打开桌面应用后重试。', 'Codex Desktop is unavailable. Open it and try again.');
   if (message === 'desktop_thread_open_failed') return t('未能在电脑端打开此会话，请确认 Codex 桌面应用可用后重试。', 'Could not open this task on the computer. Make sure Codex Desktop is available and try again.');
   if (message === 'desktop_thread_identity_mismatch') return t('已阻止操作：会话身份不一致。请更新 PC 连接器后重试，消息不会转发到其他会话。', 'Operation blocked: task identities do not match. Update the PC connector and retry; the message will not be forwarded to another task.');
@@ -50,7 +53,6 @@ export function friendlyError(error: unknown) {
   if (message === 'session_name_invalid') return t('会话名称包含不支持的控制字符。', 'The session name contains unsupported control characters.');
   if (message === 'desktop_rename_timeout') return t('桌面 Codex 没有及时确认改名，请稍后重试。', 'Codex Desktop did not confirm the rename in time. Try again shortly.');
   if (message.startsWith('desktop_rename_failed:')) return t('桌面 Codex 未能修改会话名称，请确认桌面应用可用后重试。', 'Codex Desktop could not rename the task. Make sure the desktop app is available and try again.');
-  if (message === 'desktop_delivery_timeout') return t('桌面 Codex 没有及时确认接收，消息已恢复到输入框，请确认后再重试。', 'Codex Desktop did not confirm receipt in time. The message was restored; verify the desktop app before retrying.');
   if (message === 'session_delivery_mismatch') return t('桌面返回了不同的会话标识，页面已阻止自动切换。请刷新会话列表后重试。', 'Desktop returned a different session ID, so the page blocked the automatic switch. Refresh the session list and try again.');
   if (message === 'model_config_turn_active') return t('当前任务仍在执行，完成后再修改模型配置。', 'Wait for the current run to finish before changing model settings.');
   if (message === 'model_not_available') return t('所选模型当前不可用，请重新选择。', 'The selected model is unavailable. Choose another model.');
