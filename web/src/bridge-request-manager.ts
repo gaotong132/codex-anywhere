@@ -8,7 +8,7 @@ const IMAGE_TRANSFER_REQUEST_TIMEOUT_MS = 120_000;
 const TURN_START_REQUEST_TIMEOUT_MS = 11 * 60_000;
 
 function defaultRequestTimeout(action: string) {
-  if (action === 'turn.start') return TURN_START_REQUEST_TIMEOUT_MS;
+  if (action === 'turn.start' || action === 'turn.edit') return TURN_START_REQUEST_TIMEOUT_MS;
   if (action === 'attachment.upload' || action === 'attachment.read') return IMAGE_TRANSFER_REQUEST_TIMEOUT_MS;
   return DEFAULT_BRIDGE_REQUEST_TIMEOUT_MS;
 }

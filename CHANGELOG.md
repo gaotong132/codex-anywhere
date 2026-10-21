@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Edit and resend a sent user message from Web: revert that turn and later conversation, preserve original attachments, and run the edited message. Check for active turns and stale confirmations; never automatically retry an uncertain edit. File changes and external actions are not undone.
+
 - Add permanent deletion to headless session lists with confirmation, active-turn protection, and session-scoped cache/browser-grant cleanup. Uses native history deletion without removing project files.
 - Run different ECS sessions concurrently, with task-scoped streaming, approvals, stopping and reconnect recovery. Each session still has at most one active turn; messages and question answers for that session steer its existing turn.
 - Preview linked local and generated raster images on demand, with original downloads and unchanged file access checks.

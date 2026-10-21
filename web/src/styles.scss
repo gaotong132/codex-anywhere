@@ -1344,3 +1344,6 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
 .drawer-backdrop { display: none; }
 
 @include responsive.mobile;
+
+.message-edit:disabled { opacity: .25; cursor: not-allowed; }
+.message-edit-dialog textarea { width: 100%; min-height: 180px; max-height: 45dvh; resize: vertical; padding: 12px; border: 1px solid #334158; border-radius: 10px; background: #0c1420; color: #e5ebf5; font: inherit; line-height: 1.6; }

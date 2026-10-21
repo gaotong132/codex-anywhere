@@ -27,6 +27,8 @@ type MessageCopyState = 'idle' | 'copied' | 'failed';
 
 export type MessageBubbleProps = {
   onRetryImage?: () => void;
+  onEditMessage?: (item: TimelineItem) => void;
+  editDisabled?: boolean;
   item: TimelineItem;
   active?: boolean;
   imageSource?: string;
@@ -74,10 +76,13 @@ function MessageMetadata({
   item,
   onOpenDiff,
   diffLoading = false,
+  onEditMessage, editDisabled,
 }: {
   item: TimelineItem;
   onOpenDiff?: () => void;
   diffLoading?: boolean;
+  onEditMessage?: (item: TimelineItem) => void;
+  editDisabled?: boolean;
 }) {
   const [copyState, setCopyState] = useState<MessageCopyState>('idle');
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,6 +154,13 @@ function MessageMetadata({
           ? <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6" /></svg>
           : <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="11" height="11" rx="2" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></svg>}
       </button>
+      {item.kind === 'user' && item.historyTurnId && !/^(tail|rollout):/.test(item.historyTurnId)
+        && !item.contexts?.length && !item.questionReplies?.length && item.text.trim() && onEditMessage && <button
+        className="message-copy message-edit" type="button" disabled={editDisabled}
+        title={t('修改并重新发送', 'Edit and resend')} aria-label={t('修改并重新发送', 'Edit and resend')}
+        onClick={() => onEditMessage(item)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z" /></svg>
+      </button>}
     </div>
   );
 }
@@ -322,7 +334,7 @@ function MessageBubbleComponent({
   onReadTurnDiff,
   onReadVisualization,
   onReadPreviewImage,
-  onRetryImage,
+  onRetryImage, onEditMessage, editDisabled,
 }: MessageBubbleProps) {
   const [imageExpanded, setImageExpanded] = useState(false);
   const [visualizationOpen, setVisualizationOpen] = useState(false);
@@ -686,6 +698,7 @@ function MessageBubbleComponent({
       {copyable && (
         <MessageMetadata
           item={item}
+          onEditMessage={onEditMessage} editDisabled={editDisabled}
           onOpenDiff={item.historyTurnId && onReadTurnDiff ? () => void openTurnDiff() : undefined}
           diffLoading={turnDiffPreview?.status === 'loading'}
         />
@@ -756,6 +769,8 @@ function equalOptionalRecord(
 export function messagePresentationEqual(left: TimelineItem, right: TimelineItem) {
   if (left === right) return true;
   return left.id === right.id
+    && left.historyTurnId === right.historyTurnId
+    && JSON.stringify(left.questionReplies || []) === JSON.stringify(right.questionReplies || [])
     && left.kind === right.kind
     && left.text === right.text
     && left.transient === right.transient
@@ -769,7 +784,9 @@ export function messagePresentationEqual(left: TimelineItem, right: TimelineItem
 }
 
 function messageBubblePropsEqual(left: MessageBubbleProps, right: MessageBubbleProps) {
-  return left.active === right.active
+  return left.onEditMessage === right.onEditMessage
+    && left.editDisabled === right.editDisabled
+    && left.active === right.active
     && left.imageSource === right.imageSource
     && left.onDownloadFile === right.onDownloadFile
     && left.onReadTextFile === right.onReadTextFile

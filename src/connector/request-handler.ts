@@ -1,3 +1,4 @@
+import { editIdentifier, editText } from './message-edit.js';
 import { publicError } from '../shared/protocol.js';
 import { measureOperation, operationMetrics } from './operation-metrics.js';
 import type { DesktopControls } from './desktop-controls.js';
@@ -25,6 +26,7 @@ type CodexGateway = {
   readSession(threadId: string): Promise<any>;
   renameSession(threadId: string, name: unknown): Promise<any>;
   deleteSession(threadId: unknown): Promise<any>;
+  prepareMessageEdit?(threadId: unknown, turnId: unknown): Promise<any>;
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
   readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
@@ -48,7 +50,7 @@ type CodexGateway = {
 };
 type DesktopGateway = {
   controls?: Pick<DesktopControls, 'read' | 'modelConfig' | 'updateModel' | 'stop' | 'respond'>
-    & Partial<Pick<DesktopControls, 'permissions' | 'updatePermissions'>>;
+    & Partial<Pick<DesktopControls, 'permissions' | 'updatePermissions' | 'editMessage'>>;
   getCapabilities?(): Promise<{ available: boolean; tools: string[]; inputAvailable?: boolean }>;
   listThreads(options: Payload): Promise<DesktopThreadStatus[]>;
   readThreadState(options: Payload): Promise<any>;
@@ -338,9 +340,36 @@ async function dispatchAction({
   if (action === 'file.download.close') return downloads.close(payload, downloadOwner);
   if (action === 'file.markdown.read') return downloads.readMarkdown(payload);
   if (action === 'file.text.read') return downloads.readText(payload);
-  if (action === 'turn.start') return startTurn({
-    codex, desktop, mode, payload, clientId, requestId, browser, attachments,
-  });
+  if (action === 'turn.edit.prepare' || action === 'turn.edit') {
+    if (!codex.prepareMessageEdit) throw new Error('message_edit_unavailable');
+    const threadId = editIdentifier(payload.threadId), turnId = editIdentifier(payload.turnId);
+    if (codex.getActiveTurn(threadId)) throw new Error('message_edit_busy');
+    if (action === 'turn.edit.prepare') {
+      const { input: _input, ...plan } = await codex.prepareMessageEdit(threadId, turnId);
+      return plan;
+    }
+    if (payload.confirm !== true || typeof payload.token !== 'string') throw new Error('message_edit_invalid');
+    const text = editText(payload.text);
+    if (mode === 'headless') return { ...await codex.startTurn({
+      threadId, text, clientId, requestId, edit: { turnId, token: payload.token, confirm: true },
+    }), delivery: 'appServer' };
+    if (!desktop?.controls?.editMessage) throw new Error('message_edit_unavailable');
+    const plan = await codex.prepareMessageEdit(threadId, turnId);
+    if (plan.token !== payload.token) throw new Error('message_edit_changed');
+    await codex.prepareDesktopTurn?.();
+    try { return await desktop.controls.editMessage(threadId, turnId, text); }
+    catch (error) {
+      // Only missing ownership before the native mutation permits the cold
+      // runtime. Core's writer lock protects a simultaneous Desktop takeover.
+      if ((error as Error).message !== 'desktop_input_not_ready') throw error;
+      return { ...await codex.startTurn({ threadId, text, clientId, requestId,
+        edit: { turnId, token: payload.token, confirm: true } }), delivery: 'appServer' };
+    }
+  }
+  if (action === 'turn.start') {
+    const { edit: _edit, ...input } = payload;
+    return startTurn({ codex, desktop, mode, payload: input, clientId, requestId, browser, attachments });
+  }
   if (action === 'turn.steer') {
     return {
       ...await sendWithBrowserContext(browser, String(payload.threadId || '').trim(), payload.text,

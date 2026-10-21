@@ -32,7 +32,7 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
   Approved offline nodes remain visible; two nodes use direct buttons and larger inventories use a selector. The sidebar stays open until you choose a session. Sessions, unread state,
   recent workspaces, attachments and requests stay scoped to the selected machine.
 - **Continue real sessions** — browse, rename and resume existing Codex sessions, or start a task in a local
-  project. Archive idle PC sessions from the title bar and restore them in Codex Desktop; history and project files stay intact. Markdown history opens at the latest page and loads older entries as you browse upward, preserving your position.
+  project. Archive idle PC sessions from the title bar and restore them in Codex Desktop; history and project files stay intact. Edit and resend sent user messages by reverting their turn and later conversation, keeping original attachments; executed file changes are not undone. Markdown history opens at the latest page and loads older entries as you browse upward, preserving your position.
 - **Follow task progress** — see running status, unread updates, progress, plans, tool purpose and elapsed time.
   Completed turns retain action summaries, configuration changes and failure or cancellation reasons; automation reports
   keep their full body while redundant notifications and internal fields stay out of the display.

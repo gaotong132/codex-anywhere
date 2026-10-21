@@ -1,3 +1,4 @@
+import { MessageEditDialog, type MessageEditPlan } from './message-edit-dialog';
 import {
   KeyboardEvent,
   Suspense,
@@ -236,6 +237,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [searchOpen, setSearchOpen] = useState(false);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
+  const [editTarget, setEditTarget] = useState<{ item: TimelineItem; threadId: string; environment: string; selection: number } | null>(null);
+  const [editingMessage, setEditingMessage] = useState(false);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
   const [resolvedQuestionAnswers, setResolvedQuestionAnswers] = useState<Record<string, string>>({});
   const visibleQuestionIdsRef = useRef<string[]>([]);
@@ -2019,6 +2022,41 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     updateExecution, updateSessionAttention, uploading,
   ]);
 
+  const openMessageEditor = useCallback((item: TimelineItem) => {
+    const id = threadIdRef.current;
+    if (id && item.historyTurnId) setEditTarget({ item, threadId: id, environment: environmentIdRef.current,
+      selection: selectedRequestRef.current });
+  }, []);
+  const closeMessageEditor = useCallback(() => setEditTarget(null), []);
+  const prepareMessageEdit = useCallback(async () => {
+    if (!editTarget) throw new Error('message_edit_unavailable');
+    return request<MessageEditPlan>('turn.edit.prepare', { threadId: editTarget.threadId, turnId: editTarget.item.historyTurnId });
+  }, [editTarget, request]);
+  const submitMessageEdit = useCallback(async (plan: MessageEditPlan, text: string) => {
+    const target = editTarget;
+    const current = () => Boolean(target && environmentIdRef.current === target.environment
+      && threadIdRef.current === target.threadId && selectedRequestRef.current === target.selection);
+    if (!target || !current()) throw new Error('message_edit_changed');
+    const key = JSON.stringify([target.environment, target.threadId]);
+    if (sendingRef.current.has(key)) throw new Error('message_edit_busy');
+    sendingRef.current.add(key);
+    setEditingMessage(true);
+    executionVersionRef.current += 1;
+    try {
+      await request('turn.edit', { threadId: target.threadId, turnId: plan.turnId, token: plan.token, text, confirm: true });
+      if (current()) setEditTarget(null);
+    } finally {
+      sendingRef.current.delete(key);
+      if (current()) {
+        streamItemRef.current = null;
+        setTimeline([]);
+        await loadHistory(target.threadId, null, target.selection);
+        void refreshSessions();
+      }
+      setEditingMessage(false);
+    }
+  }, [editTarget, request, loadHistory, refreshSessions]);
+
   const answerQuestions = useCallback(async (replies: QuestionReply[]) => (
     Boolean(await sendTurn(replies))
   ), [sendTurn]);
@@ -2488,7 +2526,12 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           />
         </header>
 
+        {editTarget && editTarget.environment === environmentId && editTarget.threadId === threadId
+          && editTarget.selection === selectedRequestRef.current && <MessageEditDialog
+          originalText={editTarget.item.text} onPrepare={prepareMessageEdit} onSubmit={submitMessageEdit} onClose={closeMessageEditor} />}
         <ConversationTimeline
+          onEditMessage={openMessageEditor}
+          editDisabled={!online || executionActive || uploading || editingMessage}
           messageListRef={messageListRef}
           messageContentRef={messageContentRef}
           threadId={threadId}

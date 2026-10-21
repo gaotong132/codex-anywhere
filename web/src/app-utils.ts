@@ -51,6 +51,13 @@ export function friendlyError(error: unknown) {
     }
     return t('请求超时，请稍后重试。', 'The request timed out. Try again shortly.');
   }
+  if (message === 'message_edit_busy') return t('会话正在运行，请结束后再编辑。', 'Wait until the session is idle before editing.');
+  if (message === 'message_edit_changed') return t('消息记录已变化，请刷新后重新编辑。', 'History changed. Refresh before editing again.');
+  if (message === 'message_edit_unsupported') return t('这条消息含多个输入或特殊上下文，暂不支持编辑。', 'This message has multiple inputs or special context and cannot be edited.');
+  if (message === 'message_edit_unavailable') return t('暂时无法读取这条消息，请刷新后重试。', 'This message is unavailable. Refresh and try again.');
+  if (message === 'message_edit_reverted_send_failed') return t('历史已撤回，但重发未确认。请核对最新记录，避免重复发送。', 'History was reverted, but delivery is unconfirmed. Check the latest history before retrying.');
+  if (message === 'message_edit_unconfirmed') return t('未能确认编辑结果，请先核对最新记录。', 'The edit result is unconfirmed. Check the latest history first.');
+  if (message === 'message_edit_invalid') return t('请填写有效的消息并确认重发。', 'Enter a valid message and confirm the resend.');
   if (message === 'turn_start_timeout') return t('等待原会话可写超时，消息没有发送，已恢复到输入框。', 'Timed out waiting for the session to become writable. The message was not sent and has been restored.');
   if (message === 'desktop_delivery_unknown' || message === 'desktop_delivery_timeout') return t('消息可能已经送达，但桌面 Codex 的确认丢失。请先查看会话中的消息和回复，确认未送达后再重试，避免重复发送。', 'The message may have arrived, but confirmation from Codex Desktop was lost. Check the conversation before retrying to avoid sending it twice.');
   if (message.startsWith('desktop_tool_unavailable:')) return t('当前桌面 Codex 不支持此操作，请更新桌面应用后重试。', 'This Codex Desktop host does not support this action. Update the desktop app and try again.');

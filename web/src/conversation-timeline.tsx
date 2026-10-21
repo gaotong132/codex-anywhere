@@ -21,6 +21,8 @@ export function preloadMessageBubble() {
 }
 
 type ConversationTimelineProps = {
+  onEditMessage?: (item: TimelineItem) => void;
+  editDisabled?: boolean;
   questionReplyDisabled?: boolean;
   resolvedQuestionAnswers?: Record<string, string>;
   onQuestionReply?: (replies: QuestionReply[]) => Promise<boolean>;
@@ -51,6 +53,7 @@ type ConversationTimelineProps = {
 };
 
 export const ConversationTimeline = memo(function ConversationTimeline({
+  onEditMessage, editDisabled,
   questionReplyDisabled = true,
   resolvedQuestionAnswers,
   onQuestionReply,
@@ -165,6 +168,7 @@ export const ConversationTimeline = memo(function ConversationTimeline({
             <MessageBubble
               key={item.id}
               item={item}
+              onEditMessage={onEditMessage} editDisabled={editDisabled}
               active={executionActive && (item.kind === 'progress'
                 ? progressAnimationReady && item.id === liveProgressItemId
                 : Boolean(item.transient))}

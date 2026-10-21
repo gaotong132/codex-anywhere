@@ -101,6 +101,32 @@ export class DesktopControls {
     return confirmed;
   }
 
+  private editing = new Set<string>();
+  async editMessage(threadId: string, turnId: string, message: string) {
+    if (this.editing.has(threadId)) throw new Error('message_edit_busy');
+    this.editing.add(threadId);
+    try {
+      let before = await this.snapshot(threadId, true, false);
+      if (before.summary.status !== 'idle' || before.state.requests?.length || before.state.threadGoal?.status === 'active') {
+        throw new Error('message_edit_busy');
+      }
+      if (![...conversationTurns(before.state)].some(turn => turn.turnId === turnId)) {
+        await this.input.pipe.request('thread-follower-load-complete-history', { conversationId: threadId }, 30_000, before.owner);
+        before = await this.snapshot(threadId, true, false);
+      }
+      const target = [...conversationTurns(before.state)].find(turn => turn.turnId === turnId);
+      if (!target?.params?.input?.some((item: Value) => item.type === 'text')) throw new Error('message_edit_unavailable');
+      try {
+        const reply = await this.input.pipe.request('thread-follower-edit-last-user-turn', {
+          conversationId: threadId, turnId, message, allowEarlierMessages: true,
+          shouldSendPermissionOverrides: false,
+        }, 30_000, before.owner);
+        if (reply.result?.ok !== true) throw new Error('message_edit_unconfirmed');
+      } catch { throw new Error('message_edit_unconfirmed'); }
+      return { threadId, delivery: 'desktop' as const };
+    } finally { this.editing.delete(threadId); }
+  }
+
   async modelConfig(threadId: string, catalog: Value[] | Promise<Value[]>) {
     // Model settings are a small native response. A long thread's full state
     // can exceed the stream frame limit without making these settings invalid.

@@ -985,3 +985,21 @@ test('cold permission mutation only falls back on pre-mutation missing ownership
   }
   assert.equal(calls, 1, 'never retry an uncertain native mutation through another writer');
 });
+
+test('message edits require confirmation and only a missing Desktop owner can use the cold writer', async () => {
+  for (const nativeError of [null, 'desktop_input_not_ready', 'message_edit_unconfirmed']) {
+    const starts: any[] = [], edits: any[] = [];
+    const handle = createRequestHandler(createDependencies({ codex: {
+      prepareMessageEdit: async () => ({ text: 'old', token: 'snapshot', input: [{ secret: 'not sent to browser' }] }),
+      startTurn: async value => { starts.push(value); return { threadId: value.threadId }; },
+    }, desktop: { controls: { editMessage: async (...args) => { edits.push(args); if (nativeError) throw Error(nativeError); return { threadId: args[0], delivery: 'desktop' }; } } } }));
+    assert.deepEqual((await handle(request('turn.edit.prepare', { threadId: 'task', turnId: 'turn' }))).data, { text: 'old', token: 'snapshot' });
+    assert.equal((await handle(request('turn.edit', { threadId: 'task', turnId: 'turn', text: 'new', token: 'snapshot' }))).error, 'message_edit_invalid');
+    assert.equal((await handle(request('turn.edit', { threadId: 'task', turnId: 'turn', text: 'new', token: 'stale', confirm: true }))).error, 'message_edit_changed');
+    assert.equal(edits.length, 0);
+    const result = await handle(request('turn.edit', { threadId: 'task', turnId: 'turn', text: 'new', token: 'snapshot', confirm: true }));
+    assert.equal(starts.length, nativeError === 'desktop_input_not_ready' ? 1 : 0);
+    if (nativeError === 'message_edit_unconfirmed') assert.equal(result.error, nativeError);
+    else assert.equal(result.data.delivery, nativeError ? 'appServer' : 'desktop');
+  }
+});

@@ -308,3 +308,20 @@ test('protocol rejection is definite but uncertain mutations must not be retried
   assert.equal(classifyDesktopError(new NativeRequestError('timeout', true), true).message, 'desktop_delivery_unknown');
   assert.equal(desktopSummary({ ...initial(), requests: [{ id: 1, method: 'unknown' }] }, 'owner').waitingOnApproval, true);
 });
+
+test('native editing uses the original owner operation once and keeps attachment input in the owner', async t => {
+  const { pipe, controls } = fixture(t);
+  pipe.state.turns = [{ turnId: 'original', params: { input: [{ type: 'text', text: 'old' }, { type: 'localImage', path: '/original.png' }] } }];
+  const result = await controls.editMessage('fixture', 'original', 'edited');
+  assert.equal(result.delivery, 'desktop');
+  const writes = pipe.writes.filter(w => w.method === 'thread-follower-edit-last-user-turn');
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].target, 'owner');
+  assert.deepEqual(writes[0].params, { conversationId: 'fixture', turnId: 'original', message: 'edited', allowEarlierMessages: true, shouldSendPermissionOverrides: false });
+});
+test('native editing refuses active conversations before sending an edit', async t => {
+  const { pipe, controls } = fixture(t);
+  pipe.state.threadRuntimeStatus.type = 'active';
+  await assert.rejects(controls.editMessage('fixture', 'original', 'edited'), /message_edit_busy/);
+  assert.equal(pipe.writes.some(w => w.method === 'thread-follower-edit-last-user-turn'), false);
+});

@@ -1,3 +1,4 @@
+import { editIdentifier, editText, editToken, messageEditInput } from './message-edit.js';
 import { spawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -109,6 +110,7 @@ type StartTurnOptions = {
   clientId?: string;
   requestId?: string;
   permissionMode?: unknown;
+  edit?: { turnId: string; token: string; confirm: boolean };
 };
 
 const APPROVAL_METHODS = new Set([
@@ -266,6 +268,39 @@ export class CodexAppServer extends EventEmitter {
         canStartNewSession: Boolean(threadCwd) && isAllowedWorkspace(this.allowedRoots, threadCwd),
       };
     }).filter((thread: JsonObject) => thread.id);
+  }
+
+  async prepareMessageEdit(threadId: unknown, turnId: unknown) {
+    const id = editIdentifier(threadId), target = editIdentifier(turnId);
+    await this.ensureStarted();
+    const { thread } = await this.rpcRaw('thread/read', { threadId: id, includeTurns: false });
+    if (thread?.id !== id || !thread.cwd) throw new Error('message_edit_unavailable');
+    resolveAllowedWorkspace(this.allowedRoots, thread.cwd);
+    if (!['idle', 'notLoaded'].includes(thread.status?.type)) throw new Error('message_edit_busy');
+    let cursor: string | undefined, latestTurnId = '';
+    const visited = new Set<string>();
+    // Read display summaries only, and only on explicit edit. Never fetch full
+    // tool output or scan rollout files just to render an edit icon.
+    for (let page = 0; page < 200; page++) {
+      const result = await this.rpcRaw('thread/turns/list', {
+        threadId: id, limit: 20, sortDirection: 'desc', itemsView: 'summary', ...(cursor ? { cursor } : {}),
+      });
+      const turns = result.data || [];
+      if (!latestTurnId) latestTurnId = turns[0]?.id || '';
+      if (turns.some((turn: JsonObject) => turn.status === 'inProgress')) throw new Error('message_edit_busy');
+      const turn = turns.find((turn: JsonObject) => turn.id === target);
+      if (turn) {
+        const users = (turn.items || []).filter((item: JsonObject) => item.type === 'userMessage');
+        if (users.length !== 1 || !Array.isArray(users[0].content)) throw new Error('message_edit_unsupported');
+        const input = users[0].content;
+        const { text } = messageEditInput(input);
+        return { threadId: id, turnId: target, latestTurnId, text, token: editToken(id, target, latestTurnId, input), input };
+      }
+      if (!result.nextCursor || visited.has(result.nextCursor)) break;
+      cursor = result.nextCursor;
+      visited.add(cursor!);
+    }
+    throw new Error('message_edit_unavailable');
   }
 
   async readSession(threadId: string) {
@@ -854,7 +889,7 @@ export class CodexAppServer extends EventEmitter {
     return models;
   }
 
-  async startTurn({ text, threadId, cwd, clientId, requestId, permissionMode }: StartTurnOptions) {
+  async startTurn({ text, threadId, cwd, clientId, requestId, permissionMode, edit }: StartTurnOptions) {
     let resolvedThreadId = String(threadId || '').trim();
     // Desktop first turns share a temporary runtime which must fully release
     // its writer before another task can start. Headless tasks remain parallel.
@@ -864,6 +899,8 @@ export class CodexAppServer extends EventEmitter {
     }
     if (this.deletingThreads.has(resolvedThreadId)) throw new Error('session_delete_in_progress');
     if (resolvedThreadId && this.getActiveTurn(resolvedThreadId)) throw new Error('another_turn_is_active');
+    if (edit && (!resolvedThreadId || edit.confirm !== true || !edit.token)) throw new Error('message_edit_invalid');
+    let editReverted = false;
     let subscribedThreadId = '';
     const isNewThread = !resolvedThreadId;
     const requestedPermissionMode = permissionMode === undefined
@@ -926,12 +963,25 @@ export class CodexAppServer extends EventEmitter {
         this.activeTurns.set(key, turnContext);
       }
       turnContext.threadId = resolvedThreadId;
+      let input: JsonObject[] = [{ type: 'text', text: String(text || '') }];
+      if (edit) {
+        const plan = await this.prepareMessageEdit(resolvedThreadId, edit.turnId);
+        if (plan.token !== edit.token) throw new Error('message_edit_changed');
+        input = messageEditInput(plan.input).replace(editText(text));
+        if (turnContext.cancelRequested) throw new Error('turn_cancelled');
+        await this.rpcRaw('thread/revert', { threadId: resolvedThreadId, beforeTurnId: edit.turnId });
+        editReverted = true;
+        if (turnContext.cancelRequested) throw new Error('turn_cancelled');
+        for (const [cacheKey, document] of this.turnDiffs) {
+          if (document.threadId === resolvedThreadId) this.turnDiffs.delete(cacheKey);
+        }
+      }
       // Resume may replay events from the previous turn. Only collect events
       // once we dispatch this start; its response is authoritative for turn ID.
       turnContext.startMessages = [];
       const startResult = await this.rpcRaw('turn/start', {
         threadId: resolvedThreadId,
-        input: [{ type: 'text', text: String(text || '') }],
+        input,
         cwd: turnCwd,
         ...(permissions ? permissions.turn : {}),
       });
@@ -966,6 +1016,7 @@ export class CodexAppServer extends EventEmitter {
       delete turnContext.startMessages;
       if (this.activeTurns.get(key) === turnContext) this.activeTurns.delete(key);
       await this.releaseThread(subscribedThreadId);
+      if (editReverted) throw new Error('message_edit_reverted_send_failed');
       throw error;
     }
   }

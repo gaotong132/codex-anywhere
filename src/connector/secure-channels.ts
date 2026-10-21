@@ -28,7 +28,7 @@ const DEDUPLICATED_ACTIONS = new Set([
   'file.download.open', 'file.download.chunk', 'file.download.close',
   'session.model-config.update',
   'session.rename', 'session.archive', 'session.restore',
-  'turn.start', 'turn.steer', 'turn.stop', 'approval.respond',
+  'turn.edit', 'turn.start', 'turn.steer', 'turn.stop', 'approval.respond',
 ]);
 
 export class ConnectorSecureChannels {
