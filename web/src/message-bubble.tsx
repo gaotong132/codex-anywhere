@@ -495,7 +495,7 @@ function MessageBubbleComponent({
   if (item.kind === 'progress' && !item.attachment && !item.visualization) {
     return (
       <details data-timeline-id={item.id} className={`progress-card${active ? ' live' : ''}`} open>
-        <summary>{t('进度更新', 'Progress update')}</summary>
+        <summary>{t('处理过程', 'Process')}</summary>
         <div className="progress-markdown">
           <MessageMarkdown text={item.text} onReadTextFile={onReadTextFile} onDownloadFile={onDownloadFile} />
         </div>
