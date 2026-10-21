@@ -441,12 +441,14 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   &:disabled { cursor: default; opacity: .78; }
   > span { min-width: 0; height: 18px; display: inline-flex; align-items: center; padding: 0 6px; border: 1px solid #293448; border-radius: 6px; background: rgba(20, 28, 41, .7); white-space: nowrap; }
   .model-config-model { max-width: 180px; @include truncate; color: #aebbd0; }
-  .model-config-placeholder { width: 12px; height: 3px; border-radius: 2px; background: currentColor; opacity: .35; }
+  .model-config-placeholder { width: 12px; height: 3px; border-radius: 2px; background: currentColor; opacity: .35; animation: model-loading-breathe 1.3s ease-in-out infinite; }
   .fast.active { width: 20px; justify-content: center; padding: 0; border-color: rgba(77, 126, 226, .5); color: #9ebdff; background: rgba(48, 91, 181, .16); }
   .fast svg { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-linejoin: round; stroke-width: 1.7; }
   > svg { width: 12px; height: 12px; flex: 0 0 12px; fill: none; stroke: #75839a; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.6; transition: transform .16s ease; }
 }
 .model-config.open .model-config-summary > svg { transform: rotate(180deg); }
+@keyframes model-loading-breathe { 50% { opacity: .8; } }
+@media (prefers-reduced-motion: reduce) { .model-config-summary .model-config-placeholder { animation: none; } }
 .model-config-popover {
   position: absolute; z-index: 40; top: calc(100% + 8px); left: 50%; width: min(330px, calc(100vw - 96px)); display: grid; gap: 8px; padding: 10px; border: 1px solid #343b47; border-radius: 14px; color: #aebbd0; background: #17191d; box-shadow: 0 16px 46px rgba(0, 0, 0, .44); transform: translateX(-50%);
   > p { margin: 0; color: #ff9ba4; font-size: 9px; line-height: 1.4; }
