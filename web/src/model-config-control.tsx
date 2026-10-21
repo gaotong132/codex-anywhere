@@ -92,18 +92,18 @@ export function ModelConfigControl({
           : unavailable ? t('重新读取当前模型', 'Retry reading the current model')
           : disabled ? t('会话执行中，可预选并在结束后保存', 'Preselect now and save after the task finishes') : t('配置后续轮次', 'Configure subsequent turns')}
       >
-        <span className={`model-config-model${pending ? ' model-config-placeholder' : ''}`} aria-hidden={pending || undefined}>{pending ? null : displayModel}</span>
-        <span className={`model-config-effort${effortPending ? ' model-config-placeholder' : ''}`}
-          aria-label={effortPending && !pending ? t('思考强度尚未确认', 'Reasoning effort not yet confirmed') : undefined}
-          aria-hidden={pending || undefined}>
-          {effortPending ? null : unavailable ? t('点击重试', 'Retry') : config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort) : t('默认思考', 'Default reasoning')}
-        </span>
-        {config?.fastMode && (
-          <span className="fast active" title={t('快速模式', 'Fast mode')}>
-            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.2 1.8 4.7 10h4.8l-.8 8.2 6.6-9.6h-4.8l.7-6.8Z" /></svg>
-          </span>
-        )}
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+        {pending ? <i className="model-config-placeholder" aria-hidden="true" /> : <>
+          <span className="model-config-model">{displayModel}</span>
+          {!effortPending && <span className="model-config-effort">
+            {unavailable ? t('点击重试', 'Retry') : config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort) : t('默认思考', 'Default reasoning')}
+          </span>}
+          {config?.fastMode && (
+            <span className="fast active" title={t('快速模式', 'Fast mode')}>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.2 1.8 4.7 10h4.8l-.8 8.2 6.6-9.6h-4.8l.7-6.8Z" /></svg>
+            </span>
+          )}
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+          </>}
       </button>
       {open && draft && config && (
         <div className="model-config-popover">
