@@ -20,6 +20,8 @@ The ECS checkout based on `16c4c99` contained 35 modified tracked files and seve
 - Bound pre-start event buffering to 512 messages, cancel overflowed starts and decline their approval requests.
 - Ignore delayed delivery responses after switching devices, and do not reset the newly selected session's execution controls when another Desktop delivery completes.
 
+- Preserve the restored session when its synchronous selection and the initial list render happen in the same React commit; the default selection must check the current selection ref. A bounded, eventually consistent list is not proof that a saved session no longer exists; remove that fallback and let the targeted history request determine availability. This needs no extra requests or polling.
+
 ## Deployment invariant
 
 Source must match a committed revision before building and remain Git-clean after activation. Keep machine-only instructions in `.git/info/exclude`, secrets in ignored or external configuration, and snapshots outside the checkout. Do not preserve uncommitted feature overlays across future deployments. Verify the deployed commit, container image, public health and both connector routes; preserve a previous runtime for rollback.

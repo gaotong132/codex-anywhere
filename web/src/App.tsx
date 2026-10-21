@@ -351,7 +351,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const olderHistoryLoadingRef = useRef<number | null>(null);
   const initialHistoryAttemptRef = useRef('');
   const liveHistoryHydratedThreadRef = useRef<string | null>(null);
-  const optimisticRestoreRef = useRef<string | null>(null);
   const runningRef = useRef(running);
   const ownedTurnThreadIdRef = useRef(ownedTurnThreadId);
   const sessionAttentionRef = useRef(sessionAttention);
@@ -1469,7 +1468,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       return;
     }
     cancelFileDownload();
-    optimisticRestoreRef.current = null;
     invalidateMessageAttachment();
     selectedRequestRef.current += 1;
     const requestVersion = selectedRequestRef.current;
@@ -1670,19 +1668,12 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     const previousThreadId = loadEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current);
     if (!previousThreadId) return;
     selectSession({ id: previousThreadId, title: '' }, { closeDrawer: false });
-    optimisticRestoreRef.current = previousThreadId;
   }, [authenticated, connectionEpoch, creatingNewSession, online, selectSession, threadId]);
 
   useEffect(() => {
-    const restoredThreadId = optimisticRestoreRef.current;
-    if (!restoredThreadId || !sessions.length || threadId !== restoredThreadId) return;
-    optimisticRestoreRef.current = null;
-    const restoredSession = sessions.find((session) => session.id === restoredThreadId);
-    if (!restoredSession) selectSession(sessions[0], { closeDrawer: false });
-  }, [selectSession, sessions, threadId]);
-
-  useEffect(() => {
-    if (!authenticated || creatingNewSession || threadId || !sessions.length) return;
+    // The restore effect above can select synchronously before React commits
+    // threadId. Do not overwrite that selection with the first list entry.
+    if (!authenticated || creatingNewSession || threadId || threadIdRef.current || !sessions.length) return;
     const previousThreadId = loadEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current);
     const initialSession = sessions.find((session) => session.id === previousThreadId) || sessions[0];
     selectSession(initialSession, { closeDrawer: false });
