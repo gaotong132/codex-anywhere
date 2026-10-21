@@ -93,6 +93,54 @@ export async function readRolloutPermissionMode(filePath: string): Promise<Permi
     await handle.close();
   }
 }
+
+// Cold Desktop tasks have no native owner. Read only a bounded tail, never
+// infer a default or scan an entire conversation to fill a header badge.
+export async function readRolloutPermissionSnapshot(filePath: string) {
+  const handle = await open(filePath, 'r');
+  try {
+    const end = (await handle.stat()).size;
+    const start = Math.max(0, end - 1024 * 1024);
+    const { rows } = await readCompleteRows(handle, start, end, start > 0);
+    for (let index = rows.length - 1; index >= 0; index--) {
+      const row = rows[index];
+      const settings = row.type === 'turn_context' ? row.payload
+        : row.payload?.type === 'thread_settings_applied' ? row.payload.thread_settings : null;
+      if (!settings) continue;
+      let sandbox = settings.sandbox_policy || settings.sandboxPolicy;
+      // Newer settings events omit the legacy sandbox. Reuse its projection
+      // only when the persisted permission profile is exactly the same.
+      if (!sandbox && settings.permission_profile) {
+        const profileKey = JSON.stringify(settings.permission_profile);
+        for (let previous = index - 1; previous >= 0; previous--) {
+          const context = rows[previous].type === 'turn_context' ? rows[previous].payload : null;
+          if (context?.sandbox_policy && JSON.stringify(context.permission_profile) === profileKey) {
+            sandbox = context.sandbox_policy; break;
+          }
+        }
+        if (!sandbox && settings.permission_profile.type === 'disabled') sandbox = { type: 'danger-full-access' };
+      }
+      const approval = settings.approval_policy ?? settings.approvalPolicy;
+      const reviewer = settings.approvals_reviewer ?? settings.approvalsReviewer;
+      if (!sandbox && approval == null && reviewer == null && !settings.permission_profile && !settings.activePermissionProfile) continue;
+      const type = sandbox?.type;
+      const profile = settings.permission_profile?.type;
+      const profileId = settings.activePermissionProfile?.id;
+      const builtin = (!profile || ['disabled', 'managed'].includes(profile))
+        && (!profileId || [':workspace', ':danger-full-access', ':read-only'].includes(profileId));
+      let mode: PermissionMode | 'custom' = 'custom';
+      if (builtin && approval === 'never' && reviewer === 'user'
+        && ['danger-full-access', 'dangerFullAccess'].includes(type)) mode = 'full';
+      if (builtin && approval === 'on-request' && ['workspace-write', 'workspaceWrite'].includes(type)) {
+        if (reviewer === 'user') mode = 'ask';
+        if (reviewer === 'auto_review') mode = 'auto';
+      }
+      return { mode, networkAccess: ['danger-full-access', 'dangerFullAccess'].includes(type)
+        || (sandbox?.network_access ?? sandbox?.networkAccess) === true };
+    }
+    throw new Error('desktop_permissions_unavailable');
+  } finally { await handle.close(); }
+}
 type ToolSummaryState = Omit<ToolSummaryNotice, 'kind' | 'total'> & {
   callIds: Set<string>;
   total: number;

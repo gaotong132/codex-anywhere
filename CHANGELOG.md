@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Read confirmed or saved permissions for new Desktop chats before native ownership, without navigating or resuming a task. Keep the fallback read-only, prefer live native settings after takeover, and bound saved-record reads to 1 MiB.
+
 - Choose access permissions in the new-session dialog. The first turn uses the selection; cancel leaves the current chat and device default unchanged. Full access remains gated by the connector.
 
 - Allow idle Desktop chats to change permissions from Web through the native owner, with stale-settings checks, explicit custom modes and existing full-access gates. Confirm native mutations through state events with one bounded recovery read; avoid control-summary work for streamed item text and reduce polling when native state is pushed.

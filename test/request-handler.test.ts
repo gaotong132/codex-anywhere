@@ -904,3 +904,32 @@ test('a slow catalog cannot hold current-model display and diagnostics reveal th
   assert.equal(result.data.model, 'current-native'); assert.deepEqual(result.data.models, []);
   release([]); await Promise.resolve();
 });
+
+test('cold Desktop permission fallback is read-only and never opens or resumes the task; native takeover wins', async () => {
+  let cold = true;
+  let stored = 0;
+  let error = 'desktop_input_not_ready';
+  const handle = createRequestHandler(createDependencies({ allowFullAccess: true,
+    codex: { readStoredPermissionConfig: async (id: string) => {
+      assert.equal(id, 'cold'); stored++;
+      return { mode: 'auto', networkAccess: false, editable: false, source: 'persisted' };
+    }, readPermissionMode: async () => assert.fail('no guessed defaults'), updatePermissionMode: async () => assert.fail('no second writer') },
+    desktop: { openThread: async () => assert.fail('must not focus Desktop'), controls: {
+      permissions: async () => { if (cold) throw new Error(error); return { mode: 'full', editable: true, source: 'desktop' }; },
+      updatePermissions: async () => { throw new Error('desktop_input_not_ready'); },
+    } as any },
+  }));
+  const first = await handle(request('session.permissions.read', { threadId: 'cold' }));
+  assert.equal(first.data.mode, 'auto');
+  assert.equal(first.data.editable, false);
+  assert.equal(first.data.allowFullAccess, true);
+  assert.equal(first.data.canOpenOnDesktop, undefined);
+  assert.equal((await handle(request('session.permissions.update', { threadId: 'cold', mode: 'full' }))).ok, false);
+  error = 'desktop_state_invalid_patch';
+  assert.equal((await handle(request('session.permissions.read', { threadId: 'cold' }))).ok, false);
+  cold = false;
+  const native = await handle(request('session.permissions.read', { threadId: 'cold' }));
+  assert.equal(native.data.source, 'desktop');
+  assert.equal(native.data.editable, true);
+  assert.equal(stored, 1);
+});

@@ -18,9 +18,9 @@ test('desktop access shows a working navigation/refresh flow instead of three di
   const calls: string[] = [];
   let fail = false;
   const config = { mode: 'ask' as const, editable: false, networkAccess: true, allowFullAccess: true, canOpenOnDesktop: true };
-  const render = (editable = false, busy = false, newSession = false) => act(async () => root.render(createElement(PermissionModeControl, {
+  const render = (editable = false, busy = false, newSession = false, persisted = false) => act(async () => root.render(createElement(PermissionModeControl, {
     newSession,
-    config: { ...config, editable, allowFullAccess: !editable }, loading: false, disabled: busy,
+    config: { ...config, editable, allowFullAccess: !editable, ...(persisted ? { source: 'persisted' as const, canOpenOnDesktop: false } : {}) }, loading: false, disabled: busy,
     onRefresh: async () => { calls.push('refresh'); },
     onOpenDesktop: async () => { if (fail) throw new Error('desktop_thread_open_failed'); calls.push('open'); },
     onChange: async (mode) => { calls.push(mode); },
@@ -57,6 +57,13 @@ test('desktop access shows a working navigation/refresh flow instead of three di
     assert.match(document.body.textContent!, /从第一条消息生效/);
     assert.match(document.body.textContent!, /请等待执行节点连接/);
     assert.doesNotMatch(document.body.textContent!, /当前会话正在执行或等待处理/);
+    await render(false, false, false, true);
+    await click('.permission-mode-summary');
+    assert.match(document.body.textContent!, /桌面尚未接管/);
+    assert.match(document.querySelector('.permission-mode-summary')!.textContent!, /只读/);
+    assert.equal(document.querySelectorAll('.permission-mode-options button').length, 0);
+    assert.equal(document.querySelectorAll('.permission-mode-desktop button').length, 1);
+    assert.match(document.querySelector('.permission-mode-desktop button')!.textContent!, /刷新权限/);
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of saved) {

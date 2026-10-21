@@ -27,6 +27,7 @@ type CodexGateway = {
   readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
   readStoredModelConfig?(threadId: string, catalog: any[] | Promise<any[]>): Promise<any>;
+  readStoredPermissionConfig?(threadId: string): Promise<any>;
   listModels?(options?: { allowStale?: boolean }): Promise<any[]>;
   updateModelConfig(threadId: string, value: Payload): Promise<any>;
   readPermissionMode(threadId: string, options?: { fresh?: boolean }): Promise<any>;
@@ -268,7 +269,13 @@ async function dispatchAction({
   }
   if (action === 'session.permissions.read') {
     if (mode === 'desktop' && desktop?.controls?.permissions) {
-      return desktop.controls.permissions(String(payload.threadId || ''), { networkAccess: Boolean(networkAccess), allowFullAccess: Boolean(allowFullAccess) });
+      const threadId = String(payload.threadId || '');
+      try {
+        return await desktop.controls.permissions(threadId, { networkAccess: Boolean(networkAccess), allowFullAccess: Boolean(allowFullAccess) });
+      } catch (error) {
+        if ((error as Error).message !== 'desktop_input_not_ready' || !codex.readStoredPermissionConfig) throw error;
+        return { ...await codex.readStoredPermissionConfig(threadId), allowFullAccess: Boolean(allowFullAccess) };
+      }
     }
     const desktopState = mode === 'desktop' ? await desktop?.getCapabilities?.() : undefined;
     return {

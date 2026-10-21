@@ -45,7 +45,7 @@ export type ConnectorStatus = {
 };
 export type SessionPermissionConfig = {
   mode: PermissionMode | 'custom';
-  source?: 'desktop';
+  source?: 'desktop' | 'persisted';
   settingsToken?: string;
   editable: boolean;
   networkAccess: boolean;

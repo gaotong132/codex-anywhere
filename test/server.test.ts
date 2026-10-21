@@ -628,10 +628,20 @@ test('authenticated browsers cannot query the device registry outside the secure
   const browser = await authenticateSocket({
     url, role: 'client', registry: server.deviceRegistry,
   });
+  // Authentication can enqueue a presence frame before this request's error.
+  const rejection = new Promise<any>((resolve) => {
+    const listener = (data) => {
+      const frame = JSON.parse(data.toString());
+      if (frame.type === 'presence') return;
+      browser.socket.off('message', listener);
+      resolve(frame);
+    };
+    browser.socket.on('message', listener);
+  });
   browser.socket.send(JSON.stringify({
     type: 'request', requestId: 'list-devices', action: 'devices.list', payload: {},
   }));
-  const rejected = await nextJson(browser.socket);
+  const rejected = await rejection;
   assert.equal(rejected.type, 'error');
   assert.equal(rejected.error, 'secure_channel_required');
   assert.equal(rejected.data, undefined);

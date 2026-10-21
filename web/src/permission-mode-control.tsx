@@ -105,23 +105,24 @@ export function PermissionModeControl({
           if (!open && !config?.editable && onRefresh) void runAction(onRefresh);
         }}
         aria-expanded={open}
-        title={config && !config.editable ? t('权限由 Codex 电脑端管理', 'Permissions are managed by Codex Desktop')
+        title={config?.source === 'persisted' ? t('会话已保存的权限', 'Saved session permissions') : config && !config.editable ? t('权限由 Codex 电脑端管理', 'Permissions are managed by Codex Desktop')
           : t('配置 Codex 的审批与文件访问权限', 'Configure Codex approvals and file access')}
       >
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.7-2.5 6.3-6 7.9-3.5-1.6-6-4.2-6-7.9V5l6-2.5Z" /><path d="M7.4 10.1 9.2 12l3.6-4" /></svg>
-        <span>{loading ? t('读取权限…', 'Loading access…') : permissionModeLabel(config?.mode || 'ask')}{config && !config.editable && <small> · {t('电脑端管理', 'Desktop managed')}</small>}</span>
+        <span>{loading ? t('读取权限…', 'Loading access…') : permissionModeLabel(config?.mode || 'ask')}{config && !config.editable && <small> · {config.source === 'persisted' ? t('只读', 'Read only') : t('电脑端管理', 'Desktop managed')}</small>}</span>
         <i aria-hidden="true" />
       </button>
       {open && config && (
         <div className="permission-mode-popover">
           <header>
-            <strong>{config.editable ? t('应如何批准 Codex 操作？', 'How should Codex approve actions?') : t('权限由 Codex 电脑端管理', 'Permissions are managed by Codex Desktop')}</strong>
+            <strong>{config.source === 'persisted' ? t('已保存的访问权限', 'Saved access permissions') : config.editable ? t('应如何批准 Codex 操作？', 'How should Codex approve actions?') : t('权限由 Codex 电脑端管理', 'Permissions are managed by Codex Desktop')}</strong>
             <span>{config.editable
               ? newSession
                 ? t('从第一条消息生效；创建后记住此设备的选择', 'Applies from the first message; remembered for this device after creation')
                 : config.source === 'desktop'
                 ? t('与电脑端同步，仅修改当前会话，后续轮次生效', 'Synced with Desktop for this chat; applies to subsequent turns')
                 : t('设置同时作为此执行环境中新会话的默认值', 'Also becomes the default for new tasks in this environment')
+              : config.source === 'persisted' ? t('桌面尚未接管，当前显示会话已保存的权限。接管后可在这里修改。', 'Desktop has not taken ownership yet. Showing saved permissions; editing is available once it does.')
               : t('请在运行此会话的电脑上修改权限，再刷新这里的状态。', 'Change permissions on the computer running this task, then refresh the status here.')}</span>
           </header>
           {!config.editable ? (

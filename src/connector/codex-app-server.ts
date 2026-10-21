@@ -12,6 +12,7 @@ import {
   readRolloutQuestionReplies,
   readRolloutModelSettings,
   readRolloutPermissionMode,
+  readRolloutPermissionSnapshot,
   readRolloutTail,
   type RolloutModelSettings,
 } from './rollout-tail.js';
@@ -609,6 +610,34 @@ export class CodexAppServer extends EventEmitter {
     return { ...settings, fastMode, models };
   }
 
+  async readStoredPermissionConfig(threadId: string) {
+    const id = threadId.trim();
+    if (!id) throw new Error('thread_id_required');
+    // The owned turn has already acknowledged these settings; its rollout may
+    // still be flushing. Never reuse this cache after ownership ends.
+    const applied = this.sessionPermissionModes.get(id);
+    if (this.activeTurn?.threadId === id && this.activeTurn.state === 'running' && applied) {
+      return { mode: applied, networkAccess: applied === 'full' || this.networkAccess,
+        source: 'persisted' as const, editable: false };
+    }
+    const read = async (metadata: SessionMetadata) => {
+      resolveAllowedWorkspace(this.allowedRoots, metadata.cwd);
+      return { ...await readRolloutPermissionSnapshot(metadata.path), source: 'persisted' as const, editable: false };
+    };
+    const cached = this.sessionMetadata.get(id);
+    if (cached?.path) {
+      try { return await read(cached); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    }
+    await this.ensureStarted();
+    const { thread } = await this.rpcRaw('thread/read', { threadId: id, includeTurns: false }, 5000);
+    if (thread?.id !== id || !thread.path || !thread.cwd) throw new Error('desktop_permissions_unavailable');
+    const metadata = { cwd: thread.cwd, path: thread.path, canAcceptDirectInput: thread.canAcceptDirectInput !== false };
+    const config = await read(metadata);
+    this.sessionMetadata.set(id, metadata);
+    return config;
+  }
+
   async readPermissionMode(threadId: unknown, { fresh = false }: { fresh?: boolean } = {}) {
     await this.ensureStarted();
     const resolvedThreadId = String(threadId || '').trim();
@@ -780,6 +809,9 @@ export class CodexAppServer extends EventEmitter {
         const result = await this.rpcRaw('thread/start', threadParams);
         resolvedThreadId = result?.thread?.id || result?.id || result?.threadId;
         if (!resolvedThreadId) throw new Error('codex_did_not_return_thread_id');
+        if (result.thread?.path) this.sessionMetadata.set(resolvedThreadId, {
+          cwd: turnCwd, path: result.thread.path, canAcceptDirectInput: result.thread.canAcceptDirectInput !== false,
+        });
       }
       subscribedThreadId = resolvedThreadId;
       if (this.activeTurn !== turnContext || turnContext.cancelRequested) throw new Error('turn_cancelled');
