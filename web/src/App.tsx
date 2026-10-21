@@ -131,6 +131,7 @@ import { BrowserSessionStatus } from './browser-session-status';
 import { useSidePanelSession } from './sidepanel-session';
 import {
   normalizePermissionMode,
+  type PermissionMode,
 } from '../../src/shared/permission-mode';
 import {
   normalizeTurnProgress,
@@ -295,6 +296,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [restoringSession, setRestoringSession] = useState(false);
   const [restoreError, setRestoreError] = useState('');
   const [newSessionPrompt, setNewSessionPrompt] = useState('');
+  const [newSessionPermissionMode, setNewSessionPermissionMode] = useState<PermissionMode>('ask');
   const { attachment: newSessionAttachment, setAttachment: setNewSessionAttachment, choose: prepareNewSessionAttachment } = useAttachmentDraft();
   const closeNewSessionDialog = useCallback(() => {
     setNewSessionDialogOpen(false);
@@ -1556,6 +1558,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   }, []);
 
   const beginNewSession = useCallback(() => {
+    const savedMode = normalizePermissionMode(loadEnvironmentValue(SESSION_PERMISSION_MODE_KEY, environmentIdRef.current));
+    setNewSessionPermissionMode(savedMode === 'full' && !connectorStatus?.capabilities.fullAccess ? 'ask' : savedMode);
     setNewSessionPrompt('');
     setNewSessionAttachment(null);
     setNewSessionError('');
@@ -1563,7 +1567,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     setSessionSearch('');
     setDrawerOpen(false);
     setNewSessionDialogOpen(true);
-  }, []);
+  }, [connectorStatus?.capabilities.fullAccess]);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   const archiveSession = useCallback(async () => {
@@ -1696,6 +1700,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   }, [prepareNewSessionAttachment]);
 
   const submitNewSession = useCallback(() => {
+    if (!online || running || uploading) return;
+    if (newSessionPermissionMode === 'full' && !connectorStatus?.capabilities.fullAccess) {
+      setNewSessionError(t('此执行节点未开放完全访问权限，请选择其他权限。', 'Full access is disabled on this connector. Choose another permission mode.'));
+      return;
+    }
     const projectCwd = newSessionCwd.trim();
     const text = newSessionPrompt.trim();
     if (!projectCwd) {
@@ -1712,6 +1721,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       transferPreview: newSessionAttachment.transferPreview,
       previewUrl: newSessionAttachment.kind === 'image' ? URL.createObjectURL(newSessionAttachment.file) : '',
     } : null;
+    storeEnvironmentValue(SESSION_PERMISSION_MODE_KEY, environmentIdRef.current, newSessionPermissionMode);
     selectSession(null);
     setCreatingNewSession(true);
     setPrompt(text);
@@ -1720,7 +1730,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     setNewSessionError('');
     closeNewSessionDialog();
     newSessionAutoSendRef.current = true;
-  }, [closeNewSessionDialog, newSessionCwd, newSessionAttachment, newSessionPrompt, selectSession, setNewSessionAttachment, setPendingAttachment]);
+  }, [closeNewSessionDialog, newSessionCwd, newSessionAttachment, newSessionPrompt, newSessionPermissionMode, online, running, uploading, connectorStatus?.capabilities.fullAccess, selectSession, setNewSessionAttachment, setPendingAttachment]);
 
   const sendTurn = useCallback(async (questionReplies?: QuestionReply[]) => {
     // A question response is independent of the message/attachment draft.
@@ -1742,6 +1752,9 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       || (steering && Boolean(attachment))
     ) return;
     const isExistingSession = Boolean(targetThreadId);
+    const selectedPermissionMode = isExistingSession
+      ? permissionConfig?.mode
+      : normalizePermissionMode(loadEnvironmentValue(SESSION_PERMISSION_MODE_KEY, environmentIdRef.current));
     const selectionVersion = selectedRequestRef.current;
     const projectCwd = newSessionCwd.trim();
     if (!isExistingSession && !projectCwd) {
@@ -1850,9 +1863,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         });
       }
       const action = steering ? 'turn.steer' : 'turn.start';
-      const selectedPermissionMode = isExistingSession
-        ? permissionConfig?.mode
-        : normalizePermissionMode(loadEnvironmentValue(SESSION_PERMISSION_MODE_KEY, environmentIdRef.current));
       const data = await request<TurnStartResult>(action, {
         text: turnText,
         ...(nativeImage ? { image: nativeImage } : {}),
@@ -2274,6 +2284,20 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                   placeholder={t('告诉 Codex 要做什么…', 'Tell Codex what to do…')}
                 />
               </label>
+              <div className="new-session-field new-session-permissions">
+                <span>{t('访问权限', 'Access permissions')}</span>
+                <PermissionModeControl
+                  newSession
+                  config={{
+                    mode: newSessionPermissionMode, editable: true,
+                    networkAccess: connectorStatus?.capabilities.networkAccess === true,
+                    allowFullAccess: connectorStatus?.capabilities.fullAccess === true,
+                  }}
+                  loading={false}
+                  disabled={!online}
+                  onChange={async (mode) => { setNewSessionPermissionMode(mode); setNewSessionError(''); }}
+                />
+              </div>
               {newSessionAttachment && (
                 <div className="new-session-image-preview">
                   <>{newSessionAttachment.kind === 'image' ? <img src={newSessionAttachment.previewUrl} alt="" /> : <span className="attachment-file-icon" aria-hidden="true">▤</span>}</>

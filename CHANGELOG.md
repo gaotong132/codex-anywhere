@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Choose access permissions in the new-session dialog. The first turn uses the selection; cancel leaves the current chat and device default unchanged. Full access remains gated by the connector.
+
 - Allow idle Desktop chats to change permissions from Web through the native owner, with stale-settings checks, explicit custom modes and existing full-access gates. Confirm native mutations through state events with one bounded recovery read; avoid control-summary work for streamed item text and reduce polling when native state is pushed.
 
 - Generate unique persistent routes for new Windows/Linux installations while retaining existing routes and pairing. Reject conflicting registrations and route takeover, show approved offline nodes without a 24-device cutoff, and synchronize editable device names across browsers and the relay CLI.

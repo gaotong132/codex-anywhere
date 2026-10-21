@@ -737,6 +737,11 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
 .new-session-dialog-head h2 { margin: 0; color: #edf3fc; font-size: 20px; letter-spacing: -.02em; }
 .new-session-dialog-head > span { display: block; margin-top: 7px; color: #7d899d; font-size: 12px; line-height: 1.55; }
 .new-session-dialog-body { display: grid; gap: 13px; padding: 18px 22px; overflow-y: auto; }
+.new-session-permissions {
+  .permission-mode-summary { width: auto; height: 34px; justify-content: flex-start; padding: 0 10px; font-size: 12px; }
+  .permission-mode-summary > span, .permission-mode-summary > i { display: inline; }
+  .permission-mode-popover { position: static; width: 100%; margin-top: 8px; transform: none; box-shadow: none; }
+}
 .new-session-field { min-width: 0; display: grid; gap: 6px; }
 .new-session-field > span { color: #bac6d7; font-size: 12px; font-weight: 700; }
 .new-session-field input, .new-session-field textarea {

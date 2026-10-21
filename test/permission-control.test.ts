@@ -18,7 +18,8 @@ test('desktop access shows a working navigation/refresh flow instead of three di
   const calls: string[] = [];
   let fail = false;
   const config = { mode: 'ask' as const, editable: false, networkAccess: true, allowFullAccess: true, canOpenOnDesktop: true };
-  const render = (editable = false, busy = false) => act(async () => root.render(createElement(PermissionModeControl, {
+  const render = (editable = false, busy = false, newSession = false) => act(async () => root.render(createElement(PermissionModeControl, {
+    newSession,
     config: { ...config, editable, allowFullAccess: !editable }, loading: false, disabled: busy,
     onRefresh: async () => { calls.push('refresh'); },
     onOpenDesktop: async () => { if (fail) throw new Error('desktop_thread_open_failed'); calls.push('open'); },
@@ -52,6 +53,10 @@ test('desktop access shows a working navigation/refresh flow instead of three di
     await click('.permission-mode-summary');
     assert.equal(document.querySelectorAll('.permission-mode-options button:disabled').length, 3);
     assert.match(document.body.textContent!, /当前会话正在执行或等待处理/);
+    await render(true, true, true);
+    assert.match(document.body.textContent!, /从第一条消息生效/);
+    assert.match(document.body.textContent!, /请等待执行节点连接/);
+    assert.doesNotMatch(document.body.textContent!, /当前会话正在执行或等待处理/);
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of saved) {
