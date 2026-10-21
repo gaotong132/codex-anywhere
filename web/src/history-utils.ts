@@ -78,6 +78,8 @@ export type TimelineItem = {
   contexts?: MessageContext[];
   completedAt?: number | string | null;
   fileChanges?: TurnFileProgress;
+  // Keep message boundaries when a process block spans history pages.
+  progressParts?: { text: string; completedAt?: number | string | null }[];
 };
 export type KnownAttachment = ImageAttachment & { savedAt: number };
 
@@ -176,7 +178,9 @@ export function historyItems(turns: Turn[], source?: string) {
       if (!kind || (!displayText && !attachment && !visualization && !compaction && !notice)) continue;
       const previous = items.at(-1);
       if (kind === 'progress' && !visualization && !attachment
-        && previous?.kind === 'progress' && !previous.attachment && previous.historyTurnId === historyTurnId) {
+        && previous?.kind === 'progress' && !previous.attachment && !previous.visualization && previous.historyTurnId === historyTurnId) {
+        previous.progressParts ||= [{ text: previous.text, completedAt: previous.completedAt }];
+        previous.progressParts.push({ text: displayText, completedAt: messageTime(item, turn, kind) });
         previous.text = `${previous.text}\n\n${displayText}`;
         previous.completedAt = messageTime(item, turn, kind) || previous.completedAt;
         continue;
@@ -363,12 +367,15 @@ export function mergeHistorySnapshot(
         || previous.historyTurnId !== hydrated.historyTurnId) continue;
       if (hydrated.text.startsWith(previous.text)) return { ...hydrated, id: previous.id };
       if (options.partial) {
-        if (previous.text.includes(hydrated.text)) return { ...previous, ...hydrated, id: previous.id, text: previous.text };
+        if (previous.text.includes(hydrated.text)) return { ...previous, ...hydrated, id: previous.id, text: previous.text, progressParts: previous.progressParts };
         const paragraphs = previous.text.split('\n\n');
         for (let start = 1; start < paragraphs.length; start++) {
           const overlap = paragraphs.slice(start).join('\n\n');
           if (overlap && hydrated.text.startsWith(`${overlap}\n\n`)) {
-            return { ...hydrated, id: previous.id, text: previous.text + hydrated.text.slice(overlap.length) };
+            const combined = prependHistoryPage([previous], [hydrated]);
+            const text = previous.text + hydrated.text.slice(overlap.length);
+            return { ...hydrated, id: previous.id, text,
+              progressParts: combined.length === 1 && combined[0].text === text ? combined[0].progressParts : undefined };
           }
         }
       }
@@ -508,11 +515,60 @@ function samePersistedMessage(previous: TimelineItem, next: TimelineItem) {
 }
 
 export function prependHistoryPage(older: TimelineItem[], current: TimelineItem[]) {
+  if (!older.length) return current;
   const ids = new Set(current.map((item) => item.id));
-  const snapshots = new Set(current.map(persistedSnapshotIdentity).filter(Boolean));
   const crossSourceMatches = matchCrossSourceMessages(current, older);
-  return [...older.filter((item, index) => !ids.has(item.id) && !crossSourceMatches.has(index)
-    && !(persistedSnapshotIdentity(item) && snapshots.has(persistedSnapshotIdentity(item)))), ...current];
+  const expand = (items: TimelineItem[]) => items.flatMap((owner) => (
+    owner.progressParts?.length && plainProgress(owner)
+      ? owner.progressParts.map((part) => ({ item: { ...owner, ...part, progressParts: undefined }, owner }))
+      : [{ item: owner, owner }]
+  ));
+  const saved = expand(current);
+  const snapshots = new Set(saved.map(({ item }) => persistedSnapshotIdentity(item)).filter(Boolean));
+  const incoming = expand(older.filter((item, index) => !ids.has(item.id) && !crossSourceMatches.has(index)))
+    .filter(({ item }) => !(persistedSnapshotIdentity(item) && snapshots.has(persistedSnapshotIdentity(item))));
+  if (!incoming.length) return current;
+  // A live tail can reach further back than the initial history page. Insert
+  // overlapping pages chronologically instead of placing every row before it.
+  const ordered: typeof saved = [];
+  let left = 0;
+  let right = 0;
+  while (left < incoming.length && right < saved.length) {
+    const before = timelineTime(incoming[left].item);
+    const after = timelineTime(saved[right].item);
+    if (before != null && after != null && before > after) ordered.push(saved[right++]);
+    else ordered.push(incoming[left++]);
+  }
+  ordered.push(...incoming.slice(left), ...saved.slice(right));
+
+  const result: TimelineItem[] = [];
+  for (let start = 0; start < ordered.length;) {
+    const first = ordered[start];
+    let end = start + 1;
+    if (plainProgress(first.item) && first.item.historyTurnId) {
+      while (end < ordered.length && plainProgress(ordered[end].item)
+        && ordered[end].item.historyTurnId === first.item.historyTurnId) end++;
+    }
+    if (end === start + 1 && first.item === first.owner) result.push(first.owner);
+    else {
+      const group = ordered.slice(start, end);
+      // Keep the existing DOM node so paragraph-based scroll anchoring still
+      // finds the text the user was reading after earlier paragraphs arrive.
+      const owner = group.find((entry) => ids.has(entry.owner.id))?.owner || first.owner;
+      const text = group.map(({ item }) => item.text).join('\n\n');
+      const completedAt = group.at(-1)!.item.completedAt;
+      result.push(owner.text === text && owner.completedAt === completedAt ? owner : {
+        ...owner, text, completedAt,
+        progressParts: group.map(({ item }) => ({ text: item.text, completedAt: item.completedAt })),
+      });
+    }
+    start = end;
+  }
+  return result;
+}
+
+function plainProgress(item: TimelineItem) {
+  return item.kind === 'progress' && !item.attachment && !item.visualization && !item.transient;
 }
 
 function matchCrossSourceMessages(current: TimelineItem[], latest: TimelineItem[]) {

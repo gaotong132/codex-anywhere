@@ -128,4 +128,10 @@ test('an image growing inside the same long reply preserves the currently read p
   root.scrollHeight += 200;
   controller.restore(root);
   assert.equal(root.scrollTop, 550);
+  // An older process page adds paragraphs inside the same retained card.
+  paragraphs.forEach((part) => { part.y += 150; });
+  paragraphs.unshift({ y: 0, height: 150, text: 'earlier process message' });
+  root.scrollHeight += 150;
+  controller.restore(root);
+  assert.equal(root.scrollTop, 700, 'anchor is found by text after its paragraph index changes');
 });
