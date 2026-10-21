@@ -17,8 +17,7 @@ import { MessageMarkdown } from './message-markdown';
 import { QuestionReplyContent } from './question-reply-content';
 import { elapsedLabel } from './live-activity';
 import { t } from './i18n';
-import { progressTypewriterKey, type TimelineItem } from './history-utils';
-import { TypewriterText } from './ui-components';
+import type { TimelineItem } from './history-utils';
 import type { TextPreviewDocument, TurnDiffDocument } from './app-types';
 import type { ContextCompaction } from '../../src/shared/context-compaction';
 
@@ -497,13 +496,9 @@ function MessageBubbleComponent({
     return (
       <details data-timeline-id={item.id} className={`progress-card${active ? ' live' : ''}`} open>
         <summary>{t('进度更新', 'Progress update')}</summary>
-        <pre><TypewriterText
-          className="progress-typewriter"
-          text={item.text}
-          active={active}
-          continuityKey={progressTypewriterKey(item)}
-          durationMs={1_200}
-        /></pre>
+        <div className="progress-markdown">
+          <MessageMarkdown text={item.text} onReadTextFile={onReadTextFile} onDownloadFile={onDownloadFile} />
+        </div>
       </details>
     );
   }

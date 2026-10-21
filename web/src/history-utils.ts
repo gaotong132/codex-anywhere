@@ -81,10 +81,6 @@ export type TimelineItem = {
 };
 export type KnownAttachment = ImageAttachment & { savedAt: number };
 
-export function progressTypewriterKey(item: Pick<TimelineItem, 'id' | 'historyTurnId'>) {
-  return `progress:${item.historyTurnId || item.id}`;
-}
-
 export function isDuplicateFinalProgress(progressText: string, assistantText: string) {
   const progress = canonicalMessageText(progressText);
   return Boolean(progress) && progress === canonicalMessageText(assistantText);

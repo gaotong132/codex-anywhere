@@ -22,7 +22,6 @@ import {
   loadKnownAttachments,
   mergeHistorySnapshot,
   prependHistoryPage,
-  progressTypewriterKey,
   resolveTimelineAttachment,
   storeKnownAttachments,
   type ImageAttachment,
@@ -68,7 +67,6 @@ import {
 import {
   CustomSelect,
   DownloadIndicator,
-  seedTypewriterText,
   SidebarIcon,
 } from './ui-components';
 import { ConversationTimeline, preloadMessageBubble } from './conversation-timeline';
@@ -1285,9 +1283,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         setContextUsage(normalizeContextUsage(state.contextUsage) || normalizeContextUsage(page.contextUsage) || null);
         viewport.following = true;
         viewport.forceBottom = true;
-        for (const item of items) {
-          if (item.kind === 'progress') seedTypewriterText(progressTypewriterKey(item), item.text);
-        }
         setTimeline(startTimelineCompaction(items, state.activityId || '', epochMillis(state.compactionStartedAt)));
         followFingerprintRef.current = historyFingerprint(state.turns, state.turnProgress);
         latestActivityIdRef.current = state.activityId || '';
@@ -1386,9 +1381,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         }));
         const latestItems = attachLatestAssistantFileChanges(historyItems(page.turns, page.source), page.turnProgress);
         if (liveHistoryHydratedThreadRef.current !== threadId) {
-          const liveProgressId = latestTurnProgressItemId(latestItems);
-          const liveProgress = latestItems.find((item) => item.id === liveProgressId);
-          if (liveProgress) seedTypewriterText(progressTypewriterKey(liveProgress), liveProgress.text);
           liveHistoryHydratedThreadRef.current = threadId;
         }
         const awaitingDesktopTurn = awaitingDesktopTurnRef.current;

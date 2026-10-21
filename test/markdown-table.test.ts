@@ -4,10 +4,34 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { parseHTML } from 'linkedom';
 import { MessageMarkdown } from '../web/src/message-markdown.js';
+import { MessageBubble } from '../web/src/message-bubble.js';
 
 function render(text: string) {
   return parseHTML(renderToStaticMarkup(createElement(MessageMarkdown, { text, onDownloadFile() {} }))).document;
 }
+
+test('live and historical progress render Markdown immediately without a plain-text wrapper', () => {
+  for (const active of [true, false]) {
+    const { document } = parseHTML(renderToStaticMarkup(createElement(MessageBubble, {
+      active,
+      item: { id: 'progress-markdown', kind: 'progress', text: [
+        '**原因：**检查 `nowrap`，参见[文档](https://example.com/docs)。', '',
+        '- 已复现', '- 正在修复', '', '```html', '<script>alert(1)</script>', '```',
+      ].join('\n') },
+      onDownloadFile() {}, onReadVisualization: async () => '',
+    })));
+    const card = document.querySelector('.progress-card')!;
+    assert.equal(card.classList.contains('live'), active);
+    assert.ok(card.hasAttribute('open'));
+    assert.equal(card.querySelector('strong')?.textContent, '原因：');
+    assert.equal(card.querySelector('p code')?.textContent, 'nowrap');
+    assert.equal(card.querySelector('a')?.getAttribute('href'), 'https://example.com/docs');
+    assert.equal(card.querySelectorAll('li').length, 2);
+    assert.equal(card.querySelector('pre code')?.textContent?.trim(), '<script>alert(1)</script>');
+    assert.equal(card.querySelectorAll('script, .typewriter-text').length, 0);
+    assert.equal(card.querySelector('pre')?.parentElement?.className, 'progress-markdown');
+  }
+});
 
 test('Markdown tables preserve CJK emphasis, safe line breaks and column alignment', () => {
   const document = render([

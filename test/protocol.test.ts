@@ -91,7 +91,6 @@ import {
   isDuplicateFinalProgress,
   latestTurnProgressItemId,
   mergeHistorySnapshot,
-  progressTypewriterKey,
 } from '../web/src/history-utils.js';
 import {
   MessageBubble,
@@ -1600,16 +1599,11 @@ test('Mermaid code blocks use an on-demand diagram renderer and keep ordinary co
 
 test('progress animation waits until initial history hydration finishes', async () => {
   const timelineSource = await readFile(resolve('web/src/conversation-timeline.tsx'), 'utf8');
-  const bubbleSource = await readFile(resolve('web/src/message-bubble.tsx'), 'utf8');
-  const appSource = await readFile(resolve('web/src/App.tsx'), 'utf8');
   assert.match(timelineSource, /progressAnimationReady && item\.id === liveProgressItemId/);
-  assert.match(bubbleSource, /continuityKey=\{progressTypewriterKey\(item\)\}/);
-  assert.match(appSource, /seedTypewriterText\(progressTypewriterKey\(item\), item\.text\)/);
 });
 
-test('hydrated progress starts complete and only a later suffix is animated', () => {
-  const item = { id: 'history:turn-hydrated:1', historyTurnId: 'turn-hydrated' };
-  const key = progressTypewriterKey(item);
+test('seeded typewriter text starts complete and only a later suffix is animated', () => {
+  const key = 'seeded-typewriter';
   seedTypewriterText(key, '已有进度');
 
   const hydrated = renderToStaticMarkup(createElement(TypewriterText, {
@@ -1642,7 +1636,6 @@ test('a non-prefix polling snapshot replaces progress without replaying it', () 
 test('the first live snapshot is hydrated before it can animate', async () => {
   const appSource = await readFile(resolve('web/src/App.tsx'), 'utf8');
   assert.match(appSource, /liveHistoryHydratedThreadRef\.current !== threadId/);
-  assert.match(appSource, /seedTypewriterText\(progressTypewriterKey\(liveProgress\), liveProgress\.text\)/);
 });
 
 test('only progress after the latest user message is treated as the live progress block', () => {
