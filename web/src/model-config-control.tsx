@@ -82,7 +82,8 @@ export function ModelConfigControl({
         disabled={loading || Boolean(config?.readOnly) || (!config && !(unavailable && onRefresh))}
         onClick={() => unavailable ? onRefresh?.() : setOpen((current) => !current)}
         aria-expanded={open}
-        title={config?.readOnly ? t('已读取当前模型；完整设置暂不可用，请在桌面修改', 'Current model is available; edit settings on Desktop while full settings are unavailable')
+        title={config?.source === 'persisted' ? t('上次保存的模型设置；实时设置暂不可用，请在桌面修改', 'Last saved model settings; live settings are unavailable, edit on Desktop')
+          : config?.readOnly ? t('已读取当前模型；完整设置暂不可用，请在桌面修改', 'Current model is available; edit settings on Desktop while full settings are unavailable')
           : unavailable ? t('重新读取当前模型', 'Retry reading the current model')
           : disabled ? t('会话执行中，可预选并在结束后保存', 'Preselect now and save after the task finishes') : t('配置后续轮次', 'Configure subsequent turns')}
       >

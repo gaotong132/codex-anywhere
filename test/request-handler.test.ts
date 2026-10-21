@@ -86,6 +86,27 @@ test('Desktop controls route native models, exact-turn stop and request-scoped a
   assert.equal((await unsupported(request('session.model-config.update', { threadId: 'selected' }))).error, 'desktop_input_unsupported');
 });
 
+test('cold Desktop model reads share the catalog and fall back only to saved metadata', async () => {
+  let catalogs = 0, savedReads = 0, live = false;
+  const handle = createRequestHandler(createDependencies({ codex: {
+    listModels: async () => { catalogs++; return [{ model: 'catalog-default' }]; },
+    readModelConfig: async () => assert.fail('must not infer Desktop settings from defaults'),
+    readStoredModelConfig: async (id, catalog) => {
+      assert.equal(id, 'cold'); savedReads++;
+      return { model: 'saved-astra', reasoningEffort: 'high', readOnly: true, source: 'persisted', models: await catalog };
+    },
+  }, desktop: { controls: { modelConfig: async () => {
+    if (!live) throw new Error('desktop_input_not_ready');
+    return { model: 'live-astra', source: 'desktop' };
+  } }, openThread: async () => assert.fail('model reads must not navigate') } }));
+  const first = await handle(request('session.model-config.read', { threadId: 'cold' }));
+  assert.equal(first.data.model, 'saved-astra'); assert.equal(first.data.source, 'persisted');
+  assert.equal(first.data.readOnly, true); assert.equal(catalogs, 1);
+  live = true;
+  assert.equal((await handle(request('session.model-config.read', { threadId: 'cold' }))).data.model, 'live-astra');
+  assert.equal(savedReads, 1, 'live native settings take precedence');
+});
+
 test('native images are validated before delivery and never resolve arbitrary browser paths', async () => {
   let sent: any;
   const handle = createRequestHandler(createDependencies({ attachments: { nativeInput: async image => {

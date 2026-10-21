@@ -9,6 +9,31 @@ import {
   saveSessionModelSettings,
 } from '../src/connector/session-model-settings.js';
 
+test('Desktop fallback reads exact saved metadata without defaults, history or resume', async t => {
+  const app = new CodexAppServer();
+  t.after(() => app.close());
+  app.ensureStarted = async () => {};
+  let thread: any = { id: 'cold', model: 'new-model-outside-catalog', reasoningEffort: 'xhigh' };
+  let reads = 0;
+  app.rpcRaw = async (method, params, timeout) => {
+    assert.equal(method, 'thread/read');
+    assert.deepEqual(params, { threadId: 'cold', includeTurns: false });
+    assert.equal(timeout, 5000); reads++;
+    return { thread };
+  };
+  const config = await app.readStoredModelConfig('cold', Promise.resolve([]));
+  assert.deepEqual(config, { model: 'new-model-outside-catalog', reasoningEffort: 'xhigh',
+    source: 'persisted', readOnly: true, serviceTier: null, fastMode: false, models: [] });
+  assert.equal(reads, 1);
+  thread.reasoningEffort = null;
+  assert.equal((await app.readStoredModelConfig('cold', [])).reasoningEffort, '');
+  thread.id = 'other';
+  await assert.rejects(app.readStoredModelConfig('cold', []), /desktop_model_unavailable/);
+  thread = { id: 'cold', model: null };
+  await assert.rejects(app.readStoredModelConfig('cold', []), /desktop_model_unavailable/);
+  await assert.rejects(app.readStoredModelConfig('', []), /thread_id_required/);
+});
+
 test('session model settings persist in a private connector state file', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'codex-anywhere-model-settings-'));
   const filePath = join(directory, 'settings.json');

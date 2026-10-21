@@ -110,7 +110,19 @@ test('model header does not request a full snapshot and independent status unloc
   assert.equal(changed.serviceTier, null, 'old snapshot settings cannot override the current owner');
 });
 
-test('model read loads a cold thread through Desktop without sending or changing settings', async t => {
+test('a missing legacy effort can use an already available native effective setting without a new snapshot', async t => {
+  const { pipe, controls } = fixture(t);
+  pipe.state.latestReasoningEffort = null;
+  await controls.read('fixture');
+  controls.input.state.read = async () => assert.fail('header must not request a snapshot');
+  assert.equal((await controls.modelConfig('fixture', models)).reasoningEffort, 'high');
+  pipe.state.latestReasoningEffort = 'low';
+  const changed = await controls.modelConfig('fixture', models);
+  assert.equal(changed.reasoningEffort, 'low', 'explicit live setting wins over cached state');
+  assert.equal(changed.readOnly, true);
+});
+
+test('model read never opens a cold Desktop thread', async t => {
   const pipe = new FakePipe();
   let opened = 0;
   const request = pipe.request.bind(pipe);
@@ -130,9 +142,8 @@ test('model read loads a cold thread through Desktop without sending or changing
   // Cold and oversized are independent conditions and may occur together.
   input.state.read = async () => { throw new Error('desktop_state_unavailable'); };
   const controls = new DesktopControls(input);
-  assert.equal((await controls.modelConfig('fixture', models)).model, 'astra');
-  assert.equal((await controls.modelConfig('fixture', models)).reasoningEffort, 'high');
-  assert.equal(opened, 1);
+  await assert.rejects(controls.modelConfig('fixture', models), /desktop_input_not_ready/);
+  assert.equal(opened, 0);
   assert.equal(pipe.writes.length, 0);
 });
 

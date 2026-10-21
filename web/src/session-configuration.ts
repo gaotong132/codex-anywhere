@@ -196,13 +196,13 @@ export function useSessionConfiguration({
       if (previous?.key !== selectionKey || !previous.value) return { key: selectionKey, value: {
         model: desktopState.model!, reasoningEffort: desktopState.reasoningEffort || '',
         serviceTier: desktopState.serviceTier || null, fastMode: /fast|priority/i.test(desktopState.serviceTier || ''),
-        readOnly: true, models: [],
+        source: 'desktop', readOnly: true, models: [],
       } };
       const tier = desktopState.serviceTier || 'default';
       const option = previous.value.models.find(model => model.model === desktopState.model)?.serviceTiers.find(value => value.id === tier);
       if (!previous.value.readOnly && previous.value.model === desktopState.model && previous.value.reasoningEffort === desktopState.reasoningEffort
         && previous.value.serviceTier === tier) return previous;
-      return { key: selectionKey, value: { ...previous.value, readOnly: !previous.value.models.length, model: desktopState.model!,
+      return { key: selectionKey, value: { ...previous.value, source: 'desktop', readOnly: !previous.value.models.length, model: desktopState.model!,
         reasoningEffort: desktopState.reasoningEffort || '', serviceTier: tier,
         fastMode: /fast|priority/i.test(`${tier} ${option?.name || ''}`) } };
     });

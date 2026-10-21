@@ -26,6 +26,7 @@ type CodexGateway = {
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
   readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
+  readStoredModelConfig?(threadId: string, catalog: any[] | Promise<any[]>): Promise<any>;
   listModels?(options?: { allowStale?: boolean }): Promise<any[]>;
   updateModelConfig(threadId: string, value: Payload): Promise<any>;
   readPermissionMode(threadId: string, options?: { fresh?: boolean }): Promise<any>;
@@ -247,7 +248,13 @@ async function dispatchAction({
   if (action === 'session.model-config.read') {
     if (mode === 'desktop') {
       if (!desktop?.controls || !codex.listModels) throw new Error('desktop_input_unsupported');
-      return desktop.controls.modelConfig(String(payload.threadId || ''), headerModelCatalog(codex));
+      const threadId = String(payload.threadId || '');
+      const catalog = headerModelCatalog(codex);
+      try { return await desktop.controls.modelConfig(threadId, catalog); }
+      catch (error) {
+        if (!codex.readStoredModelConfig) throw error;
+        return measureOperation('model.persisted', () => codex.readStoredModelConfig!(threadId, catalog));
+      }
     }
     return codex.readModelConfig(String(payload.threadId || ''));
   }

@@ -59,23 +59,24 @@ export class DesktopControls {
   async modelConfig(threadId: string, catalog: Value[] | Promise<Value[]>) {
     // Model settings are a small native response. A long thread's full state
     // can exceed the stream frame limit without making these settings invalid.
-    // Selecting a cold conversation in Web must let Desktop load its settings.
-    // Only Desktop resumes it; this does not submit a message or start a turn.
+    // Reading a Web header must never navigate Desktop to a cold conversation.
     const [owner, models] = await Promise.all([
-      measureOperation('model.owner', () => this.input.owner(threadId, true, 8000)), catalog,
+      measureOperation('model.owner', () => this.input.owner(threadId, false, 2000)), catalog,
     ]);
     if (typeof owner.settings.model !== 'string' || !owner.settings.model) throw new Error('desktop_model_unavailable');
     // Header reads must not subscribe to or wait for the complete conversation.
     // The existing approval/status poll supplies full settings independently.
     const state = this.input.state.peek(threadId, owner.id);
     const summary = state ? desktopSummary(state, owner.id) : null;
+    const reasoningEffort = owner.settings.reasoningEffort
+      ?? (summary && summary.model === owner.settings.model ? summary.reasoningEffort : '');
     const current = summary && summary.model === owner.settings.model
-      && summary.reasoningEffort === (owner.settings.reasoningEffort || '');
+      && summary.reasoningEffort === reasoningEffort;
     const serviceTier = current ? summary!.serviceTier : null;
     const tier = models.find(m => m.model === owner.settings.model)?.serviceTiers?.find((t: Value) => t.id === serviceTier);
-    return { model: owner.settings.model, reasoningEffort: owner.settings.reasoningEffort || '', serviceTier,
+    return { model: owner.settings.model, reasoningEffort, serviceTier,
       fastMode: Boolean(serviceTier && /fast|priority/i.test(`${serviceTier} ${tier?.name || ''}`)),
-      readOnly: !current || !models.length, models };
+      source: 'desktop' as const, readOnly: !current || !models.length, models };
   }
   async updateModel(threadId: string, value: Value, models: Value[]) {
     const model = models.find(m => m.model === value.model);

@@ -481,6 +481,23 @@ export class CodexAppServer extends EventEmitter {
     }
   }
 
+  async readStoredModelConfig(threadId: string, catalog: ModelOption[] | Promise<ModelOption[]>) {
+    const id = threadId.trim();
+    if (!id) throw new Error('thread_id_required');
+    await this.ensureStarted();
+    // Metadata includes the latest persisted settings without loading the thread
+    // or reading its turns. Never substitute global defaults for missing values.
+    const [result, models] = await Promise.all([
+      this.rpcRaw('thread/read', { threadId: id, includeTurns: false }, 5000), catalog,
+    ]);
+    const thread = result?.thread;
+    if (thread?.id !== id || typeof thread.model !== 'string' || !thread.model.trim()) {
+      throw new Error('desktop_model_unavailable');
+    }
+    return { model: thread.model, reasoningEffort: thread.reasoningEffort ?? '',
+      serviceTier: null, fastMode: false, readOnly: true, source: 'persisted' as const, models };
+  }
+
   async readModelConfig(threadId: unknown): Promise<SessionModelConfig> {
     await this.ensureStarted();
     const resolvedThreadId = String(threadId || '').trim();

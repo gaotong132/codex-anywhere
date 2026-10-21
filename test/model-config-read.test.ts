@@ -81,6 +81,19 @@ async function configurationHarness(t: any, request: BridgeRequest) {
 const readConfig = { model: 'astra', reasoningEffort: 'high', serviceTier: 'default', fastMode: false,
   models: [{ model: 'astra', serviceTiers: [] }] };
 
+test('saved settings stay read-only until a live native update arrives', async t => {
+  const request = (async (action: string) => action === 'session.model-config.read'
+    ? { ...readConfig, source: 'persisted', serviceTier: null, readOnly: true } : { capabilities: {} }) as BridgeRequest;
+  const harness = await configurationHarness(t, request);
+  await harness.render();
+  assert.equal(harness.state().modelConfig?.source, 'persisted');
+  assert.equal(harness.state().modelConfig?.readOnly, true);
+  await harness.render({ desktopState: { threadId: 'one', model: 'astra', reasoningEffort: 'xhigh', serviceTier: 'default' } });
+  assert.equal(harness.state().modelConfig?.source, 'desktop');
+  assert.equal(harness.state().modelConfig?.reasoningEffort, 'xhigh');
+  assert.equal(harness.state().modelConfig?.readOnly, false);
+});
+
 test('model initialization retries one transient failure and stops after recovery', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let reads = 0;
