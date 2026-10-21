@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
-import { setTimeout as delay } from 'node:timers/promises';
 import { DesktopUserInput, classifyDesktopError } from './desktop-user-input.js';
 import { measureOperation } from './operation-metrics.js';
+import { desktopPermissionConfig, desktopPermissionSettings, type PermissionCapabilities } from './desktop-permissions.js';
 
 type Value = Record<string, any>;
 function mutationError(error: unknown) {
@@ -18,10 +18,14 @@ function approvalId(owner: string, request: Value) {
   return 'desktop:' + createHash('sha256').update(JSON.stringify([owner, request.id, request.method, request.params])).digest('hex');
 }
 export function desktopSummary(state: Value, owner: string) {
-  const turns: Value[] = [...(state.turns || []), ...Object.values(state.turnHistory?.history?.entitiesByKey || {})];
-  const active = turns.filter(t => t?.status === 'inProgress' && typeof t.turnId === 'string')
-    .sort((a, b) => (b.turnStartedAtMs || 0) - (a.turnStartedAtMs || 0))[0];
   const status = String(state.threadRuntimeStatus?.type || 'unknown');
+  let active: Value | undefined;
+  if (status === 'active') {
+    for (const turn of conversationTurns(state)) {
+      if (turn?.status === 'inProgress' && typeof turn.turnId === 'string'
+        && (!active || (turn.turnStartedAtMs || 0) > (active.turnStartedAtMs || 0))) active = turn;
+    }
+  }
   const turnId = status === 'active' ? active?.turnId || null : null;
   const approvals = (Array.isArray(state.requests) ? state.requests : [])
     .filter((r: Value) => Object.hasOwn(approvalMethods, r.method) && r.id != null)
@@ -42,6 +46,12 @@ export function desktopSummary(state: Value, owner: string) {
     serviceTier: state.latestThreadSettings?.serviceTier ?? state.latestServiceTier ?? 'default' };
 }
 
+function* conversationTurns(state: Value): Generator<Value> {
+  yield* state.turns || [];
+  const entities = state.turnHistory?.history?.entitiesByKey || {};
+  for (const key in entities) if (Object.hasOwn(entities, key)) yield entities[key];
+}
+
 export class DesktopControls {
   constructor(readonly input: DesktopUserInput) {}
   async snapshot(threadId: string, fresh = false, open = true) {
@@ -55,6 +65,41 @@ export class DesktopControls {
     }
   }
   async read(threadId: string, open = false) { return (await this.snapshot(threadId, false, open)).summary; }
+
+  async permissions(threadId: string, capabilities: PermissionCapabilities) {
+    return desktopPermissionConfig((await this.snapshot(threadId, false, false)).state, capabilities);
+  }
+
+  async updatePermissions(threadId: string, value: Value, capabilities: PermissionCapabilities) {
+    const before = await this.snapshot(threadId, true, false);
+    if (before.summary.status === 'active' || before.state.requests?.length || before.state.threadGoal?.status === 'active') {
+      throw new Error('permission_mode_turn_active');
+    }
+    if (before.summary.status !== 'idle') throw new Error('desktop_permissions_unavailable');
+    const config = desktopPermissionConfig(before.state, capabilities);
+    if (!value.settingsToken || config.settingsToken !== value.settingsToken) throw new Error('desktop_settings_changed');
+    const settings = desktopPermissionSettings(value.mode, before.state, capabilities);
+    try {
+      const reply = await this.input.pipe.request('thread-follower-update-thread-settings', {
+        conversationId: threadId, threadSettings: settings,
+      }, 15000, before.owner);
+      if (reply.result?.applied !== true) throw new Error('desktop_settings_changed');
+    } catch (error) {
+      if ((error as Error).message === 'desktop_settings_changed') throw error;
+      throw mutationError(error);
+    }
+    // Desktop normalizes writable roots after its optimistic settings patch.
+    // Read its canonical configuration once so the returned conflict token does
+    // not immediately become stale. Do not assert caller-supplied roots survived.
+    const after = await this.input.state.read(threadId, before.owner, 5000, true)
+      .catch(() => { throw new Error('desktop_settings_unconfirmed'); });
+    const confirmed = desktopPermissionConfig(after, capabilities);
+    const sandbox = after.latestThreadSettings.sandboxPolicy;
+    if (confirmed.mode !== value.mode || (value.mode !== 'full' && sandbox.networkAccess !== capabilities.networkAccess)) {
+      throw new Error('desktop_settings_unconfirmed');
+    }
+    return confirmed;
+  }
 
   async modelConfig(threadId: string, catalog: Value[] | Promise<Value[]>) {
     // Model settings are a small native response. A long thread's full state
@@ -85,7 +130,7 @@ export class DesktopControls {
     const tier = value.fastMode === true ? model.serviceTiers.find((t: Value) => /fast|priority/i.test(`${t.id} ${t.name}`))
       : model.serviceTiers.find((t: Value) => t.id === model.defaultServiceTier) || model.serviceTiers.find((t: Value) => /default|standard/i.test(`${t.id} ${t.name}`)) || { id: 'default' };
     if (!tier) throw new Error('fast_mode_not_available');
-    const before = await this.snapshot(threadId, true);
+    const before = await this.snapshot(threadId, true, false);
     if (before.summary.status === 'active') throw new Error('model_config_turn_active');
     try {
       const result = await this.input.pipe.request('thread-follower-update-thread-settings', {
@@ -97,11 +142,14 @@ export class DesktopControls {
       if ((error as Error).message === 'desktop_settings_changed') throw error;
       throw mutationError(error);
     }
-    const after = await this.modelConfigFresh(threadId, models).catch(() => { throw new Error('desktop_settings_unconfirmed'); });
+    await this.input.state.waitFor(threadId, before.owner, state => {
+      const summary = desktopSummary(state, before.owner);
+      return summary.model === model.model && summary.reasoningEffort === value.reasoningEffort && summary.serviceTier === tier.id;
+    }).catch(() => { throw new Error('desktop_settings_unconfirmed'); });
+    const after = await this.modelConfig(threadId, models);
     if (after.model !== model.model || after.reasoningEffort !== value.reasoningEffort || after.serviceTier !== tier.id) throw new Error('desktop_settings_changed');
     return after;
   }
-  private async modelConfigFresh(threadId: string, models: Value[]) { await this.snapshot(threadId, true); return this.modelConfig(threadId, models); }
 
   async stop(threadId: string, expectedTurnId: unknown) {
     if (typeof expectedTurnId !== 'string' || !expectedTurnId) throw new Error('desktop_turn_id_required');
@@ -113,16 +161,12 @@ export class DesktopControls {
       }, 15000, before.owner);
       if (reply.result?.ok !== true || reply.result?.interruptedTurnId !== expectedTurnId) throw new Error('desktop_stop_unconfirmed');
     } catch (error) { if ((error as Error).message === 'desktop_stop_unconfirmed') throw error; throw mutationError(error); }
-    for (let i = 0; i < 12; i++) {
-      const after = await this.snapshot(threadId, true, false).catch(() => { throw new Error('desktop_stop_unconfirmed'); });
-      if (after.owner !== before.owner) throw new Error('desktop_stop_unconfirmed');
-      const turns: Value[] = [...(after.state.turns || []), ...Object.values(after.state.turnHistory?.history?.entitiesByKey || {})];
-      if (after.summary.turnId !== expectedTurnId && turns.some(turn => turn.turnId === expectedTurnId
-        && ['interrupted', 'aborted', 'cancelled'].includes(turn.status))) return { stopped: true, turnId: expectedTurnId };
-      if (turns.some(turn => turn.turnId === expectedTurnId && turn.status === 'completed')) throw new Error('desktop_turn_changed');
-      await delay(200);
-    }
-    throw new Error('desktop_stop_unconfirmed');
+    const after = await this.input.state.waitFor(threadId, before.owner, state =>
+      [...conversationTurns(state)].some(turn => turn.turnId === expectedTurnId
+        && ['interrupted', 'aborted', 'cancelled', 'completed'].includes(turn.status))
+    ).catch(() => { throw new Error('desktop_stop_unconfirmed'); });
+    if ([...conversationTurns(after)].some(turn => turn.turnId === expectedTurnId && turn.status === 'completed')) throw new Error('desktop_turn_changed');
+    return { stopped: true, turnId: expectedTurnId };
   }
 
   async respond(threadId: string, id: string, approved: boolean) {
@@ -144,12 +188,9 @@ export class DesktopControls {
       const reply = await this.input.pipe.request(method, params, 15000, before.owner);
       if (reply.result?.ok !== true) throw new Error('desktop_approval_unconfirmed');
     } catch (error) { if ((error as Error).message === 'desktop_approval_unconfirmed') throw error; throw mutationError(error); }
-    for (let i = 0; i < 12; i++) {
-      const after = await this.snapshot(threadId, true, false).catch(() => { throw new Error('desktop_approval_unconfirmed'); });
-      if (after.owner !== before.owner) throw new Error('desktop_approval_unconfirmed');
-      if (!(after.state.requests || []).some((r: Value) => approvalId(after.owner, r) === id)) return { approvalId: id, approved, resolved: true };
-      await delay(200);
-    }
-    throw new Error('desktop_approval_unconfirmed');
+    await this.input.state.waitFor(threadId, before.owner, state =>
+      !(state.requests || []).some((r: Value) => approvalId(before.owner, r) === id)
+    ).catch(() => { throw new Error('desktop_approval_unconfirmed'); });
+    return { approvalId: id, approved, resolved: true };
   }
 }

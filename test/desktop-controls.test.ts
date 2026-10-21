@@ -5,6 +5,7 @@ import { DesktopUserInput, classifyDesktopError } from '../src/connector/desktop
 import { DesktopControls, desktopSummary } from '../src/connector/desktop-controls.js';
 import { DesktopState, applyDesktopPatches } from '../src/connector/desktop-state.js';
 import { NativeRequestError } from '../src/connector/desktop-native-pipe.js';
+import { desktopPermissionConfig } from '../src/connector/desktop-permissions.js';
 
 const models = [{ model: 'astra', supportedReasoningEfforts: [{ reasoningEffort: 'high' }, { reasoningEffort: 'low' }],
   serviceTiers: [{ id: 'priority', name: 'Fast' }], defaultServiceTier: null }];
@@ -38,15 +39,19 @@ class FakePipe extends DesktopInputPipe {
     if (method === 'thread-follower-update-thread-settings') {
       if (this.noEffect) return { result: { applied: false } };
       Object.assign(this.state.latestThreadSettings, params.threadSettings);
-      this.state.latestModel = params.threadSettings.model; this.state.latestReasoningEffort = params.threadSettings.effort;
+      if (params.threadSettings.model) this.state.latestModel = params.threadSettings.model;
+      if (params.threadSettings.effort) this.state.latestReasoningEffort = params.threadSettings.effort;
+      if (params.threadSettings.sandboxPolicy) this.state.latestThreadSettings.activePermissionProfile = null;
+      await this.follow(this.state.id, this.owner, true);
       return { result: { applied: true } };
     }
     if (method === 'thread-follower-interrupt-turn') {
       this.state.threadRuntimeStatus.type = 'idle';
       this.state.turnHistory.history.entitiesByKey['turn:' + params.expectedTurnId].status = 'interrupted';
+      await this.follow(this.state.id, this.owner, true);
       return { result: { ok: true, interruptedTurnId: params.expectedTurnId } };
     }
-    if (!this.noEffect) this.state.requests = [];
+    if (!this.noEffect) { this.state.requests = []; await this.follow(this.state.id, this.owner, true); }
     return { result: { ok: true } };
   }
 }
@@ -69,6 +74,72 @@ test('unreadable snapshots back off while concurrent reads share a single follow
   t.mock.timers.tick(30_001);
   await assert.rejects(state.read('fixture', 'owner', 100));
   assert.equal(calls, 2);
+});
+
+test('desktop permissions preserve other settings, require fresh identity, and enforce capability and active-turn gates', async t => {
+  const { pipe, controls } = fixture(t);
+  pipe.state.cwd = 'D:/project';
+  Object.assign(pipe.state.latestThreadSettings, { approvalPolicy: 'never', approvalsReviewer: 'user',
+    sandboxPolicy: { type: 'dangerFullAccess' }, activePermissionProfile: { id: ':danger-full-access', extends: null } });
+  const caps = { networkAccess: false, allowFullAccess: true };
+  const original = await controls.permissions('fixture', caps);
+  assert.equal(original.mode, 'full');
+  const ask = await controls.updatePermissions('fixture', { mode: 'ask', settingsToken: original.settingsToken }, caps);
+  assert.equal(ask.mode, 'ask');
+  assert.equal(pipe.state.latestModel, 'astra');
+  assert.equal(pipe.state.latestThreadSettings.serviceTier, 'default');
+  assert.equal(pipe.state.latestThreadSettings.sandboxPolicy.networkAccess, false);
+  pipe.state.latestThreadSettings.sandboxPolicy.writableRoots = ['D:/project', 'D:/native-visualizations'];
+  assert.equal(desktopPermissionConfig(pipe.state, caps).settingsToken, ask.settingsToken,
+    'Desktop workspace normalization does not change the Web permission selection');
+  await assert.rejects(controls.updatePermissions('fixture', { mode: 'auto', settingsToken: original.settingsToken }, caps), /desktop_settings_changed/);
+  await assert.rejects(controls.updatePermissions('fixture', { mode: 'full', settingsToken: ask.settingsToken }, { ...caps, allowFullAccess: false }), /full_access_not_allowed/);
+  const auto = await controls.updatePermissions('fixture', { mode: 'auto', settingsToken: ask.settingsToken }, caps);
+  assert.equal(auto.mode, 'auto');
+  pipe.state.threadRuntimeStatus.type = 'active';
+  await assert.rejects(controls.updatePermissions('fixture', { mode: 'full', settingsToken: auto.settingsToken }, caps), /permission_mode_turn_active/);
+  assert.equal(pipe.writes.length, 2);
+  pipe.state.latestThreadSettings.activePermissionProfile = { id: 'company-policy' };
+  assert.equal(desktopPermissionConfig(pipe.state, caps).mode, 'custom');
+  assert.throws(() => desktopPermissionConfig({}, caps), /desktop_permissions_unavailable/);
+});
+
+test('state waits use pushed updates, clean listeners and use at most one recovery snapshot', async t => {
+  const pipe = new FakePipe(), state = new DesktopState(pipe);
+  t.after(() => state.close());
+  await state.read('fixture', 'owner', 100);
+  let follows = 0;
+  const follow = pipe.follow.bind(pipe);
+  pipe.follow = async (...args) => { follows++; return follow(...args); };
+  const waiting = state.waitFor('fixture', 'owner', s => s.latestModel === 'new', 50);
+  pipe.state.latestModel = 'new';
+  await follow('fixture', 'owner', true);
+  assert.equal((await waiting).latestModel, 'new');
+  assert.equal(follows, 0);
+  pipe.state.latestModel = 'recovered';
+  assert.equal((await state.waitFor('fixture', 'owner', s => s.latestModel === 'recovered', 1)).latestModel, 'recovered');
+  assert.equal(follows, 1);
+  await assert.rejects(state.waitFor('fixture', 'owner', () => false, 1), /desktop_state_unconfirmed/);
+  assert.equal(follows, 2);
+  assert.equal(state.listenerCount('changed'), 0);
+  assert.equal(state.listenerCount('invalidated'), 0);
+});
+
+test('streamed item patches update cached text without repeatedly publishing operational summaries', async t => {
+  const pipe = new FakePipe(), state = new DesktopState(pipe); t.after(() => state.close());
+  pipe.state.turnHistory.history.entitiesByKey.t = { turnId: 't', status: 'inProgress', items: [{ text: 'a' }] };
+  await state.read('fixture', 'owner', 100);
+  let changes = 0; state.on('changed', () => changes++);
+  const patch = (base: number, path: any[], value: any) => pipe.emit('broadcast', {
+    method: 'thread-stream-state-changed', version: 11, sourceClientId: 'owner',
+    params: { hostId: 'local', conversationId: 'fixture', change: { type: 'patches', baseRevision: base, revision: base + 1,
+      patches: [{ op: 'replace', path, value }] } },
+  });
+  patch(1, ['turnHistory', 'history', 'entitiesByKey', 't', 'items', 0, 'text'], 'ab');
+  assert.equal(changes, 0);
+  assert.equal(state.peek('fixture', 'owner')!.turnHistory.history.entitiesByKey.t.items[0].text, 'ab');
+  patch(2, ['turnHistory', 'history', 'entitiesByKey', 't', 'status'], 'completed');
+  assert.equal(changes, 1);
 });
 
 test('native model/Fast update uses conditional owner settings and restores standard when catalog lists only Fast', async t => {

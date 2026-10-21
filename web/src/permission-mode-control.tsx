@@ -22,7 +22,8 @@ const OPTIONS: Array<{ mode: PermissionMode; label: [string, string]; descriptio
   },
 ];
 
-function permissionModeLabel(mode: PermissionMode) {
+function permissionModeLabel(mode: PermissionMode | 'custom') {
+  if (mode === 'custom') return t('自定义权限', 'Custom permissions');
   const option = OPTIONS.find((candidate) => candidate.mode === mode) || OPTIONS[0];
   return t(...option.label);
 }
@@ -115,7 +116,9 @@ export function PermissionModeControl({
           <header>
             <strong>{config.editable ? t('应如何批准 Codex 操作？', 'How should Codex approve actions?') : t('权限由 Codex 电脑端管理', 'Permissions are managed by Codex Desktop')}</strong>
             <span>{config.editable
-              ? t('设置同时作为此执行环境中新会话的默认值', 'Also becomes the default for new tasks in this environment')
+              ? config.source === 'desktop'
+                ? t('与电脑端同步，仅修改当前会话，后续轮次生效', 'Synced with Desktop for this chat; applies to subsequent turns')
+                : t('设置同时作为此执行环境中新会话的默认值', 'Also becomes the default for new tasks in this environment')
               : t('请在运行此会话的电脑上修改权限，再刷新这里的状态。', 'Change permissions on the computer running this task, then refresh the status here.')}</span>
           </header>
           {!config.editable ? (
@@ -145,6 +148,7 @@ export function PermissionModeControl({
               );
             })}
           </div>
+          {config.source === 'desktop' && onRefresh && <div className="permission-mode-desktop"><div><button type="button" disabled={saving || loading} onClick={() => void runAction(onRefresh)}>{t('刷新权限', 'Refresh permissions')}</button></div></div>}
           {disabled && <p className="permission-mode-note">{t('当前会话正在执行或等待处理，结束后可修改权限。', 'This task is running or waiting. Change permissions after it finishes.')}</p>}</>}
           {config.editable && config.mode !== 'full' && !config.networkAccess && (
             <p className="permission-mode-note">{t('此执行节点未开放网络；批准后也不会授予网络访问。', 'Network access is disabled on this connector, even after approval.')}</p>

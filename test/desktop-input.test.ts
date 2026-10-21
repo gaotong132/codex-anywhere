@@ -114,6 +114,7 @@ test('idle input uses the existing owner and normal input, without toolOutput or
     const start = writes[1].params.turnStart;
     assert.deepEqual(start.request.input, [{ type: 'text', text: message.text, text_elements: [] }]);
     assert.equal(start.request.threadId, 'fixture'); assert.equal(start.context.inheritThreadSettings, true);
+    assert.equal(start.context.usePermissionSelection, true, 'native permission selection cannot replay the previous turn profile');
     assert.equal(start.request.clientUserMessageId, writes[0].params.clientUserMessageId);
     assert.doesNotMatch(JSON.stringify(writes), /toolOutput|send_message_to_thread|approvalPolicy|sandboxPolicy|source_thread_id/);
   });

@@ -51,3 +51,24 @@ test('resolved Desktop approval follows actual execution status without inventin
   assert.equal(resolvedDesktopExecution({ approvals: [], desktopStatusUnavailable: true }), null);
   assert.equal(resolvedDesktopExecution({ approvals: [], desktopState: { status: 'unknown', waitingOnApproval: false } }), null);
 });
+
+test('native pushes apply approvals immediately and reduce polling while preserving periodic verification', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let reads = 0;
+  const applied: PendingApprovals[] = [];
+  const poller = createApprovalPoller({
+    read: async () => { reads++; return { approvals: [], desktopState: { status: 'active', waitingOnApproval: false } }; },
+    apply: value => applied.push(value), onError: () => assert.fail('unexpected failure'),
+  });
+  try {
+    poller.push({ approvals: [{ approvalId: 'native-request', threadId: 'fixture', kind: 'command' }],
+      desktopState: { status: 'active', waitingOnApproval: true } });
+    assert.equal(applied[0].approvals[0].approvalId, 'native-request');
+    await poller.refresh();
+    t.mock.timers.tick(4000);
+    assert.equal(reads, 1);
+    t.mock.timers.tick(11000);
+    await poller.refresh();
+    assert.equal(reads, 2, 'push does not eliminate recovery checks');
+  } finally { poller.stop(); }
+});

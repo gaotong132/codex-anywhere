@@ -105,7 +105,9 @@ export class DesktopUserInput {
         response = await this.pipe.request('thread-follower-start-turn', {
           conversationId: threadId,
           turnStart: { request: { threadId, input, clientUserMessageId: id },
-            context: { inheritThreadSettings: true, restoreMessage } },
+            // Use Desktop's current permission selection, rather than letting
+            // its legacy fallback reuse the previous turn's permission profile.
+            context: { inheritThreadSettings: true, usePermissionSelection: true, restoreMessage } },
         }, this.timeoutMs, owner.id);
       }
       // start returns {turn}; steer returns {turnId}. Both must acknowledge the owner operation.

@@ -308,7 +308,7 @@ test('headless permission modes stay behind connector capabilities', async () =>
   assert.deepEqual(calls, [['read', 'thread-1'], ['update', 'thread-1', 'auto']]);
 });
 
-test('Desktop permission modes remain owned by the computer', async () => {
+test('Desktop permission updates never fall back to an independent app-server writer', async () => {
   let updates = 0;
   const handle = createRequestHandler(createDependencies({
     codex: { updatePermissionMode: async () => { updates += 1; return { mode: 'full' }; } },
@@ -319,6 +319,22 @@ test('Desktop permission modes remain owned by the computer', async () => {
   assert.equal(response.ok, false);
   assert.match(response.error, /desktop_permission_mode_managed_on_computer/);
   assert.equal(updates, 0);
+});
+
+test('Desktop permission routes use native controls and connector capabilities', async () => {
+  const calls: any[] = [];
+  const handle = createRequestHandler(createDependencies({ networkAccess: false, allowFullAccess: true,
+    codex: { readPermissionMode: async () => assert.fail('must use live native settings'),
+      updatePermissionMode: async () => assert.fail('must not acquire Desktop writer') },
+    desktop: { controls: {
+      permissions: async (...args: any[]) => { calls.push(args); return { mode: 'custom', source: 'desktop', editable: true, settingsToken: 'before' }; },
+      updatePermissions: async (...args: any[]) => { calls.push(args); return { mode: 'auto', source: 'desktop', editable: true, settingsToken: 'after' }; },
+    } as any },
+  }));
+  assert.equal((await handle(request('session.permissions.read', { threadId: 'native' }))).data.mode, 'custom');
+  assert.equal((await handle(request('session.permissions.update', { threadId: 'native', mode: 'auto', settingsToken: 'before' }))).data.mode, 'auto');
+  assert.deepEqual(calls, [['native', { networkAccess: false, allowFullAccess: true }],
+    ['native', { threadId: 'native', mode: 'auto', settingsToken: 'before' }, { networkAccess: false, allowFullAccess: true }]]);
 });
 
 test('Desktop permissions refresh persisted state and expose navigation only for a capable Desktop connector', async () => {

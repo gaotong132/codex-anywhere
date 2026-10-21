@@ -43,7 +43,8 @@ type CodexGateway = {
   needsDesktopPermissionRecovery(threadId: string): Promise<boolean>;
 };
 type DesktopGateway = {
-  controls?: Pick<DesktopControls, 'read' | 'modelConfig' | 'updateModel' | 'stop' | 'respond'>;
+  controls?: Pick<DesktopControls, 'read' | 'modelConfig' | 'updateModel' | 'stop' | 'respond'>
+    & Partial<Pick<DesktopControls, 'permissions' | 'updatePermissions'>>;
   getCapabilities?(): Promise<{ available: boolean; tools: string[]; inputAvailable?: boolean }>;
   listThreads(options: Payload): Promise<DesktopThreadStatus[]>;
   readThreadState(options: Payload): Promise<any>;
@@ -266,6 +267,9 @@ async function dispatchAction({
     return codex.updateModelConfig(String(payload.threadId || ''), payload);
   }
   if (action === 'session.permissions.read') {
+    if (mode === 'desktop' && desktop?.controls?.permissions) {
+      return desktop.controls.permissions(String(payload.threadId || ''), { networkAccess: Boolean(networkAccess), allowFullAccess: Boolean(allowFullAccess) });
+    }
     const desktopState = mode === 'desktop' ? await desktop?.getCapabilities?.() : undefined;
     return {
       ...await codex.readPermissionMode(String(payload.threadId || ''), { fresh: mode === 'desktop' }),
@@ -280,6 +284,10 @@ async function dispatchAction({
     return desktop.openThread({ threadId: payload.threadId });
   }
   if (action === 'session.permissions.update') {
+    if (mode === 'desktop' && desktop?.controls?.updatePermissions) {
+      return desktop.controls.updatePermissions(String(payload.threadId || ''), payload,
+        { networkAccess: Boolean(networkAccess), allowFullAccess: Boolean(allowFullAccess) });
+    }
     if (mode !== 'headless') throw new Error('desktop_permission_mode_managed_on_computer');
     return {
       ...await codex.updatePermissionMode(String(payload.threadId || ''), payload.mode),

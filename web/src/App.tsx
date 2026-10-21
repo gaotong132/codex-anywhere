@@ -744,7 +744,14 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     }
     const eventThreadId = String(payload.threadId || '');
     if (message.event === 'desktop.state') {
-      if (eventThreadId === threadIdRef.current) setNativeState({ environmentId: environmentIdRef.current, value: payload as NativeDesktopState });
+      if (eventThreadId === threadIdRef.current) {
+        const state = payload as NativeDesktopState;
+        setNativeState({ environmentId: environmentIdRef.current, value: state });
+        approvalPollRef.current?.push({ approvals: state.approvals || [], desktopState: { ...state, waitingOnApproval: Boolean(state.waitingOnApproval) },
+          ...(state.waitingOnApproval && !state.approvals?.length ? { externalApproval: {
+            approvalId: '', threadId: eventThreadId, kind: 'desktop', source: 'desktop', actionable: false,
+          } } : {}) });
+      }
       return;
     }
     if (
@@ -1852,7 +1859,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         threadId: targetThreadId,
         ...(steering ? {} : {
           cwd: isExistingSession ? '' : projectCwd,
-          ...(selectedPermissionMode ? { permissionMode: selectedPermissionMode } : {}),
+          ...(selectedPermissionMode && selectedPermissionMode !== 'custom' ? { permissionMode: selectedPermissionMode } : {}),
           ...(directDesktopDelivery ? { preferDesktop: true } : {}),
         }),
       });

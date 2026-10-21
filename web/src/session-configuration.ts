@@ -122,7 +122,7 @@ export function useSessionConfiguration({
     let nextConfig: SessionPermissionConfig;
     if (targetThreadId) {
       nextConfig = await request<SessionPermissionConfig>('session.permissions.update', {
-        threadId: targetThreadId, mode,
+        threadId: targetThreadId, mode, settingsToken: permissionConfig?.settingsToken,
       });
     } else {
       if (!connectorStatus) throw new Error(t('执行环境尚未就绪', 'Execution environment is not ready'));
@@ -136,11 +136,11 @@ export function useSessionConfiguration({
         allowFullAccess: connectorStatus.capabilities.fullAccess,
       };
     }
-    storeEnvironmentValue(SESSION_PERMISSION_MODE_KEY, environmentId, mode);
+    if (nextConfig.source !== 'desktop') storeEnvironmentValue(SESSION_PERMISSION_MODE_KEY, environmentId, mode);
     if (selectionKeyRef.current === targetKey) {
       setPermissionState({ key: targetKey, value: nextConfig });
     }
-  }, [connectorStatus, environmentId, request, threadId]);
+  }, [connectorStatus, environmentId, permissionConfig, request, threadId]);
 
   useEffect(() => {
     if (!threadId || !online) {

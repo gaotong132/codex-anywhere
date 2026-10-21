@@ -44,7 +44,9 @@ export type ConnectorStatus = {
     sessionArchivePendingApproval?: boolean; sessionRestore?: boolean; desktopNativeImages?: boolean; desktopNativeState?: boolean };
 };
 export type SessionPermissionConfig = {
-  mode: PermissionMode;
+  mode: PermissionMode | 'custom';
+  source?: 'desktop';
+  settingsToken?: string;
   editable: boolean;
   networkAccess: boolean;
   allowFullAccess: boolean;

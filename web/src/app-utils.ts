@@ -49,6 +49,7 @@ export function friendlyError(error: unknown) {
   if (message === 'desktop_input_unsupported') return t('当前 Codex 版本不支持此原生操作，需要更新 Connector 的协议适配。', 'This Codex version does not support this native operation. Update the Connector protocol adapter.');
   if (message === 'desktop_input_not_ready' || message.startsWith('desktop_state_')) return t('暂时无法读取桌面会话状态，请在电脑上打开该会话后重试。', 'Desktop chat state is unavailable. Open the chat on your computer and retry.');
   if (message === 'desktop_settings_changed') return t('桌面设置已变化，未能确认本次修改。请刷新后检查设置。', 'Desktop settings changed. Refresh and check the current settings.');
+  if (message === 'desktop_permissions_unavailable') return t('暂时无法确认桌面权限，请稍后刷新。', 'Desktop permissions could not be confirmed. Refresh and try again.');
   if (message === 'desktop_turn_changed' || message === 'desktop_turn_id_required') return t('当前轮次已变化，请刷新状态后再停止。', 'The active turn changed. Refresh its state before stopping.');
   if (message === 'desktop_approval_expired') return t('此审批已失效或已在电脑上处理，请刷新当前请求。', 'This approval expired or was handled on your computer. Refresh the pending request.');
   if (['desktop_operation_unknown', 'desktop_settings_unconfirmed', 'desktop_approval_unconfirmed', 'desktop_stop_unconfirmed'].includes(message)) return t('操作可能已执行，但尚未确认结果。请刷新状态后检查，勿重复操作。', 'The operation may have executed but is not yet confirmed. Refresh and check its result before retrying.');

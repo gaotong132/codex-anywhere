@@ -92,6 +92,34 @@ export class DesktopState extends EventEmitter {
     return entry?.owner === owner && Date.now() - entry.touched <= 60_000 ? entry.state : null;
   }
 
+  // Mutations are sent once. Observe their result on the existing subscription;
+  // a missed notification gets one bounded snapshot recovery, never a poll loop.
+  async waitFor(threadId: string, owner: string, matches: (state: ObjectValue) => boolean,
+    timeoutMs = 2500): Promise<ObjectValue> {
+    const current = this.peek(threadId, owner);
+    if (current && matches(current)) return current;
+    const observed = await new Promise<ObjectValue | null>((resolve, reject) => {
+      const finish = (error?: Error, state: ObjectValue | null = null) => {
+        clearTimeout(timer); this.off('changed', changed); this.off('invalidated', invalidated);
+        error ? reject(error) : resolve(state);
+      };
+      const changed = (id: string, state: ObjectValue, source: string) => {
+        if (id !== threadId) return;
+        if (source !== owner) { finish(new Error('desktop_state_unavailable')); return; }
+        if (matches(state)) finish(undefined, state);
+      };
+      const invalidated = (id: string) => { if (id === threadId) finish(new Error('desktop_state_unavailable')); };
+      const timer = setTimeout(() => finish(), timeoutMs);
+      this.on('changed', changed); this.on('invalidated', invalidated);
+    });
+    if (observed) return observed;
+    const entry = this.entries.get(threadId);
+    if (!entry || entry.owner !== owner) throw new Error('desktop_state_unavailable');
+    const recovered = await this.read(threadId, owner, 5000, true);
+    if (!matches(recovered)) throw new Error('desktop_state_unconfirmed');
+    return recovered;
+  }
+
   private receive(message: ObjectValue) {
     const params = message.params;
     if (params?.hostId !== 'local' || typeof params.conversationId !== 'string') return;
@@ -114,7 +142,11 @@ export class DesktopState extends EventEmitter {
         entry.state = applyDesktopPatches(entry.state, change.patches); entry.revision = change.revision;
         if (entry.state.id !== id) throw new Error('identity changed');
       } else throw new Error('invalid state change');
-      this.emit('changed', id, entry.state, entry.owner);
+      // Item text/output patches cannot change controls. Keep the state current
+      // without rescanning all historical turns for every streamed token.
+      if (change.type === 'snapshot' || change.patches.some((patch: ObjectValue) => !isItemPatch(patch.path))) {
+        this.emit('changed', id, entry.state, entry.owner);
+      }
     } catch { this.invalidate(id, entry); }
   }
   private invalidate(id: string, entry: Entry) {
@@ -128,4 +160,10 @@ export class DesktopState extends EventEmitter {
     void this.pipe.follow(id, entry.owner, false, 1000).catch(() => {});
   }
   close() { this.closed = true; clearInterval(this.timer); for (const id of this.entries.keys()) this.release(id); }
+}
+
+function isItemPatch(path: Array<string | number>) {
+  return (path[0] === 'turns' && typeof path[1] === 'number' && path[2] === 'items')
+    || (path[0] === 'turnHistory' && path[1] === 'history' && path[2] === 'entitiesByKey'
+      && typeof path[3] === 'string' && path[4] === 'items');
 }
