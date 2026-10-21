@@ -28,6 +28,7 @@ type CodexGateway = {
   readModelConfig(threadId: string): Promise<any>;
   readStoredModelConfig?(threadId: string, catalog: any[] | Promise<any[]>): Promise<any>;
   readStoredPermissionConfig?(threadId: string): Promise<any>;
+  updateStoredPermissionConfig?(threadId: string, value: any): Promise<any>;
   listModels?(options?: { allowStale?: boolean }): Promise<any[]>;
   updateModelConfig(threadId: string, value: Payload): Promise<any>;
   readPermissionMode(threadId: string, options?: { fresh?: boolean }): Promise<any>;
@@ -292,8 +293,15 @@ async function dispatchAction({
   }
   if (action === 'session.permissions.update') {
     if (mode === 'desktop' && desktop?.controls?.updatePermissions) {
-      return desktop.controls.updatePermissions(String(payload.threadId || ''), payload,
-        { networkAccess: Boolean(networkAccess), allowFullAccess: Boolean(allowFullAccess) });
+      const threadId = String(payload.threadId || '').trim();
+      try {
+        return await desktop.controls.updatePermissions(threadId, payload,
+          { networkAccess: Boolean(networkAccess), allowFullAccess: Boolean(allowFullAccess) });
+      } catch (error) {
+        // Only a pre-mutation owner lookup failure can use the cold path.
+        if ((error as Error).message !== 'desktop_input_not_ready' || !codex.updateStoredPermissionConfig) throw error;
+        return { ...await codex.updateStoredPermissionConfig(threadId, payload), allowFullAccess: Boolean(allowFullAccess) };
+      }
     }
     if (mode !== 'headless') throw new Error('desktop_permission_mode_managed_on_computer');
     return {

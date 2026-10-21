@@ -622,7 +622,7 @@ export class CodexAppServer extends EventEmitter {
     }
     const read = async (metadata: SessionMetadata) => {
       resolveAllowedWorkspace(this.allowedRoots, metadata.cwd);
-      return { ...await readRolloutPermissionSnapshot(metadata.path), source: 'persisted' as const, editable: false };
+      return { ...await readRolloutPermissionSnapshot(metadata.path), source: 'persisted' as const, editable: !this.activeTurn };
     };
     const cached = this.sessionMetadata.get(id);
     if (cached?.path) {
@@ -636,6 +636,57 @@ export class CodexAppServer extends EventEmitter {
     const config = await read(metadata);
     this.sessionMetadata.set(id, metadata);
     return config;
+  }
+
+  updateStoredPermissionConfig(threadId: string, value: { mode?: unknown; settingsToken?: unknown }) {
+    // Serialize with connector delivery/release; ordinary reads remain independent.
+    const operation = this.threadRelease.then(async () => {
+      if (this.activeTurn) throw new Error('permission_mode_turn_active');
+      if (!PERMISSION_MODES.includes(value.mode as PermissionMode)) throw new Error('permission_mode_invalid');
+      const mode = value.mode as PermissionMode;
+      if (mode === 'full' && !this.allowFullAccess) throw new Error('full_access_not_allowed');
+      const before = await this.readStoredPermissionConfig(threadId);
+      if (!value.settingsToken || !('settingsToken' in before) || before.settingsToken !== value.settingsToken) {
+        throw new Error('desktop_settings_changed');
+      }
+      const metadata = this.sessionMetadata.get(threadId)!;
+      const editor = new CodexAppServer({ bin: this.bin, runtimeCwd: this.runtimeCwd,
+        allowedRoots: this.allowedRoots, networkAccess: this.networkAccess, allowFullAccess: this.allowFullAccess,
+        releaseRuntimeAfterTurn: true });
+      try {
+        await editor.ensureStarted();
+        // Core's writer lock arbitrates simultaneous Desktop takeover. Never
+        // navigate Desktop, retry uncertain writes, or retain another writer.
+        const resumed = await editor.rpcRaw('thread/resume', { threadId, excludeTurns: true }, 5000);
+        if (resumed.thread?.id !== threadId || resumed.thread?.status?.type !== 'idle') {
+          throw new Error('permission_mode_turn_active');
+        }
+        const current = await readRolloutPermissionSnapshot(resumed.thread.path);
+        if (current.settingsToken !== value.settingsToken) throw new Error('desktop_settings_changed');
+        await editor.rpcRaw('thread/settings/update', { threadId,
+          ...permissionSettings(mode, resolveAllowedWorkspace(this.allowedRoots, resumed.thread.cwd), this.networkAccess).turn });
+        metadata.path = resumed.thread.path;
+        // The RPC acknowledges an enqueued update. Confirm its persisted result
+        // before stopping this short-lived runtime (no background polling).
+        for (let attempt = 0; ; attempt++) {
+          const saved = await readRolloutPermissionSnapshot(metadata.path);
+          if (saved.mode === mode && saved.networkAccess === (mode === 'full' || this.networkAccess)) break;
+          if (attempt === 10) throw new Error('desktop_settings_unconfirmed');
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } catch (error) {
+        if (isActiveWriterError(error)) throw new Error('permission_mode_managed_on_computer');
+        throw error;
+      } finally {
+        await editor.releaseThread(threadId);
+      }
+      const confirmed = await this.readStoredPermissionConfig(threadId);
+      if (confirmed.mode !== mode) throw new Error('desktop_settings_unconfirmed');
+      this.sessionPermissionModes.set(threadId, mode);
+      return confirmed;
+    });
+    this.threadRelease = operation.then(() => undefined, () => undefined);
+    return operation;
   }
 
   async readPermissionMode(threadId: unknown, { fresh = false }: { fresh?: boolean } = {}) {

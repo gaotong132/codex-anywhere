@@ -59,11 +59,16 @@ test('desktop access shows a working navigation/refresh flow instead of three di
     assert.doesNotMatch(document.body.textContent!, /当前会话正在执行或等待处理/);
     await render(false, false, false, true);
     await click('.permission-mode-summary');
-    assert.match(document.body.textContent!, /桌面尚未接管/);
+    assert.match(document.body.textContent!, /任务空闲后可修改/);
     assert.match(document.querySelector('.permission-mode-summary')!.textContent!, /只读/);
     assert.equal(document.querySelectorAll('.permission-mode-options button').length, 0);
     assert.equal(document.querySelectorAll('.permission-mode-desktop button').length, 1);
     assert.match(document.querySelector('.permission-mode-desktop button')!.textContent!, /刷新权限/);
+    await render(true, false, false, true);
+    await click('.permission-mode-summary');
+    assert.equal(document.querySelectorAll('.permission-mode-options button').length, 3);
+    assert.match(document.body.textContent!, /仅修改当前会话/);
+    assert.doesNotMatch(document.body.textContent!, /新会话的默认值/);
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of saved) {

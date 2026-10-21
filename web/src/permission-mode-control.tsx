@@ -119,10 +119,10 @@ export function PermissionModeControl({
             <span>{config.editable
               ? newSession
                 ? t('从第一条消息生效；创建后记住此设备的选择', 'Applies from the first message; remembered for this device after creation')
-                : config.source === 'desktop'
+                : config.source
                 ? t('与电脑端同步，仅修改当前会话，后续轮次生效', 'Synced with Desktop for this chat; applies to subsequent turns')
                 : t('设置同时作为此执行环境中新会话的默认值', 'Also becomes the default for new tasks in this environment')
-              : config.source === 'persisted' ? t('桌面尚未接管，当前显示会话已保存的权限。接管后可在这里修改。', 'Desktop has not taken ownership yet. Showing saved permissions; editing is available once it does.')
+              : config.source === 'persisted' ? t('当前显示会话已保存的权限，任务空闲后可修改。', 'Showing saved permissions; editing is available when the task is idle.')
               : t('请在运行此会话的电脑上修改权限，再刷新这里的状态。', 'Change permissions on the computer running this task, then refresh the status here.')}</span>
           </header>
           {!config.editable ? (

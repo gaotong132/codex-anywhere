@@ -1,4 +1,5 @@
 import { open } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { userImageAttachment } from '../shared/user-image.js';
 import type { FileHandle } from 'node:fs/promises';
 import {
@@ -119,13 +120,23 @@ export async function readRolloutPermissionSnapshot(filePath: string) {
           }
         }
         if (!sandbox && settings.permission_profile.type === 'disabled') sandbox = { type: 'danger-full-access' };
+          // Settings-only updates can omit the legacy sandbox projection.
+          const profile = settings.permission_profile;
+          const entries = profile.file_system?.entries;
+          if (!sandbox && profile.type === 'managed' && profile.file_system?.type === 'restricted'
+            && Array.isArray(entries) && typeof settings.cwd === 'string'
+            && entries.some((entry: any) => entry.access === 'write' && entry.path?.type === 'path' && entry.path.path === settings.cwd)
+            && !entries.some((entry: any) => entry.access === 'write' && entry.path?.type === 'special' && entry.path.value?.kind === 'root')) {
+            sandbox = { type: 'workspace-write', network_access: profile.network === 'enabled' };
+          }
       }
       const approval = settings.approval_policy ?? settings.approvalPolicy;
       const reviewer = settings.approvals_reviewer ?? settings.approvalsReviewer;
       if (!sandbox && approval == null && reviewer == null && !settings.permission_profile && !settings.activePermissionProfile) continue;
       const type = sandbox?.type;
       const profile = settings.permission_profile?.type;
-      const profileId = settings.activePermissionProfile?.id;
+        const activeProfile = settings.active_permission_profile ?? settings.activePermissionProfile;
+        const profileId = activeProfile?.id;
       const builtin = (!profile || ['disabled', 'managed'].includes(profile))
         && (!profileId || [':workspace', ':danger-full-access', ':read-only'].includes(profileId));
       let mode: PermissionMode | 'custom' = 'custom';
@@ -135,7 +146,16 @@ export async function readRolloutPermissionSnapshot(filePath: string) {
         if (reviewer === 'user') mode = 'ask';
         if (reviewer === 'auto_review') mode = 'auto';
       }
-      return { mode, networkAccess: ['danger-full-access', 'dangerFullAccess'].includes(type)
+        const persistedProfile = settings.permission_profile;
+        const entries = persistedProfile?.file_system?.entries;
+        // Resume deduplicates workspace roots and adds a built-in profile ID.
+        // Compare permissions, not those normalization details or model settings.
+        const normalizedProfile = Array.isArray(entries) ? { ...persistedProfile,
+          file_system: { ...persistedProfile.file_system, entries: [...new Set(entries.map((entry: unknown) => JSON.stringify(entry)))].sort() } } : persistedProfile;
+        const token = { approval, reviewer, cwd: settings.cwd,
+          permissions: normalizedProfile ?? sandbox, profile: builtin ? null : activeProfile };
+        return { mode, settingsToken: 'persisted:' + createHash('sha256').update(JSON.stringify(token)).digest('hex'),
+          networkAccess: ['danger-full-access', 'dangerFullAccess'].includes(type)
         || (sandbox?.network_access ?? sandbox?.networkAccess) === true };
     }
     throw new Error('desktop_permissions_unavailable');

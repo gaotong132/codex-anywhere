@@ -933,3 +933,22 @@ test('cold Desktop permission fallback is read-only and never opens or resumes t
   assert.equal(native.data.editable, true);
   assert.equal(stored, 1);
 });
+
+test('cold permission mutation only falls back on pre-mutation missing ownership', async () => {
+  let error = 'desktop_input_not_ready', calls = 0;
+  const handle = createRequestHandler(createDependencies({ allowFullAccess: true,
+    codex: { updateStoredPermissionConfig: async (id: string, value: any) => {
+      calls++; assert.equal(id, 'cold'); assert.equal(value.settingsToken, 'persisted:token');
+      return { mode: value.mode, source: 'persisted', editable: true };
+    } },
+    desktop: { openThread: async () => assert.fail('no navigation'), controls: {
+      updatePermissions: async () => { throw new Error(error); },
+    } as any },
+  }));
+  const send = () => handle(request('session.permissions.update', { threadId: 'cold', mode: 'full', settingsToken: 'persisted:token' }));
+  assert.equal((await send()).data.mode, 'full'); assert.equal(calls, 1);
+  for (error of ['desktop_operation_unknown', 'desktop_settings_changed', 'permission_mode_turn_active', 'desktop_app_unavailable']) {
+    assert.equal((await send()).ok, false);
+  }
+  assert.equal(calls, 1, 'never retry an uncertain native mutation through another writer');
+});

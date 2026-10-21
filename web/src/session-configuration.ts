@@ -136,7 +136,7 @@ export function useSessionConfiguration({
         allowFullAccess: connectorStatus.capabilities.fullAccess,
       };
     }
-    if (nextConfig.source !== 'desktop') storeEnvironmentValue(SESSION_PERMISSION_MODE_KEY, environmentId, mode);
+    if (!nextConfig.source) storeEnvironmentValue(SESSION_PERMISSION_MODE_KEY, environmentId, mode);
     if (selectionKeyRef.current === targetKey) {
       setPermissionState({ key: targetKey, value: nextConfig });
     }

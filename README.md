@@ -45,7 +45,7 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
   Desktop model, reasoning and Fast choices are read and updated through the native owner, and live changes sync back to Web.
   If a large conversation's full state is unavailable, native model and reasoning settings remain visible in read-only mode; unconfirmed Fast settings are not overwritten. Failed model reads offer a retry instead of showing automatic defaults.
   Existing Desktop tasks read and update permissions through the native owner while idle. Changes apply only to that chat; custom configurations are identified explicitly, and full access remains gated by the connector.
-  Before Desktop takes ownership of a new chat, Web shows confirmed or saved permissions as read-only without navigating the computer.
+  Before Desktop takes ownership of a new chat, Web reads saved permissions and can update them while idle, without navigating the computer. Saving briefly loads and releases the task, verifies persistence, and rejects conflicting changes; ordinary reads add no polling.
   Choose permissions before creating a chat; the first message uses that selection, which is remembered per device only when submitted.
 - **Answer task questions** — choose suggested answers or enter your own in question cards, including those from
   `request_user_input_async`. Answered state syncs with Desktop and full exchanges remain expandable; answering preserves
