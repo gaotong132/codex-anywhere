@@ -1,12 +1,15 @@
 import { isValidElement, memo, useMemo, type ReactNode } from 'react';
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkCjkFriendly from 'remark-cjk-friendly/parseOnly';
+import { remarkLineBreaks } from './markdown-line-breaks';
+import { t } from './i18n';
 import { localFileName, localFilePathFromHref, localFilePathFromRelativeHref } from './file-utils';
 import { isSvgCodeClass, isSvgFilePath, LocalSvgImage, SvgPreview } from './svg-preview';
 import { isMermaidCodeClass, MermaidDiagram } from './mermaid-diagram';
 import type { TextPreviewDocument } from './app-types';
 
-const markdownPlugins = [remarkGfm];
+const markdownPlugins = [remarkGfm, remarkCjkFriendly, remarkLineBreaks];
 
 function messageUrlTransform(url: string) {
   return localFilePathFromHref(url) ? url : defaultUrlTransform(url);
@@ -26,6 +29,11 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   onReadTextFile?: (path: string) => Promise<TextPreviewDocument>;
 }) {
   const components = useMemo<Components>(() => ({
+    table: ({ node: _node, children, ...props }) => (
+      <div className="markdown-table-scroll" tabIndex={0} role="region" aria-label={t('表格', 'Table')}>
+        <table {...props}>{children}</table>
+      </div>
+    ),
     pre: ({ node: _node, children, ...props }) => {
       const code = isValidElement<{ className?: string; children?: ReactNode }>(children)
         && children.type === 'code' ? children : null;

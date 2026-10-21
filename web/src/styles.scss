@@ -860,8 +860,9 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
     max-width: 100%; margin: .7em 0; padding: 12px; overflow-x: auto; border: 1px solid #2b3546; border-radius: 10px; background: #080c13; font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; font-size: .86em; line-height: 1.55;
     code { padding: 0; border: 0; background: transparent; font-size: inherit; }
   }
-  table { display: block; width: 100%; max-width: 100%; margin: .8em 0; overflow-x: auto; border-collapse: collapse; }
-  th, td { padding: 7px 9px; border: 1px solid #354055; text-align: left; white-space: nowrap; }
+  .markdown-table-scroll { max-width: 100%; margin: .8em 0; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { min-width: 8rem; padding: 7px 9px; border: 1px solid #354055; text-align: left; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
   th { background: rgba(54, 70, 96, .45); }
   hr { border: 0; border-top: 1px solid #354055; }
   input[type="checkbox"] { width: auto; margin-right: .45em; }
