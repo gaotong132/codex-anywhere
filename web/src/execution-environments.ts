@@ -24,7 +24,7 @@ export function normalizeEnvironmentId(value: unknown) {
 export function environmentDisplayName(environmentId: string, labels: EnvironmentLabels = {}) {
   if (Object.hasOwn(labels, environmentId) && labels[environmentId] && labels[environmentId] !== environmentId) return labels[environmentId];
   if (environmentId === DEFAULT_ENVIRONMENT_ID) return t('我的电脑', 'My computer');
-  if (environmentId === 'ecs') return t('ECS · 24×7', 'ECS · 24×7');
+  if (environmentId === 'ecs') return t('ECS · 7×24', 'ECS · 7×24');
   return environmentId;
 }
 

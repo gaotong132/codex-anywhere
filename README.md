@@ -26,6 +26,8 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
 
 ## What it does
 
+- **Run sessions concurrently** — different ECS sessions can work at the same time, with independent messages,
+  question answers, approvals and stopping. Each session keeps one active turn; text sent during that turn steers it.
 - **Switch execution environments** — connect multiple computers and ECS nodes with unique persistent device IDs and editable names.
   Approved offline nodes remain visible; two nodes use direct buttons and larger inventories use a selector. The sidebar stays open until you choose a session. Sessions, unread state,
   recent workspaces, attachments and requests stay scoped to the selected machine.
@@ -142,7 +144,7 @@ Read the honest threat model and incident steps in the [security policy](docs/SE
 You need:
 
 - a reachable Linux ECS/VPS with Git, Docker Engine, and Docker Compose v2; add Node.js 22+ and an
-  authenticated Codex CLI when the same host should also run a 24×7 connector;
+  authenticated Codex CLI when the same host should also run a 7×24 connector;
 - a Windows computer with Codex Desktop/CLI, Node.js 22+, Git, and PowerShell;
 - a browser-reachable entry point. A domain, certificate, and reverse proxy are optional; WSS is
   recommended over public or untrusted networks.

@@ -449,32 +449,46 @@ test('content security policy limits WebSocket connections to the current host',
 test('server authenticates current devices and rejects plaintext application frames', async (t) => {
   const server = createBridgeServer({ connectorToken: TOKEN });
   const address = await server.listen(0, '127.0.0.1');
-  t.after(() => server.close());
+  const sockets: WebSocket[] = [];
+  t.after(() => { for (const socket of sockets) socket.terminate(); return server.close(); });
+  // Presence is an independent push; it can arrive between any two replies.
+  const nextReply = (socket: WebSocket) => new Promise<any>(resolve => {
+    const listener = (data: any) => {
+      const frame = JSON.parse(String(data));
+      if (frame.type === 'presence') return;
+      socket.off('message', listener); resolve(frame);
+    };
+    socket.on('message', listener);
+  });
   const url = `ws://127.0.0.1:${address.port}/ws`;
 
   const connectorConnection = await authenticateSocket({
     url, role: 'connector', token: TOKEN, deviceId: 'personal-pc', registry: server.deviceRegistry,
   });
   const connector = connectorConnection.socket;
+  sockets.push(connector);
   assert.equal(connectorConnection.auth.type, 'auth.ok');
 
   const clientConnection = await authenticateSocket({
     url, role: 'client', registry: server.deviceRegistry,
   });
   const client = clientConnection.socket;
+  sockets.push(client);
   const auth = clientConnection.auth;
   assert.equal(auth.type, 'auth.ok');
   assert.equal(auth.identityId, undefined);
   assert.deepEqual(auth.devices, ['personal-pc']);
   assert.equal(auth.secureDevices, undefined);
 
+  const pongReply = nextReply(client);
   client.send(JSON.stringify({ type: 'ping', at: 123 }));
-  const pong = await nextJson(client);
+  const pong = await pongReply;
   assert.equal(pong.type, 'pong');
   assert.equal(typeof pong.at, 'number');
 
+  const rejectionReply = nextReply(client);
   client.send(JSON.stringify({ type: 'request', requestId: 'r1', action: 'connector.status', deviceId: 'personal-pc', payload: {} }));
-  const rejected = await nextJson(client);
+  const rejected = await rejectionReply;
   assert.equal(rejected.requestId, 'r1');
   assert.equal(rejected.error, 'secure_channel_required');
   connector.close();

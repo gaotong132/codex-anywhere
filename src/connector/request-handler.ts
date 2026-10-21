@@ -19,10 +19,12 @@ type BridgeRequest = {
 };
 type CodexGateway = {
   child: unknown;
-  activeTurn: unknown;
+  activeTurns: ReadonlyMap<unknown, { threadId: string; turnId?: string; state?: string }>;
+  getActiveTurn(threadId: string): { threadId: string; turnId?: string; state?: string } | null;
   listSessions(options: Payload): Promise<any[]>;
   readSession(threadId: string): Promise<any>;
   renameSession(threadId: string, name: unknown): Promise<any>;
+  deleteSession(threadId: unknown): Promise<any>;
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
   readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
@@ -183,8 +185,8 @@ async function dispatchAction({
       platform: process.platform,
       codexOnline: Boolean(codex.child),
       ...(mode === 'desktop' ? { desktopOnline: desktopState?.available === true, desktopTools: desktopState?.tools || [], desktopInputOnline: desktopState?.inputAvailable === true } : {}),
-      activeTurn: Boolean(codex.activeTurn),
-      capabilities: { networkAccess, fullAccess: allowFullAccess,
+      activeTurn: codex.activeTurns.size > 0,
+      capabilities: { sessionDelete: mode === 'headless', networkAccess, fullAccess: allowFullAccess,
         ...(mode === 'desktop' && desktop?.controls && desktopState?.inputAvailable ? { desktopNativeState: true, desktopNativeImages: Boolean(attachments.nativeInput) } : {}),
         ...(mode === 'desktop' && desktop?.archiveThread && supports('read_thread', 'set_thread_archived') ? { sessionArchive: true, sessionArchivePendingApproval: true } : {}),
         ...(mode === 'desktop' && desktop?.restoreThread && supports('set_thread_archived') ? { sessionRestore: true } : {}),
@@ -199,7 +201,7 @@ async function dispatchAction({
       sessions: mergeDesktopSessionStatuses(
         sessions,
         desktopStatuses?.threads || [],
-        String((codex.activeTurn as { threadId?: unknown } | null)?.threadId || ''),
+        [...codex.activeTurns.values()].map(turn => turn.threadId),
       ),
       desktopStatuses,
     };
@@ -210,7 +212,7 @@ async function dispatchAction({
     if (payload.confirm !== true) throw new Error('session_archive_confirmation_required');
     const threadId = String(payload.threadId || '').trim();
     if (!threadId) throw new Error('thread_id_required');
-    if ((codex.activeTurn as { threadId?: string } | null)?.threadId === threadId) {
+    if (codex.getActiveTurn(threadId)) {
       throw new Error('session_archive_not_idle');
     }
     const result = await desktop.archiveThread({ threadId, cancelPendingApproval: payload.cancelPendingApproval === true });
@@ -224,6 +226,13 @@ async function dispatchAction({
     if (!threadId) throw new Error('thread_id_required');
     const result = await desktop.restoreThread({ threadId });
     if (result.threadId !== threadId || result.archived !== false) throw new Error('session_delivery_mismatch');
+    return result;
+  }
+  if (action === 'session.delete') {
+    if (mode !== 'headless') throw new Error('session_delete_headless_only');
+    if (payload.confirm !== true) throw new Error('session_delete_confirmation_required');
+    const result = await codex.deleteSession(payload.threadId);
+    browser?.clearSession(result.threadId);
     return result;
   }
   if (action === 'session.rename') {
@@ -352,7 +361,7 @@ async function dispatchAction({
   }
   if (action === 'approval.pending') {
     const pending = await codex.listApprovals(payload.threadId, clientId);
-    if (pending.approvals?.length) return pending;
+    if (pending.approvals?.length || pending.activeTurn) return pending;
     const threadId = String(payload.threadId || '').trim();
     if (!threadId) return pending;
     if (mode !== 'desktop' || !desktop) return pending;
@@ -385,7 +394,6 @@ async function dispatchAction({
       // Unknown is not approval resolution. Keep the last state and retry.
       return { ...pending, desktopStatusUnavailable: true };
     }
-    return pending;
   }
   if (action === 'approval.respond') {
     if (String(payload.approvalId || '').startsWith('desktop:')) {
@@ -403,8 +411,15 @@ async function startTurn({
 }: Pick<DispatchContext, 'codex' | 'desktop' | 'mode' | 'payload' | 'clientId' | 'requestId' | 'browser' | 'attachments'>) {
   const threadId = String(payload.threadId || '').trim();
   if (!threadId || mode === 'headless') {
+    // A reloaded/reconnected browser may have missed turn.started. Resolve
+    // delivery from the connector's ownership, never from browser hints.
+    const active = threadId ? codex.getActiveTurn(threadId) : null;
+    const steer = threadId && active?.threadId === threadId
+      && active.state === 'running' && active.turnId;
     return { ...await sendWithBrowserContext(browser, threadId, payload.text,
-      (text) => codex.startTurn({ ...payload, text, clientId, requestId })), delivery: 'appServer' };
+      (text) => steer
+        ? codex.steerTurn({ ...payload, text, clientId, requestId })
+        : codex.startTurn({ ...payload, text, clientId, requestId })), delivery: 'appServer' };
   }
   // Existing Desktop tasks must keep their original writer. Starting or
   // resuming them through the bridge's app-server creates a second writer and

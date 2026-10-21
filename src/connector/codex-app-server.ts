@@ -100,6 +100,7 @@ type TurnContext = {
   cwd: string;
   state: string;
   cancelRequested?: boolean;
+  startMessages?: JsonObject[];
 };
 type StartTurnOptions = {
   text?: unknown;
@@ -129,7 +130,9 @@ export class CodexAppServer extends EventEmitter {
   nextId: number;
   pending: Map<number, PendingRpc>;
   approvals: Map<string, PendingApproval>;
-  activeTurn: TurnContext | null;
+  activeTurns = new Map<string | symbol, TurnContext>();
+  private deletingThreads = new Set<string>();
+  private threadReleases = new Map<string, Promise<void>>();
   private threadRelease: Promise<void>;
   private runtimeRelease: Promise<void> | null = null;
   private compactionProgress = new CompactionProgressReader();
@@ -159,7 +162,6 @@ export class CodexAppServer extends EventEmitter {
     this.nextId = 0;
     this.pending = new Map();
     this.approvals = new Map();
-    this.activeTurn = null;
     this.threadRelease = Promise.resolve();
     this.releaseRuntimeAfterTurn = options.releaseRuntimeAfterTurn === true;
     this.sessionMetadata = new Map();
@@ -296,6 +298,44 @@ export class CodexAppServer extends EventEmitter {
     const name = normalizeSessionName(value);
     await this.rpcRaw('thread/name/set', { threadId: resolvedThreadId, name });
     return { threadId: resolvedThreadId, title: name };
+  }
+
+  async deleteSession(threadId: unknown) {
+    const id = typeof threadId === 'string' ? threadId.trim() : '';
+    if (!/^[a-zA-Z0-9_-]{1,256}$/.test(id)) throw new Error('thread_id_required');
+    if (this.getActiveTurn(id)) throw new Error('session_delete_turn_active');
+    if (this.deletingThreads.has(id)) throw new Error('session_delete_in_progress');
+    // Reserve before awaiting so a concurrent start cannot acquire this thread.
+    this.deletingThreads.add(id);
+    try {
+      await this.threadReleases.get(id);
+      await this.ensureStarted();
+      const result = await this.rpcRaw('thread/read', { threadId: id, includeTurns: false });
+      const thread = result?.thread;
+      if (thread?.id !== id) throw new Error('session_delivery_mismatch');
+      if (!thread.cwd) throw new Error('session_project_directory_unavailable');
+      resolveAllowedWorkspace(this.allowedRoots, thread.cwd);
+      if (['active', 'running', 'waiting', 'inProgress'].includes(thread.status?.type)
+        || thread.turns?.some((turn: JsonObject) => turn.status === 'inProgress')) {
+        throw new Error('session_delete_turn_active');
+      }
+      if (!['idle', 'notLoaded'].includes(thread.status?.type)) throw new Error('session_delete_status_unknown');
+      // Native deletion maintains Codex's history/indexes. Never remove paths
+      // supplied by the browser or touch the session's project directory.
+      await this.rpcRaw('thread/delete', { threadId: id });
+      this.sessionMetadata.delete(id);
+      this.sessionPermissionModes.delete(id);
+      this.sessionModelSettings.delete(id);
+      this.clearApprovalsForThread(id);
+      for (const [key, document] of this.turnDiffs) {
+        if (document.threadId === id) this.turnDiffs.delete(key);
+      }
+      try { saveSessionModelSettings(this.modelSettingsPath, this.sessionModelSettings); }
+      catch { this.emit('diagnostic', 'Could not persist model settings after session deletion'); }
+      return { threadId: id, deleted: true };
+    } finally {
+      this.deletingThreads.delete(id);
+    }
   }
 
   async listSessionTurns(threadId: unknown, options: {
@@ -437,8 +477,9 @@ export class CodexAppServer extends EventEmitter {
     const page = await readRolloutTail({ filePath, threadId, ...options });
     let compactionStartedAt: number | null = null;
     if (!options.cursor && page.turns[0]?.status === 'inProgress' && page.activityId) {
-      if (this.activeTurn?.threadId === threadId && this.activeTurn.turnId === page.activityId) {
-        compactionStartedAt = this.activeTurn.compaction?.startedAt || null;
+      const active = this.getActiveTurn(threadId);
+      if (active?.turnId === page.activityId) {
+        compactionStartedAt = active.compaction?.startedAt || null;
       } else {
         const progress = await this.compactionProgress.read({
           threadId, turnId: page.activityId, turnStartedAt: page.activityStartedAt || 0,
@@ -542,7 +583,7 @@ export class CodexAppServer extends EventEmitter {
     await this.ensureStarted();
     const resolvedThreadId = String(threadId || '').trim();
     if (!resolvedThreadId) throw new Error('thread_id_required');
-    if (this.activeTurn?.threadId === resolvedThreadId) throw new Error('model_config_turn_active');
+    if (this.getActiveTurn(resolvedThreadId)) throw new Error('model_config_turn_active');
     const models = await this.listModels();
     const requestedModel = String(value.model || '').trim();
     const model = models.find((candidate) => candidate.model === requestedModel);
@@ -616,13 +657,14 @@ export class CodexAppServer extends EventEmitter {
     // The owned turn has already acknowledged these settings; its rollout may
     // still be flushing. Never reuse this cache after ownership ends.
     const applied = this.sessionPermissionModes.get(id);
-    if (this.activeTurn?.threadId === id && this.activeTurn.state === 'running' && applied) {
+    const active = this.activeTurns.get(id);
+    if (active?.state === 'running' && applied) {
       return { mode: applied, networkAccess: applied === 'full' || this.networkAccess,
         source: 'persisted' as const, editable: false };
     }
     const read = async (metadata: SessionMetadata) => {
       resolveAllowedWorkspace(this.allowedRoots, metadata.cwd);
-      return { ...await readRolloutPermissionSnapshot(metadata.path), source: 'persisted' as const, editable: !this.activeTurn };
+      return { ...await readRolloutPermissionSnapshot(metadata.path), source: 'persisted' as const, editable: !this.activeTurns.size };
     };
     const cached = this.sessionMetadata.get(id);
     if (cached?.path) {
@@ -641,7 +683,7 @@ export class CodexAppServer extends EventEmitter {
   updateStoredPermissionConfig(threadId: string, value: { mode?: unknown; settingsToken?: unknown }) {
     // Serialize with connector delivery/release; ordinary reads remain independent.
     const operation = this.threadRelease.then(async () => {
-      if (this.activeTurn) throw new Error('permission_mode_turn_active');
+      if (this.activeTurns.size) throw new Error('permission_mode_turn_active');
       if (!PERMISSION_MODES.includes(value.mode as PermissionMode)) throw new Error('permission_mode_invalid');
       const mode = value.mode as PermissionMode;
       if (mode === 'full' && !this.allowFullAccess) throw new Error('full_access_not_allowed');
@@ -714,7 +756,7 @@ export class CodexAppServer extends EventEmitter {
     if (!PERMISSION_MODES.includes(value as PermissionMode)) throw new Error('permission_mode_invalid');
     const mode = normalizePermissionMode(value);
     if (mode === 'full' && !this.allowFullAccess) throw new Error('full_access_not_allowed');
-    if (this.activeTurn) throw new Error('permission_mode_turn_active');
+    if (this.getActiveTurn(resolvedThreadId)) throw new Error('permission_mode_turn_active');
     let metadata = this.sessionMetadata.get(resolvedThreadId);
     if (!metadata?.cwd) {
       await this.listSessions();
@@ -813,10 +855,15 @@ export class CodexAppServer extends EventEmitter {
   }
 
   async startTurn({ text, threadId, cwd, clientId, requestId, permissionMode }: StartTurnOptions) {
-    if (this.activeTurn) throw new Error('another_turn_is_active');
-    await this.threadRelease;
-    if (this.activeTurn) throw new Error('another_turn_is_active');
     let resolvedThreadId = String(threadId || '').trim();
+    // Desktop first turns share a temporary runtime which must fully release
+    // its writer before another task can start. Headless tasks remain parallel.
+    if (this.releaseRuntimeAfterTurn) {
+      await this.threadRelease;
+      if (this.activeTurns.size) throw new Error('desktop_first_turn_busy');
+    }
+    if (this.deletingThreads.has(resolvedThreadId)) throw new Error('session_delete_in_progress');
+    if (resolvedThreadId && this.getActiveTurn(resolvedThreadId)) throw new Error('another_turn_is_active');
     let subscribedThreadId = '';
     const isNewThread = !resolvedThreadId;
     const requestedPermissionMode = permissionMode === undefined
@@ -832,9 +879,14 @@ export class CodexAppServer extends EventEmitter {
     const turnContext: TurnContext = {
       clientId, requestId, threadId: resolvedThreadId, turnId: '', cwd: turnCwd, state: 'starting',
     };
-    this.activeTurn = turnContext;
+    // Reserve existing tasks before the first await. New tasks have independent
+    // provisional keys until app-server assigns their thread IDs.
+    let key: string | symbol = resolvedThreadId || Symbol('new-thread');
+    this.activeTurns.set(key, turnContext);
     try {
+      await (this.releaseRuntimeAfterTurn ? this.threadRelease : this.threadReleases.get(resolvedThreadId));
       await this.ensureStarted();
+      if (this.activeTurns.get(key) !== turnContext || turnContext.cancelRequested) throw new Error('turn_cancelled');
       if (resolvedThreadId) {
         const cachedMetadata = this.sessionMetadata.get(resolvedThreadId);
         if (cachedMetadata?.cwd) {
@@ -855,7 +907,8 @@ export class CodexAppServer extends EventEmitter {
         ? { cwd: turnCwd, ...permissions.thread } : { cwd: turnCwd };
       if (resolvedThreadId) {
         const result = await this.resumeThread(resolvedThreadId, threadParams, turnContext);
-        resolvedThreadId = result?.thread?.id || result?.id || resolvedThreadId;
+        const resumedId = result?.thread?.id || result?.id || resolvedThreadId;
+        if (resumedId !== resolvedThreadId) throw new Error('session_delivery_mismatch');
       } else {
         const result = await this.rpcRaw('thread/start', threadParams);
         resolvedThreadId = result?.thread?.id || result?.id || result?.threadId;
@@ -864,8 +917,18 @@ export class CodexAppServer extends EventEmitter {
           cwd: turnCwd, path: result.thread.path, canAcceptDirectInput: result.thread.canAcceptDirectInput !== false,
         });
       }
+      if (key !== resolvedThreadId && this.activeTurns.has(resolvedThreadId)) throw new Error('session_delivery_mismatch');
       subscribedThreadId = resolvedThreadId;
-      if (this.activeTurn !== turnContext || turnContext.cancelRequested) throw new Error('turn_cancelled');
+      if (this.activeTurns.get(key) !== turnContext || turnContext.cancelRequested) throw new Error('turn_cancelled');
+      if (key !== resolvedThreadId) {
+        this.activeTurns.delete(key);
+        key = resolvedThreadId;
+        this.activeTurns.set(key, turnContext);
+      }
+      turnContext.threadId = resolvedThreadId;
+      // Resume may replay events from the previous turn. Only collect events
+      // once we dispatch this start; its response is authoritative for turn ID.
+      turnContext.startMessages = [];
       const startResult = await this.rpcRaw('turn/start', {
         threadId: resolvedThreadId,
         input: [{ type: 'text', text: String(text || '') }],
@@ -874,9 +937,8 @@ export class CodexAppServer extends EventEmitter {
       });
       const turnId = String(startResult?.turn?.id || startResult?.turnId || '').trim();
       if (!turnId) throw new Error('codex_did_not_return_turn_id');
-      turnContext.threadId = resolvedThreadId;
       turnContext.turnId = turnId;
-      if (this.activeTurn !== turnContext || turnContext.cancelRequested) {
+      if (this.activeTurns.get(key) !== turnContext || turnContext.cancelRequested) {
         await this.rpcRaw('turn/interrupt', { threadId: resolvedThreadId, turnId }).catch(() => undefined);
         throw new Error('turn_cancelled');
       }
@@ -884,10 +946,25 @@ export class CodexAppServer extends EventEmitter {
       if (appliedPermissionMode) {
         this.sessionPermissionModes.set(resolvedThreadId, appliedPermissionMode);
       }
-      this.emitTurn('turn.started', { threadId: resolvedThreadId, turnId });
+      this.emitTurn('turn.started', { threadId: resolvedThreadId, turnId }, turnContext);
+      const messages = turnContext.startMessages;
+      delete turnContext.startMessages;
+      for (const message of messages) {
+        if (message.id != null) this.handleServerRequest(message);
+        else this.handleNotification(message.method, message.params);
+      }
       return { threadId: resolvedThreadId };
     } catch (error) {
-      if (this.activeTurn === turnContext) this.activeTurn = null;
+      // A failed or cancelled start must not leave native approval RPCs waiting.
+      for (const message of turnContext.startMessages || []) {
+        if (message.id == null) continue;
+        try {
+          this.writeRpc({ jsonrpc: '2.0', id: message.id,
+            result: approvalResult(message.method, false, message.params) });
+        } catch { /* The runtime may already have exited. */ }
+      }
+      delete turnContext.startMessages;
+      if (this.activeTurns.get(key) === turnContext) this.activeTurns.delete(key);
       await this.releaseThread(subscribedThreadId);
       throw error;
     }
@@ -895,9 +972,9 @@ export class CodexAppServer extends EventEmitter {
 
   private releaseThread(threadId: unknown): Promise<void> {
     const resolvedThreadId = String(threadId || '').trim();
-    if (!resolvedThreadId) return this.threadRelease;
+    if (!resolvedThreadId) return Promise.resolve();
     const child = this.child;
-    const release = this.threadRelease
+    const release = (this.threadReleases.get(resolvedThreadId) || Promise.resolve())
       .catch(() => undefined)
       .then(() => this.rpcRaw('thread/unsubscribe', { threadId: resolvedThreadId }))
       .finally(async () => {
@@ -905,14 +982,14 @@ export class CodexAppServer extends EventEmitter {
         // mode only uses this runtime for first turns; release our OWN idle child
         // before handing that same task to Desktop. Never stop a replacement or
         // a runtime executing another turn. Headless environments keep theirs.
-        if (!this.releaseRuntimeAfterTurn || !child || this.child !== child || this.activeTurn) return;
+        if (!this.releaseRuntimeAfterTurn || !child || this.child !== child || this.activeTurns.size) return;
         let finishRelease!: () => void;
         this.runtimeRelease = new Promise<void>((resolve) => { finishRelease = resolve; });
         try {
           // Let already dispatched RPCs finish. New calls wait for the next
           // runtime, including later steps of an existing multi-RPC operation.
           await Promise.allSettled([...this.inflightRpcs]);
-          if (this.child !== child || this.activeTurn) return;
+          if (this.child !== child || this.activeTurns.size) return;
           const exited = new Promise<void>((resolve, reject) => {
             const timer = setTimeout(() => reject(new Error('codex_writer_release_timeout')), 5_000);
             child.once('close', () => { clearTimeout(timer); resolve(); });
@@ -925,10 +1002,14 @@ export class CodexAppServer extends EventEmitter {
         }
       })
       .then(() => undefined);
-    this.threadRelease = release.catch((error) => {
+    const settled = release.catch((error) => {
       this.emit('diagnostic', `Failed to release Codex thread ${resolvedThreadId}: ${String(error)}`);
+    }).finally(() => {
+      if (this.threadReleases.get(resolvedThreadId) === settled) this.threadReleases.delete(resolvedThreadId);
     });
-    return this.threadRelease;
+    this.threadReleases.set(resolvedThreadId, settled);
+    this.threadRelease = Promise.all([this.threadRelease, settled]).then(() => undefined);
+    return release;
   }
 
   async prepareDesktopTurn() { await this.threadRelease; }
@@ -938,7 +1019,7 @@ export class CodexAppServer extends EventEmitter {
     const prompt = String(text || '').trim();
     if (!targetThreadId) throw new Error('thread_id_required');
     if (!prompt) throw new Error('message_required');
-    const turnContext = this.activeTurn;
+    const turnContext = this.getActiveTurn(targetThreadId);
     if (
       !turnContext
       || turnContext.threadId !== targetThreadId
@@ -967,7 +1048,7 @@ export class CodexAppServer extends EventEmitter {
     try {
       return await this.rpcRaw('thread/resume', { threadId, ...threadParams });
     } catch (error) {
-      if (this.activeTurn !== turnContext) throw new Error('turn_cancelled');
+      if (this.getActiveTurn(threadId) !== turnContext) throw new Error('turn_cancelled');
       if (isActiveWriterError(error)) throw new Error('thread_active_writer_conflict');
       throw error;
     }
@@ -975,10 +1056,16 @@ export class CodexAppServer extends EventEmitter {
 
   listApprovals(threadId: unknown, clientId?: string) {
     const targetThreadId = String(threadId || '').trim();
-    if (clientId && this.activeTurn?.threadId === targetThreadId) {
-      this.activeTurn.clientId = clientId;
+    const active = targetThreadId ? this.getActiveTurn(targetThreadId) : null;
+    if (clientId && active) {
+      active.clientId = clientId;
     }
     return {
+      activeTurn: active ? {
+        threadId: active.threadId,
+        turnId: active.turnId,
+        state: active.state,
+      } : null,
       approvals: [...this.approvals.entries()]
         .filter(([, pending]) => !targetThreadId || pending.threadId === targetThreadId)
         .map(([approvalId, pending]) => ({
@@ -1008,14 +1095,18 @@ export class CodexAppServer extends EventEmitter {
       kind: pending.kind,
       summary: approvalDecisionSummary(pending),
       approved: approved === true,
-    });
+    }, this.getActiveTurn(pending.threadId));
     return { approvalId: String(approvalId), approved: approved === true };
   }
 
   async stopTurn(expectedThreadId?: unknown) {
-    const turn = this.activeTurn;
-    if (!turn) return { stopped: false };
     const expected = String(expectedThreadId || '').trim();
+    if (!expected && this.activeTurns.size > 1) throw new Error('thread_id_required');
+    const turn = this.getActiveTurn(expected) || (this.getActiveTurn()?.threadId === '' ? this.getActiveTurn() : null);
+    if (!turn) {
+      if (expected && this.activeTurns.size) throw new Error('turn_stop_mismatch');
+      return { stopped: false };
+    }
     if (expected && turn.threadId && expected !== turn.threadId) {
       throw new Error('turn_stop_mismatch');
     }
@@ -1027,7 +1118,7 @@ export class CodexAppServer extends EventEmitter {
     try {
       await this.rpcRaw('turn/interrupt', { threadId: turn.threadId, turnId: turn.turnId });
     } catch (error) {
-      if (this.activeTurn !== turn) return { stopped: true };
+      if (this.getActiveTurn(turn.threadId) !== turn) return { stopped: true };
       turn.cancelRequested = false;
       turn.state = 'running';
       throw error;
@@ -1036,9 +1127,8 @@ export class CodexAppServer extends EventEmitter {
   }
 
   async close() {
-    const previous = this.activeTurn;
-    this.activeTurn = null;
-    this.clearApprovalsForThread(previous?.threadId);
+    this.activeTurns.clear();
+    this.approvals.clear();
     if (!this.child) return;
     const child = this.child;
     child.kill();
@@ -1122,13 +1212,14 @@ export class CodexAppServer extends EventEmitter {
       });
       return;
     }
-    if (mcpApproval && (!params.threadId || params.threadId !== this.activeTurn?.threadId
-      || (params.turnId && params.turnId !== this.activeTurn?.turnId))) {
+    if (this.bufferStartingMessage(message)) return;
+    const active = this.notificationTurn(params);
+    if (!active || (mcpApproval && !params.threadId)) {
       this.writeRpc({ jsonrpc: '2.0', id: message.id, result: approvalResult(method, false, params) });
       return;
     }
     const approvalId = String(message.id);
-    const threadId = String(params.threadId || params.conversationId || this.activeTurn?.threadId || '');
+    const threadId = active.threadId;
     const kind = approvalKind(method);
     const summary = approvalSummary(method, params, SUMMARY_LIMIT);
     this.approvals.set(approvalId, {
@@ -1139,12 +1230,15 @@ export class CodexAppServer extends EventEmitter {
       threadId,
       kind,
       summary,
-    });
+    }, active);
   }
 
   handleNotification(method: string, params: JsonObject) {
+    if (this.bufferStartingMessage({ method, params })) return;
+    const active = this.notificationTurn(params);
+    if (!active) return;
+    const emit = (event: string, payload: JsonObject) => this.emitTurn(event, payload, active);
     if ((method === 'item/started' || method === 'item/completed') && params.item?.type === 'contextCompaction') {
-      const active = this.activeTurn;
       if (!active || params.threadId !== active.threadId || params.turnId !== active.turnId) return;
       if (method === 'item/started') {
         if (active.compaction?.itemId !== params.item.id) active.compaction = { itemId: params.item.id, startedAt: Date.now() };
@@ -1152,29 +1246,29 @@ export class CodexAppServer extends EventEmitter {
         if (active.compaction && active.compaction.itemId !== params.item.id) return;
         delete active.compaction;
       }
-      this.emitTurn('turn.compaction', { startedAt: active.compaction?.startedAt || null });
+      emit('turn.compaction', { startedAt: active.compaction?.startedAt || null });
       return;
     }
     if (method === 'turn/plan/updated') {
       const plan = summarizePlanSteps(params.plan);
-      if (plan) this.emitTurn('turn.progress', { plan });
+      if (plan) emit('turn.progress', { plan });
       return;
     }
     if (method === 'turn/diff/updated') {
       const files = summarizeUnifiedDiff(params.diff);
       if (files) {
-        const activeTurn = this.activeTurn;
+        const activeTurn = active;
         const document = activeTurn
           ? createTurnDiffDocument(activeTurn.threadId, activeTurn.turnId, params.diff)
           : null;
         if (document) this.rememberTurnDiff(document);
-        this.emitTurn('turn.progress', { files });
+        emit('turn.progress', { files });
       }
       return;
     }
     if (isReasoningMethod(method)) {
       const text = extractText(params);
-      if (text) this.emitTurn('turn.reasoning', { text });
+      if (text) emit('turn.reasoning', { text });
       return;
     }
     const itemType = String(params.item?.type || params.type || '');
@@ -1185,35 +1279,35 @@ export class CodexAppServer extends EventEmitter {
     ) {
       const delta = String(params.delta || '');
       const itemId = String(params.itemId || params.item_id || params.item?.id || '');
-      if (delta) this.emitTurn('turn.delta', {
+      if (delta) emit('turn.delta', {
         delta, phase: params.phase || params.item?.phase || '', ...(itemId ? { itemId } : {}),
       });
       return;
     }
     if (method === 'item/started') {
       const item = params.item || {};
-      if (['commandExecution', 'toolCall', 'webSearch'].includes(item.type)) this.emitTurn('tool.started', summarizeItem(item));
+      if (['commandExecution', 'toolCall', 'webSearch'].includes(item.type)) emit('tool.started', summarizeItem(item));
       return;
     }
     if (method === 'item/completed') {
       const item = params.item || {};
       if (['commandExecution', 'toolCall', 'webSearch'].includes(item.type)) {
-        this.emitTurn('tool.completed', summarizeItem(item));
+        emit('tool.completed', summarizeItem(item));
         return;
       }
       const questions = asyncQuestionsFromItem(item);
       if (questions) {
-        if (params.threadId === this.activeTurn?.threadId && params.turnId === this.activeTurn?.turnId) {
-          this.emitTurn('turn.questions', { questions, itemId: item.id });
+        if (params.threadId === active?.threadId && params.turnId === active?.turnId) {
+          emit('turn.questions', { questions, itemId: item.id });
         }
         return;
       }
       const text = extractText(item);
-      if (text && item.phase === 'final_answer') this.emitTurn('turn.final', { text });
+      if (text && item.phase === 'final_answer') emit('turn.final', { text });
       return;
     }
     if (method === 'turn/completed' || method === 'turn.completed') {
-      const previous = this.activeTurn;
+      const previous = active;
       const threadId = params.threadId || params.thread_id;
       const turnId = params.turn?.id || params.turnId || params.turn_id;
       if (!previous || (threadId && threadId !== previous.threadId) || (turnId && turnId !== previous.turnId)) return;
@@ -1223,16 +1317,17 @@ export class CodexAppServer extends EventEmitter {
         : failure || /failed|error/i.test(status) ? 'failed' : 'completed';
       const error = failure ? publicError(extractText(failure) || 'Codex execution error').slice(0, 500) : '';
       this.clearApprovalsForThread(previous?.threadId);
-      this.emitTurn('turn.ended', {
+      emit('turn.ended', {
         reason, status, threadId: previous?.threadId, usage: params.usage || params.turn?.usage,
         ...(error ? { error } : {}),
       });
-      this.activeTurn = null;
-      void this.releaseThread(previous?.threadId);
+      previous.state = 'completed';
+      if (this.getActiveTurn(previous.threadId) === previous) this.activeTurns.delete(previous.threadId);
+      void this.releaseThread(previous?.threadId).catch(() => {});
       return;
     }
     if (method === 'error' || method.includes('error')) {
-      this.emitTurn('turn.error', {
+      emit('turn.error', {
         error: publicError(String(params.message || params.error?.message || 'Codex error')).slice(0, SUMMARY_LIMIT),
       });
     }
@@ -1257,16 +1352,48 @@ export class CodexAppServer extends EventEmitter {
     }
   }
 
-  emitTurn(event: string, payload: JsonObject) {
-    if (!this.activeTurn) return;
+  getActiveTurn(threadId?: unknown): TurnContext | null {
+    const id = String(threadId || '').trim();
+    if (id) return this.activeTurns.get(id) || null;
+    return this.activeTurns.size === 1 ? this.activeTurns.values().next().value! : null;
+  }
+
+  private bufferStartingMessage(message: JsonObject): boolean {
+    const params = message.params || {};
+    const threadId = params.threadId || params.thread_id || params.conversationId;
+    // Never assign unscoped events to a provisional or concurrent start.
+    const active = threadId ? this.getActiveTurn(threadId) : null;
+    if (!active?.startMessages || active.turnId) return false;
+    if (active.startMessages.length >= 512) {
+      active.cancelRequested = true;
+      if (message.id != null) this.writeRpc({ jsonrpc: '2.0', id: message.id,
+        result: approvalResult(message.method, false, params) });
+      return true;
+    }
+    active.startMessages.push(message);
+    return true;
+  }
+
+  private notificationTurn(params: JsonObject): TurnContext | null {
+    const threadId = params.threadId || params.thread_id || params.conversationId;
+    const turnId = params.turnId || params.turn_id || params.turn?.id;
+    const active = threadId ? this.getActiveTurn(threadId)
+      : turnId ? [...this.activeTurns.values()].find(turn => turn.turnId === turnId) || null
+        : this.getActiveTurn();
+    if (!active || (!active.turnId && active.state === 'starting')) return null;
+    return turnId && turnId !== active.turnId ? null : active;
+  }
+
+  emitTurn(event: string, payload: JsonObject, active: TurnContext | null) {
+    if (!active) return;
     this.emit('turn-event', {
-      clientId: this.activeTurn.clientId,
-      requestId: this.activeTurn.requestId,
+      clientId: active.clientId,
+      requestId: active.requestId,
       event,
       payload: {
         ...payload,
-        threadId: this.activeTurn.threadId,
-        turnId: this.activeTurn.turnId,
+        threadId: active.threadId,
+        turnId: active.turnId,
       },
     });
   }
@@ -1280,10 +1407,10 @@ export class CodexAppServer extends EventEmitter {
     }
     this.pending.clear();
     this.approvals.clear();
-    if (this.activeTurn) {
-      this.emitTurn('turn.error', { error: publicError(error) });
-      this.activeTurn = null;
+    for (const active of this.activeTurns.values()) {
+      this.emitTurn('turn.error', { error: publicError(error) }, active);
     }
+    this.activeTurns.clear();
   }
 }
 

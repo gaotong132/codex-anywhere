@@ -5,10 +5,12 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 import { formatDate } from './app-utils';
 import {
   localTextPreviewInfo,
   localFileName,
+  isRasterImageFilePath,
 } from './file-utils';
 import { CodePreview } from './code-preview';
 import { isSvgFilePath, SvgPreview } from './svg-preview';
@@ -39,7 +41,7 @@ type FilePreviewState = {
   path: string;
   name: string;
   content: string;
-  kind: 'markdown' | 'code' | 'text';
+  kind: 'markdown' | 'code' | 'text' | 'image';
   language: string;
   status: 'loading' | 'ready' | 'failed';
 };
@@ -431,6 +433,20 @@ function MessageBubbleComponent({
   }
 
   const openLocalFile = useCallback(async (path: string) => {
+    if (isRasterImageFilePath(path) && onReadPreviewImage) {
+      const requestVersion = ++filePreviewRequestRef.current;
+      const preview = { path, name: localFileName(path), content: '', kind: 'image' as const, language: '' };
+      setFilePreview({ ...preview, status: 'loading' });
+      try {
+        const content = await onReadPreviewImage(path);
+        if (requestVersion !== filePreviewRequestRef.current) return;
+        setFilePreview({ ...preview, content, status: 'ready' });
+      } catch {
+        if (requestVersion !== filePreviewRequestRef.current) return;
+        setFilePreview({ ...preview, status: 'failed' });
+      }
+      return;
+    }
     const previewInfo = localTextPreviewInfo(path);
     if (!onReadTextFile || !previewInfo) {
       onDownloadFile(path);
@@ -457,7 +473,7 @@ function MessageBubbleComponent({
         path, name: localFileName(path), content: '', status: 'failed', ...previewInfo,
       });
     }
-  }, [onDownloadFile, onReadTextFile]);
+  }, [onDownloadFile, onReadTextFile, onReadPreviewImage]);
 
   function closeFilePreview() {
     filePreviewRequestRef.current += 1;
@@ -513,6 +529,7 @@ function MessageBubbleComponent({
         /> : <MessageMarkdown
           text={item.text}
           attachmentPath={item.attachment?.path}
+          onPreviewImage={onReadPreviewImage ? openLocalFile : undefined}
           onReadTextFile={onReadTextFile}
           onDownloadFile={openLocalFile}
         />}
@@ -603,7 +620,7 @@ function MessageBubbleComponent({
             />
           </div>
         )}
-        {filePreview && (
+        {filePreview && createPortal(
           <div
             className="markdown-lightbox"
             role="dialog"
@@ -619,7 +636,7 @@ function MessageBubbleComponent({
                   setFilePreviewHistory(history => history.slice(0, -1));
                 }}>{t('返回', 'Back')}</button>}
                 <button type="button" onClick={() => onDownloadFile(filePreview.path)}>
-                  {t('下载', 'Download')}
+                  {filePreview.kind === 'image' ? t('下载原图', 'Download original') : t('下载', 'Download')}
                 </button>
                 <button type="button" onClick={closeFilePreview} aria-label={t('关闭预览', 'Close preview')}>
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
@@ -640,10 +657,18 @@ function MessageBubbleComponent({
               )}
               {filePreview.status === 'ready' && filePreview.kind === 'markdown' && (
                 <article className="message assistant markdown-preview-content">
-                  <MessageMarkdown text={filePreview.content} basePath={filePreview.path} onReadTextFile={onReadTextFile} onDownloadFile={openLocalFile} />
+                  <MessageMarkdown text={filePreview.content} basePath={filePreview.path} onReadTextFile={onReadTextFile} onDownloadFile={openLocalFile} onPreviewImage={onReadPreviewImage ? openLocalFile : undefined} />
                 </article>
               )}
-              {filePreview.status === 'ready' && filePreview.kind !== 'markdown' && (
+              {filePreview.status === 'ready' && filePreview.kind === 'image' && (
+                <div className="linked-image-preview">
+                  <img src={filePreview.content} alt={filePreview.name} onError={() => {
+                    setFilePreview(current => current === filePreview ? { ...current, content: '', status: 'failed' } : current);
+                  }} />
+                  <small>{t('此处为压缩预览，下载原图可查看完整画质。', 'This is a compressed preview. Download the original for full quality.')}</small>
+                </div>
+              )}
+              {filePreview.status === 'ready' && filePreview.kind !== 'markdown' && filePreview.kind !== 'image' && (
                 isHtmlFilePath(filePreview.path)
                   ? <HtmlPreview key={filePreview.path} source={filePreview.content} name={filePreview.name} path={filePreview.path}
                     onReadImage={onReadPreviewImage} onOpen={(path) => {
@@ -655,7 +680,7 @@ function MessageBubbleComponent({
                   : <CodePreview content={filePreview.content} language={filePreview.language} />
               )}
             </main>
-          </div>
+          </div>, document.body
         )}
       </div>
       {copyable && (

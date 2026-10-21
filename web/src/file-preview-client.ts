@@ -19,12 +19,24 @@ export function validateTextPreview(result: TextPreviewDocument) {
   return result;
 }
 
+export async function readLinkedImagePreview(request: BridgeRequest, path: string) {
+  let image: DownloadedImage;
+  try {
+    image = await request<DownloadedImage>('attachment.read', { path, source: 'local' });
+  } catch (error) {
+    // Markdown links do not carry the attachment source. Generated images can
+    // live outside project roots (including a custom CODEX_HOME). Ask the
+    // generated-image reader, which independently checks its canonical root.
+    // Never fall back on timeouts, missing files, or invalid image contents.
+    if (!(error instanceof Error) || error.message !== 'local_image_path_not_allowed') throw error;
+    image = await request<DownloadedImage>('attachment.read', { path, source: 'generated' });
+  }
+  if (!isValidImagePayload(image.mimeType, image.data)) throw new Error('attachment_content_mismatch');
+  return `data:${image.mimeType};base64,${image.data}`;
+}
+
 export function useFilePreviews(request: BridgeRequest, threadId: string | null) {
-  const readPreviewImage = useCallback(async (path: string) => {
-    const image = await request<DownloadedImage>('attachment.read', { path, source: 'local' });
-    if (!isValidImagePayload(image.mimeType, image.data)) throw new Error('attachment_content_mismatch');
-    return `data:${image.mimeType};base64,${image.data}`;
-  }, [request]);
+  const readPreviewImage = useCallback((path: string) => readLinkedImagePreview(request, path), [request]);
   const readVisualization = useCallback(async (path: string) => {
     const result = await request<VisualizationDocument>('visualization.read', { path });
     if (!result?.content || !validPreviewText(result.content, result.size, 2 * 1024 * 1024)) {

@@ -20,6 +20,15 @@ export function followLabel(state: FollowState) {
 }
 
 export function friendlyError(error: unknown) {
+  const deletionErrors: Record<string, string> = {
+    session_delete_turn_active: t('该会话仍在运行，请先停止任务或等待完成后再删除。', 'Stop this session or wait for it to finish before deleting it.'),
+    session_delete_in_progress: t('该会话正在删除，请稍候。', 'This session is being deleted. Please wait.'),
+    session_delete_headless_only: t('只能删除 ECS 会话，电脑端会话请在电脑上管理。', 'Only headless sessions can be deleted here. Manage Desktop sessions on your computer.'),
+    session_delete_confirmation_required: t('请先确认删除此会话。', 'Confirm session deletion first.'),
+    session_delete_status_unknown: t('暂时无法确认会话状态，请刷新后再删除。', 'Session status is unknown. Refresh before deleting.'),
+  };
+  const deletionError = deletionErrors[error instanceof Error ? error.message : String(error)];
+  if (deletionError) return deletionError;
   const message = error instanceof Error ? error.message : String(error || t('请求失败', 'Request failed'));
   if (message === 'session_archive_not_idle') return t('会话仍在运行、等待处理或状态未知，请确认空闲后再归档。', 'The task is running, waiting, or its status is unknown. Archive it when idle.');
   if (message === 'session_archive_unsupported') return t('当前节点不支持归档，请更新 PC 连接器。', 'Archiving is unavailable. Update the PC connector.');
@@ -28,7 +37,8 @@ export function friendlyError(error: unknown) {
   if (message === 'desktop_thread_restore_failed') return t('电脑端未确认恢复，会话仍可从 Codex 客户端的已归档列表恢复。', 'Desktop did not confirm restoration. You can still restore from archived chats in Codex Desktop.');
   if (message === 'session_restore_unsupported') return t('当前连接器不支持恢复，请更新 PC 连接器或在 Codex 客户端恢复。', 'Update the PC connector or restore in Codex Desktop.');
   if (message === 'connector_offline') return t('当前执行环境离线，请确认对应连接器正在运行。', 'The current environment is offline. Make sure its connector is running.');
-  if (message === 'another_turn_is_active') return t('当前已有一个任务在运行，请等待完成或先停止。', 'Another task is running. Wait for it to finish or stop it first.');
+  if (message === 'another_turn_is_active') return t('当前会话正在启动或执行任务，请稍后追加消息或先停止。', 'This session already has an active turn. Steer it when ready or stop it first.');
+  if (message === 'desktop_first_turn_busy') return t('电脑端另一个新会话的首轮仍在执行，请等它完成后再新建。', 'Another Desktop task is completing its first turn. Wait before creating another task.');
   if (message === 'turn_stop_mismatch') return t('运行状态已经变化，请刷新后重试。', 'The run state changed. Refresh and try again.');
   if (message === 'project_directory_required') return t('新会话必须选择或填写项目目录。', 'Choose or enter a project directory for the new session.');
   if (message === 'session_project_directory_unavailable') return t('该会话没有可用的项目目录，无法通过连接器继续。', 'This session has no project directory available to the connector.');

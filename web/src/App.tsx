@@ -40,6 +40,7 @@ import { buildFileMessage, uploadFile } from './file-upload';
 import { useAttachmentDraft } from './attachment-draft';
 import { useFileTransfer } from './file-transfer';
 import { useFilePreviews } from './file-preview-client';
+import { restoreOwnedTurn } from './owned-turn';
 import { t } from './i18n';
 import { adoptDeliveryThread, confirmedDelivery, useDeliveryNotice, visibleDelivery, type MessageDelivery } from './message-delivery';
 import {
@@ -54,6 +55,7 @@ import {
   initialBootstrapReady,
   isConnectionInterruption,
   isCurrentSessionRequest,
+  isSessionRunning,
   isEventForSelectedThread,
   isTemporaryProjectPath,
   makeId,
@@ -79,6 +81,7 @@ import { SessionRenameDialog } from './session-rename-dialog';
 import { SessionArchiveDialog } from './session-archive-dialog';
 import { ApprovalNotice, ArchivedSessionNotice } from './session-notices';
 import { createApprovalPoller, resolvedDesktopExecution } from './approval-poller';
+import { SessionDeleteDialog } from './session-delete-dialog';
 import {
   epochMillis,
   liveEventActivity,
@@ -295,6 +298,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const [lastArchived, setLastArchived] = useState<{ id: string; title: string; environment: string } | null>(null);
   const [restoringSession, setRestoringSession] = useState(false);
   const [restoreError, setRestoreError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{ session: Session; environmentId: string } | null>(null);
+  const deletedSessionsRef = useRef(new Map<string, Set<string>>());
   const [newSessionPrompt, setNewSessionPrompt] = useState('');
   const [newSessionPermissionMode, setNewSessionPermissionMode] = useState<PermissionMode>('ask');
   const { attachment: newSessionAttachment, setAttachment: setNewSessionAttachment, choose: prepareNewSessionAttachment } = useAttachmentDraft();
@@ -332,6 +337,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const viewport = useConversationScroll(messageListRef, messageContentRef, `${environmentId}:${threadId}`, initialBootstrapPending);
   const streamItemRef = useRef<{ id: string; kind: TimelineKind; sourceItemId: string } | null>(null);
   const activeTurnIdRef = useRef('');
+  const executionVersionRef = useRef(0);
   const turnProgressRef = useRef<TurnProgress>({});
   const followFingerprintRef = useRef('');
   const latestActivityIdRef = useRef('');
@@ -339,7 +345,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const newSessionAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   const newSessionAutoSendRef = useRef(false);
-  const sendingRef = useRef(false);
+  const pendingNewRequestRef = useRef<string | null>(null);
+  const sendingRef = useRef(new Set<string>());
   const sessionRefreshInFlightRef = useRef<{ environment: string; channel: BrowserSecureChannel | null } | null>(null);
   const olderHistoryLoadingRef = useRef<number | null>(null);
   const initialHistoryAttemptRef = useRef('');
@@ -591,7 +598,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       if (sessionRefreshInFlightRef.current !== refresh || environmentIdRef.current !== refresh.environment
         || secureChannelRef.current !== refresh.channel) return [];
       sessionStatusesRef.current.accept(data.desktopStatuses);
-      const nextSessions = sessionStatusesRef.current.apply(data.sessions || [],
+      const nextSessions = sessionStatusesRef.current.apply((data.sessions || []).filter(session => !deletedSessionsRef.current.get(refresh.environment)?.has(session.id)),
         runningRef.current ? ownedTurnThreadIdRef.current || '' : '');
       setSessions(nextSessions);
       setSessionsInitialized(true);
@@ -736,6 +743,9 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       return;
     }
     if (message.type !== 'event') return;
+    if (['turn.started', 'turn.ended', 'turn.error', 'approval.requested', 'approval.resolved'].includes(message.event || '')) {
+      executionVersionRef.current += 1;
+    }
     const payload = message.payload || {};
     if (message.event === 'sessions.status') {
       if (sessionStatusesRef.current.accept(payload as SessionStatusSnapshot)) {
@@ -760,18 +770,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       message.event !== 'turn.started'
       && !isEventForSelectedThread(eventThreadId, threadIdRef.current, ownedTurnThreadIdRef.current)
     ) {
-      if (eventThreadId) {
-        updateSessionAttention((current) => current[eventThreadId] === 'running'
-          ? current : { ...current, [eventThreadId]: 'running' });
-      }
-      if (message.event === 'turn.error' || message.event === 'turn.ended') {
-        if (eventThreadId && ownedTurnThreadIdRef.current === eventThreadId) {
-          runningRef.current = false;
-          ownedTurnThreadIdRef.current = null;
-          updateExecution({ running: false, ownedTurnThreadId: null });
-          updateSessionAttention((current) => current[eventThreadId] === 'running'
-            ? { ...current, [eventThreadId]: 'unread' } : current);
-        }
+      const ended = message.event === 'turn.error' || message.event === 'turn.ended';
+      if (eventThreadId) updateSessionAttention((current) => ({
+        ...current, [eventThreadId]: ended ? 'unread' : 'running',
+      }));
+      if (ended) {
         void refreshSessions();
       }
       return;
@@ -781,7 +784,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       const previousOwnedThreadId = ownedTurnThreadIdRef.current;
       const nextThreadId = String(payload.threadId || '');
       const adoptStartedThread = shouldAdoptStartedThread(
-        nextThreadId, selectedThreadId, previousOwnedThreadId === NEW_TURN_KEY,
+        nextThreadId, selectedThreadId, previousOwnedThreadId === NEW_TURN_KEY
+          && Boolean(message.requestId) && message.requestId === pendingNewRequestRef.current,
       );
       if (nextThreadId && !adoptStartedThread) {
         updateSessionAttention((current) => ({ ...current, [nextThreadId]: 'running' }));
@@ -1074,6 +1078,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       secureChannelRef.current = null;
       setConnecting(false);
       setOnline(false);
+      executionVersionRef.current += 1;
       runningRef.current = false;
       ownedTurnThreadIdRef.current = null;
       updateExecution({ running: false, ownedTurnThreadId: null });
@@ -1487,6 +1492,10 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     latestActivityIdRef.current = '';
     awaitingDesktopTurnRef.current = null;
     setFollowState(nextThreadId ? 'checking' : 'idle');
+    pendingNewRequestRef.current = null;
+    executionVersionRef.current += 1;
+    runningRef.current = false;
+    ownedTurnThreadIdRef.current = null;
     resetExecutionPresentation();
     setApproval(null);
     viewport.following = true;
@@ -1624,6 +1633,38 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       : session));
   }, [request]);
 
+  const beginDeleteSession = useCallback((session: Session) => {
+    setDeleteTarget({ session, environmentId: environmentIdRef.current });
+  }, []);
+
+  const deleteSession = useCallback(async () => {
+    const target = deleteTarget;
+    if (!target || target.environmentId !== environmentIdRef.current) return;
+    const id = target.session.id;
+    const result = await request<{ threadId: string; deleted: boolean }>('session.delete', { threadId: id, confirm: true });
+    if (result.threadId !== id || !result.deleted) throw new Error('session_delivery_mismatch');
+    const deleted = deletedSessionsRef.current.get(target.environmentId) || new Set<string>();
+    deleted.add(id);
+    deletedSessionsRef.current.set(target.environmentId, deleted);
+    if (loadEnvironmentValue(LAST_THREAD_KEY, target.environmentId) === id) {
+      storeEnvironmentValue(LAST_THREAD_KEY, target.environmentId, '');
+    }
+    if (environmentIdRef.current !== target.environmentId) return;
+    setSessions(current => current.filter(session => session.id !== id));
+    updateSessionAttention(current => {
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    if (threadIdRef.current === id) {
+      setPrompt('');
+      setPendingAttachment(null);
+      setRenameDialogOpen(false);
+      selectSession(null);
+    }
+    setDeleteTarget(current => current === target ? null : current);
+  }, [deleteTarget, request, selectSession, updateSessionAttention]);
+
   useEffect(() => {
     if (!authenticated || !online || !connectionEpoch || creatingNewSession || threadId) return;
     const previousThreadId = loadEnvironmentValue(LAST_THREAD_KEY, environmentIdRef.current);
@@ -1700,7 +1741,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   }, [prepareNewSessionAttachment]);
 
   const submitNewSession = useCallback(() => {
-    if (!online || running || uploading) return;
+    if (!online || uploading) return;
     if (newSessionPermissionMode === 'full' && !connectorStatus?.capabilities.fullAccess) {
       setNewSessionError(t('此执行节点未开放完全访问权限，请选择其他权限。', 'Full access is disabled on this connector. Choose another permission mode.'));
       return;
@@ -1730,7 +1771,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     setNewSessionError('');
     closeNewSessionDialog();
     newSessionAutoSendRef.current = true;
-  }, [closeNewSessionDialog, newSessionCwd, newSessionAttachment, newSessionPrompt, newSessionPermissionMode, online, running, uploading, connectorStatus?.capabilities.fullAccess, selectSession, setNewSessionAttachment, setPendingAttachment]);
+  }, [closeNewSessionDialog, newSessionCwd, newSessionAttachment, newSessionPrompt, newSessionPermissionMode, online, uploading, connectorStatus?.capabilities.fullAccess, selectSession, setNewSessionAttachment, setPendingAttachment]);
 
   const sendTurn = useCallback(async (questionReplies?: QuestionReply[]) => {
     // A question response is independent of the message/attachment draft.
@@ -1738,6 +1779,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     const text = questionReplies ? buildQuestionReply(questionReplies) : prompt.trim();
     const attachment = questionReplies ? null : pendingAttachment;
     const targetThreadId = threadIdRef.current;
+    const sendKey = JSON.stringify([environmentIdRef.current, targetThreadId || NEW_TURN_KEY]);
     const steering = canSteerOwnedTurn(
       running, executionState, ownedTurnThreadId, targetThreadId,
     );
@@ -1747,7 +1789,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     if (
       (!text && !attachment)
       || uploading
-      || sendingRef.current
+      || sendingRef.current.has(sendKey)
       || (running && !steering)
       || (steering && Boolean(attachment))
     ) return;
@@ -1764,7 +1806,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     if (!isExistingSession) {
       storeEnvironmentValue(NEW_SESSION_CWD_KEY, environmentIdRef.current, projectCwd);
     }
-    sendingRef.current = true;
+    sendingRef.current.add(sendKey);
+    executionVersionRef.current += 1;
     const delivery: MessageDelivery = {
       id: makeId(), environmentId: environmentIdRef.current, selectionVersion, threadId: targetThreadId, status: 'sending',
     };
@@ -1872,8 +1915,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           ...(selectedPermissionMode && selectedPermissionMode !== 'custom' ? { permissionMode: selectedPermissionMode } : {}),
           ...(directDesktopDelivery ? { preferDesktop: true } : {}),
         }),
-      });
+      }, { onRequestId: requestId => {
+        if (!isExistingSession) pendingNewRequestRef.current = requestId;
+      } });
       const sentAt = Date.now();
+      if (environmentIdRef.current !== delivery.environmentId) return;
       if (optimisticItemId) {
         setTimeline((current) => current.map((item) => item.id === optimisticItemId
           ? { ...item, completedAt: sentAt }
@@ -1914,9 +1960,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         if (timelineAttachment) rememberAttachment(data.threadId, visibleText, timelineAttachment);
       }
       if (data.delivery === 'desktop') {
-        runningRef.current = false;
-        ownedTurnThreadIdRef.current = null;
-        updateExecution({ running: false, ownedTurnThreadId: null });
         if (!selectionStillCurrent) {
           if (targetThreadId) {
             updateSessionAttention((current) => ({ ...current, [targetThreadId]: 'running' }));
@@ -1924,6 +1967,9 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           void refreshSessions();
           return;
         }
+        runningRef.current = false;
+        ownedTurnThreadIdRef.current = null;
+        updateExecution({ running: false, ownedTurnThreadId: null });
         awaitingDesktopTurnRef.current = {
           text: visibleText,
           previousActivityId: latestActivityIdRef.current,
@@ -1941,11 +1987,6 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         targetThreadId, threadIdRef.current, selectionVersion, selectedRequestRef.current,
       );
       if (!selectionStillCurrent) {
-        if (!steering && ownedTurnThreadIdRef.current === (targetThreadId || NEW_TURN_KEY)) {
-          runningRef.current = false;
-          ownedTurnThreadIdRef.current = null;
-          updateExecution({ running: false, ownedTurnThreadId: null });
-        }
         void refreshSessions();
         return;
       }
@@ -1977,7 +2018,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       }
       reportTimelineError(error);
     } finally {
-      sendingRef.current = false;
+      sendingRef.current.delete(sendKey);
       if (attachment) setUploadProgress(null);
     }
   }, [
@@ -1998,6 +2039,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
   }, [creatingNewSession, pendingAttachment, prompt, running, sendTurn, uploading]);
 
   const stopTurn = useCallback(async () => {
+    executionVersionRef.current += 1;
     const selectionVersion = selectedRequestRef.current;
     const targetThreadId = ownedTurnThreadIdRef.current || threadIdRef.current;
     setStopping(true);
@@ -2013,6 +2055,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       return;
     }
     setStopping(false);
+    executionVersionRef.current += 1;
     if (selectionVersion !== selectedRequestRef.current) return;
     runningRef.current = false;
     ownedTurnThreadIdRef.current = null;
@@ -2069,11 +2112,13 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     }
     const targetEnvironment = environmentIdRef.current;
     const isCurrent = () => threadIdRef.current === threadId && environmentIdRef.current === targetEnvironment;
+    let snapshotVersion = executionVersionRef.current;
     const poller = createApprovalPoller({
-      read: () => request<PendingApprovals>('approval.pending', { threadId }),
+      read: () => { snapshotVersion = executionVersionRef.current; return request<PendingApprovals>('approval.pending', { threadId }); },
       onError: () => { if (isCurrent()) setApprovalStatusError(t('状态查询失败，正在自动重试。', 'Status check failed; retrying automatically.')); },
       apply: (result) => {
-        if (!isCurrent()) return;
+        if (!isCurrent() || snapshotVersion !== executionVersionRef.current
+          || sendingRef.current.has(JSON.stringify([environmentIdRef.current, threadId]))) return;
         if (result.desktopStatusUnavailable) {
           setNativeState(null);
           setApprovalStatusError(t('暂时无法确认电脑端状态，正在重试。', 'Desktop status is temporarily unavailable; retrying.'));
@@ -2094,6 +2139,16 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             state: 'waiting', activity: 'waiting', startedAt: current.startedAt || Date.now(),
           }));
           if (!previous && viewport.following) viewport.forceBottom = true;
+        } else if (result.activeTurn !== undefined && (result.activeTurn !== null || ownedTurnThreadIdRef.current === threadId)) {
+          setApproval(null);
+          const restored = restoreOwnedTurn(result.activeTurn, threadId,
+            ownedTurnThreadIdRef.current, snapshotVersion, executionVersionRef.current);
+          if (restored) {
+            runningRef.current = restored.running!;
+            ownedTurnThreadIdRef.current = restored.ownedTurnThreadId!;
+            activeTurnIdRef.current = result.activeTurn?.turnId || '';
+            updateExecution(restored);
+          }
         } else if (previous?.actionable === false || previous?.source === 'desktop') {
           const state = resolvedDesktopExecution(result);
           if (!state) return;
@@ -2325,7 +2380,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
               <button
                 className="primary-action"
                 type="button"
-                disabled={!online || running || uploading || !newSessionCwd.trim() || (!newSessionPrompt.trim() && !newSessionAttachment)}
+                disabled={!online || uploading || !newSessionCwd.trim() || (!newSessionPrompt.trim() && !newSessionAttachment)}
                 onClick={submitNewSession}
               >
                 {t('创建并发送', 'Create and send')}
@@ -2349,6 +2404,11 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         onClose={() => setArchiveTarget(null)}
         onArchive={archiveSession}
       />}
+      {deleteTarget && (
+        <SessionDeleteDialog key={`${deleteTarget.environmentId}:${deleteTarget.session.id}`}
+          title={deleteTarget.session.title || deleteTarget.session.id}
+          onClose={() => setDeleteTarget(null)} onDelete={deleteSession} />
+      )}
 
       <RunDetailsSheet
         open={runDetailsOpen && executionActive}
@@ -2393,6 +2453,17 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                     cancelPendingApproval: approval?.actionable === false })}>
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
                     <path d="M4 8v12h16V8M3 4h18v4H3zM9 12h6" />
+                  </svg>
+                </button>
+              )}
+              {threadId && activeSession && connectorStatus?.mode === 'headless'
+                && connectorStatus.capabilities.sessionDelete && !connectorStatus.capabilities.sessionArchive && (
+                <button type="button" className="session-rename-button"
+                  disabled={!online || executionActive || isSessionRunning(activeSession.status) || sessionAttention[threadId] === 'running'}
+                  aria-label={t('删除会话', 'Delete session')} title={t('删除会话', 'Delete session')}
+                  onClick={() => beginDeleteSession(activeSession)}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+                    <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v7M14 10v7" />
                   </svg>
                 </button>
               )}

@@ -26,7 +26,7 @@
   <circle cx="707" cy="332" r="270" fill="#2e6bd0" opacity=".055"/>
 
   <text x="70" y="78" fill="#f2f6fc" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="750">How it works</text>
-  <text x="70" y="111" fill="#8091aa" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">Choose your computer or a 24×7 ECS node; each route keeps a separate end-to-end encrypted channel.</text>
+  <text x="70" y="111" fill="#8091aa" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16">Choose your computer or a 7×24 ECS node; each route keeps a separate end-to-end encrypted channel.</text>
 
   <g font-family="Inter,Segoe UI,Arial,sans-serif" filter="url(#shadow2)">
     <g transform="translate(70 205)">

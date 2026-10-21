@@ -85,7 +85,7 @@ test('an authorized browser keeps async answers as exact Desktop envelopes', asy
 
 test('live async question events stay bound to their original task and turn', () => {
   const codex = new CodexAppServer({ cwd: process.cwd(), allowedRoots: [process.cwd()] });
-  codex.activeTurn = { threadId: 'task-a', turnId: 'turn-a', clientId: 'browser-a', requestId: 'request-a' };
+  codex.activeTurns.set('task-a', { threadId: 'task-a', turnId: 'turn-a', clientId: 'browser-a', requestId: 'request-a' });
   const events: any[] = [];
   codex.on('turn-event', (event) => events.push(event));
   codex.handleNotification('item/completed', { threadId: 'task-b', turnId: 'turn-a', item: source });

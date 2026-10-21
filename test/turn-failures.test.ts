@@ -75,7 +75,7 @@ test('rollout terminal details are bounded and redacted while successful complet
 
 test('live terminal failures carry the reason and cannot end another task or newer turn', () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
-  codex.activeTurn = { threadId: 'task', turnId: 'failed-turn', clientId: 'client', requestId: 'request' };
+  codex.activeTurns.set('task', { threadId: 'task', turnId: 'failed-turn', clientId: 'client', requestId: 'request' });
   codex.rpcRaw = async () => ({});
   const events: any[] = [];
   codex.on('turn-event', event => events.push(event));
@@ -83,14 +83,14 @@ test('live terminal failures carry the reason and cannot end another task or new
     codex.handleNotification('turn/completed', { threadId, turn: { id, status: 'failed', error: { message: detail } } });
   }
   assert.equal(events.length, 0);
-  assert.ok(codex.activeTurn);
+  assert.ok(codex.getActiveTurn());
   codex.handleNotification('turn/completed', { threadId: 'task', turn: { id: 'failed-turn', status: 'failed', error: { message: detail } } });
   assert.equal(events.length, 1);
   assert.equal(events[0].event, 'turn.ended');
   assert.equal(events[0].payload.reason, 'failed');
   assert.equal(events[0].payload.error, detail);
   assert.equal(events[0].payload.turnId, 'failed-turn');
-  assert.equal(codex.activeTurn, null);
+  assert.equal(codex.getActiveTurn(), null);
 });
 
 test('duplicate terminal events collapse per turn and converge with persisted history', () => {

@@ -11,7 +11,7 @@ const params = { threadId: 'test-task', turnId: 'test-turn', serverName: 'anywhe
 test('MCP approval is queued for the exact live task and approves only this call', async () => {
   const codex = new CodexAppServer();
   const writes: any[] = []; codex.writeRpc = (value) => { writes.push(value); };
-  codex.activeTurn = { threadId: 'test-task', turnId: 'test-turn', cwd: process.cwd(), state: 'running' };
+  codex.activeTurns.set('test-task', { threadId: 'test-task', turnId: 'test-turn', cwd: process.cwd(), state: 'running' });
   codex.handleServerRequest({ id: 7, method, params });
   assert.equal(writes.length, 0);
   assert.equal(codex.listApprovals('test-task').approvals[0].kind, 'mcp-tool');
@@ -24,7 +24,7 @@ test('MCP approval is queued for the exact live task and approves only this call
 
 test('unknown elicitation forms, stale turns and missing task IDs cannot become generic approvals', () => {
   const codex = new CodexAppServer(); const writes: any[] = []; codex.writeRpc = (v) => { writes.push(v); };
-  codex.activeTurn = { threadId: 'test-task', turnId: 'test-turn', cwd: process.cwd(), state: 'running' };
+  codex.activeTurns.set('test-task', { threadId: 'test-task', turnId: 'test-turn', cwd: process.cwd(), state: 'running' });
   for (const changed of [{ threadId: '' }, { threadId: 'other' }, { turnId: 'old' }, { mode: 'url' },
     { _meta: {} }, { requestedSchema: { type: 'object', properties: { password: { type: 'string' } } } }]) {
     codex.handleServerRequest({ id: 1, method, params: { ...params, ...changed } });

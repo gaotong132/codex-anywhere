@@ -38,6 +38,10 @@ export function isMarkdownFilePath(path: string) {
   return /\.(?:md|markdown)$/i.test(String(path || '').trim());
 }
 
+export function isRasterImageFilePath(path: string) {
+  return /\.(?:png|jpe?g|webp)$/i.test(path);
+}
+
 export type LocalTextPreviewInfo = TextPreviewDescriptor;
 
 export function localTextPreviewInfo(path: string): LocalTextPreviewInfo | null {

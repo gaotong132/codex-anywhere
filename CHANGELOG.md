@@ -4,7 +4,14 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
-- Read confirmed or saved permissions for new Desktop chats before native ownership, without navigating or resuming a task. Keep the fallback read-only, prefer live native settings after takeover, and bound saved-record reads to 1 MiB.
+- Add permanent deletion to headless session lists with confirmation, active-turn protection, and session-scoped cache/browser-grant cleanup. Uses native history deletion without removing project files.
+- Run different ECS sessions concurrently, with task-scoped streaming, approvals, stopping and reconnect recovery. Each session still has at most one active turn; messages and question answers for that session steer its existing turn.
+- Preview linked local and generated raster images on demand, with original downloads and unchanged file access checks.
+
+- Fix `turn_id_mismatch` when sending to a resumed ECS session: bind the new turn from its start response, ignore replayed history, and replay early output and approvals only for that turn.
+- Rename the ECS availability label to `7×24` across the UI and current documentation.
+
+- Read saved permissions for unloaded Desktop chats and allow idle edits through a temporary runtime; verify persistence and release ownership without navigating Desktop. Saved-state reads remain bounded to 1 MiB.
 
 - Choose access permissions in the new-session dialog. The first turn uses the selection; cancel leaves the current chat and device default unchanged. Full access remains gated by the connector.
 
@@ -13,7 +20,7 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 - Generate unique persistent routes for new Windows/Linux installations while retaining existing routes and pairing. Reject conflicting registrations and route takeover, show approved offline nodes without a 24-device cutoff, and synchronize editable device names across browsers and the relay CLI.
 - Read effective reasoning effort from Desktop collaboration/thread settings when the legacy field is empty, preventing an incorrect default-reasoning label.
 
-- Load a selected cold conversation through Desktop before reading its native model settings, without sending a message. Keep model and reasoning labels readable when a long conversation exceeds the full-state frame limit. Leave unconfirmed full settings read-only, and replace misleading automatic/default labels after read failures with a retry action.
+- Read saved model settings for cold conversations without loading or navigating Desktop. Keep model and reasoning labels readable when a long conversation exceeds the full-state frame limit. Leave unconfirmed full settings read-only, and replace misleading automatic/default labels after read failures with a retry action.
 
 - Confirm message delivery in the existing detail line above the Web composer only after the selected computer or ECS accepts it, without an extra row or browser-closing instructions. The next activity replaces the receipt; otherwise it expires after five seconds. Distinguish pending and unconfirmed delivery, bind receipts to the selected conversation, and handle creation events arriving before the response.
 

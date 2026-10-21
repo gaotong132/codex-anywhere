@@ -96,31 +96,32 @@ test('history polling exposes an in-flight compaction and clears it at the persi
 
 test('native compaction lifecycle is isolated, stable on duplicate starts and cleared on completion', () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
-  codex.activeTurn = { threadId: 'task', turnId: 'turn', cwd: process.cwd(), state: 'running' };
+  codex.activeTurns.set('task', { threadId: 'task', turnId: 'turn', cwd: process.cwd(), state: 'running' });
   const events: any[] = []; codex.on('turn-event', event => events.push(event));
   const payload = { threadId: 'task', turnId: 'turn', item: { type: 'contextCompaction', id: 'compact-a' } };
   codex.handleNotification('item/started', { ...payload, threadId: 'other' });
   codex.handleNotification('item/started', { ...payload, turnId: 'old' });
   assert.equal(events.length, 0);
   codex.handleNotification('item/started', payload);
-  const startedAt = codex.activeTurn.compaction?.startedAt;
+  const startedAt = codex.getActiveTurn().compaction?.startedAt;
   assert.ok(startedAt);
   codex.handleNotification('item/started', payload);
-  assert.equal(codex.activeTurn.compaction?.startedAt, startedAt);
+  assert.equal(codex.getActiveTurn().compaction?.startedAt, startedAt);
   codex.handleNotification('item/completed', { ...payload, item: { ...payload.item, id: 'older-compaction' } });
   assert.equal(events.length, 2);
   codex.handleNotification('item/completed', payload);
-  assert.equal(codex.activeTurn.compaction, undefined);
+  assert.equal(codex.getActiveTurn().compaction, undefined);
   assert.equal(events.at(-1).event, 'turn.compaction');
   assert.equal(events.at(-1).payload.startedAt, null);
 });
 
-test('task switches clear the compaction presentation while retaining the background writer', () => {
+test('task switches clear compaction and controls without changing the background snapshot', () => {
   const current = patchConversationExecution(initialConversationExecution(), {
     running: true, ownedTurnThreadId: 'task', state: 'running', compactionStartedAt: Date.now(),
   });
   const next = resetConversationExecutionPresentation(current);
   assert.equal(next.compactionStartedAt, null);
-  assert.equal(next.ownedTurnThreadId, 'task');
-  assert.equal(next.running, true);
+  assert.equal(next.ownedTurnThreadId, null);
+  assert.equal(next.running, false);
+  assert.equal(current.ownedTurnThreadId, 'task');
 });

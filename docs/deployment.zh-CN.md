@@ -6,7 +6,7 @@
 
 Codex Anywhere 使用一台小型 Linux 转发服务作为浏览器与一个或多个 Codex 执行节点的会合点。Codex、
 项目、附件和生成文件都留在当前选择的节点；每个连接器只建立出站连接，因此个人电脑不需要公网 IP
-或家庭网络入站规则。转发主机也可以同时运行一个 24×7 无头连接器。
+或家庭网络入站规则。转发主机也可以同时运行一个 7×24 无头连接器。
 
 `http://127.0.0.1:3300` 只是同一台电脑上的调测地址，不是有实际意义的手机部署方式。
 
@@ -20,7 +20,7 @@ Codex Anywhere 使用一台小型 Linux 转发服务作为浏览器与一个或�
 - **服务器信息**：ECS 地址、SSH 端口、登录用户，以及可用的临时 SSH 账号或私钥文件路径。
   云控制台/API 的临时凭证不一定能直接登录 SSH，需要说明它能做什么。
 - **访问入口**：准备使用的域名，或已有的 VPN/安全隧道。配置公网 HTTPS/WSS 时，还需要能修改域名解析。
-- **运行位置**：哪台电脑已经安装并登录 Codex；是否还需要让 ECS 自己作为一个 24×7 执行节点。
+- **运行位置**：哪台电脑已经安装并登录 Codex；是否还需要让 ECS 自己作为一个 7×24 执行节点。
 
 把凭证放在 Codex 能读取的本机私密文件中，只提供路径，不把密钥正文贴进聊天或提交到仓库。
 可直接复制下面这段，替换方括号中的内容：
@@ -127,7 +127,7 @@ Markdown、SVG、源代码、配置和文本预览支持连接器账号可读的
   -AllowedRoots 'D:\project'
 ```
 
-## 2B. 安装 24×7 Linux/ECS 连接器
+## 2B. 安装 7×24 Linux/ECS 连接器
 
 Linux 连接器使用 `headless` 模式：新建和恢复的会话都由它自己的 Codex app-server 管理，不依赖 Codex
 Desktop。先从 [Node.js 官网](https://nodejs.org/en/download)安装 22+，不要假定发行版自带的 `nodejs`
@@ -154,7 +154,7 @@ codex login status
 mkdir -p /root/codex-workspaces
 ./scripts/install-linux-connector.sh \
   --user root \
-  --label 'ECS · 24x7' \
+  --label 'ECS · 7×24' \
   --allowed-root /root/codex-workspaces \
   --enable-network
 ```
@@ -233,6 +233,13 @@ journalctl -u codex-anywhere-connector -n 50 --no-pager
 构建、加载插件，配置精确扩展 Origin 白名单及节点 MCP；普通 Web 配对成功并不代表这些附加步骤也已完成。
 
 ## 日常管理与升级
+
+生产源码必须与已提交版本一致，不再部署叠加未提交功能补丁的版本；功能改动先审查并提交。本机专用 `AGENTS.md` 用 `.git/info/exclude` 排除，凭证保留在已忽略的 `.env` 或仓库外的服务配置中，备份放在仓库之外。发布前后确认 `git status --porcelain` 为空，并记录提交号和镜像 ID。发现工作区有改动时先整理，不自动覆盖或叠加。
+
+
+ECS 连接器允许不同会话并发运行。切换到另一个会话后可继续发送消息，停止和审批仅作用于当前会话。
+同一会话仍只有一个活动轮次；运行中发送文字会追加到该轮次。升级或重启连接器前应等待所有会话空闲。
+
 固定使用发布版本时，按 [v0.4.4 升级步骤](release-0.4.4.zh-CN.md#升级)操作。
 `update` 脚本跟随 `main`，不会锁定 tag，也不会等待全部业务任务空闲。升级前先保留旧提交、镜像和私有状态，
 选择空闲窗口，并在重启后逐个验证 Connector。
@@ -569,7 +576,7 @@ cd /root/codex-anywhere
 检查流式回复。浏览器开发者工具 Network → WS 中的 `/ws` 请求应返回 **101 Switching Protocols** 并持续收发帧。
 仅 `/health` 成功不能证明 WSS 升级和连接器认证成功，普通 `curl /ws` 也不是完整的 WebSocket 验收。
 
-如果 ECS 也要执行任务，再按正文“安装 24×7 Linux/ECS 连接器”安装 Node.js、认证 Codex CLI 和 systemd 服务，
+如果 ECS 也要执行任务，再按正文“安装 7×24 Linux/ECS 连接器”安装 Node.js、认证 Codex CLI 和 systemd 服务，
 完成相同的批准与在线检查；仅作 Relay 时无需此步骤。浏览器扩展属于实验性附加特性，也不是基础部署的前提。
 
 ### G. 自动续期、巡检和备份

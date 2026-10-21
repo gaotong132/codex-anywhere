@@ -46,14 +46,12 @@ export function patchConversationExecution(
 }
 
 export function resetConversationExecutionPresentation(
-  current: ConversationExecution,
+  _current: ConversationExecution,
   state: ExecutionState = 'idle',
 ) {
-  return {
-    ...initialConversationExecution(state),
-    running: current.running,
-    ownedTurnThreadId: current.ownedTurnThreadId,
-  };
+  // Execution controls belong to the selected session. Its connector snapshot
+  // restores ownership; a background task must not block another session.
+  return initialConversationExecution(state);
 }
 
 type FieldSetters = {

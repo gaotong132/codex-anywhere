@@ -8,7 +8,7 @@ for (const desktop of [false, true]) test(`runtime release after a completed tur
   let kills = 0;
   const child = Object.assign(new EventEmitter(), { kill() { kills++; queueMicrotask(() => child.emit('close', 0)); } });
   codex.child = child as any;
-  codex.activeTurn = { threadId: 'fixture', turnId: 'turn', cwd: process.cwd(), state: 'running' };
+  codex.activeTurns.set('fixture', { threadId: 'fixture', turnId: 'turn', cwd: process.cwd(), state: 'running' });
   codex.rpcRaw = async () => ({ status: 'unsubscribed' }) as any;
   codex.handleNotification('turn/completed', { turn: { status: 'completed' } });
   await codex.prepareDesktopTurn();
@@ -21,13 +21,13 @@ test('release never kills a replacement runtime or a new active turn', async () 
     const codex = new CodexAppServer({ releaseRuntimeAfterTurn: true }); let kills = 0;
     const child = Object.assign(new EventEmitter(), { kill() { kills++; } });
     codex.child = child as any;
-    codex.activeTurn = { threadId: 'fixture', turnId: 'turn', cwd: process.cwd(), state: 'running' };
+    codex.activeTurns.set('fixture', { threadId: 'fixture', turnId: 'turn', cwd: process.cwd(), state: 'running' });
     let done!: () => void;
     codex.rpcRaw = async () => { await new Promise<void>(resolve => { done = resolve; }); return {} as any; };
     codex.handleNotification('turn/completed', { turn: { status: 'completed' } });
     await new Promise<void>(resolve => setImmediate(resolve));
     if (replacement) codex.child = Object.assign(new EventEmitter(), { kill() { kills++; } }) as any;
-    else codex.activeTurn = { threadId: 'next', turnId: 'next-turn', cwd: process.cwd(), state: 'running' };
+    else codex.activeTurns.set('next', { threadId: 'next', turnId: 'next-turn', cwd: process.cwd(), state: 'running' });
     done(); await codex.prepareDesktopTurn(); assert.equal(kills, 0);
   }
 });
@@ -48,7 +48,7 @@ test('Desktop release drains an existing read and queues its next RPC and new re
     const result = message.method === 'thread/unsubscribe' ? { status: 'unsubscribed' } : { data: [] };
     queueMicrotask(() => codex.handleLine(JSON.stringify({ id: message.id, result })));
   };
-  codex.activeTurn = { threadId: 'fixture', turnId: 'turn', cwd: process.cwd(), state: 'running' };
+  codex.activeTurns.set('fixture', { threadId: 'fixture', turnId: 'turn', cwd: process.cwd(), state: 'running' });
   const reading = codex.readSession('fixture');
   await new Promise<void>((resolve) => setImmediate(resolve));
   codex.handleNotification('turn/completed', { turn: { status: 'completed' } });
@@ -77,7 +77,7 @@ test('an RPC timeout still permits Desktop runtime release', async () => {
     if (message.method === 'thread/unsubscribe') queueMicrotask(() => codex.handleLine(JSON.stringify({ id: message.id, result: {} })));
   };
   const timedOut = assert.rejects(codex.rpcRaw('thread/read', {}, 30), /RPC timeout: thread\/read/);
-  codex.activeTurn = { threadId: 'fixture', turnId: 'turn', cwd: process.cwd(), state: 'running' };
+  codex.activeTurns.set('fixture', { threadId: 'fixture', turnId: 'turn', cwd: process.cwd(), state: 'running' });
   codex.handleNotification('turn/completed', { turn: { status: 'completed' } });
   const keepAlive = setTimeout(() => {}, 1000);
   try {

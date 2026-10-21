@@ -7,7 +7,7 @@ Documentation for **v0.4.4 (2026-10-18)** · [Release and upgrade](release-0.4.4
 Codex Anywhere uses a small Linux relay as the meeting point for a browser and one or more Codex connector
 nodes. Codex, projects, attachments, and generated files remain on the selected node. Every connector makes
 an outbound connection only, so a personal computer needs neither a public IP nor a home-network inbound
-rule. The relay host can also run a headless connector for 24×7 work.
+rule. The relay host can also run a headless connector for 7×24 work.
 
 `http://127.0.0.1:3300` is a same-computer test endpoint, not a practical phone deployment.
 
@@ -24,7 +24,7 @@ Have these three things ready:
 - **An entry point:** your domain or existing VPN/secure tunnel. Public HTTPS/WSS setup also needs access
   to update the domain's DNS records.
 - **Execution hosts:** the computer where Codex is installed and signed in, and whether the ECS should
-  also run a 24×7 headless connector.
+  also run a 7×24 headless connector.
 
 Keep credentials in a private local file that Codex can read and provide only its path. Do not paste the
 secret into chat or commit it to the repository. Replace the brackets in this prompt and hand it over:
@@ -140,7 +140,7 @@ Use a stable, recognizable route when installing more than one connector:
   -AllowedRoots 'D:\project'
 ```
 
-## 2B. Install a 24×7 Linux/ECS connector
+## 2B. Install a 7×24 Linux/ECS connector
 
 The Linux connector runs in `headless` mode: it owns both new and resumed sessions through Codex
 app-server and never depends on Codex Desktop. Install Node.js 22+ and Codex CLI, then sign in as the
@@ -168,7 +168,7 @@ home directory:
 mkdir -p /root/codex-workspaces
 ./scripts/install-linux-connector.sh \
   --user root \
-  --label 'ECS · 24x7' \
+  --label 'ECS · 7×24' \
   --allowed-root /root/codex-workspaces \
   --enable-network
 ```
@@ -243,6 +243,13 @@ session on each node and confirm that returning to the other node never mixes th
 verify that the public URL uses the intended transport and that `ECS-IP:3300` is unreachable externally.
 
 ## Operate and update
+
+Keep production source identical to a committed revision. Review and commit feature patches before deployment. Keep machine-only `AGENTS.md` in `.git/info/exclude`, secrets in ignored `.env` or external service configuration, and backups outside the repository. Before and after deployment, require an empty `git status --porcelain` and record the commit and image ID. Reconcile a dirty checkout instead of silently overlaying a release.
+
+The ECS connector supports concurrent sessions. Switching sessions allows an independent send; Stop and approvals
+apply only to the selected task. Each session has one active turn, and text sent during it is steering input.
+Wait for all sessions to become idle before upgrading or restarting the connector.
+
 For the tagged release, follow the [v0.4.4 upgrade procedure](release-0.4.4.md#upgrade).
 The `update` helper tracks `main`; it does not pin a tag or wait for all business tasks to become idle.
 Save the previous commit, image and private state first, schedule an idle window, and verify each Connector after restart.
@@ -601,7 +608,7 @@ In browser developer tools, Network → WS should show **101 Switching Protocols
 by ongoing frames. A successful `/health` response alone does not verify WSS upgrades or connector
 authentication; ordinary `curl /ws` is not a complete WebSocket test either.
 
-If ECS should also execute tasks, follow “Install a 24×7 Linux/ECS connector” above for Node.js,
+If ECS should also execute tasks, follow “Install a 7×24 Linux/ECS connector” above for Node.js,
 Codex CLI authentication and the systemd service; approve it and verify its online status. Skip this
 step for a Relay-only host. The browser extension is an experimental extra, not a prerequisite for deployment.
 

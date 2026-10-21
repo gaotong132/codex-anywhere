@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkCjkFriendly from 'remark-cjk-friendly/parseOnly';
 import { remarkLineBreaks } from './markdown-line-breaks';
 import { t } from './i18n';
-import { localFileName, localFilePathFromHref, localFilePathFromRelativeHref } from './file-utils';
+import { isRasterImageFilePath, localFileName, localFilePathFromHref, localFilePathFromRelativeHref } from './file-utils';
 import { isSvgCodeClass, isSvgFilePath, LocalSvgImage, SvgPreview } from './svg-preview';
 import { isMermaidCodeClass, MermaidDiagram } from './mermaid-diagram';
 import type { TextPreviewDocument } from './app-types';
@@ -21,12 +21,14 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   basePath,
   onDownloadFile,
   onReadTextFile,
+  onPreviewImage,
 }: {
   text: string;
   attachmentPath?: string;
   basePath?: string;
   onDownloadFile: (path: string) => void;
   onReadTextFile?: (path: string) => Promise<TextPreviewDocument>;
+  onPreviewImage?: (path: string) => void;
 }) {
   const components = useMemo<Components>(() => ({
     table: ({ node: _node, children, ...props }) => (
@@ -48,6 +50,15 @@ export const MessageMarkdown = memo(function MessageMarkdown({
     },
     a: ({ node: _node, href, children, ...props }) => {
       const localPath = localFilePathFromHref(href) || localFilePathFromRelativeHref(href, basePath);
+      if (localPath && isRasterImageFilePath(localPath) && onPreviewImage) {
+        return <span className="local-image-link">
+          <a {...props} href={href} onClick={(event) => {
+            event.preventDefault(); onPreviewImage(localPath);
+          }}>{children}</a>
+          <button type="button" className="local-image-preview-button" onClick={() => onPreviewImage(localPath)}
+            aria-label={t(`预览图片：${localFileName(localPath)}`, `Preview image: ${localFileName(localPath)}`)}>{t('预览', 'Preview')}</button>
+        </span>;
+      }
       return localPath
         ? <a {...props} href={href} onClick={(event) => {
             event.preventDefault();
@@ -60,6 +71,11 @@ export const MessageMarkdown = memo(function MessageMarkdown({
       const localPath = localFilePathFromHref(src) || localFilePathFromRelativeHref(src, basePath);
       if (!localPath) return <img {...props} src={src} alt={alt || ''} loading="lazy" />;
       if (attachmentPath === localPath) return null;
+      if (isRasterImageFilePath(localPath) && onPreviewImage) {
+        return <button type="button" className="local-image-preview-button" onClick={() => onPreviewImage(localPath)}>
+          {alt || localFileName(localPath)} · {t('预览', 'Preview')}
+        </button>;
+      }
       if (isSvgFilePath(localPath) && onReadTextFile) {
         return <LocalSvgImage path={localPath} name={alt || localFileName(localPath)}
           onRead={onReadTextFile} onOpen={onDownloadFile} />;
@@ -71,7 +87,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
         }}>{alt || localFileName(localPath)}</a>
       );
     },
-  }), [attachmentPath, basePath, onDownloadFile, onReadTextFile]);
+  }), [attachmentPath, basePath, onDownloadFile, onReadTextFile, onPreviewImage]);
   return (
     <ReactMarkdown
       remarkPlugins={markdownPlugins}

@@ -243,7 +243,7 @@ test('mobile download status explains background limits and automatic resume', (
   assert.match(paused, /回到本页后会自动续传/);
 });
 
-test('conversation execution resets atomically without losing a background writer', () => {
+test('switching sessions releases local controls without changing the background task snapshot', () => {
   const running = patchConversationExecution(initialConversationExecution(), {
     running: true,
     ownedTurnThreadId: 'thread-a',
@@ -255,8 +255,8 @@ test('conversation execution resets atomically without losing a background write
     progress: { plan: { current: 1, total: 3 } },
   });
   const selectedAnotherSession = resetConversationExecutionPresentation(running);
-  assert.equal(selectedAnotherSession.running, true);
-  assert.equal(selectedAnotherSession.ownedTurnThreadId, 'thread-a');
+  assert.equal(selectedAnotherSession.running, false);
+  assert.equal(selectedAnotherSession.ownedTurnThreadId, null);
   assert.equal(selectedAnotherSession.state, 'idle');
   assert.equal(selectedAnotherSession.purpose, '');
   assert.deepEqual(selectedAnotherSession.progress, {});
@@ -556,14 +556,14 @@ test('run details expose a confirmed stop only for a connector-owned turn', () =
     detail: '正在执行测试',
     progress: {},
     startedAt: null,
-    environment: 'ECS · 24×7',
+    environment: 'ECS · 7×24',
     canStop: true,
     stopping: false,
     onClose: () => {},
     onStop: () => {},
   }));
   assert.match(owned, /停止本次执行/);
-  assert.match(owned, /ECS · 24×7/);
+  assert.match(owned, /ECS · 7×24/);
 
   const desktopOwned = renderToStaticMarkup(createElement(RunDetailsSheet, {
     open: true,
@@ -2315,10 +2315,10 @@ test('app-server approval requests survive reconnect and use protocol decisions'
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   const writes = [];
   codex.writeRpc = (message) => writes.push(message);
-  codex.activeTurn = {
+  codex.activeTurns.set('thread-1', {
     clientId: 'old-client', requestId: 'old-request', threadId: 'thread-1',
     cwd: process.cwd(), state: 'running',
-  };
+  });
   const eventPromise = once(codex, 'turn-event');
   codex.handleServerRequest({
     jsonrpc: '2.0', id: 41, method: 'item/commandExecution/requestApproval',
@@ -2331,7 +2331,7 @@ test('app-server approval requests survive reconnect and use protocol decisions'
 
   const pending = codex.listApprovals('thread-1', 'new-client');
   assert.equal(pending.approvals.length, 1);
-  assert.equal(codex.activeTurn.clientId, 'new-client');
+  assert.equal(codex.getActiveTurn().clientId, 'new-client');
   const resolvedPromise = once(codex, 'turn-event');
   await codex.respondApproval('41', true, 'thread-1');
   const [resolved] = await resolvedPromise;
@@ -2374,10 +2374,10 @@ test('live progress preserves app-server agent message boundaries', () => {
 
 test('app-server progress deltas expose their item identity', async () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
-  codex.activeTurn = {
+  codex.activeTurns.set('thread-1', {
     clientId: 'client', requestId: 'request', threadId: 'thread-1',
     turnId: 'turn-1', cwd: process.cwd(), state: 'running',
-  };
+  });
   const eventPromise = once(codex, 'turn-event');
   codex.handleNotification('item/agentMessage/delta', {
     threadId: 'thread-1', turnId: 'turn-1', itemId: 'message-2',
@@ -2394,14 +2394,14 @@ test('app-server progress deltas expose their item identity', async () => {
 test('app-server stops a running turn through the interrupt protocol', async () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   const calls = [];
-  codex.activeTurn = {
+  codex.activeTurns.set('thread-1', {
     clientId: 'client', requestId: 'request', threadId: 'thread-1',
     turnId: 'turn-1', cwd: process.cwd(), state: 'running',
-  };
+  });
   codex.rpcRaw = async (method, params) => { calls.push([method, params]); return {}; };
   assert.deepEqual(await codex.stopTurn(), { stopped: true });
   assert.deepEqual(calls, [['turn/interrupt', { threadId: 'thread-1', turnId: 'turn-1' }]]);
-  assert.equal(codex.activeTurn.state, 'cancelling');
+  assert.equal(codex.getActiveTurn().state, 'cancelling');
 
   const endedPromise = once(codex, 'turn-event');
   codex.handleNotification('turn/completed', {
@@ -2410,20 +2410,20 @@ test('app-server stops a running turn through the interrupt protocol', async () 
   const [ended] = await endedPromise;
   assert.equal(ended.event, 'turn.ended');
   assert.equal(ended.payload.reason, 'cancelled');
-  assert.equal(codex.activeTurn, null);
+  assert.equal(codex.getActiveTurn(), null);
 });
 
 test('app-server refuses to stop a different selected thread', async () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   const calls = [];
-  codex.activeTurn = {
+  codex.activeTurns.set('thread-1', {
     clientId: 'client', requestId: 'request', threadId: 'thread-1',
     turnId: 'turn-1', cwd: process.cwd(), state: 'running',
-  };
+  });
   codex.rpcRaw = async (method, params) => { calls.push([method, params]); return {}; };
   await assert.rejects(codex.stopTurn('thread-2'), /turn_stop_mismatch/);
   assert.deepEqual(calls, []);
-  assert.equal(codex.activeTurn.state, 'running');
+  assert.equal(codex.getActiveTurn().state, 'running');
 });
 
 test('a stop requested while a turn is starting interrupts it once its id arrives', async () => {
@@ -2476,10 +2476,10 @@ test('live tool activity forwards a bounded useful summary without raw arguments
 
 test('app-server forwards only aggregate plan and diff progress', async () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
-  codex.activeTurn = {
+  codex.activeTurns.set('thread-1', {
     clientId: 'client', requestId: 'request', threadId: 'thread-1',
     turnId: 'turn-1', cwd: process.cwd(), state: 'running',
-  };
+  });
   const planEvent = once(codex, 'turn-event');
   codex.handleNotification('turn/plan/updated', {
     threadId: 'thread-1', turnId: 'turn-1', plan: [
@@ -3059,7 +3059,7 @@ test('failed turn starts release a thread that was already resumed', async () =>
     () => codex.startTurn({ text: 'hello', threadId: 'thread-1' }),
     /turn_start_failed/,
   );
-  assert.equal(codex.activeTurn, null);
+  assert.equal(codex.getActiveTurn(), null);
   assert.deepEqual(calls.at(-1), {
     method: 'thread/unsubscribe', params: { threadId: 'thread-1' },
   });
@@ -3134,5 +3134,5 @@ test('new sessions require an explicit project directory', async () => {
     () => codex.startTurn({ text: 'hello' }),
     /project_directory_required/,
   );
-  assert.equal(codex.activeTurn, null);
+  assert.equal(codex.getActiveTurn(), null);
 });

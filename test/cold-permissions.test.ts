@@ -25,9 +25,9 @@ test('cold permission reads use exact cached metadata, no runtime, stale mode ca
   app.sessionPermissionModes.set('cold', 'full');
   app.ensureStarted = async () => assert.fail('cached metadata must not start a runtime');
   app.rpcRaw = async () => assert.fail('cached metadata must not issue RPC');
-  app.activeTurn = { threadId: 'cold', state: 'running' } as any;
+  app.activeTurns.set('cold', { threadId: 'cold', state: 'running' } as any);
   assert.equal((await app.readStoredPermissionConfig('cold')).mode, 'full');
-  app.activeTurn = null;
+  app.activeTurns.clear();
   assert.deepEqual(await app.readStoredPermissionConfig('cold'), {
     mode: 'auto', networkAccess: false, source: 'persisted', editable: true,
     settingsToken: (await readRolloutPermissionSnapshot(path)).settingsToken,
@@ -114,9 +114,9 @@ test('cold permission edits serialize, recheck the locked snapshot and always re
   await writeFile(path, row(auto)); race = false; writerError = true;
   await assert.rejects(app.updateStoredPermissionConfig('cold', { mode: 'full', settingsToken: token }), /writer unavailable/);
   assert.equal(released, 3);
-  app.activeTurn = { threadId: 'cold', state: 'running' } as any;
+  app.activeTurns.set('cold', { threadId: 'cold', state: 'running' } as any);
   await assert.rejects(app.updateStoredPermissionConfig('cold', { mode: 'ask', settingsToken: token }), /permission_mode_turn_active/);
-  app.activeTurn = null; app.allowFullAccess = false;
+  app.activeTurns.clear(); app.allowFullAccess = false;
   await assert.rejects(app.updateStoredPermissionConfig('cold', { mode: 'full', settingsToken: token }), /full_access_not_allowed/);
   assert.equal(released, 3);
 });

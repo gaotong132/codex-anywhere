@@ -14,6 +14,7 @@ function defaultRequestTimeout(action: string) {
 }
 
 export type BridgeRequestOptions = {
+  onRequestId?: (requestId: string) => void;
   timeoutMs?: number | null;
   signal?: AbortSignal;
   onUploadProgress?: (progress: FrameSendProgress) => void;
@@ -115,6 +116,7 @@ export class BridgeRequestManager {
       options.signal?.addEventListener('abort', onAbort, { once: true });
       this.pending.set(requestId, pending);
       try {
+        options.onRequestId?.(requestId);
         if (!pending.send()) throw new Error('secure_channel_not_ready');
       } catch {
         pending.reject(new Error(t('连接已断开', 'Connection closed')));

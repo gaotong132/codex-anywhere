@@ -114,6 +114,7 @@ export const SessionSidebar = memo(function SessionSidebar({
       <nav className="session-list">
         {visibleSessions.map((session) => {
           const sessionRunning = isSessionRunning(session.status)
+            || attention[session.id] === 'running'
             || (session.id === selectedThreadId
               && (executionState === 'running' || executionState === 'waiting'));
           const completedUnread = !sessionRunning && attention[session.id] === 'unread';

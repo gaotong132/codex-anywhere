@@ -3,6 +3,22 @@ import test from 'node:test';
 import { BridgeRequestManager } from '../web/src/bridge-request-manager.js';
 import { friendlyError } from '../web/src/app-utils.js';
 import type { FrameSendOptions } from '../web/src/websocket-send.js';
+import { shouldAdoptStartedThread } from '../web/src/app-utils.js';
+
+test('new-session event correlation is registered before send and excludes another task start', async () => {
+  let pendingNewRequest: string | null = null;
+  const manager = new BridgeRequestManager({ isConnected: () => true, createId: () => 'new-task-request',
+    send: frame => {
+      assert.equal(pendingNewRequest, frame.requestId);
+      assert.equal(shouldAdoptStartedThread('background-task', null, pendingNewRequest === 'other-request'), false);
+      assert.equal(shouldAdoptStartedThread('new-task', null, pendingNewRequest === frame.requestId), true);
+      return true;
+    },
+  });
+  const pending = manager.request('turn.start', { text: 'New task' }, { onRequestId: id => { pendingNewRequest = id; } });
+  manager.handle({ type: 'response', requestId: 'new-task-request', ok: true, data: { threadId: 'new-task' } });
+  assert.deepEqual(await pending, { threadId: 'new-task' });
+});
 
 test('reconnect replays the original nested request after the caller edits its draft', async () => {
   const sent: any[] = [];

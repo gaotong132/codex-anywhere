@@ -310,11 +310,12 @@ function parseToolPayload(result: JsonObject): JsonObject {
 }
 
 export function mergeDesktopSessionStatuses<T extends { id: string; status?: string }>(
-  sessions: T[], desktopThreads: DesktopThreadStatus[], locallyActiveThreadId = '',
+  sessions: T[], desktopThreads: DesktopThreadStatus[], locallyActiveThreadIds: string | Iterable<string> = [],
 ) {
   const statuses = new Map((desktopThreads || []).map((thread) => [thread.id, thread.status]));
+  const active = new Set(typeof locallyActiveThreadIds === 'string' ? [locallyActiveThreadIds] : locallyActiveThreadIds);
   return (sessions || []).map((session) => {
-    if (session.id === locallyActiveThreadId) return { ...session, status: 'active' };
+    if (active.has(session.id)) return { ...session, status: 'active' };
     return statuses.has(session.id)
       ? { ...session, status: statuses.get(session.id) }
       : session;

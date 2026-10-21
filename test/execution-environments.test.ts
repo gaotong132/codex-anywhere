@@ -61,7 +61,7 @@ test('execution environment inventory is normalized without injecting a phantom 
 
 test('execution environment labels are defined in one place', () => {
   assert.equal(environmentDisplayName('personal-pc'), '我的电脑');
-  assert.equal(environmentDisplayName('ecs'), 'ECS · 24×7');
+  assert.equal(environmentDisplayName('ecs'), 'ECS · 7×24');
   assert.equal(environmentShortName('ecs'), 'ECS');
   assert.equal(environmentOnlineLabel('ecs'), 'ECS在线');
   assert.equal(environmentOfflineLabel('lab'), 'lab离线');

@@ -7,10 +7,12 @@ function createDependencies(overrides = {}) {
   return {
     codex: {
       child: {},
-      activeTurn: null,
+      activeTurns: new Map(),
+      getActiveTurn(threadId) { return this.activeTurns.get(threadId) || null; },
       listSessions: async () => [],
       readSession: async () => ({}),
       renameSession: async (threadId, name) => ({ threadId, title: name }),
+      deleteSession: async (threadId) => ({ threadId, deleted: true }),
       listSessionTurns: async () => ({}),
       readTurnDiff: async (threadId, turnId) => ({ threadId, turnId, content: 'diff' }),
       readModelConfig: async () => ({ model: 'gpt-default' }),
@@ -127,15 +129,30 @@ test('desktop archive requires confirmation, protects owned turns, and advertise
   assert.equal((await handler(request('connector.status'))).data.capabilities.sessionArchive, true);
   assert.equal((await handler(request('session.archive', { threadId: 'target', confirm: 'true' }))).error, 'session_archive_confirmation_required');
   assert.equal((await handler(request('session.archive', { confirm: true }))).error, 'thread_id_required');
-  deps.codex.activeTurn = { threadId: 'target' };
+  deps.codex.activeTurns.set('target', { threadId: 'target' });
   assert.equal((await handler(request('session.archive', { threadId: 'target', confirm: true }))).error, 'session_archive_not_idle');
-  deps.codex.activeTurn = null;
+  deps.codex.activeTurns.clear();
   assert.equal((await handler(request('session.archive', { threadId: 'target', confirm: true }))).ok, true);
   assert.deepEqual(calls, ['target']);
   const headless = createRequestHandler({ ...deps, mode: 'headless' });
   assert.equal((await headless(request('connector.status'))).data.capabilities.sessionArchive, undefined);
   assert.equal((await headless(request('session.archive', { threadId: 'target', confirm: true }))).error, 'session_archive_unsupported');
   assert.deepEqual(calls, ['target']);
+});
+
+test('session deletion requires headless mode and explicit confirmation', async () => {
+  const deleted: string[] = [];
+  const codex = { deleteSession: async (threadId: string) => { deleted.push(threadId); return { threadId, deleted: true }; } };
+  const desktop = createRequestHandler(createDependencies({ codex }));
+  assert.equal((await desktop(request('session.delete', { threadId: 'a', confirm: true }))).error, 'session_delete_headless_only');
+  const headless = createRequestHandler(createDependencies({ codex, mode: 'headless' }));
+  assert.equal((await headless(request('connector.status'))).data.capabilities.sessionDelete, true);
+  for (const confirm of [undefined, false, 'true', 1]) {
+    assert.equal((await headless(request('session.delete', { threadId: 'a', confirm }))).error, 'session_delete_confirmation_required');
+  }
+  assert.deepEqual(deleted, []);
+  assert.deepEqual((await headless(request('session.delete', { threadId: 'a', confirm: true }))).data, { threadId: 'a', deleted: true });
+  assert.deepEqual(deleted, ['a']);
 });
 
 test('file upload RPCs use the authenticated device owner and advertise support only when enabled', async () => {
@@ -279,7 +296,7 @@ test('request handler keeps connector routing independent from process startup',
       deviceId: 'personal-pc', deviceLabel: 'My computer', mode: 'desktop',
       platform: process.platform, codexOnline: true, activeTurn: false,
       desktopOnline: true, desktopInputOnline: false, desktopTools: ['send_message_to_thread', 'read_thread', 'set_thread_archived', 'navigate_to_codex_page'],
-      capabilities: { networkAccess: false, fullAccess: false },
+      capabilities: { networkAccess: false, fullAccess: false, sessionDelete: false },
     },
   });
 });
@@ -306,6 +323,22 @@ test('headless permission modes stay behind connector capabilities', async () =>
   }));
   assert.equal(updated.data.mode, 'auto');
   assert.deepEqual(calls, [['read', 'thread-1'], ['update', 'thread-1', 'auto']]);
+});
+
+test('headless dispatch steers only its target and lists every concurrent task as active', async () => {
+  const calls: any[] = [];
+  const handle = createRequestHandler(createDependencies({ mode: 'headless', codex: {
+    activeTurns: new Map(['a', 'b'].map(threadId => [threadId, { threadId, turnId: `turn-${threadId}`, state: 'running' }])),
+    listSessions: async () => [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+    startTurn: async payload => { calls.push(['start', payload.threadId]); return { threadId: payload.threadId }; },
+    steerTurn: async payload => { calls.push(['steer', payload.threadId]); return { threadId: payload.threadId }; },
+  } }));
+  assert.equal((await handle(request('connector.status'))).data.activeTurn, true);
+  assert.deepEqual((await handle(request('sessions.list'))).data.sessions, [
+    { id: 'a', status: 'active' }, { id: 'b', status: 'active' }, { id: 'c' },
+  ]);
+  await Promise.all(['b', 'c'].map(threadId => handle(request('turn.start', { threadId, text: 'Continue' }))));
+  assert.deepEqual(calls, [['steer', 'b'], ['start', 'c']]);
 });
 
 test('Desktop permission updates never fall back to an independent app-server writer', async () => {
@@ -510,7 +543,7 @@ test('session listing returns immediately and merges asynchronously cached Deskt
 
   const locallyActive = createRequestHandler(createDependencies({
     codex: {
-      activeTurn: { threadId: 'thread-1' },
+      activeTurns: new Map([['thread-1', { threadId: 'thread-1' }]]),
       listSessions: async () => sessions,
     },
     desktop: { listThreads: async () => [{ id: 'thread-1', status: 'notLoaded' }] },
