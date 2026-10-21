@@ -1,4 +1,5 @@
 import { publicError } from '../shared/protocol.js';
+import { measureOperation, operationMetrics } from './operation-metrics.js';
 import type { DesktopControls } from './desktop-controls.js';
 import type { FileUploadManager } from './file-uploads.js';
 import type { BrowserSessionBroker } from '../browser-control/session-broker.js';
@@ -25,7 +26,7 @@ type CodexGateway = {
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
   readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
-  listModels?(): Promise<any[]>;
+  listModels?(options?: { allowStale?: boolean }): Promise<any[]>;
   updateModelConfig(threadId: string, value: Payload): Promise<any>;
   readPermissionMode(threadId: string, options?: { fresh?: boolean }): Promise<any>;
   updatePermissionMode(threadId: string, mode: unknown): Promise<any>;
@@ -82,6 +83,19 @@ type DispatchContext = Dependencies & Required<Pick<BridgeRequest, 'action'>> & 
 };
 
 const DESKTOP_STATUS_REFRESH_MS = 6_000;
+const MEASURED_ACTIONS = new Set(['sessions.list', 'session.model-config.read', 'session.turns.list',
+  'approval.pending', 'connector.status', 'session.permissions.read', 'turn.start']);
+
+async function headerModelCatalog(codex: CodexGateway) {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      measureOperation('model.catalog', () => codex.listModels!({ allowStale: true })),
+      new Promise<any[]>(resolve => { timer = setTimeout(() => resolve([]), 1500); }),
+    ]);
+  } catch { return []; }
+  finally { clearTimeout(timer); }
+}
 
 export function createRequestHandler({
   codex, desktop, attachments, fileUploads, visualizations, downloads, deviceId, browser,
@@ -117,11 +131,12 @@ export function createRequestHandler({
       action, payload = {}, requestId, clientId, clientDeviceId,
     } = message;
     try {
-      const data = await dispatchAction({
+      const run = () => dispatchAction({
         action, payload, requestId, clientId, clientDeviceId,
         codex, desktop, attachments, fileUploads, visualizations, downloads, deviceId, deviceLabel, mode, browser,
         networkAccess, allowFullAccess, getDesktopStatuses, refreshDesktopThreads,
       });
+      const data = await (MEASURED_ACTIONS.has(action) ? measureOperation(action, run) : run());
       return { type: 'response', clientId, requestId, ok: true, data };
     } catch (error) {
       return { type: 'response', clientId, requestId, ok: false, error: publicError(error) };
@@ -134,6 +149,7 @@ async function dispatchAction({
   codex, desktop, attachments, fileUploads, visualizations, downloads, deviceId, deviceLabel, mode, browser,
   networkAccess, allowFullAccess, getDesktopStatuses, refreshDesktopThreads,
 }: DispatchContext) {
+  if (action === 'connector.diagnostics') return { operations: operationMetrics() };
   if (action.startsWith('browser.')) {
     if (!browser) throw new Error('browser_control_not_enabled_on_connector');
     if (!clientId || !clientDeviceId) throw new Error('browser_authenticated_device_required');
@@ -231,7 +247,7 @@ async function dispatchAction({
   if (action === 'session.model-config.read') {
     if (mode === 'desktop') {
       if (!desktop?.controls || !codex.listModels) throw new Error('desktop_input_unsupported');
-      return desktop.controls.modelConfig(String(payload.threadId || ''), await codex.listModels());
+      return desktop.controls.modelConfig(String(payload.threadId || ''), headerModelCatalog(codex));
     }
     return codex.readModelConfig(String(payload.threadId || ''));
   }

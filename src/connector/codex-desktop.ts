@@ -38,7 +38,7 @@ export class CodexDesktopClient {
     this.timeoutMs = Number.isFinite(options.timeoutMs)
       ? Math.max(1_000, Number(options.timeoutMs)) : DEFAULT_TIMEOUT_MS;
     this.client = null;
-    this.userInput = new DesktopUserInput(threadId => this.openThread({ threadId }), this.timeoutMs);
+    this.userInput = new DesktopUserInput((threadId, timeoutMs) => this.openThread({ threadId }, timeoutMs), this.timeoutMs);
     this.controls = new DesktopControls(this.userInput);
   }
 
@@ -84,14 +84,14 @@ export class CodexDesktopClient {
     return { threadId: targetThreadId, title };
   }
 
-  async openThread({ threadId }: { threadId?: unknown }) {
+  async openThread({ threadId }: { threadId?: unknown }, timeoutMs = this.timeoutMs) {
     const targetThreadId = requireThreadId(threadId);
     const result = await this.callTool({
       tool: 'navigate_to_codex_page',
       arguments: { threadId: targetThreadId },
       callerThreadId: targetThreadId,
       callId: `bridge-open-${randomUUID()}`,
-    });
+    }, { timeoutMs });
     if (result?.success !== true) throw new Error('desktop_thread_open_failed');
     return { threadId: targetThreadId, opened: true };
   }

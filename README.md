@@ -108,6 +108,11 @@ No per-task history reads are needed, and an unavailable Desktop bridge cannot h
 Desktop snapshot streams use a separate IPC connection from message delivery and model settings;
 oversized snapshots cannot close the command connection. Concurrent snapshot reads are coalesced,
 failed reads back off for 30 seconds, and incremental patches copy only changed branches.
+Current model/effort reads do not wait for full conversation snapshots. Model catalogs refresh in the
+background when cached; concurrent catalog, owner and session-list reads share work. On reconnect or
+resume, Web cancels obsolete model requests and retries a transient read once with bounded deadlines.
+Native frames are assembled without repeatedly copying partial payloads. Authenticated
+`connector.diagnostics` returns bounded operation timings and error categories, without message content or credentials.
 Codex Anywhere does not implement ACP.
 
 ## Security at a glance

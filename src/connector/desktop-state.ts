@@ -87,6 +87,11 @@ export class DesktopState extends EventEmitter {
     return selected.pending;
   }
 
+  peek(threadId: string, owner: string): ObjectValue | null {
+    const entry = this.entries.get(threadId);
+    return entry?.owner === owner && Date.now() - entry.touched <= 60_000 ? entry.state : null;
+  }
+
   private receive(message: ObjectValue) {
     const params = message.params;
     if (params?.hostId !== 'local' || typeof params.conversationId !== 'string') return;

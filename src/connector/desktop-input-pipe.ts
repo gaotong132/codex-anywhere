@@ -1,3 +1,4 @@
+import { NativeFrameReader } from './native-frame-reader.js';
 import { EventEmitter } from 'node:events';
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
@@ -26,19 +27,22 @@ export class DesktopInputPipe extends EventEmitter {
   private ready: Promise<void> | null = null;
   private clientId = '';
   private closed = false;
-  private buffer = Buffer.alloc(0);
+  private frames = new NativeFrameReader(MAX_FRAME_BYTES);
   private pending = new Map<string, Pending>();
   private cancelConnect: (() => void) | null = null;
 
   constructor(readonly path = '\\\\.\\pipe\\codex-ipc') { super(); }
 
   async request(method: InputMethod, params: Message, timeoutMs: number, targetClientId?: string): Promise<Message> {
+    const deadline = Date.now() + timeoutMs;
     // Snapshot and bound input before any asynchronous connection/initialization.
     const snapshot = JSON.parse(JSON.stringify(params));
     encodeNativeFrame({ type: 'request', requestId: randomUUID(), sourceClientId: randomUUID(),
       method, version: versions[method], params: snapshot, targetClientId });
     await this.connect(timeoutMs);
-    return this.dispatch(method, versions[method], snapshot, timeoutMs, targetClientId);
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new NativeRequestError(`${method} timeout`, false);
+    return this.dispatch(method, versions[method], snapshot, remaining, targetClientId);
   }
 
   async follow(conversationId: string, owner: string, following: boolean, timeoutMs: number) {
@@ -116,35 +120,35 @@ export class DesktopInputPipe extends EventEmitter {
 
   private onData(socket: net.Socket, chunk: Buffer) {
     if (this.socket !== socket) return;
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    while (this.buffer.length >= 4) {
-      const length = this.buffer.readUInt32LE(0);
-      if (!length || length > MAX_FRAME_BYTES) return this.disconnect(socket, new Error('desktop input invalid frame size'));
-      if (this.buffer.length < length + 4) return;
-      let message: Message;
-      try { message = JSON.parse(this.buffer.subarray(4, length + 4).toString('utf8')); }
-      catch { return this.disconnect(socket, new Error('desktop input invalid JSON')); }
-      this.buffer = this.buffer.subarray(length + 4);
-      if (!message || typeof message.type !== 'string') return this.disconnect(socket, new Error('desktop input invalid message'));
-      if (message.type === 'client-discovery-request') {
-        // We are a caller only. Never claim ownership or execute Desktop requests.
-        socket.write(encodeNativeFrame({ type: 'client-discovery-response', requestId: message.requestId,
-          response: { canHandle: false } }), error => { if (error) this.disconnect(socket, error); });
-        continue;
-      }
-      if (message.type === 'broadcast') { this.emit('broadcast', message); continue; }
-      if (message.type !== 'response') continue;
-      const pending = this.pending.get(message.requestId);
-      if (!pending) continue;
-      this.pending.delete(message.requestId);
-      clearTimeout(pending.timer);
-      if (message.resultType === 'error') {
-        pending.reject(new NativeRequestError(String(message.error || 'desktop input rejected'), true, 'desktop_host_error'));
-      } else if (message.resultType !== 'success' || message.method !== pending.method || !message.handledByClientId
-        || (pending.targetClientId && pending.targetClientId !== message.handledByClientId)) {
-        pending.reject(new NativeRequestError('desktop input invalid response', true));
-      } else pending.resolve(message);
-    }
+    try {
+      this.frames.push(chunk, payload => {
+        if (this.socket !== socket) return false;
+        let message: Message;
+        try { message = JSON.parse(payload.toString('utf8')); }
+        catch { this.disconnect(socket, new Error('desktop input invalid JSON')); return false; }
+        if (!message || typeof message.type !== 'string') {
+          this.disconnect(socket, new Error('desktop input invalid message')); return false;
+        }
+        if (message.type === 'client-discovery-request') {
+          socket.write(encodeNativeFrame({ type: 'client-discovery-response', requestId: message.requestId,
+            response: { canHandle: false } }), error => { if (error) this.disconnect(socket, error); });
+          return true;
+        }
+        if (message.type === 'broadcast') { this.emit('broadcast', message); return true; }
+        if (message.type !== 'response') return true;
+        const pending = this.pending.get(message.requestId);
+        if (!pending) return true;
+        this.pending.delete(message.requestId);
+        clearTimeout(pending.timer);
+        if (message.resultType === 'error') {
+          pending.reject(new NativeRequestError(String(message.error || 'desktop input rejected'), true, 'desktop_host_error'));
+        } else if (message.resultType !== 'success' || message.method !== pending.method || !message.handledByClientId
+          || (pending.targetClientId && pending.targetClientId !== message.handledByClientId)) {
+          pending.reject(new NativeRequestError('desktop input invalid response', true));
+        } else pending.resolve(message);
+        return this.socket === socket;
+      });
+    } catch { this.disconnect(socket, new Error('desktop input invalid frame size')); }
   }
 
   private disconnect(socket: net.Socket, error: Error) {
@@ -152,7 +156,7 @@ export class DesktopInputPipe extends EventEmitter {
     this.socket = null;
     this.ready = null;
     this.clientId = '';
-    this.buffer = Buffer.alloc(0);
+    this.frames.clear();
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(new NativeRequestError(error.message, true));

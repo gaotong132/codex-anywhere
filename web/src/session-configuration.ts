@@ -23,12 +23,14 @@ export function useSessionConfiguration({
   threadId,
   request,
   desktopState,
+  recoveryKey = '',
 }: {
   environmentId: string;
   online: boolean;
   threadId: string | null;
   request: BridgeRequest;
   desktopState?: NativeDesktopState | null;
+  recoveryKey?: string;
 }) {
   const [modelState, setModelState] = useState<KeyedValue<SessionModelConfig | null> | null>(null);
   const [modelLoadingKey, setModelLoadingKey] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function useSessionConfiguration({
   const connectorStatusPending = online && connectorState?.key !== environmentId;
   const modelConfig = online && modelState?.key === selectionKey ? modelState.value : null;
   const modelConfigLoading = Boolean(
-    online && threadId && (modelState?.key !== selectionKey || modelLoadingKey === selectionKey),
+    online && threadId && !modelConfig && (modelState?.key !== selectionKey || modelLoadingKey === selectionKey),
   );
   const permissionConfig = online && connectorStatus && permissionState?.key === selectionKey
     ? permissionState.value : null;
@@ -68,7 +70,7 @@ export function useSessionConfiguration({
         if (!disposed) setConnectorState({ key: environmentId, value: null });
       });
     return () => { disposed = true; };
-  }, [environmentId, online, request]);
+  }, [environmentId, online, request, recoveryKey]);
 
   const refreshPermissionConfig = useCallback(async () => {
     const requestNumber = ++permissionRequestRef.current;
@@ -146,24 +148,35 @@ export function useSessionConfiguration({
       return undefined;
     }
     let disposed = false;
+    const abort = new AbortController();
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     const targetKey = selectionKey;
     setModelLoadingKey(targetKey);
-    void request<SessionModelConfig>('session.model-config.read', { threadId })
-      .then((config) => {
-        if (!disposed && selectionKeyRef.current === targetKey) {
-          setModelState({ key: targetKey, value: config });
+    const isCurrent = () => !disposed && selectionKeyRef.current === targetKey;
+    const read = async (attempt: number) => {
+      let retry = false;
+      try {
+        const config = await request<SessionModelConfig>('session.model-config.read', { threadId },
+          { timeoutMs: 12_000, signal: abort.signal });
+        if (!isCurrent()) return;
+        setModelState({ key: targetKey, value: config });
+        // A cold catalog can arrive after the lightweight current model.
+        retry = !config.models.length && attempt === 0;
+      } catch (error) {
+        if (!isCurrent()) return;
+        const message = error instanceof Error ? error.message : '';
+        retry = attempt === 0 && /^(?:desktop_input_not_ready|desktop_input_unavailable|desktop_model_unavailable|desktop_state_\w+|request_timeout)$|timeout/i.test(message);
+        setModelState(previous => previous?.key === targetKey ? previous : { key: targetKey, value: null });
+      } finally {
+        if (isCurrent()) {
+          if (retry) retryTimer = setTimeout(() => { void read(1); }, 800);
+          else setModelLoadingKey(null);
         }
-      })
-      .catch(() => {
-        if (!disposed && selectionKeyRef.current === targetKey) {
-          setModelState({ key: targetKey, value: null });
-        }
-      })
-      .finally(() => {
-        if (!disposed && selectionKeyRef.current === targetKey) setModelLoadingKey(null);
-      });
-    return () => { disposed = true; };
-  }, [online, request, selectionKey, threadId, modelReadAttempt]);
+      }
+    };
+    void read(0);
+    return () => { disposed = true; clearTimeout(retryTimer); abort.abort(); };
+  }, [online, request, selectionKey, threadId, modelReadAttempt, recoveryKey]);
 
   const saveModelConfig = useCallback(async (draft: ModelConfigDraft) => {
     const targetKey = selectionKeyRef.current;
@@ -180,12 +193,16 @@ export function useSessionConfiguration({
   useEffect(() => {
     if (!desktopState?.model || desktopState.threadId !== threadId) return;
     setModelState(previous => {
-      if (previous?.key !== selectionKey || !previous.value) return previous;
+      if (previous?.key !== selectionKey || !previous.value) return { key: selectionKey, value: {
+        model: desktopState.model!, reasoningEffort: desktopState.reasoningEffort || '',
+        serviceTier: desktopState.serviceTier || null, fastMode: /fast|priority/i.test(desktopState.serviceTier || ''),
+        readOnly: true, models: [],
+      } };
       const tier = desktopState.serviceTier || 'default';
       const option = previous.value.models.find(model => model.model === desktopState.model)?.serviceTiers.find(value => value.id === tier);
       if (!previous.value.readOnly && previous.value.model === desktopState.model && previous.value.reasoningEffort === desktopState.reasoningEffort
         && previous.value.serviceTier === tier) return previous;
-      return { key: selectionKey, value: { ...previous.value, readOnly: false, model: desktopState.model!,
+      return { key: selectionKey, value: { ...previous.value, readOnly: !previous.value.models.length, model: desktopState.model!,
         reasoningEffort: desktopState.reasoningEffort || '', serviceTier: tier,
         fastMode: /fast|priority/i.test(`${tier} ${option?.name || ''}`) } };
     });

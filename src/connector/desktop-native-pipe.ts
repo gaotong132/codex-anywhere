@@ -1,3 +1,4 @@
+import { NativeFrameReader } from './native-frame-reader.js';
 import net from 'node:net';
 
 type JsonObject = Record<string, any>;
@@ -33,7 +34,7 @@ export class NativePipeClient {
   private cancelConnect: (() => void) | null = null;
   private nextId = 0;
   private pending = new Map<number, PendingRequest>();
-  private pendingData = Buffer.alloc(0);
+  private frames = new NativeFrameReader(MAX_FRAME_BYTES);
 
   constructor(public readonly pipePath: string) {}
 
@@ -98,39 +99,33 @@ export class NativePipeClient {
 
   private onData(socket: net.Socket, chunk: Buffer) {
     if (socket !== this.socket) return;
-    this.pendingData = Buffer.concat([this.pendingData, chunk]);
-    while (this.pendingData.length >= 4) {
-      const length = this.pendingData.readUInt32LE(0);
-      if (!length || length > MAX_FRAME_BYTES) {
-        this.disconnect(socket, new Error('desktop response invalid frame size'));
-        return;
-      }
-      if (this.pendingData.length < length + 4) return;
-      const payload = this.pendingData.subarray(4, length + 4);
-      this.pendingData = this.pendingData.subarray(length + 4);
-      let response: JsonObject;
-      try {
-        response = JSON.parse(payload.toString('utf8'));
-        if (!response || response.jsonrpc !== '2.0') throw new Error('invalid response');
-      } catch {
-        this.disconnect(socket, new Error('desktop response invalid JSON-RPC'));
-        return;
-      }
-      const pending = this.pending.get(response.id);
-      if (!pending) continue; // Includes late responses to expired requests.
-      this.pending.delete(response.id);
-      clearTimeout(pending.timer);
-      if (response.error) {
-        pending.reject(new NativeRequestError(response.error.message || 'desktop request failed', true, 'desktop_host_error'));
-      } else pending.resolve(response.result);
-    }
+    try {
+      this.frames.push(chunk, payload => {
+        let response: JsonObject;
+        try {
+          response = JSON.parse(payload.toString('utf8'));
+          if (!response || response.jsonrpc !== '2.0') throw new Error('invalid response');
+        } catch {
+          this.disconnect(socket, new Error('desktop response invalid JSON-RPC'));
+          return false;
+        }
+        const pending = this.pending.get(response.id);
+        if (!pending) return true; // Includes late responses to expired requests.
+        this.pending.delete(response.id);
+        clearTimeout(pending.timer);
+        if (response.error) {
+          pending.reject(new NativeRequestError(response.error.message || 'desktop request failed', true, 'desktop_host_error'));
+        } else pending.resolve(response.result);
+        return this.socket === socket;
+      });
+    } catch { this.disconnect(socket, new Error('desktop response invalid frame size')); }
   }
 
   private disconnect(socket: net.Socket, error: Error) {
     if (socket !== this.socket) return;
     this.socket = null;
     this.connected = false;
-    this.pendingData = Buffer.alloc(0);
+    this.frames.clear();
     for (const pending of this.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(new NativeRequestError(error.message, true));

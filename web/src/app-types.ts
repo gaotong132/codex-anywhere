@@ -27,7 +27,7 @@ export type SessionModelConfig = {
   readOnly?: boolean;
   model: string;
   reasoningEffort: string;
-  serviceTier: string;
+  serviceTier: string | null;
   fastMode: boolean;
   models: ModelOption[];
 };

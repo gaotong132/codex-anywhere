@@ -11,8 +11,9 @@ export class DesktopUserInput {
   readonly state: DesktopState;
   private readonly statePipe: DesktopInputPipe;
   private queues = new Map<string, Promise<unknown>>();
+  private owners = new Map<string, Promise<{ id: string; settings: Record<string, any> }>>();
 
-  constructor(private openThread: (threadId: string) => Promise<unknown>, private timeoutMs: number,
+  constructor(private openThread: (threadId: string, timeoutMs?: number) => Promise<unknown>, private timeoutMs: number,
     pipe = new DesktopInputPipe(), statePipe = new DesktopInputPipe(pipe.path)) {
     this.pipe = pipe;
     // Large follower snapshots must never disconnect in-flight user input or
@@ -32,20 +33,35 @@ export class DesktopUserInput {
     return sending;
   }
 
-  async owner(threadId: string, open = true) {
-    const deadline = Date.now() + this.timeoutMs;
+  owner(threadId: string, open = true, timeoutMs = this.timeoutMs) {
+    const key = JSON.stringify([threadId, open, timeoutMs]);
+    const pending = this.owners.get(key);
+    if (pending) return pending;
+    const reading = this.readOwner(threadId, open, timeoutMs).finally(() => {
+      if (this.owners.get(key) === reading) this.owners.delete(key);
+    });
+    this.owners.set(key, reading);
+    return reading;
+  }
+
+  private async readOwner(threadId: string, open: boolean, timeoutMs: number) {
+    const deadline = Date.now() + timeoutMs;
+    const remaining = () => {
+      if (Date.now() >= deadline) throw new Error('desktop_input_not_ready');
+      return Math.max(1, deadline - Date.now());
+    };
     let opened = false;
     while (true) {
       try {
-        const owner = await this.pipe.request('thread-owner-discovery', { hostId: 'local', conversationId: threadId }, this.timeoutMs);
-        const state = await this.pipe.request('thread-follower-read-model-settings', { conversationId: threadId }, this.timeoutMs, owner.handledByClientId);
+        const owner = await this.pipe.request('thread-owner-discovery', { hostId: 'local', conversationId: threadId }, remaining());
+        const state = await this.pipe.request('thread-follower-read-model-settings', { conversationId: threadId }, remaining(), owner.handledByClientId);
         if (state.result?.settings?.resumeState === 'resumed') return { id: owner.handledByClientId as string, settings: state.result.settings };
       } catch (error) {
         if (!(error instanceof NativeRequestError) || error.code !== 'desktop_host_error' || !error.message.includes('no-client-found')) throw error;
       }
       // Only Desktop may resume/own the thread. Opening a cold thread can focus its window.
       if (!open) throw new Error('desktop_input_not_ready');
-      if (!opened) { await this.openThread(threadId); opened = true; }
+      if (!opened) { await this.openThread(threadId, remaining()); opened = true; }
       if (Date.now() >= deadline) throw new Error('desktop_input_not_ready');
       await delay(250);
     }

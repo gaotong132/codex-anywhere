@@ -555,7 +555,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     savePermissionMode,
     refreshPermissionConfig,
     openPermissionSettingsOnDesktop,
-  } = useSessionConfiguration({ environmentId, online, threadId, request, desktopState });
+  } = useSessionConfiguration({ environmentId, online, threadId, request, desktopState,
+    recoveryKey: `${connectionEpoch}:${resumeEpoch}` });
 
   const replayPendingRequests = useCallback(() => {
     if (!secureChannelRef.current?.isReady()) return 0;

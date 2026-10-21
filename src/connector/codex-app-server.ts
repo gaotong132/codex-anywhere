@@ -139,6 +139,8 @@ export class CodexAppServer extends EventEmitter {
   private modelSettingsPath: string | null;
   sessionPermissionModes: Map<string, PermissionMode>;
   modelCatalogCache: { expiresAt: number; models: ModelOption[] } | null;
+  private modelCatalogRead: Promise<ModelOption[]> | null = null;
+  private sessionListReads = new Map<string, Promise<any[]>>();
   turnDiffs: Map<string, TurnDiffDocument>;
 
   constructor(options: CodexAppServerOptions = {}) {
@@ -221,8 +223,18 @@ export class CodexAppServer extends EventEmitter {
   }
 
   async listSessions(options: { cwd?: string } = {}) {
-    await this.ensureStarted();
     const cwd = options.cwd ? resolveAllowedWorkspace(this.allowedRoots, options.cwd) : '';
+    const pending = this.sessionListReads.get(cwd);
+    if (pending) return pending;
+    const reading = this.readSessionList(cwd).finally(() => {
+      if (this.sessionListReads.get(cwd) === reading) this.sessionListReads.delete(cwd);
+    });
+    this.sessionListReads.set(cwd, reading);
+    return reading;
+  }
+
+  private async readSessionList(cwd: string) {
+    await this.ensureStarted();
     const result = await this.rpcRaw('thread/list', {
       limit: 100,
       sortKey: 'recency_at',
@@ -663,10 +675,24 @@ export class CodexAppServer extends EventEmitter {
     saveSessionModelSettings(this.modelSettingsPath, this.sessionModelSettings);
   }
 
-  async listModels(): Promise<ModelOption[]> {
+  async listModels(options: { allowStale?: boolean } = {}): Promise<ModelOption[]> {
     if (this.modelCatalogCache && this.modelCatalogCache.expiresAt > Date.now()) {
       return this.modelCatalogCache.models;
     }
+    if (!this.modelCatalogRead) {
+      const reading = this.readModelCatalog().finally(() => {
+        if (this.modelCatalogRead === reading) this.modelCatalogRead = null;
+      });
+      this.modelCatalogRead = reading;
+    }
+    if (options.allowStale && this.modelCatalogCache) {
+      void this.modelCatalogRead.catch(() => {});
+      return this.modelCatalogCache.models;
+    }
+    return this.modelCatalogRead;
+  }
+
+  private async readModelCatalog(): Promise<ModelOption[]> {
     await this.ensureStarted();
     const result = await this.rpcRaw('model/list', { limit: 100, includeHidden: false });
     const models = (Array.isArray(result?.data) ? result.data : []).map((model: JsonObject) => ({

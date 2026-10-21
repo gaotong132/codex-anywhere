@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { DesktopUserInput, classifyDesktopError } from './desktop-user-input.js';
+import { measureOperation } from './operation-metrics.js';
 
 type Value = Record<string, any>;
 function mutationError(error: unknown) {
@@ -55,23 +56,26 @@ export class DesktopControls {
   }
   async read(threadId: string, open = false) { return (await this.snapshot(threadId, false, open)).summary; }
 
-  async modelConfig(threadId: string, models: Value[]) {
+  async modelConfig(threadId: string, catalog: Value[] | Promise<Value[]>) {
     // Model settings are a small native response. A long thread's full state
     // can exceed the stream frame limit without making these settings invalid.
     // Selecting a cold conversation in Web must let Desktop load its settings.
     // Only Desktop resumes it; this does not submit a message or start a turn.
-    const owner = await this.input.owner(threadId, true);
-    let summary: ReturnType<typeof desktopSummary>;
-    try {
-      summary = desktopSummary(await this.input.state.read(threadId, owner.id, 5000), owner.id);
-    } catch {
-      if (typeof owner.settings.model !== 'string' || !owner.settings.model) throw new Error('desktop_model_unavailable');
-      return { model: owner.settings.model, reasoningEffort: owner.settings.reasoningEffort || '',
-        serviceTier: null, fastMode: false, readOnly: true, models };
-    }
-    const tier = models.find(m => m.model === summary.model)?.serviceTiers?.find((t: Value) => t.id === summary.serviceTier);
-    return { model: summary.model, reasoningEffort: summary.reasoningEffort, serviceTier: summary.serviceTier,
-      fastMode: /fast|priority/i.test(`${summary.serviceTier} ${tier?.name || ''}`), models };
+    const [owner, models] = await Promise.all([
+      measureOperation('model.owner', () => this.input.owner(threadId, true, 8000)), catalog,
+    ]);
+    if (typeof owner.settings.model !== 'string' || !owner.settings.model) throw new Error('desktop_model_unavailable');
+    // Header reads must not subscribe to or wait for the complete conversation.
+    // The existing approval/status poll supplies full settings independently.
+    const state = this.input.state.peek(threadId, owner.id);
+    const summary = state ? desktopSummary(state, owner.id) : null;
+    const current = summary && summary.model === owner.settings.model
+      && summary.reasoningEffort === (owner.settings.reasoningEffort || '');
+    const serviceTier = current ? summary!.serviceTier : null;
+    const tier = models.find(m => m.model === owner.settings.model)?.serviceTiers?.find((t: Value) => t.id === serviceTier);
+    return { model: owner.settings.model, reasoningEffort: owner.settings.reasoningEffort || '', serviceTier,
+      fastMode: Boolean(serviceTier && /fast|priority/i.test(`${serviceTier} ${tier?.name || ''}`)),
+      readOnly: !current || !models.length, models };
   }
   async updateModel(threadId: string, value: Value, models: Value[]) {
     const model = models.find(m => m.model === value.model);

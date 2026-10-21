@@ -93,6 +93,23 @@ test('model and effort remain readable when a long conversation snapshot is unav
   await assert.rejects(controls.modelConfig('fixture', models), /desktop_model_unavailable/);
 });
 
+test('model header does not request a full snapshot and independent status unlocks full settings', async t => {
+  const { pipe, controls } = fixture(t);
+  let follows = 0;
+  const follow = pipe.follow.bind(pipe);
+  pipe.follow = async (...args) => { follows++; return follow(...args); };
+  const first = await controls.modelConfig('fixture', models);
+  assert.equal(first.model, 'astra'); assert.equal(first.readOnly, true);
+  assert.equal(follows, 0, 'displaying the model cannot pull complete history');
+  await controls.read('fixture');
+  assert.equal((await controls.modelConfig('fixture', models)).readOnly, false);
+  assert.equal(follows, 1);
+  pipe.state.latestModel = 'other';
+  const changed = await controls.modelConfig('fixture', models);
+  assert.equal(changed.model, 'other'); assert.equal(changed.readOnly, true);
+  assert.equal(changed.serviceTier, null, 'old snapshot settings cannot override the current owner');
+});
+
 test('model read loads a cold thread through Desktop without sending or changing settings', async t => {
   const pipe = new FakePipe();
   let opened = 0;
@@ -102,14 +119,7 @@ test('model read loads a cold thread through Desktop without sending or changing
       throw new NativeRequestError('no-client-found', true, 'desktop_host_error');
     }
 
-test('effective effort follows native collaboration and thread settings when the legacy field is empty', () => {
-  const state = initial();
-  state.latestReasoningEffort = null;
-  state.latestThreadSettings.effort = 'high';
-  assert.equal(desktopSummary(state, 'owner').reasoningEffort, 'high');
-  state.latestCollaborationMode = { settings: { reasoning_effort: 'xhigh' } };
-  assert.equal(desktopSummary(state, 'owner').reasoningEffort, 'xhigh');
-});
+
     return request(...args);
   };
   const input = new DesktopUserInput(async id => {
@@ -124,6 +134,15 @@ test('effective effort follows native collaboration and thread settings when the
   assert.equal((await controls.modelConfig('fixture', models)).reasoningEffort, 'high');
   assert.equal(opened, 1);
   assert.equal(pipe.writes.length, 0);
+});
+
+test('effective effort follows native collaboration and thread settings when the legacy field is empty', () => {
+  const state = initial();
+  state.latestReasoningEffort = null;
+  state.latestThreadSettings.effort = 'high';
+  assert.equal(desktopSummary(state, 'owner').reasoningEffort, 'high');
+  state.latestCollaborationMode = { settings: { reasoning_effort: 'xhigh' } };
+  assert.equal(desktopSummary(state, 'owner').reasoningEffort, 'xhigh');
 });
 
 test('native model changes fail on concurrent settings or an active turn', async t => {

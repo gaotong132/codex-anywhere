@@ -69,7 +69,7 @@ function request(action, payload = {}) {
 test('Desktop controls route native models, exact-turn stop and request-scoped approval without app-server mutations', async () => {
   const calls: any[] = [];
   const native = { read: async id => ({ threadId: id, approvals: [], waitingOnApproval: false }),
-    modelConfig: async (id, models) => ({ model: models[0].model, threadId: id }),
+    modelConfig: async (id, models) => ({ model: (await models)[0].model, threadId: id }),
     updateModel: async (...args) => { calls.push(['model', ...args]); return { model: 'native' }; },
     stop: async (...args) => { calls.push(['stop', ...args]); return { stopped: true }; },
     respond: async (...args) => { calls.push(['approval', ...args]); return { resolved: true }; } };
@@ -847,4 +847,23 @@ test('Desktop controls follow host capabilities independently of app-server heal
     getCapabilities: async () => { throw new Error('headless must not probe Desktop'); },
   } }));
   assert.equal((await headless(request('connector.status'))).ok, true);
+});
+
+test('a slow catalog cannot hold current-model display and diagnostics reveal the pending stage', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let release!: (value: any) => void, ownerRead = false;
+  const handle = createRequestHandler(createDependencies({
+    codex: { listModels: () => new Promise(resolve => { release = resolve; }) },
+    desktop: { controls: { modelConfig: async (_id, catalog) => { ownerRead = true;
+      return { model: 'current-native', models: await catalog, readOnly: true }; } } },
+  }));
+  const reading = handle(request('session.model-config.read', { threadId: 'private-thread' }));
+  assert.equal(ownerRead, true, 'native owner read starts before catalog completion');
+  const diagnostics = (await handle(request('connector.diagnostics'))).data.operations;
+  assert.ok(diagnostics.some(row => row.operation === 'model.catalog' && row.outcome === 'pending'));
+  assert.doesNotMatch(JSON.stringify(diagnostics), /private-thread/);
+  t.mock.timers.tick(1500);
+  const result = await reading;
+  assert.equal(result.data.model, 'current-native'); assert.deepEqual(result.data.models, []);
+  release([]); await Promise.resolve();
 });

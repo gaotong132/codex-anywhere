@@ -40,6 +40,23 @@ function standard(r: any, socket: net.Socket) {
 }
 const message = { threadId: 'fixture', text: '真实用户输入', requestId: 'one' };
 
+test('concurrent owner reads coalesce without caching stale settings or extending their budget', async () => {
+  const pipe = new DesktopInputPipe('unused');
+  const input = new DesktopUserInput(async () => assert.fail(), 1000, pipe);
+  let calls = 0, release!: () => void;
+  pipe.request = async method => {
+    calls++;
+    if (method === 'thread-owner-discovery') { await new Promise<void>(r => { release = r; }); return { handledByClientId: 'owner' }; }
+    return { result: { settings: { model: 'astra', resumeState: 'resumed' } } };
+  };
+  try {
+    const first = input.owner('fixture'), second = input.owner('fixture');
+    assert.equal(calls, 1); release();
+    assert.equal((await first).id, 'owner'); await second; assert.equal(calls, 2);
+    const third = input.owner('fixture'); assert.equal(calls, 3); release(); await third;
+  } finally { input.close(); }
+});
+
 test('an oversized follower snapshot cannot abort a concurrent native message or model read', async () => {
   await host((r, socket) => {
     if (standard(r, socket)) return;
