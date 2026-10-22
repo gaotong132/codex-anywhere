@@ -88,7 +88,7 @@ done
 command -v systemctl >/dev/null 2>&1 || die 'systemd is required.'
 command -v systemd-analyze >/dev/null 2>&1 || die 'systemd-analyze is required.'
 command -v getent >/dev/null 2>&1 || die 'getent is required.'
-command -v node >/dev/null 2>&1 || die 'Node.js 22 or newer is required.'
+command -v node >/dev/null 2>&1 || die 'Node.js 22.12 or newer is required.'
 command -v npm >/dev/null 2>&1 || die 'npm is required.'
 command -v codex >/dev/null 2>&1 || die 'Codex CLI is required.'
 REGISTRATION=$(node "$ROOT_DIR/scripts/connector-registration.mjs" /etc/codex-anywhere/connector.env "$DEVICE_ID" "$DEVICE_LABEL")
@@ -134,8 +134,7 @@ fi
 NODE_BIN=$(command -v node)
 NPM_BIN=$(command -v npm)
 CODEX_BIN=$(command -v codex)
-NODE_MAJOR=$("$NODE_BIN" -p 'Number(process.versions.node.split(".")[0])')
-[ "$NODE_MAJOR" -ge 22 ] || die 'Node.js 22 or newer is required.'
+"$NODE_BIN" -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 22 || (major === 22 && minor >= 12) ? 0 : 1)' || die 'Node.js 22.12 or newer is required.'
 run_as_service_user test -x "$NODE_BIN" || die "Node.js is not executable by $SERVICE_USER."
 run_as_service_user test -x "$NPM_BIN" || die "npm is not executable by $SERVICE_USER."
 run_as_service_user test -x "$CODEX_BIN" || die "Codex CLI is not executable by $SERVICE_USER."

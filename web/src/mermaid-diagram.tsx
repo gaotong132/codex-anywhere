@@ -180,6 +180,9 @@ function loadMermaid() {
         suppressErrorRendering: true,
         maxTextSize: 50_000,
         maxEdges: 500,
+        // Keep v11 layout and colors; v12 otherwise loads ELK for ordinary diagrams.
+        layout: 'dagre',
+        look: 'classic',
         theme: 'base',
         darkMode: true,
         themeVariables: mermaidThemeVariables,

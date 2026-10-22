@@ -4,6 +4,8 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+- Upgrade Mermaid to 12.2.0 and KaTeX to 0.18.10. Explicitly keep Dagre/classic rendering, the existing dark palette and lazy loading; retain source fallback on render failure. Align Node requirements to 22.12+. Target-phone acceptance remains pending; see [migration validation](docs/mermaid-12-validation.md).
+
 ## v0.4.5 — 2026-10-22
 
 - Read model/settings without navigating Desktop; bound state reads and reuse pushed status updates. Keep model loading compact and preserve the selected session during initial list refresh.

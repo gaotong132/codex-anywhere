@@ -9,7 +9,7 @@
 
 ## 开始开发
 
-要求 Node.js 22+ 和 npm；CI 会覆盖 Node.js 22 与 24。
+要求 Node.js 22.12+ 和 npm；CI 会覆盖 Node.js 22 与 24。
 
 ```bash
 npm ci

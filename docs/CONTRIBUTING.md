@@ -9,7 +9,7 @@ mobile Web bridge for Codex running on the user's own execution nodes.
 
 ## Get started
 
-Requirements: Node.js 22+ and npm. CI covers Node.js 22 and 24.
+Requirements: Node.js 22.12+ and npm. CI covers Node.js 22 and 24.
 
 ```bash
 npm ci

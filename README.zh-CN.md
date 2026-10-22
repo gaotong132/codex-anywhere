@@ -118,8 +118,8 @@ Codex Anywhere 没有实现 ACP。
 你需要：
 
 - 一台可访问的 Linux ECS/VPS，安装 Git、Docker Engine 和 Docker Compose v2；如果它还要作为 7×24
-  执行节点，则需要 Node.js 22+ 和已登录的 Codex CLI；
-- 一台运行 Codex Desktop/CLI 的 Windows 电脑，安装 Node.js 22+、Git 和 PowerShell；
+  执行节点，则需要 Node.js 22.12+ 和已登录的 Codex CLI；
+- 一台运行 Codex Desktop/CLI 的 Windows 电脑，安装 Node.js 22.12+、Git 和 PowerShell；
 - 一个浏览器可以访问的入口。域名、证书和反向代理可选；经过公网或不可信网络时推荐 WSS。
 
 启动转发服务：
@@ -139,7 +139,7 @@ Windows/Desktop、Linux/ECS 无头模式、环境切换和日常维护命令。
 
 ## 开发
 
-要求：Node.js 22+，以及已完成登录认证的 Codex CLI。
+要求：Node.js 22.12+，以及已完成登录认证的 Codex CLI。
 
 ```bash
 npm ci

@@ -55,9 +55,9 @@ require retraining as a full-time system administrator.
 
 For a newly purchased ECS without a public endpoint, follow the [fresh-ECS appendix](#appendix-deploy-on-a-new-ecs) at the end of this guide.
 
-- Reachable Linux ECS/VPS: Git, Docker Engine, Docker Compose v2. Add Node.js 22+ and an authenticated
+- Reachable Linux ECS/VPS: Git, Docker Engine, Docker Compose v2. Add Node.js 22.12+ and an authenticated
   Codex CLI when this host should also be an execution node.
-- Windows Codex computer: Codex Desktop/CLI, Node.js 22+, Git, PowerShell.
+- Windows Codex computer: Codex Desktop/CLI, Node.js 22.12+, Git, PowerShell.
 - Browser-reachable entry: WSS is recommended across public or untrusted networks. A domain, TLS
   certificate, and reverse proxy are optional; a private VPN or secure tunnel is also suitable.
 
@@ -99,7 +99,7 @@ On the computer running Codex:
 
 This section connects to an already signed-in, running Codex Desktop under the same Windows user. CLI-only
 installation does not provide Desktop delivery. Keep that computer awake, signed in and online. Install Node.js
-22+ and Git, then verify `node --version`, `npm.cmd --version` and `git --version` in a new PowerShell window.
+22.12+ and Git, then verify `node --version`, `npm.cmd --version` and `git --version` in a new PowerShell window.
 The launcher can discover the Codex executable bundled with Desktop.
 
 ```powershell
@@ -143,7 +143,7 @@ Use a stable, recognizable route when installing more than one connector:
 ## 2B. Install a 7×24 Linux/ECS connector
 
 The Linux connector runs in `headless` mode: it owns both new and resumed sessions through Codex
-app-server and never depends on Codex Desktop. Install Node.js 22+ and Codex CLI, then sign in as the
+app-server and never depends on Codex Desktop. Install Node.js 22.12+ and Codex CLI, then sign in as the
 actual service account; do not assume the distribution's Node version is recent enough:
 
 ```bash
@@ -443,7 +443,7 @@ Replace every occurrence of `codex.example.com` below with your own domain.
 | Nginx | For this appendix | Listen on 80/443, terminate TLS and proxy HTTP/WebSocket |
 | Domain and DNS record | For this appendix | Give clients a stable endpoint and validate domain ownership |
 | TLS certificate, Certbot / snapd | For this appendix | Issue and renew certificates; existing trusted certificates can use another manager |
-| Node.js 22+, authenticated Codex CLI, Connector | Optional | Install on the host only if ECS also executes Codex tasks; Relay runs Node inside Docker |
+| Node.js 22.12+, authenticated Codex CLI, Connector | Optional | Install on the host only if ECS also executes Codex tasks; Relay runs Node inside Docker |
 
 **WSS is WebSocket over TLS; there is no separate WSS service to install.** The connections are:
 

@@ -48,8 +48,8 @@ Codex 能自动完成多少，取决于你提供的权限和网络条件。DNS�
 第一次购买 ECS、尚未配置公网入口时，可按文末[附录：新购 ECS 从零部署](#附录新购-ecs-从零部署)完成基础安装。
 
 - 可访问的 Linux ECS/VPS：Git、Docker Engine、Docker Compose v2；如果还要作为执行节点，需要
-  Node.js 22+ 和已登录认证的 Codex CLI。
-- Windows Codex 电脑：Codex Desktop/CLI、Node.js 22+、Git、PowerShell。
+  Node.js 22.12+ 和已登录认证的 Codex CLI。
+- Windows Codex 电脑：Codex Desktop/CLI、Node.js 22.12+、Git、PowerShell。
 - 浏览器可达的入口：经过公网或不可信网络时推荐 WSS。域名、TLS 证书和反向代理可选，也可以使用
   私有 VPN 或安全隧道。
 
@@ -90,7 +90,7 @@ cd codex-anywhere
 
 本节默认接入 **已登录并运行的 Codex Desktop**，请使用同一个 Windows 用户安装连接器；仅安装 CLI
 不等于具备 Desktop 会话投递能力。电脑需要保持开机、用户登录及网络在线，睡眠后无法远程执行。
-先从 [Node.js 官网](https://nodejs.org/en/download)安装 22+，安装 Git，并在新开的 PowerShell 中确认
+先从 [Node.js 官网](https://nodejs.org/en/download)安装 22.12+，安装 Git，并在新开的 PowerShell 中确认
 `node --version`、`npm.cmd --version` 和 `git --version` 可用。Desktop 自带的 Codex 可执行文件可以由启动器发现。
 
 ```powershell
@@ -130,7 +130,7 @@ Markdown、SVG、源代码、配置和文本预览支持连接器账号可读的
 ## 2B. 安装 7×24 Linux/ECS 连接器
 
 Linux 连接器使用 `headless` 模式：新建和恢复的会话都由它自己的 Codex app-server 管理，不依赖 Codex
-Desktop。先从 [Node.js 官网](https://nodejs.org/en/download)安装 22+，不要假定发行版自带的 `nodejs`
+Desktop。先从 [Node.js 官网](https://nodejs.org/en/download)安装 22.12+，不要假定发行版自带的 `nodejs`
 满足版本要求。然后安装 [Codex CLI](https://developers.openai.com/codex/cli/)，并在**实际运行服务的账号**下登录：
 
 ```bash
@@ -426,7 +426,7 @@ Web 侧边栏“执行环境”旁的编辑按钮可修改当前设备名称，�
 | Nginx | 本附录需要 | 监听 80/443，终止 TLS，反向代理 HTTP 和 WebSocket |
 | 域名及 DNS 解析 | 本附录需要 | 让客户端访问固定域名，并完成证书域名验证 |
 | TLS 证书、Certbot / snapd | 本附录需要 | 签发和自动续期证书；已有受信任证书可用自己的证书管理工具 |
-| Node.js 22+、已认证的 Codex CLI、Connector | 可选 | 仅在 ECS 也要执行 Codex 任务时安装；仅转发时 Node 在容器内运行 |
+| Node.js 22.12+、已认证的 Codex CLI、Connector | 可选 | 仅在 ECS 也要执行 Codex 任务时安装；仅转发时 Node 在容器内运行 |
 
 **WSS 是经过 TLS 加密的 WebSocket，不需要另外安装“WSS 服务”。** 在这个方案中：
 

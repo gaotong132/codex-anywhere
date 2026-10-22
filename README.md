@@ -143,9 +143,9 @@ Read the honest threat model and incident steps in the [security policy](docs/SE
 
 You need:
 
-- a reachable Linux ECS/VPS with Git, Docker Engine, and Docker Compose v2; add Node.js 22+ and an
+- a reachable Linux ECS/VPS with Git, Docker Engine, and Docker Compose v2; add Node.js 22.12+ and an
   authenticated Codex CLI when the same host should also run a 7×24 connector;
-- a Windows computer with Codex Desktop/CLI, Node.js 22+, Git, and PowerShell;
+- a Windows computer with Codex Desktop/CLI, Node.js 22.12+, Git, and PowerShell;
 - a browser-reachable entry point. A domain, certificate, and reverse proxy are optional; WSS is
   recommended over public or untrusted networks.
 
@@ -167,7 +167,7 @@ remote entry point.
 
 ## Develop
 
-Requirements: Node.js 22+ and an authenticated Codex CLI.
+Requirements: Node.js 22.12+ and an authenticated Codex CLI.
 
 ```bash
 npm ci
