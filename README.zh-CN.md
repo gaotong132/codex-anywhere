@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-文档对应 **v0.4.4（2026-10-18）** · [发布与升级](docs/release-0.4.4.zh-CN.md) · [文档索引](docs/README.zh-CN.md)
+文档对应 **v0.4.5（2026-10-22）** · [发布与升级](docs/release-0.4.5.zh-CN.md) · [文档索引](docs/README.zh-CN.md)
 
 [![CI](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml/badge.svg)](https://github.com/gaotong132/codex-anywhere/actions/workflows/codeql.yml)

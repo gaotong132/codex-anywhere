@@ -2,7 +2,7 @@
 
 English | [简体中文](browser-agent.zh-CN.md)
 
-Documentation for **v0.4.4 (2026-10-18)** · [Release and upgrade](release-0.4.4.md) · [Documentation index](README.md)
+Documentation for **v0.4.5 (2026-10-22)** · [Release and upgrade](release-0.4.5.md) · [Documentation index](README.md)
 
 Browser Agent is included in `main` as an **experimental add-on**, disabled by default. It requires a separate
 extension build and installation plus Relay configuration; page control also needs Connector/MCP setup. Normal session
@@ -159,7 +159,7 @@ source does not update running processes.
 
 ## Acceptance gates
 
-Release v0.4.3 passed 451 root tests and 100 extension tests plus type checks and builds. The dated entries below retain their original evidence and fingerprints; they are not current release counts. See [release verification](release-0.4.4.md#verification-and-limits).
+Release v0.4.3 passed 451 root tests and 100 extension tests plus type checks and builds. The dated entries below retain their original evidence and fingerprints; they are not current release counts. See [release verification](release-0.4.5.md#verification-and-limits).
 
 - 2026-09-09 state reminders: 370 root tests, type checks and builds pass. Coverage includes stable-state suppression,
   failures and reordered delivery receipts, same-count page replacement, liveness changes, reconnect, bounded retention,

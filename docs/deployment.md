@@ -2,7 +2,7 @@
 
 English | [简体中文](deployment.zh-CN.md)
 
-Documentation for **v0.4.4 (2026-10-18)** · [Release and upgrade](release-0.4.4.md) · [Documentation index](README.md)
+Documentation for **v0.4.5 (2026-10-22)** · [Release and upgrade](release-0.4.5.md) · [Documentation index](README.md)
 
 Codex Anywhere uses a small Linux relay as the meeting point for a browser and one or more Codex connector
 nodes. Codex, projects, attachments, and generated files remain on the selected node. Every connector makes
@@ -250,7 +250,7 @@ The ECS connector supports concurrent sessions. Switching sessions allows an ind
 apply only to the selected task. Each session has one active turn, and text sent during it is steering input.
 Wait for all sessions to become idle before upgrading or restarting the connector.
 
-For the tagged release, follow the [v0.4.4 upgrade procedure](release-0.4.4.md#upgrade).
+For the tagged release, follow the [v0.4.5 upgrade procedure](release-0.4.5.md#upgrade).
 The `update` helper tracks `main`; it does not pin a tag or wait for all business tasks to become idle.
 Save the previous commit, image and private state first, schedule an idle window, and verify each Connector after restart.
 

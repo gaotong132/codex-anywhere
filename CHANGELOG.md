@@ -4,6 +4,12 @@ English | [简体中文](CHANGELOG.zh-CN.md)
 
 ## Unreleased
 
+## v0.4.5 — 2026-10-22
+
+- Read model/settings without navigating Desktop; bound state reads and reuse pushed status updates. Keep model loading compact and preserve the selected session during initial list refresh.
+- Render process messages as Markdown, wrap wide table cells, support CJK emphasis and safe line breaks, and merge paged process updates without duplicate cards.
+- Reconcile production feature changes into the repository; deploy clean committed source while keeping machine configuration and recovery backups outside Git.
+
 - Edit and resend a sent user message from Web: revert that turn and later conversation, preserve original attachments, and run the edited message. Check for active turns and stale confirmations; never automatically retry an uncertain edit. File changes and external actions are not undone.
 
 - Add permanent deletion to headless session lists with confirmation, active-turn protection, and session-scoped cache/browser-grant cleanup. Uses native history deletion without removing project files.

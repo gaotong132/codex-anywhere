@@ -1,8 +1,8 @@
-# Documentation · v0.4.4
+# Documentation · v0.4.5
 
 English | [简体中文](README.zh-CN.md)
 
-Reviewed for the 2026-10-18 release. Start with [project features](../README.md) or [release highlights and upgrade steps](release-0.4.4.md).
+Reviewed for the 2026-10-22 release. Start with [project features](../README.md) or [release highlights and upgrade steps](release-0.4.5.md).
 
 | Guide | Scope |
 | --- | --- |
@@ -12,7 +12,7 @@ Reviewed for the 2026-10-18 release. Start with [project features](../README.md)
 | [Browser extension](../extension/README.md) | Optional experimental installation, side-panel chat, page grants, screenshots, zoom and limits |
 | [Browser architecture](browser-agent.md) | MCP, trusted caller identity, encrypted routing and acceptance boundaries |
 | [Composite controls](../extension/docs/composite-controls.md) | Nested controls, native pointer validation and zoomed screenshot regression |
-| [Current code review](code-review-0.4.4.md) | Reproduced issues, refactoring scope, validation and limits |
+| [v0.4.4 code review](code-review-0.4.4.md) | Reproduced issues, refactoring scope, validation and limits |
 | [Production source review](code-review-2026-10-21.md) | Server overlay reconciliation, concurrency, deletion and image preview |
 | [Changelog](../CHANGELOG.md) | Published version history |
 
