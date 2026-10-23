@@ -72,7 +72,7 @@
     "@vitejs/plugin-react": "6.1.1",
     "linkedom": "0.18.13",
     "sass": "1.105.1",
-    "tsx": "^4.23.13",
+    "tsx": "^4.23.15",
     "typescript": "7.0.2",
     "vite": "8.3.4"
   }
