@@ -181,7 +181,7 @@ function SessionDrawerPreview() {
             <button className="sidebar-tool mobile-only" type="button" tabIndex={-1}><SidebarIcon name="panel-close" /></button>
           </div>
         </div>
-        <EnvironmentSwitcher value="ecs" environmentIds={['personal-pc', 'ecs']}
+        <EnvironmentSwitcher value="ecs" environmentIds={['personal-pc', 'ecs', 'studio']}
           onlineEnvironmentIds={['personal-pc', 'ecs']} onChange={() => {}} />
         <nav className="session-list">
           {sessions.map((session) => (

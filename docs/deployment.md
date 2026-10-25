@@ -235,7 +235,7 @@ details on hover or tap; a session that has compacted should keep a compaction m
 For a long session, browse upward once and confirm that the older-history indicator appears, the current
 reading position does not jump, and a failed request offers retry. For a connector-owned test run, open
 the running-status strip and verify that Stop interrupts only that run. Repeat with an isolated Desktop turn: Web must use its confirmed turn ID. Active goals still require Desktop stop, since stopping one turn does not pause a goal.
-With one or two known environments, the sidebar shows direct buttons with separate selection and online states. More environments use the full selector. Switching keeps the drawer open until a session is chosen, restores the last session for that environment, and clears attachment drafts to avoid sending files to the wrong node.
+With at most two online environments, the sidebar shows direct buttons with separate selection and online states, regardless of the total registered count. Additional offline devices remain in an expandable section; selecting an offline device or losing the current connection reveals its selected button without switching environments. Inventories of one or two devices keep both buttons visible even when offline. More than two online environments use the full selector. Switching keeps the drawer open until a session is chosen, restores the last session for that environment, and clears attachment drafts to avoid sending files to the wrong node.
 
 When multiple connectors are approved, open the sidebar, switch execution environments, and confirm that
 the top-bar badge, session list, remembered workspace, and online state change together. Start one harmless
@@ -386,7 +386,7 @@ Operators can also run:
 
 The same identity can reconnect and replace its old socket. Another identity cannot be approved on an occupied route, and approved identities cannot switch routes. For `device_route_conflict` or `device_route_mismatch`, inspect configuration and registrations, choose a separate ID for the new device and request approval again. Do not revoke a needed existing machine to make room. Legacy duplicate routes require an operator to retain the correct identity and revoke conflicting records.
 
-The inventory includes every approved connector, including offline nodes, without the former 24-device truncation. More than two nodes use a dropdown. Revocation updates the list on the next presence broadcast.
+The inventory includes every approved connector, including offline nodes, without the former 24-device truncation. More than two online nodes use a dropdown; otherwise online nodes have direct buttons and additional offline nodes remain in an expandable section. Revocation updates the list on the next presence broadcast.
 
 ## Supported configuration
 
