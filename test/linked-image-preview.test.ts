@@ -110,6 +110,8 @@ test('image links preview on demand, preserve original downloads, retry failures
     await click('[aria-label="预览图片：b.png"]');
     await act(async () => pending[1].reject(new Error('local_image_not_found')));
     assert.match(document.querySelector('[role="dialog"]')!.textContent!, /预览失败/);
+    assert.match(document.querySelector('[role="dialog"]')!.textContent!, /图片不存在或无法读取/);
+    assert.doesNotMatch(document.querySelector('[role="dialog"]')!.textContent!, /仍可下载/);
     await click('.markdown-preview-state button');
     assert.equal(pending[2].path, '/root/b.png');
     await click('[aria-label="关闭预览"]');
@@ -127,6 +129,19 @@ test('image links preview on demand, preserve original downloads, retry failures
       document.dispatchEvent(event);
     });
     assert.equal(document.querySelector('[role="dialog"]'), null);
+    for (const error of ['local_image_path_not_allowed', 'generated_image_path_not_allowed']) {
+      await click('[aria-label="预览图片：a.png"]');
+      await act(async () => pending.at(-1)!.reject(new Error(error)));
+      const failure = document.querySelector('.markdown-preview-state.failed')!;
+      assert.match(failure.textContent!, /该图片所在目录未获当前设备授权/);
+      assert.match(failure.textContent!, /连接器允许目录/);
+      assert.doesNotMatch(failure.textContent!, /仍可下载|path_not_allowed/);
+      await click('.markdown-preview-state button');
+      await act(async () => pending.at(-1)!.resolve('data:image/webp;base64,YQ=='));
+      assert.equal(document.querySelector('.markdown-preview-state.failed'), null);
+      assert.ok(document.querySelector('.linked-image-preview img'));
+      await click('[aria-label="关闭预览"]');
+    }
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of saved) {

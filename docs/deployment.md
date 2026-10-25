@@ -354,6 +354,7 @@ Keep the current and previous deployment plus needed base/container images; do n
 | Browser storage was cleared | Generate a new pairing link for that profile and revoke the retired device if appropriate; do not reset the whole registry |
 | HTML still shows source or relative images are missing | Refresh Web, use matching v0.4.3 nodes and check the Connector's raster-image roots |
 | Generated images are missing | Update and restart the selected Connector, refresh Web and check the original files under the Codex generated-images directory; updating Relay alone cannot fix node-side history parsing |
+| Image preview says the folder is not allowed | Add the image's project directory to the selected Connector's complete `-AllowedRoots` list, restart that Connector when idle, then retry. A missing-image message instead means the original file must exist and be readable on that device. |
 | Docker exits with a package.json permission error | Rebuild from v0.4.3; the Dockerfile sets readable package metadata for the non-root runtime. Do not make private configuration public or run the service as root to bypass it |
 | Container health still says starting | The reference health check runs every 30 seconds with a 10-second start period; inspect container state/logs and allow for the first probe before declaring failure |
 | A supported code link still downloads immediately | Update both checkouts, restart the connector, then fully refresh or reopen the browser tab |

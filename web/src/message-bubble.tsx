@@ -46,7 +46,21 @@ type FilePreviewState = {
   kind: 'markdown' | 'code' | 'text' | 'image';
   language: string;
   status: 'loading' | 'ready' | 'failed';
+  error?: string;
 };
+
+function imagePreviewFailure(error: unknown) {
+  const code = error instanceof Error ? error.message : '';
+  if (/^(?:local|generated)_image_path_not_allowed$/.test(code)) {
+    return t('该图片所在目录未获当前设备授权。请在电脑端将该项目目录加入连接器允许目录，再重试。',
+      'This image folder is not allowed on the selected device. Add the project folder to the connector’s allowed directories on that computer, then retry.');
+  }
+  if (/^(?:local|generated)_image_not_found$/.test(code)) {
+    return t('预览失败：图片不存在或无法读取，可能已被移动或删除。',
+      'Preview failed: the image is missing or unreadable. It may have been moved or deleted.');
+  }
+  return t('预览失败，请重试，或尝试下载原文件。', 'Preview failed. Retry or try downloading the original file.');
+}
 
 type TurnDiffPreviewState = {
   turnId: string;
@@ -453,9 +467,9 @@ function MessageBubbleComponent({
         const content = await onReadPreviewImage(path);
         if (requestVersion !== filePreviewRequestRef.current) return;
         setFilePreview({ ...preview, content, status: 'ready' });
-      } catch {
+      } catch (error) {
         if (requestVersion !== filePreviewRequestRef.current) return;
-        setFilePreview({ ...preview, status: 'failed' });
+        setFilePreview({ ...preview, status: 'failed', error: imagePreviewFailure(error) });
       }
       return;
     }
@@ -661,7 +675,7 @@ function MessageBubbleComponent({
               )}
               {filePreview.status === 'failed' && (
                 <div className="markdown-preview-state failed">
-                  <span>{t('预览失败，仍可下载文件。', 'Preview failed; the file can still be downloaded.')}</span>
+                  <span>{filePreview.error || t('预览失败，仍可下载文件。', 'Preview failed; the file can still be downloaded.')}</span>
                   <button type="button" onClick={() => void openLocalFile(filePreview.path)}>
                     {t('重试', 'Retry')}
                   </button>
