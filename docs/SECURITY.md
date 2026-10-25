@@ -107,8 +107,7 @@ results through summary RPCs. A displayed reference never bypasses canonical-pat
 
 
 
-- Image previews must resolve inside an allowed root, pass content validation, and are resized and
-  converted to WebP before transfer.
+- Linked image previews accept absolute paths readable by the connector account without workspace-root restrictions. They require regular non-symlink JPEG/PNG/WebP files no larger than 32 MiB, validate content and file snapshots, and resize to WebP previews no larger than 512 KiB. Managed generated-image and upload readers retain their own directory checks.
 - General uploads use encrypted 256 KiB chunks, a 100 MiB per-file limit and an upload ID bound to the
   authenticated browser device. A connector permits at most four incomplete uploads, two per device;
   inactive uploads expire after 30 minutes. Files use private temporary storage, generated paths and
@@ -139,7 +138,7 @@ results through summary RPCs. A displayed reference never bypasses canonical-pat
   renderer; decrypted HTML goes directly into the frame over a private browser message channel.
   Inline CSS/JavaScript can run, but application storage, top navigation, popups, forms and automatic
   network requests are blocked. Standalone external or local CSS/JS files are not bundled.
-  Up to 100 declared local raster images load near the viewport through the existing root/MIME checks,
+  Up to 100 declared local raster images load near the viewport through the existing size/MIME checks,
   with three concurrent reads and a 32 MiB encoded-data budget. Up to 200 local links can be opened by
   a real user click, retaining source/download controls and up to 20 back-navigation entries.
 - Timeline diagnostics expose only aggregate tool counts, bounded public failure details, model settings,
@@ -161,7 +160,7 @@ results through summary RPCs. A displayed reference never bypasses canonical-pat
 
 Broad `-AllowedRoots`, `-AllowAnyFileDownload`, `-EnableNetworkAccess`, and `-AllowFullAccess` options increase connector
 authority and are disabled or narrow by default. `-AllowAnyFileDownload` expands only confirmed downloads;
-raster image previews retain their root checks, while text-based previews already accept any readable absolute path. Full access also allows Codex operations beyond read-only preview, subject to the connector service account’s OS permissions.
+text and linked raster previews already accept readable absolute paths without workspace-root checks. Full access also allows Codex operations beyond read-only preview, subject to the connector service account’s OS permissions.
 
 ## Trust boundary and honest limits
 

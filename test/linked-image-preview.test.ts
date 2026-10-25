@@ -14,7 +14,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-test('linked generated images use the managed reader without allowing arbitrary files outside project roots', async t => {
+test('linked images preview from project, generated and other readable directories without configured roots', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'linked-image-preview-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const local = join(directory, 'project'), generated = join(directory, 'custom-codex-home', 'generated_images');
@@ -27,17 +27,14 @@ test('linked generated images use the managed reader without allowing arbitrary 
   const request: BridgeRequest = (async (action, payload) => {
     assert.equal(action, 'attachment.read');
     sources.push(payload.source);
-    return readImageAttachment(payload, { localAllowedRoots: [local], generatedDirectory: generated });
+    return readImageAttachment(payload, { generatedDirectory: generated });
   }) as BridgeRequest;
-  await assert.rejects(readImageAttachment({ path: generatedPath, source: 'local' }, {
-    localAllowedRoots: [local], generatedDirectory: generated,
-  }), /local_image_path_not_allowed/);
   assert.match(await readLinkedImagePreview(request, generatedPath), /^data:image\/webp;base64,/);
-  assert.deepEqual(sources.splice(0), ['local', 'generated']);
+  assert.deepEqual(sources.splice(0), ['local']);
   assert.match(await readLinkedImagePreview(request, localPath), /^data:image\/webp;base64,/);
   assert.deepEqual(sources.splice(0), ['local']);
-  await assert.rejects(readLinkedImagePreview(request, outsidePath), /generated_image_path_not_allowed/);
-  assert.deepEqual(sources.splice(0), ['local', 'generated']);
+  assert.match(await readLinkedImagePreview(request, outsidePath), /^data:image\/webp;base64,/);
+  assert.deepEqual(sources.splice(0), ['local']);
 });
 
 test('linked-image fallback neither retries network errors nor accepts unsupported preview types', async () => {

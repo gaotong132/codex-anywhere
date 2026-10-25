@@ -35,11 +35,11 @@ test('same-size image replacement with preserved mtime invalidates preview cache
   const time = new Date('2026-01-01T00:00:00Z');
   await writeFile(path, pad(red));
   await utimes(path, time, time);
-  const before = await readImageAttachment({ path, source: 'local' }, { localAllowedRoots: [directory] });
+  const before = await readImageAttachment({ path, source: 'local' });
   await writeFile(replacement, pad(blue));
   await utimes(replacement, time, time);
   await rename(replacement, path);
-  const after = await readImageAttachment({ path, source: 'local' }, { localAllowedRoots: [directory] });
+  const after = await readImageAttachment({ path, source: 'local' });
   assert.notEqual(after.data, before.data);
 });
 
@@ -168,7 +168,7 @@ test('generated image read returns a lightweight preview only from the Codex ima
   );
 });
 
-test('local Markdown images render only from configured project roots', async (t) => {
+test('local Markdown images accept readable absolute paths without project roots and still validate content', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'bridge-local-image-test-'));
   const outsideDirectory = await mkdtemp(join(tmpdir(), 'bridge-local-image-outside-'));
   const localImage = join(directory, 'diagram.png');
@@ -184,15 +184,16 @@ test('local Markdown images render only from configured project roots', async (t
 
   const result = await readImageAttachment({
     path: localImage, source: 'local',
-  }, { localAllowedRoots: [directory] });
+  });
   assert.equal(result.mimeType, 'image/webp');
   assert.ok(result.data.length > 0);
+  const outside = await readImageAttachment({ path: outsideImage, source: 'local' });
+  assert.equal(outside.mimeType, 'image/webp');
+  for (const path of ['', 'diagram.png', '../diagram.png']) {
+    await assert.rejects(readImageAttachment({ path, source: 'local' }), /local_image_path_invalid/);
+  }
   await assert.rejects(
-    () => readImageAttachment({ path: outsideImage, source: 'local' }, { localAllowedRoots: [directory] }),
-    /local_image_path_not_allowed/,
-  );
-  await assert.rejects(
-    () => readImageAttachment({ path: fakeImage, source: 'local' }, { localAllowedRoots: [directory] }),
+    () => readImageAttachment({ path: fakeImage, source: 'local' }),
     /local_image_content_mismatch/,
   );
 });

@@ -1,5 +1,5 @@
 import { lstat, open, realpath } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { fileTypeFromBuffer } from 'file-type';
 import { LRUCache } from 'lru-cache';
 import sharp from 'sharp';
@@ -25,10 +25,12 @@ export async function readRasterImagePreview({
   errorPrefix,
 }: {
   path: unknown;
-  allowedRoots: string[];
+  allowedRoots: string[] | null;
   errorPrefix: string;
 }) {
-  const requestedPath = resolve(String(requestedValue || ''));
+  const requested = String(requestedValue || '');
+  if (!isAbsolute(requested)) throw new Error(`${errorPrefix}_path_invalid`);
+  const requestedPath = resolve(requested);
   const candidateStats = await lstat(requestedPath).catch((error) => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`${errorPrefix}_not_found`);
     throw error;
@@ -39,9 +41,11 @@ export async function readRasterImagePreview({
   }
 
   const path = await realpath(requestedPath);
-  const roots = await Promise.all(allowedRoots.map(async (root) => realpath(resolve(root)).catch(() => resolve(root))));
-  if (!roots.some((root) => isPathWithinRoot(path, root))) {
-    throw new Error(`${errorPrefix}_path_not_allowed`);
+  if (allowedRoots !== null) {
+    const roots = await Promise.all(allowedRoots.map(async (root) => realpath(resolve(root)).catch(() => resolve(root))));
+    if (!roots.some((root) => isPathWithinRoot(path, root))) {
+      throw new Error(`${errorPrefix}_path_not_allowed`);
+    }
   }
 
   const handle = await open(path, 'r');

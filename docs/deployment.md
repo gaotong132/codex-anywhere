@@ -124,10 +124,10 @@ to a login shortcut.
 
 New sessions have no default workspace: choose a project in the Web UI. `-AllowedRoots` is optional and
 defaults to the connector checkout; specify additional roots only when those directories should be
-selectable or available for raster image previews; text-based previews need no additional roots. `-AllowAnyFileDownload`, `-EnableNetworkAccess`, and `-AllowFullAccess` are
+selectable for new sessions; text and linked raster previews need no additional roots. `-AllowAnyFileDownload`, `-EnableNetworkAccess`, and `-AllowFullAccess` are
 explicit opt-ins.
 
-Markdown, SVG, source-code, config, and text previews accept any readable absolute path, with type, UTF-8 and 2 MiB limits. Raster image previews remain root-bound. Enabling
+Markdown, SVG, source-code, config, and text previews accept any readable absolute path, with type, UTF-8 and 2 MiB limits. Linked raster previews also accept readable absolute paths, validating JPEG/PNG/WebP content, a 32 MiB original limit and a 512 KiB preview limit. Enabling
 `-AllowAnyFileDownload` permits a confirmed download outside those roots; it does not silently expand
 preview access. Re-run the installer with the complete intended `-AllowedRoots` list when another project
 tree should be available in the Web UI.
@@ -352,13 +352,13 @@ Keep the current and previous deployment plus needed base/container images; do n
 | Desktop permission choices are unavailable | Updated connectors use the native Desktop owner to read and change the current chat’s permissions while idle. Running tasks and pending requests cannot change modes. Full access requires `CODEX_ALLOW_FULL_ACCESS=1`; unknown configurations show Custom permissions. If the owner is unavailable, open that chat on Desktop and retry. Refresh permissions after a concurrent change. |
 | Linux reports no login or executable | Check systemd `User`, `HOME`, executable paths and that account's `codex login status` |
 | Browser storage was cleared | Generate a new pairing link for that profile and revoke the retired device if appropriate; do not reset the whole registry |
-| HTML still shows source or relative images are missing | Refresh Web, use matching v0.4.3 nodes and check the Connector's raster-image roots |
+| HTML still shows source or relative images are missing | Refresh Web, update the Connector and check that the image paths resolve to readable JPEG/PNG/WebP files |
 | Generated images are missing | Update and restart the selected Connector, refresh Web and check the original files under the Codex generated-images directory; updating Relay alone cannot fix node-side history parsing |
-| Image preview says the folder is not allowed | Add the image's project directory to the selected Connector's complete `-AllowedRoots` list, restart that Connector when idle, then retry. A missing-image message instead means the original file must exist and be readable on that device. |
+| Linked image preview says the folder is not allowed | Update and restart the selected Connector when idle; current linked-image previews do not require `-AllowedRoots`. A missing-image message instead means the original file must exist and be readable on that device. |
 | Docker exits with a package.json permission error | Rebuild from v0.4.3; the Dockerfile sets readable package metadata for the non-root runtime. Do not make private configuration public or run the service as root to bypass it |
 | Container health still says starting | The reference health check runs every 30 seconds with a 10-second start period; inspect container state/logs and allow for the first probe before declaring failure |
 | A supported code link still downloads immediately | Update both checkouts, restart the connector, then fully refresh or reopen the browser tab |
-| The preview opens but reports failure | For text previews, confirm a regular UTF-8 file no larger than 2 MiB, an allowed filename/type and OS read access; workspace roots apply to raster previews, not text |
+| The preview opens but reports failure | For text previews, confirm a regular UTF-8 file no larger than 2 MiB, an allowed filename/type and OS read access; linked raster previews require readable JPEG/PNG/WebP originals no larger than 32 MiB |
 | Code is readable but has no syntax color | The recognized language is not in the lazy highlighter subset or the file exceeds the 512 KiB highlighting limit; plain escaped text is expected |
 | A binary, `.env`, certificate, or key file downloads instead | Sensitive, binary, and unrecognized formats intentionally never receive inline text preview |
 | The context ring is empty | Update both checkouts and fully refresh the browser; the selected session must also contain token accounting reported by Codex |
@@ -370,7 +370,7 @@ Keep the current and previous deployment plus needed base/container images; do n
 | A Linux session cannot continue after its first turn | Confirm `CODEX_CONNECTOR_MODE=headless`, update the checkout, and restart the systemd service |
 
 Preview access and download access are separate. `-AllowAnyFileDownload` affects only the confirmed
-download path. Text-based previews already accept any readable absolute path; raster image previews retain their root checks.
+download path. Text and linked raster previews already accept readable absolute paths without workspace-root checks.
 
 ## Multiple devices and custom names
 
@@ -407,7 +407,7 @@ Connector installer options:
 | `-BridgeUrl` | `ws://127.0.0.1:3300/ws` | Relay WebSocket endpoint |
 | `-DeviceId` / `--device-id` | Unique generated ID on first install; reused on reinstall | Stable route separate from its display name; do not reuse across machines |
 | `-DeviceLabel` / `--label` | Hostname on first install; reused on reinstall | Initial registration name; rename later through Web or the relay |
-| `-AllowedRoots` | connector checkout | Local roots for new sessions, raster image previews and normal downloads; does not restrict text-based previews |
+| `-AllowedRoots` | connector checkout | Local roots for new sessions and normal downloads; does not restrict text or linked raster previews |
 | `-AllowAnyFileDownload` | off | Allow confirmed downloads outside configured roots; does not change preview policy |
 | `-EnableNetworkAccess` | off | Allow connector-owned Codex turns to request network access |
 | `-AllowFullAccess` / `--allow-full-access` | off | Let approved Web clients remove Codex approval and sandbox restrictions on this node |
@@ -421,7 +421,7 @@ Connector runtime environment:
 | `CODEX_ALLOW_FULL_ACCESS` | `0` | Server-side gate for the Web full-access permission mode |
 | `BRIDGE_DEVICE_IDENTITY_FILE` | installer-managed | Mode-0600 Ed25519 connector identity file on Linux |
 
-Full access is intentionally separate from `-AllowedRoots`: those roots still bound raster image previews and ordinary
+Full access is intentionally separate from `-AllowedRoots`: those roots still bound new-session directories and ordinary
 downloads, but Codex itself is unsandboxed and can read or modify any file available to the connector
 service account. Enable it only on a dedicated node and only when every approved browser is trusted.
 

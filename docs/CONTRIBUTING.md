@@ -47,7 +47,7 @@ their focused `src/connector` modules instead of accumulating in the process/RPC
 2. Never expose credentials, device identity material, raw tool output, or unnecessary local paths in
    logs or the Web UI.
 3. Keep explicit confirmation for local file downloads and privileged Codex actions. Inline previews
-   must stay bounded, type-allowlisted, and read-only. Text-based file previews have no root restriction; raster image previews retain theirs. Desktop-owned approvals must not
+   must stay bounded, type-allowlisted, and read-only. Text and linked raster previews accept readable absolute paths without workspace-root restrictions; managed generated-image and upload readers retain their own directory checks. Desktop-owned approvals must not
    be presented as Web-actionable.
 4. Treat protocol, filesystem, reconnect, rollout/history mapping, optimistic messages, and live animation
    changes as security- or correctness-sensitive. Add a regression test for the failure mode.
