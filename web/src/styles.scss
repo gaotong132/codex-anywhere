@@ -154,7 +154,7 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   min-width: 0;
   display: flex;
   flex-direction: column;
-  padding: 22px 18px 14px;
+  padding: 16px 18px 14px;
   border-right: 1px solid $panel-divider;
   background: #0d111b;
   overflow: hidden;
@@ -164,8 +164,8 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 5px;
-  padding-bottom: 12px;
+  margin-bottom: 4px;
+  padding-bottom: 6px;
   border-bottom: 1px solid rgba(79, 97, 128, .38);
 
   > div:first-child { min-width: 0; }
@@ -241,14 +241,25 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   }
   p { color: #efbb78; font-size: 12px; margin: 0; }
 }
-.environment-picker-direct { padding: 7px; gap: 6px; background: #101722; }
+.environment-picker-direct {
+  min-height: 0; grid-template-columns: minmax(0, 1fr); padding: 4px; gap: 2px; margin-bottom: 5px;
+  background: transparent;
+  &:has(.environment-rename-trigger) { grid-template-columns: minmax(0, 1fr) 24px; column-gap: 4px; }
+  .environment-picker-heading { display: contents; }
+  .environment-picker-label { display: none; }
+  .environment-rename-trigger {
+    grid-column: 2; grid-row: 1; align-self: center; width: 24px; height: 28px; padding: 5px;
+  }
+  .environment-shortcuts, .environment-empty { grid-column: 1; grid-row: 1; }
+  .environment-offline, .environment-rename { grid-column: 1 / -1; }
+}
 .environment-shortcuts {
-  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px;
-  padding: 3px; border: 1px solid #263247; border-radius: 10px; background: #0c131e;
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 3px;
+  padding: 2px; border: 0; border-radius: 7px; background: #0c131e;
 }
 .environment-shortcut {
-  min-width: 0; height: 44px; min-height: 44px; display: flex; align-items: center; gap: 7px;
-  padding: 0 10px; border: 1px solid transparent; border-radius: 8px;
+  min-width: 0; height: 32px; min-height: 32px; display: flex; align-items: center; gap: 6px;
+  padding: 0 8px; border: 1px solid transparent; border-radius: 6px;
   color: #8e9cb1; background: transparent; text-align: left;
   strong { @include truncate; font-size: 12px; font-weight: 600; line-height: 1.4; }
   @include interaction.hover(':not([aria-pressed=true])') { background: #192334; color: #cbd8eb; }
@@ -256,12 +267,12 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
 }
 .environment-shortcut-status { display: flex; align-items: center; flex: 0 0 auto; }
 .environment-shortcut-status .environment-status-dot { width: 5px; height: 5px; flex: 0 0 5px; box-shadow: none; }
-.environment-empty { margin: 0; padding: 12px 6px; color: #8e9cb1; font-size: 12px; }
+.environment-empty { margin: 0; padding: 8px 4px; color: #8e9cb1; font-size: 12px; }
 .environment-offline {
   min-width: 0;
   summary {
-    min-width: 0; min-height: 36px; display: flex; align-items: center; gap: 8px;
-    padding: 0 6px; border-radius: 6px; color: #8797ae; cursor: pointer; list-style: none; font-size: 11px;
+    min-width: 0; min-height: 26px; display: flex; align-items: center; gap: 6px;
+    padding: 0 4px; border-radius: 6px; color: #8797ae; cursor: pointer; list-style: none; font-size: 11px;
     &::-webkit-details-marker { display: none; }
     > span { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
     strong { @include truncate; min-width: 0; margin-left: auto; color: #c3d1e5; font-size: 11px; font-weight: 500; }
@@ -273,7 +284,7 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
 }
 .environment-offline-count { color: #73839c; font-size: 10px; font-variant-numeric: tabular-nums; }
 .environment-offline-list {
-  display: grid; gap: 3px; max-height: 144px; overflow-y: auto; overscroll-behavior: contain;
+  display: grid; gap: 2px; max-height: 140px; overflow-y: auto; overscroll-behavior: contain;
   padding: 3px; border-top: 1px solid #253044;
 }
 .environment-picker-select .custom-select-trigger {
