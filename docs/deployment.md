@@ -132,6 +132,8 @@ Markdown, SVG, source-code, config, and text previews accept any readable absolu
 preview access. Re-run the installer with the complete intended `-AllowedRoots` list when another project
 tree should be available in the Web UI.
 
+Markdown file previews preserve single line breaks and recognize compact headings such as `###1.` or `###Chapter`. Standard headings, tables, lists and emphasis still render normally; escaped text and code stay literal. This reading layout applies only to file previews and does not rewrite the original file or change conversation Markdown.
+
 Use a stable, recognizable route when installing more than one connector:
 
 ```powershell

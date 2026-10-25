@@ -683,7 +683,7 @@ function MessageBubbleComponent({
               )}
               {filePreview.status === 'ready' && filePreview.kind === 'markdown' && (
                 <article className="message assistant markdown-preview-content">
-                  <MessageMarkdown text={filePreview.content} basePath={filePreview.path} onReadTextFile={onReadTextFile} onDownloadFile={openLocalFile} onPreviewImage={onReadPreviewImage ? openLocalFile : undefined} />
+                  <MessageMarkdown filePreview text={filePreview.content} basePath={filePreview.path} onReadTextFile={onReadTextFile} onDownloadFile={openLocalFile} onPreviewImage={onReadPreviewImage ? openLocalFile : undefined} />
                 </article>
               )}
               {filePreview.status === 'ready' && filePreview.kind === 'image' && (

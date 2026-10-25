@@ -3,6 +3,7 @@ import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markd
 import remarkGfm from 'remark-gfm';
 import remarkCjkFriendly from 'remark-cjk-friendly/parseOnly';
 import { remarkLineBreaks } from './markdown-line-breaks';
+import { remarkMarkdownFile } from './markdown-file';
 import { t } from './i18n';
 import { isRasterImageFilePath, localFileName, localFilePathFromHref, localFilePathFromRelativeHref } from './file-utils';
 import { isSvgCodeClass, isSvgFilePath, LocalSvgImage, SvgPreview } from './svg-preview';
@@ -10,6 +11,7 @@ import { isMermaidCodeClass, MermaidDiagram } from './mermaid-diagram';
 import type { TextPreviewDocument } from './app-types';
 
 const markdownPlugins = [remarkGfm, remarkCjkFriendly, remarkLineBreaks];
+const markdownFilePlugins = [...markdownPlugins, remarkMarkdownFile];
 
 function messageUrlTransform(url: string) {
   return localFilePathFromHref(url) ? url : defaultUrlTransform(url);
@@ -19,6 +21,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   text,
   attachmentPath,
   basePath,
+  filePreview = false,
   onDownloadFile,
   onReadTextFile,
   onPreviewImage,
@@ -26,6 +29,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   text: string;
   attachmentPath?: string;
   basePath?: string;
+  filePreview?: boolean;
   onDownloadFile: (path: string) => void;
   onReadTextFile?: (path: string) => Promise<TextPreviewDocument>;
   onPreviewImage?: (path: string) => void;
@@ -90,7 +94,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
   }), [attachmentPath, basePath, onDownloadFile, onReadTextFile, onPreviewImage]);
   return (
     <ReactMarkdown
-      remarkPlugins={markdownPlugins}
+      remarkPlugins={filePreview ? markdownFilePlugins : markdownPlugins}
       components={components}
       urlTransform={messageUrlTransform}
     >
