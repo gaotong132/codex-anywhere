@@ -14,7 +14,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-test('linked generated images use the managed reader without allowing arbitrary files outside project roots', async t => {
+test('linked images preview from project, generated and other readable directories without configured roots', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'linked-image-preview-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const local = join(directory, 'project'), generated = join(directory, 'custom-codex-home', 'generated_images');
@@ -27,17 +27,14 @@ test('linked generated images use the managed reader without allowing arbitrary 
   const request: BridgeRequest = (async (action, payload) => {
     assert.equal(action, 'attachment.read');
     sources.push(payload.source);
-    return readImageAttachment(payload, { localAllowedRoots: [local], generatedDirectory: generated });
+    return readImageAttachment(payload, { generatedDirectory: generated });
   }) as BridgeRequest;
-  await assert.rejects(readImageAttachment({ path: generatedPath, source: 'local' }, {
-    localAllowedRoots: [local], generatedDirectory: generated,
-  }), /local_image_path_not_allowed/);
   assert.match(await readLinkedImagePreview(request, generatedPath), /^data:image\/webp;base64,/);
-  assert.deepEqual(sources.splice(0), ['local', 'generated']);
+  assert.deepEqual(sources.splice(0), ['local']);
   assert.match(await readLinkedImagePreview(request, localPath), /^data:image\/webp;base64,/);
   assert.deepEqual(sources.splice(0), ['local']);
-  await assert.rejects(readLinkedImagePreview(request, outsidePath), /generated_image_path_not_allowed/);
-  assert.deepEqual(sources.splice(0), ['local', 'generated']);
+  assert.match(await readLinkedImagePreview(request, outsidePath), /^data:image\/webp;base64,/);
+  assert.deepEqual(sources.splice(0), ['local']);
 });
 
 test('linked-image fallback neither retries network errors nor accepts unsupported preview types', async () => {
@@ -110,6 +107,8 @@ test('image links preview on demand, preserve original downloads, retry failures
     await click('[aria-label="预览图片：b.png"]');
     await act(async () => pending[1].reject(new Error('local_image_not_found')));
     assert.match(document.querySelector('[role="dialog"]')!.textContent!, /预览失败/);
+    assert.match(document.querySelector('[role="dialog"]')!.textContent!, /图片不存在或无法读取/);
+    assert.doesNotMatch(document.querySelector('[role="dialog"]')!.textContent!, /仍可下载/);
     await click('.markdown-preview-state button');
     assert.equal(pending[2].path, '/root/b.png');
     await click('[aria-label="关闭预览"]');
@@ -127,6 +126,19 @@ test('image links preview on demand, preserve original downloads, retry failures
       document.dispatchEvent(event);
     });
     assert.equal(document.querySelector('[role="dialog"]'), null);
+    for (const error of ['local_image_path_not_allowed', 'generated_image_path_not_allowed']) {
+      await click('[aria-label="预览图片：a.png"]');
+      await act(async () => pending.at(-1)!.reject(new Error(error)));
+      const failure = document.querySelector('.markdown-preview-state.failed')!;
+      assert.match(failure.textContent!, /该图片所在目录未获当前设备授权/);
+      assert.match(failure.textContent!, /连接器允许目录/);
+      assert.doesNotMatch(failure.textContent!, /仍可下载|path_not_allowed/);
+      await click('.markdown-preview-state button');
+      await act(async () => pending.at(-1)!.resolve('data:image/webp;base64,YQ=='));
+      assert.equal(document.querySelector('.markdown-preview-state.failed'), null);
+      assert.ok(document.querySelector('.linked-image-preview img'));
+      await click('[aria-label="关闭预览"]');
+    }
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of saved) {

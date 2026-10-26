@@ -33,7 +33,6 @@ type ImagePayload = {
 type AttachmentOptions = {
   directory?: string;
   generatedDirectory?: string;
-  localAllowedRoots?: string[];
   now?: number;
   maxAgeMs?: number;
 };
@@ -73,7 +72,7 @@ export async function readImageAttachment(payload: ImagePayload, options: Attach
   if (payload?.source === 'local') {
     return readRasterImagePreview({
       path: payload.path,
-      allowedRoots: options.localAllowedRoots || [],
+      allowedRoots: null,
       errorPrefix: 'local_image',
     });
   }

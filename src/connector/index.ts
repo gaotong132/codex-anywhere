@@ -71,7 +71,7 @@ const handleRequest = createRequestHandler({
   attachments: {
     save: saveImageAttachment,
     nativeInput: resolveNativeImageAttachment,
-    read: (payload) => readImageAttachment(payload, { localAllowedRoots: allowedRoots }),
+    read: (payload) => readImageAttachment(payload),
   },
   visualizations: { read: readVisualization },
   downloads,

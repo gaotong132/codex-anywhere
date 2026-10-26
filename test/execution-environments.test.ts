@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createElement } from 'react';
+import { act, createElement } from 'react';
+import { createRoot } from 'react-dom/client';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { parseHTML } from 'linkedom';
 import { EnvironmentSwitcher } from '../web/src/environment-switcher.js';
@@ -41,14 +42,68 @@ test('two environments have direct controls with stable positions and an accessi
   assert.equal(document.querySelector('[aria-haspopup]'), null);
 });
 
-test('larger environment inventories retain an accessible selector for every route', () => {
+test('two online devices stay one-click choices despite additional offline devices', () => {
   const { document } = parseHTML(renderToStaticMarkup(createElement(EnvironmentSwitcher, {
-    value: 'lab', environmentIds: ['ecs', 'personal-pc', 'lab'], onlineEnvironmentIds: ['lab'], onChange: () => {},
+    value: 'lab', environmentIds: ['old-pc', 'ecs', 'personal-pc', 'lab'], onlineEnvironmentIds: ['lab', 'ecs'], onChange: () => {},
+  })));
+  assert.deepEqual([...document.querySelectorAll('.environment-shortcuts strong')].map(node => node.textContent), ['ECS', 'lab']);
+  assert.equal(document.querySelector('[aria-haspopup]'), null);
+  assert.equal(document.querySelector('.environment-offline')!.hasAttribute('open'), false);
+  assert.equal(document.querySelectorAll('.environment-offline-list button').length, 2);
+  assert.equal(document.querySelector('.environment-offline-count')!.textContent, '2');
+});
+
+test('more than two online environments retain an accessible selector', () => {
+  const { document } = parseHTML(renderToStaticMarkup(createElement(EnvironmentSwitcher, {
+    value: 'lab', environmentIds: ['ecs', 'personal-pc', 'lab'], onlineEnvironmentIds: ['lab', 'ecs', 'personal-pc'], onChange: () => {},
   })));
   const trigger = document.querySelector('button[aria-haspopup="listbox"]');
   assert(trigger);
   assert.match(trigger.textContent || '', /lab/);
   assert.equal(trigger.getAttribute('aria-label'), '切换执行环境');
+});
+
+test('presence changes preserve the selected route and direct clicks target only their own device', async () => {
+  const keys = ['window', 'document', 'IS_REACT_ACT_ENVIRONMENT'] as const;
+  const saved = keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const);
+  const { window, document } = parseHTML('<html><body><div id="root"></div></body></html>');
+  for (const [key, value] of [['window', window], ['document', document], ['IS_REACT_ACT_ENVIRONMENT', true]] as const) {
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
+  const root = createRoot(document.getElementById('root')!);
+  const calls: string[] = [];
+  const render = (onlineEnvironmentIds: string[], value = 'lab') => act(async () => root.render(createElement(EnvironmentSwitcher, {
+    value, environmentIds: ['ecs', 'lab', 'personal-pc'], onlineEnvironmentIds, onChange: id => calls.push(id),
+  })));
+  const click = (selector: string) => act(async () => {
+    document.querySelector(selector)!.dispatchEvent(new window.Event('click', { bubbles: true }));
+  });
+  try {
+    await render(['lab', 'ecs', 'personal-pc']);
+    assert.ok(document.querySelector('[aria-haspopup="listbox"]'));
+    await render(['lab', 'ecs']);
+    await click('.environment-shortcuts button[aria-pressed="true"]');
+    assert.deepEqual(calls, [], 'clicking the current device does not reconnect');
+    await click('.environment-shortcuts button[aria-pressed="false"]');
+    assert.deepEqual(calls, ['ecs']);
+    await render(['ecs']);
+    assert.equal(document.querySelector('.environment-offline')!.hasAttribute('open'), true);
+    assert.equal(document.querySelector('.environment-offline-list [aria-pressed="true"] strong')!.textContent, 'lab');
+    await click('.environment-offline-list button[aria-pressed="false"]');
+    assert.deepEqual(calls, ['ecs', 'personal-pc']);
+    await render(['lab', 'ecs']);
+    assert.equal(document.querySelector('.environment-shortcuts [aria-pressed="true"] strong')!.textContent, 'lab');
+    assert.equal(document.querySelector('.environment-offline')!.hasAttribute('open'), false);
+    await render(['lab', 'ecs', 'personal-pc']);
+    assert.match(document.querySelector('[aria-haspopup="listbox"]')!.textContent!, /lab/);
+    assert.deepEqual(calls, ['ecs', 'personal-pc'], 'presence changes never switch devices automatically');
+  } finally {
+    await act(async () => root.unmount());
+    for (const [key, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+  }
 });
 
 test('execution environment inventory is normalized without injecting a phantom PC', () => {
@@ -90,7 +145,12 @@ test('approved offline devices and custom names survive inventories larger than 
   const { document } = parseHTML(renderToStaticMarkup(createElement(EnvironmentSwitcher, {
     value: 'node-39', environmentIds: inventory.ids, labels: inventory.labels, onlineEnvironmentIds: [], onChange: () => {},
   })));
-  assert.match(document.querySelector('button')!.textContent!, /电脑 39/);
+  assert.match(document.querySelector('.environment-empty')!.textContent!, /暂无在线设备/);
+  assert.equal(document.querySelector('[aria-haspopup]'), null);
+  assert.equal(document.querySelector('.environment-offline')!.hasAttribute('open'), true);
+  assert.equal(document.querySelectorAll('.environment-offline-list button').length, 40);
+  assert.match(document.querySelector('.environment-offline summary')!.textContent!, /电脑 39/);
+  assert.match(document.querySelector('[aria-pressed="true"]')!.textContent!, /电脑 39/);
 });
 test('connector-scoped storage migrates the legacy local-computer value only', () => {
   const storage = new MemoryStorage();
