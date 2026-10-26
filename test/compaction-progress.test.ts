@@ -27,6 +27,58 @@ function log(path: string, threadId: string, turnId: string, at: number, compact
   db.close();
 }
 
+function trace(path: string, threadId: string | null, at: number, target: string, body: string) {
+  const db = new DatabaseSync(path);
+  db.prepare('INSERT INTO logs(thread_id,ts,ts_nanos,target,feedback_log_body) VALUES(?,?,?,?,?)').run(
+    threadId, Math.floor(at / 1000), (at % 1000) * 1_000_000, target, body,
+  );
+  db.close();
+}
+
+function desktopTrace(turnId: string, compacting = true) {
+  return `session_loop{thread_id=task}:codex.turn_input{turn.id="${turnId}"}:turn{turn.id=${turnId} model=example}:session_task.run:run_turn:`
+    + (compacting ? 'run_auto_compact{reason=ContextLimit phase=MidTurn}:' : '')
+    + 'model_client.stream_responses_websocket{transport="responses_websocket"}:responses_websocket.stream_request: unhandled responses event: "response.compaction.compacting"';
+}
+
+test('Desktop WebSocket compaction uses scoped logs with quoted IDs and resets between compression cycles', async t => {
+  const { filePath } = await fixture(t);
+  const now = Date.now() - 20000;
+  const request = { threadId: 'task', turnId: 'turn', turnStartedAt: now, after: now };
+  trace(filePath, 'task', now + 1000, 'codex_core::compact_remote_v2::attempt',
+    'session_loop{thread_id=task}:turn{turn.id="turn"}:run_turn:run_auto_compact{reason=ContextLimit}: rewrote history outputs before remote compaction v2');
+  trace(filePath, 'task', now + 2000, 'codex_api::sse::responses', desktopTrace('turn'));
+  trace(filePath, null, now + 3000, 'codex_http_client::custom_ca', 'using system root certificates');
+  trace(filePath, 'other-task', now + 4000, 'codex_api::sse::responses', desktopTrace('turn'));
+  const reader = new CompactionProgressReader(filePath);
+  assert.deepEqual(await reader.read(request), { turnId: 'turn', startedAt: now + 1000 });
+  trace(filePath, 'task', now + 5000, 'codex_api::endpoint::responses_websocket', desktopTrace('turn', false));
+  trace(filePath, 'task', now + 6000, 'codex_core::responses_retry', desktopTrace('turn'));
+  (reader as any).cache.get('task').at = 0;
+  assert.deepEqual(await reader.read(request), { turnId: 'turn', startedAt: now + 6000 }, 'a later cycle cannot reuse the earlier timer');
+  assert.equal(await reader.read({ ...request, after: now + 6500 }), null);
+  trace(filePath, 'task', now + 7000, 'codex_core::client', desktopTrace('turn', false));
+  assert.equal(await new CompactionProgressReader(filePath).read(request), null, 'normal WebSocket generation clears the signal');
+  assert.equal(await reader.read({ ...request, turnId: 'other-turn' }), null);
+});
+
+test('Desktop compaction ignores quoted mismatches, preflight, response text and unrelated log targets', async t => {
+  const { filePath } = await fixture(t);
+  const now = Date.now() - 1000;
+  const misleading = [
+    ['codex_api::sse::responses', desktopTrace('turn').replace('turn.id="turn"', 'turn.id="other-turn"')],
+    ['codex_api::sse::responses', desktopTrace('turn').replace('run_auto_compact{reason=ContextLimit phase=MidTurn}', 'run_pre_sampling_compact')],
+    ['codex_api::sse::responses', 'response text: ' + desktopTrace('turn')],
+    ['tool_output', desktopTrace('turn')],
+    ['codex_core::client', 'session_loop{thread_id=task}:turn{turn.id="turn"}: compact_scope_tokens=95000 compact_scope_limit=100000'],
+  ];
+  for (const [index, [target, body]] of misleading.entries()) {
+    const threadId = `task-${index}`;
+    trace(filePath, threadId, now + 100, target, body);
+    assert.equal(await new CompactionProgressReader(filePath).read({ threadId, turnId: 'turn', turnStartedAt: now, after: 0 }), null);
+  }
+});
+
 test('Desktop compaction reads exact task/turn spans, not high usage, preflight or old compactions', async (t) => {
   const { filePath } = await fixture(t);
   const now = Date.now() - 10000;
@@ -68,14 +120,14 @@ test('missing or incompatible logs degrade without creating files; scans and cac
   assert.equal(await new CompactionProgressReader(filePath).read(request), null);
 });
 
-test('history polling exposes an in-flight compaction and clears it at the persisted completion boundary', async (t) => {
+test('history polling exposes WebSocket compaction and clears it at the persisted completion boundary', async (t) => {
   const { directory, filePath } = await fixture(t);
   const rollout = join(directory, 'rollout.jsonl');
   const now = Date.now() - 20000;
   const event = (time: number, type: string, payload: object) => JSON.stringify({ timestamp: new Date(time).toISOString(), type, payload }) + '\n';
   await writeFile(rollout, event(now, 'event_msg', { type: 'task_started', turn_id: 'turn' })
     + event(now + 500, 'event_msg', { type: 'token_count', info: { last_token_usage: { total_tokens: 100 }, model_context_window: 1000 } }));
-  log(filePath, 'task', 'turn', now + 1000);
+  trace(filePath, 'task', now + 1000, 'codex_api::sse::responses', desktopTrace('turn'));
   const codex = new CodexAppServer({ runtimeCwd: directory });
   (codex as any).compactionProgress = new CompactionProgressReader(filePath);
   const first = await codex.readSessionTail('task', rollout);
@@ -86,7 +138,7 @@ test('history polling exposes an in-flight compaction and clears it at the persi
   await appendFile(rollout, event(now + 5000, 'compacted', { window_number: 2 }));
   assert.equal((await codex.readSessionTail('task', rollout)).compactionStartedAt, null);
   assert.equal((await codex.readSessionTail('task', rollout)).turns[0].status, 'inProgress');
-  log(filePath, 'task', 'turn', now + 6000);
+  trace(filePath, 'task', now + 6000, 'codex_api::endpoint::responses_websocket', desktopTrace('turn'));
   assert.equal((await codex.readSessionTail('task', rollout)).compactionStartedAt, null, 'brief cached result stays stable');
   (codex as any).compactionProgress = new CompactionProgressReader(filePath);
   assert.equal((await codex.readSessionTail('task', rollout)).compactionStartedAt, now + 6000);

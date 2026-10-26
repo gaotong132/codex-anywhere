@@ -26,6 +26,16 @@ export function clearPendingCompactions(items: TimelineItem[]) {
     ? items.filter(item => item.compactionProgress?.status !== 'inProgress') : items;
 }
 
+// Polling snapshots replace the active signal, including when the task keeps
+// running after compaction ends or moves on to a different turn.
+export function syncTimelineCompaction(items: TimelineItem[], turnId: string, startedAt: number | null) {
+  if (!turnId || !startedAt) return clearPendingCompactions(items);
+  const stale = (item: TimelineItem) => item.compactionProgress?.status === 'inProgress'
+    && (item.historyTurnId !== turnId || item.compactionProgress.startedAt !== startedAt);
+  const current = items.some(stale) ? items.filter(item => !stale(item)) : items;
+  return startTimelineCompaction(current, turnId, startedAt);
+}
+
 // Hydrate the live marker in place, retaining its React identity across polls.
 // A later compaction in the same turn must not consume an earlier marker.
 export function matchCompactionSnapshots(current: TimelineItem[], latest: TimelineItem[]) {

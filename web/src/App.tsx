@@ -128,7 +128,7 @@ import {
 } from '../../src/shared/context-compaction';
 import type { TimelineNotice } from '../../src/shared/timeline-notice';
 import { appendTimelineNotice } from './timeline-notice-events';
-import { clearPendingCompactions, finishTimelineCompaction, startTimelineCompaction } from './compaction-timeline';
+import { clearPendingCompactions, finishTimelineCompaction, startTimelineCompaction, syncTimelineCompaction } from './compaction-timeline';
 import { PresenceIndicator } from './presence-indicator';
 import { PermissionModeControl } from './permission-mode-control';
 import { BrowserSessionStatus } from './browser-session-status';
@@ -1437,7 +1437,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         setTimeline((current) => {
           const merged = historyChanged ? mergeHistorySnapshot(current, latestItems, latestTurnIds, { partial: true }) : current;
           return inProgress
-            ? startTimelineCompaction(merged, page.activityId || '', epochMillis(page.compactionStartedAt))
+            ? syncTimelineCompaction(merged, page.activityId || '', epochMillis(page.compactionStartedAt))
             : clearPendingCompactions(merged);
         });
         schedule(inProgress || changed ? 1_500 : 6_000);

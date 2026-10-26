@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { clearPendingCompactions, finishTimelineCompaction, startTimelineCompaction } from '../web/src/compaction-timeline.js';
+import { clearPendingCompactions, finishTimelineCompaction, startTimelineCompaction, syncTimelineCompaction } from '../web/src/compaction-timeline.js';
 import { mergeHistorySnapshot, type TimelineItem } from '../web/src/history-utils.js';
 
 const start = 1788970200000;
@@ -9,6 +9,22 @@ const marker = (sequence: number, completedAt: number, turnId = 'turn'): Timelin
   compaction: { sequence, contextWindow: 100000, beforeTokens: 90000, afterTokens: 10000 },
 });
 const merge = (current: TimelineItem[], latest: TimelineItem[]) => mergeHistorySnapshot(current, latest, new Set(['turn']));
+
+test('polling removes stale pending compression while keeping persisted history and stable active markers', () => {
+  const persisted = marker(1, start - 1000);
+  const active = startTimelineCompaction([persisted], 'turn', start);
+  assert.equal(syncTimelineCompaction(active, 'turn', start), active);
+  assert.deepEqual(syncTimelineCompaction(active, 'turn', null), [persisted], 'normal generation must not leave a running compression marker');
+  assert.deepEqual(syncTimelineCompaction(active, '', null), [persisted]);
+  const next = syncTimelineCompaction(active, 'next-turn', start + 5000);
+  assert.equal(next.length, 2);
+  assert.equal(next[1].historyTurnId, 'next-turn');
+  const repeated = syncTimelineCompaction(active, 'turn', start + 6000);
+  assert.equal(repeated.length, 2);
+  assert.equal(repeated[1].compactionProgress?.startedAt, start + 6000);
+  const completed = merge(active, [persisted, marker(2, start + 1000)]);
+  assert.equal(syncTimelineCompaction(completed, 'turn', null), completed);
+});
 
 test('live compaction finishes and hydrates in the same timeline slot without duplicate markers', () => {
   const message: TimelineItem = { id: 'message', kind: 'assistant', text: 'Working', historyTurnId: 'turn' };

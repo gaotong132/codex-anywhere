@@ -234,6 +234,10 @@ and both previews should retain a Download button. If a completed reply reports 
 totals, confirm that the bounded diff belongs to that turn, and toggle line wrapping once. When Codex
 reports context accounting, confirm that the top-right activity ring shows usage and reveals exact token
 details on hover or tap; a session that has compacted should keep a compaction marker in its timeline.
+For Desktop-owned turns, the in-progress compaction indicator uses bounded local HTTP or WebSocket
+trace spans matched to the exact task and turn. It clears when normal generation resumes or completion
+is recorded, and a later compaction starts a new timer. Missing or incompatible local logs may prevent
+this best-effort indicator from appearing; token usage alone is never treated as proof of compaction.
 For a long session, browse upward once and confirm that the older-history indicator appears, the current
 reading position does not jump, and a failed request offers retry. For a connector-owned test run, open
 the running-status strip and verify that Stop interrupts only that run. Repeat with an isolated Desktop turn: Web must use its confirmed turn ID. Active goals still require Desktop stop, since stopping one turn does not pause a goal.
