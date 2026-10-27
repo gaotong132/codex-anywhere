@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { historyItems, mergeHistorySnapshot, type TimelineItem } from '../web/src/history-utils.js';
+import { acknowledgeOptimisticUser, historyItems, mergeHistorySnapshot, type TimelineItem } from '../web/src/history-utils.js';
 import { loadTimelineImages } from '../web/src/timeline-images.js';
 import type { BridgeRequest } from '../web/src/bridge-request-manager.js';
 import { MessageBubble } from '../web/src/message-bubble.js';
@@ -13,6 +13,63 @@ const row = (id: string, text: string, seconds: number, extra: Partial<TimelineI
 const partial = (current: TimelineItem[], latest: TimelineItem[]) => mergeHistorySnapshot(
   current, latest, new Set(latest.map((item) => item.historyTurnId!)), { partial: true },
 );
+
+test('a late delivery receipt cannot change a hydrated message identity or duplicate it on the next poll', () => {
+  const pending: TimelineItem = { id: 'pending', kind: 'user', text: 'continue', transient: true };
+  const persisted = row('tail:0', 'continue', 1, { kind: 'user', historySource: 'rollout' });
+  const hydrated = partial([pending], [persisted]);
+  const acknowledged = acknowledgeOptimisticUser(hydrated, pending.id, 1_800_000_002_000);
+  assert.equal(acknowledged[0], hydrated[0], 'persisted timestamps belong to history, not delivery receipts');
+  let current = acknowledged;
+  for (let index = 0; index < 5; index++) current = partial(current, [persisted]);
+  assert.equal(current.length, 1);
+  assert.equal(current[0].id, pending.id);
+  assert.equal(current[0].completedAt, persisted.completedAt);
+});
+
+test('receipt before history and duplicate receipts still converge to one persisted message', () => {
+  const pending: TimelineItem = { id: 'pending', kind: 'user', text: 'continue', transient: true };
+  const confirmed = acknowledgeOptimisticUser([pending], pending.id, 1_800_000_002_000);
+  assert.equal(confirmed[0].completedAt, 1_800_000_002_000);
+  const persisted = row('tail:0', 'continue', 1, { kind: 'user', historySource: 'rollout' });
+  const current = partial(confirmed, [persisted]);
+  assert.deepEqual(partial(acknowledgeOptimisticUser(current, pending.id, 1_800_000_003_000), [persisted]), current);
+  assert.deepEqual(acknowledgeOptimisticUser(current, 'missing', 1_800_000_004_000), current);
+});
+
+test('an unchanged history poll cannot consume a second identical pending submission', () => {
+  const previous = row('saved', 'continue', 1, { kind: 'user', historySource: 'appServer' });
+  const pending: TimelineItem = { id: 'pending', kind: 'user', text: 'continue', transient: true };
+  const oldSnapshot = { ...previous, id: 'tail:0', historySource: 'rollout' as const, completedAt: 1_800_000_001_200 };
+  let current = partial([previous, pending], [oldSnapshot]);
+  assert.deepEqual(current.map(item => item.id), ['saved', 'pending']);
+  assert.equal(current[1].transient, true);
+  const second = { ...oldSnapshot, id: 'tail:1', historyTurnId: 'next-turn', completedAt: 1_800_000_010_000 };
+  current = partial(current, [oldSnapshot, second]);
+  assert.deepEqual(current.map(item => item.id), ['saved', 'pending']);
+  assert.equal(current[1].transient, undefined);
+  assert.equal(current[1].historyTurnId, 'next-turn');
+  assert.deepEqual(partial(current, [oldSnapshot, second]), current);
+});
+
+test('each persisted input consumes at most one pending input with matching attachments', () => {
+  const first: TimelineItem = { id: 'pending-1', kind: 'user', text: 'continue', transient: true };
+  const second = { ...first, id: 'pending-2' };
+  const persisted = row('tail:0', 'continue', 1, { kind: 'user' });
+  const current = partial([first, second], [persisted]);
+  assert.equal(current.length, 2);
+  assert.equal(current.filter(item => item.transient).length, 1);
+  assert.deepEqual(partial(current, [persisted]), current);
+  const image = { ...first, attachment: { path: '/first.png', name: 'first.png' } };
+  const otherImage = { ...persisted, attachment: { path: '/second.png', name: 'second.png' } };
+  const images = partial([image], [otherImage]);
+  assert.equal(images.length, 2);
+  assert.equal(images.find(item => item.id === first.id)?.transient, true);
+  const previous = { ...persisted, id: 'saved' };
+  const pendingImage = partial([previous, image], [persisted]);
+  assert.equal(pendingImage.find(item => item.id === 'saved')?.attachment, undefined, 'a pending image must not attach to an older text message');
+  assert.equal(pendingImage.find(item => item.id === first.id)?.attachment?.path, '/first.png');
+});
 
 test('resume after a long turn retains inputs and images outside the bounded live tail', () => {
   const first = [row('page:0', 'question', 0, { kind: 'user' }),
