@@ -83,6 +83,13 @@ export type TimelineItem = {
 };
 export type KnownAttachment = ImageAttachment & { savedAt: number };
 
+export function acknowledgeOptimisticUser(items: TimelineItem[], id: string, sentAt: number) {
+  // History may arrive before the send response and adopt the optimistic ID.
+  // Never replace its persisted timestamp with the later receipt time.
+  return items.map(item => item.id === id && item.kind === 'user' && item.transient
+    ? { ...item, completedAt: sentAt } : item);
+}
+
 export function isDuplicateFinalProgress(progressText: string, assistantText: string) {
   const progress = canonicalMessageText(progressText);
   return Boolean(progress) && progress === canonicalMessageText(assistantText);
@@ -314,8 +321,9 @@ export function mergeHistorySnapshot(
   const transientAttachments = new Map(current
     .filter((item) => item.transient && item.attachment)
     .map((item) => [messageContentIdentity(item), item.attachment]));
-  const optimisticUserMatches = matchOptimisticUsers(current, latest);
   const crossSourceMatches = matchCrossSourceMessages(current, latest);
+  const optimisticUserMatches = matchOptimisticUsers(current, latest, crossSourceMatches);
+  const matchedOptimisticUserIds = new Set([...optimisticUserMatches.values()].map(item => item.id));
   const persistedIdentities = new Map<string, TimelineItem[]>();
   const claimedIds = new Set<string>();
   const occupiedIds = new Set([...current, ...latest].map((item) => item.id));
@@ -354,7 +362,9 @@ export function mergeHistorySnapshot(
       ...item,
       id,
       ...(item.attachment ? {} : {
-        attachment: transientAttachments.get(messageContentIdentity(item)),
+        attachment: item.kind === 'user'
+          ? optimisticUserMatches.get(index)?.attachment || persisted?.attachment
+          : transientAttachments.get(messageContentIdentity(item)),
       }),
       ...(item.fileChanges || !retainedFileChanges ? {} : { fileChanges: retainedFileChanges }),
     };
@@ -456,7 +466,8 @@ export function mergeHistorySnapshot(
     && !(persistedSnapshotIdentity(item) && persistedSnapshotItems.has(persistedSnapshotIdentity(item)))
     && !(item.historyTurnId && latestTurnIds.has(item.historyTurnId) && !item.transient)
     && !(introducesNewTurn && item.transient && item.kind === 'assistant')
-    && !(item.transient && persistedItems.has(messageIdentity(item)))
+    && !(item.transient && (item.kind === 'user'
+      ? matchedOptimisticUserIds.has(item.id) : persistedItems.has(messageIdentity(item))))
   );
   const retained = current.filter(keep);
   const insertionIndex = firstMatch < 0
@@ -602,15 +613,23 @@ function matchCrossSourceMessages(current: TimelineItem[], latest: TimelineItem[
   return matches;
 }
 
-function matchOptimisticUsers(current: TimelineItem[], latest: TimelineItem[]) {
+function matchOptimisticUsers(current: TimelineItem[], latest: TimelineItem[], crossSourceMatches: Map<number, TimelineItem>) {
   const matches = new Map<number, TimelineItem>();
-  const claimedLatestIndexes = new Set<number>();
   const optimisticUsers = current.filter((item) => item.transient && item.kind === 'user').reverse();
+  if (!optimisticUsers.length) return matches;
+  // An unchanged poll of an older identical message is not confirmation of a
+  // new submission. Reserve rows already represented by persisted history.
+  const claimedLatestIndexes = new Set(latest.flatMap((item, index) => (
+    crossSourceMatches.has(index) || current.some(previous => samePersistedMessage(previous, item))
+      ? [index] : []
+  )));
   for (const optimistic of optimisticUsers) {
     const identity = messageContentIdentity(optimistic);
     for (let index = latest.length - 1; index >= 0; index -= 1) {
       if (claimedLatestIndexes.has(index) || latest[index]?.kind !== 'user') continue;
       if (messageContentIdentity(latest[index]) !== identity) continue;
+      if (optimistic.attachment && latest[index].attachment
+        && optimistic.attachment.path !== latest[index].attachment!.path) continue;
       claimedLatestIndexes.add(index);
       matches.set(index, optimistic);
       break;

@@ -22,6 +22,7 @@ import {
   latestTurnProgressItemId,
   loadKnownAttachments,
   mergeHistorySnapshot,
+  acknowledgeOptimisticUser,
   prependHistoryPage,
   resolveTimelineAttachment,
   storeKnownAttachments,
@@ -1915,9 +1916,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       const sentAt = Date.now();
       if (environmentIdRef.current !== delivery.environmentId) return;
       if (optimisticItemId) {
-        setTimeline((current) => current.map((item) => item.id === optimisticItemId
-          ? { ...item, completedAt: sentAt }
-          : item));
+        setTimeline((current) => acknowledgeOptimisticUser(current, optimisticItemId, sentAt));
       }
       const receipt = confirmedDelivery(delivery, data.threadId);
       const selectionStillCurrent = isCurrentSessionRequest(
