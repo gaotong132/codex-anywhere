@@ -38,7 +38,7 @@
     "check": "npm run typecheck && npm test && npm run check:docs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@noble/ciphers": "2.4.0",
     "@noble/curves": "2.4.0",
     "@noble/ed25519": "3.2.0",
