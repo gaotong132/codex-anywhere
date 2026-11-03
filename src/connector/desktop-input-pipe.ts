@@ -5,6 +5,9 @@ import { randomUUID } from 'node:crypto';
 import { encodeNativeFrame, MAX_FRAME_BYTES, NativeRequestError } from './desktop-native-pipe.js';
 
 type Message = Record<string, any>;
+// Full follower snapshots include long conversation history. Keep this larger
+// receive budget exclusive to the state connection; requests stay at 8 MiB.
+export const MAX_STATE_FRAME_BYTES = 32 * 1024 * 1024;
 type Pending = { method: string; targetClientId?: string; resolve(value: Message): void; reject(error: Error): void; timer: NodeJS.Timeout };
 
 // Desktop's owner/follower IPC is length-prefixed JSON, NOT the app-tools JSON-RPC pipe.
@@ -29,11 +32,14 @@ export class DesktopInputPipe extends EventEmitter {
   private ready: Promise<void> | null = null;
   private clientId = '';
   private closed = false;
-  private frames = new NativeFrameReader(MAX_FRAME_BYTES);
+  private frames: NativeFrameReader;
   private pending = new Map<string, Pending>();
   private cancelConnect: (() => void) | null = null;
 
-  constructor(readonly path = '\\\\.\\pipe\\codex-ipc') { super(); }
+  constructor(readonly path = '\\\\.\\pipe\\codex-ipc', stateStream = false) {
+    super();
+    this.frames = new NativeFrameReader(stateStream ? MAX_STATE_FRAME_BYTES : MAX_FRAME_BYTES);
+  }
 
   async request(method: InputMethod, params: Message, timeoutMs: number, targetClientId?: string): Promise<Message> {
     const deadline = Date.now() + timeoutMs;

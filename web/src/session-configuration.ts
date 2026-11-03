@@ -40,6 +40,9 @@ export function useSessionConfiguration({
   const [permissionState, setPermissionState] = useState<KeyedValue<SessionPermissionConfig | null> | null>(null);
   const [permissionLoadingKey, setPermissionLoadingKey] = useState<string | null>(null);
   const permissionRequestRef = useRef(0);
+  const desktopStateRef = useRef(desktopState);
+  desktopStateRef.current = desktopState;
+  const permissionRecoveryRef = useRef('');
   const selectionKey = `${environmentId}\0${threadId || ''}`;
   const selectionKeyRef = useRef(selectionKey);
   selectionKeyRef.current = selectionKey;
@@ -109,6 +112,19 @@ export function useSessionConfiguration({
     return () => { permissionRequestRef.current += 1; };
   }, [refreshPermissionConfig]);
 
+  useEffect(() => {
+    if (!online || desktopState?.threadId !== threadId || desktopState?.status === 'unknown') {
+      permissionRecoveryRef.current = '';
+      return;
+    }
+    // The first permission read can fail before a follower snapshot recovers.
+    // Retry once per recovery/selection, not on every streamed state update.
+    if (permissionConfigLoading || permissionConfig?.source === 'desktop'
+      || permissionRecoveryRef.current === selectionKey) return;
+    permissionRecoveryRef.current = selectionKey;
+    void refreshPermissionConfig().catch(() => {});
+  }, [desktopState, online, threadId, selectionKey, permissionConfigLoading, permissionConfig, refreshPermissionConfig]);
+
   const openPermissionSettingsOnDesktop = useCallback(async () => {
     if (!threadId) throw new Error('thread_id_required');
     await request('session.desktop.open', { threadId });
@@ -159,7 +175,15 @@ export function useSessionConfiguration({
         const config = await request<SessionModelConfig>('session.model-config.read', { threadId },
           { timeoutMs: 12_000, signal: abort.signal });
         if (!isCurrent()) return;
-        setModelState({ key: targetKey, value: config });
+        const native = desktopStateRef.current;
+        // A native snapshot can arrive before the catalog response. Do not
+        // downgrade an already recovered header until the next 15-second poll.
+        const recovered = config.readOnly && config.models.length && native?.threadId === threadId
+          && native.status !== 'unknown' && native.model === config.model && native.reasoningEffort === config.reasoningEffort;
+        const tier = native?.serviceTier || 'default';
+        const option = config.models.find(model => model.model === config.model)?.serviceTiers.find(value => value.id === tier);
+        setModelState({ key: targetKey, value: recovered ? { ...config, source: 'desktop', readOnly: false,
+          serviceTier: tier, fastMode: /fast|priority/i.test(`${tier} ${option?.name || ''}`) } : config });
         // A cold catalog can arrive after the lightweight current model.
         retry = !config.models.length && attempt === 0;
       } catch (error) {
