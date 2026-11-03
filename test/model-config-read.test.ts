@@ -139,3 +139,68 @@ test('native model push can recover a failed header without inventing catalog or
   assert.equal(harness.state().modelConfig?.readOnly, true);
   assert.equal(harness.state().modelConfigLoading, false);
 });
+
+test('native settings arriving before the model catalog unlock the header without another status poll', async t => {
+  let finish!: (value: any) => void;
+  const request = (async (action: string) => action === 'session.model-config.read'
+    ? new Promise(resolve => { finish = resolve; }) : { capabilities: {} }) as BridgeRequest;
+  const harness = await configurationHarness(t, request);
+  await harness.render();
+  await harness.render({ desktopState: { threadId: 'one', status: 'idle', model: 'astra', reasoningEffort: 'high', serviceTier: 'default' } });
+  assert.equal(harness.state().modelConfig?.readOnly, true, 'no editable catalog yet');
+  await act(async () => finish({ ...readConfig, source: 'desktop', readOnly: true, serviceTier: null }));
+  assert.equal(harness.state().modelConfig?.readOnly, false);
+  assert.equal(harness.state().modelConfig?.serviceTier, 'default');
+});
+
+test('a native snapshot for different model settings cannot unlock a late read-only response', async t => {
+  let finish!: (value: any) => void;
+  const request = (async (action: string) => action === 'session.model-config.read'
+    ? new Promise(resolve => { finish = resolve; }) : { capabilities: {} }) as BridgeRequest;
+  const harness = await configurationHarness(t, request);
+  await harness.render({ desktopState: { threadId: 'one', model: 'other', reasoningEffort: 'high', serviceTier: 'default' } });
+  await act(async () => finish({ ...readConfig, source: 'desktop', readOnly: true, serviceTier: null }));
+  assert.equal(harness.state().modelConfig?.model, 'astra');
+  assert.equal(harness.state().modelConfig?.readOnly, true);
+});
+
+test('permission read recovers once when native status becomes available and does not poll on each push', async t => {
+  let permissionReads = 0;
+  const request = (async (action: string) => {
+    if (action === 'session.model-config.read') return readConfig;
+    if (action === 'session.permissions.read') {
+      if (++permissionReads === 1) throw new Error('desktop_state_unavailable');
+      return { source: 'desktop', editable: true, mode: 'ask' };
+    }
+    return { capabilities: {} };
+  }) as BridgeRequest;
+  const harness = await configurationHarness(t, request);
+  await harness.render();
+  assert.equal(permissionReads, 1);
+  assert.equal(harness.state().permissionConfig, null);
+  const native = { threadId: 'one', status: 'idle', model: 'astra', reasoningEffort: 'high', serviceTier: 'default' };
+  await harness.render({ desktopState: native });
+  assert.equal(permissionReads, 2);
+  assert.equal(harness.state().permissionConfig?.editable, true);
+  await harness.render({ desktopState: { ...native } });
+  assert.equal(permissionReads, 2);
+});
+
+test('failed permission recovery is bounded and another task state cannot trigger it', async t => {
+  let permissionReads = 0;
+  const request = (async (action: string) => {
+    if (action === 'session.model-config.read') return readConfig;
+    if (action === 'session.permissions.read') { permissionReads++; throw new Error('desktop_state_unavailable'); }
+    return { capabilities: {} };
+  }) as BridgeRequest;
+  const harness = await configurationHarness(t, request);
+  await harness.render({ desktopState: { threadId: 'other', status: 'idle' } });
+  assert.equal(permissionReads, 1);
+  await harness.render({ desktopState: { threadId: 'one', status: 'idle' } });
+  assert.equal(permissionReads, 2);
+  await harness.render({ desktopState: { threadId: 'one', status: 'idle' } });
+  assert.equal(permissionReads, 2);
+  await harness.render({ desktopState: null });
+  await harness.render({ desktopState: { threadId: 'one', status: 'idle' } });
+  assert.equal(permissionReads, 3, 'a later connection recovery gets one new attempt');
+});

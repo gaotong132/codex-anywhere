@@ -14,7 +14,7 @@ export class DesktopUserInput {
   private owners = new Map<string, Promise<{ id: string; settings: Record<string, any> }>>();
 
   constructor(private openThread: (threadId: string, timeoutMs?: number) => Promise<unknown>, private timeoutMs: number,
-    pipe = new DesktopInputPipe(), statePipe = new DesktopInputPipe(pipe.path)) {
+    pipe = new DesktopInputPipe(), statePipe = new DesktopInputPipe(pipe.path, true)) {
     this.pipe = pipe;
     // Large follower snapshots must never disconnect in-flight user input or
     // small owner/model requests. Both connections still use the same owner.

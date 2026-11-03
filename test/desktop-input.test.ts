@@ -4,7 +4,7 @@ import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DesktopInputPipe } from '../src/connector/desktop-input-pipe.js';
+import { DesktopInputPipe, MAX_STATE_FRAME_BYTES } from '../src/connector/desktop-input-pipe.js';
 import { DesktopUserInput } from '../src/connector/desktop-user-input.js';
 import { NativeRequestError, encodeNativeFrame, MAX_FRAME_BYTES } from '../src/connector/desktop-native-pipe.js';
 
@@ -57,12 +57,44 @@ test('concurrent owner reads coalesce without caching stale settings or extendin
   } finally { input.close(); }
 });
 
+test('large follower snapshots use an isolated receive budget and preserve subsequent patches', async () => {
+  await host((r, socket) => {
+    if (standard(r, socket)) return;
+    if (r.method !== 'thread-stream-following-changed' || !r.params.following) return;
+    const snapshot = { type: 'broadcast', method: 'thread-stream-state-changed', version: 11,
+      sourceClientId: 'owner', params: { conversationId: 'fixture', hostId: 'local', change: {
+        type: 'snapshot', revision: 1, conversationState: { id: 'fixture', latestModel: 'astra',
+          historyText: 'x'.repeat(MAX_FRAME_BYTES + 1024), latestThreadSettings: { effort: 'high' } },
+      } } };
+    const payload = Buffer.from(JSON.stringify(snapshot));
+    assert.ok(payload.length > MAX_FRAME_BYTES && payload.length < MAX_STATE_FRAME_BYTES);
+    const header = Buffer.alloc(4); header.writeUInt32LE(payload.length);
+    socket.write(header.subarray(0, 2));
+    socket.write(Buffer.concat([header.subarray(2), payload]));
+    socket.write(encodeNativeFrame({ ...snapshot, params: { ...snapshot.params, change: {
+      type: 'patches', baseRevision: 1, revision: 2,
+      patches: [{ op: 'replace', path: ['latestThreadSettings', 'effort'], value: 'low' }],
+    } } }));
+  }, async pipe => {
+    const input = new DesktopUserInput(async () => assert.fail(), 1000, pipe);
+    try {
+      const state = await input.state.read('fixture', 'owner', 3000);
+      assert.equal(state.latestModel, 'astra');
+      const updated = await input.state.waitFor('fixture', 'owner', value => value.latestThreadSettings.effort === 'low');
+      assert.equal(updated.latestThreadSettings.effort, 'low');
+      assert.equal((await input.owner('fixture', false)).settings.model, 'gpt-6-astra');
+      await assert.rejects(input.pipe.request('thread-follower-read-model-settings',
+        { conversationId: 'fixture', oversized: 'x'.repeat(MAX_FRAME_BYTES) }, 1000, 'owner'), /desktop_request_too_large/);
+    } finally { input.close(); }
+  });
+});
+
 test('an oversized follower snapshot cannot abort a concurrent native message or model read', async () => {
   await host((r, socket) => {
     if (standard(r, socket)) return;
     if (r.method === 'thread-stream-following-changed') {
       if (r.params.following) {
-        const header = Buffer.alloc(4); header.writeUInt32LE(MAX_FRAME_BYTES + 1);
+        const header = Buffer.alloc(4); header.writeUInt32LE(MAX_STATE_FRAME_BYTES + 1);
         socket.write(header);
       }
     } else if (r.method === 'thread-follower-steer-turn') {
