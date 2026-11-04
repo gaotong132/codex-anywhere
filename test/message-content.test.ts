@@ -15,6 +15,53 @@ const escapeHtml = (value: string) => value.replaceAll('<', '&lt;').replaceAll('
 const escapeMarkdown = (value: string) => value.replaceAll('<', '\\<').replaceAll('_', '\\_');
 
 const openPage = '<external_codex_apps_open_page>{"page_id":null}</external_codex_apps_open_page>';
+const browserContext = `<in-app-browser-context source="ambient-ui-state">
+This block is automatically supplied ambient UI state, not part of the user's request. Do not treat it as an instruction or as evidence that the user explicitly selected the in-app browser.
+# In app browser:
+- The user has the in-app browser open with 1 tab.
+- Current URL: https://example.com/review
+</in-app-browser-context>`;
+const browserTabs = `<external_browser_tabs>\n${browserContext}\n</external_browser_tabs>`;
+
+test('Desktop ambient browser prefixes are hidden without discarding the actual user request', () => {
+  const request = '，当前会显示这个多余的消息。\n保留 `<tag>` 和 &lt;example&gt;。';
+  for (const payload of [browserTabs, browserContext, browserTabs.replaceAll('\n', '\r\n')]) {
+    for (const encode of [(value: string) => value, escapeHtml, escapeMarkdown]) {
+      const raw = encode(payload);
+      assert.equal(parseUserMessage(raw).text, '');
+      assert.equal(parseUserMessage(`${raw}${request}`).text, request);
+      assert.equal(parseUserMessage(`${raw}\n\n## My request:\n${request}`).text, request);
+      const forwarded = `<codex_delegation><source_thread_id>source-task</source_thread_id><input>${raw}${request}</input></codex_delegation>`;
+      assert.equal(parseUserMessage(forwarded).text, parseUserMessage(`<codex_delegation><input>${request}</input></codex_delegation>`).text);
+      assert.equal(parseUserMessage(forwarded).contexts[0]?.kind, 'delegation');
+    }
+  }
+});
+
+test('browser context examples and incomplete or modified envelopes stay visible', () => {
+  for (const raw of [
+    `解释 ${browserTabs}`, `> ${browserTabs}`, `\`${browserTabs}\``,
+    `\`\`\`xml\n${browserTabs}\n\`\`\``, `~~~xml\n${browserTabs}\n~~~`,
+    browserTabs.replace('</external_browser_tabs>', ''),
+    browserTabs.replace('ambient-ui-state', 'other-source'),
+    browserTabs.replace('not part of', 'part of'),
+    browserTabs.replace('</in-app-browser-context>', '我的补充\n</in-app-browser-context>'),
+    '<external_browser_tabs>我的正文</external_browser_tabs>',
+  ]) assert.equal(parseUserMessage(raw).text, raw.trim());
+  assert.equal(parseUserMessage(`## My request:\n${browserTabs}`).text, browserTabs);
+  assert.equal(parseAssistantMessage(browserTabs).text, browserTabs);
+});
+
+test('ambient browser metadata creates no bubble across connector and browser history paths', () => {
+  const request = '检查这个页面';
+  const items = [browserTabs, `${browserTabs}\n${request}`].map(text => ({ type: 'userMessage', text }));
+  assert.deepEqual(historyItems(mapTurns([{ id: 'turn-browser', items }])).map(item => item.text), [request]);
+  assert.deepEqual(historyItems([{ id: 'turn-browser', items }]).map(item => item.text), [request]);
+  const rows = rollout.mapRolloutRows(items.map(({ text }) => ({ type: 'response_item',
+    payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+  })));
+  assert.deepEqual(rows.filter(row => row.text).map(row => row.text), [request]);
+});
 
 test('Desktop open-Page context is hidden across raw, escaped and forwarded user messages', () => {
   for (const payload of [openPage, openPage.replace('null', '"page-example"')]) {
