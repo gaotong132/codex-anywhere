@@ -241,6 +241,9 @@ this best-effort indicator from appearing; token usage alone is never treated as
 When testing message delivery, let history synchronization and the send response arrive in either order:
 one submission should remain one bubble across later polls and reconnects. A late receipt must preserve
 the persisted message timestamp; deliberately repeated inputs and different image attachments remain distinct.
+Desktop's automatically supplied in-app browser context is hidden from user message bubbles, including
+its `external_browser_tabs` wrapper. Text following a recognized context block remains visible;
+quoted examples, assistant text and incomplete or unknown context formats are preserved.
 For a long session, browse upward once and confirm that the older-history indicator appears, the current
 reading position does not jump, and a failed request offers retry. For a connector-owned test run, open
 the running-status strip and verify that Stop interrupts only that run. Repeat with an isolated Desktop turn: Web must use its confirmed turn ID. Active goals still require Desktop stop, since stopping one turn does not pause a goal.

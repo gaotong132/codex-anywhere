@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { stripBrowserContext } from './browser-context.js';
+import { stripDesktopBrowserContext } from './desktop-browser-context.js';
 import { parseQuestionReplies, questionReplyText, type QuestionReply } from './async-questions.js';
 
 const USER_REQUEST_SECTION = /(?:^|\r?\n)##\s+My request:\s*(?:\r?\n|$)([\s\S]*)/i;
@@ -108,7 +109,7 @@ function parseMessageContent(value: unknown, role: 'user' | 'assistant'): Parsed
   }
 
   if (role === 'user') {
-    text = stripBrowserContext(text);
+    text = stripDesktopBrowserContext(stripBrowserContext(text));
     if (isOpenPageContext(text)) return { text: '', contexts };
   }
   const questionReplies = role === 'user' ? parseQuestionReplies(text) : undefined;
