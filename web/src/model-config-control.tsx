@@ -82,13 +82,13 @@ export function ModelConfigControl({
       <button
         className="model-config-summary"
         type="button"
-        disabled={loading || Boolean(config?.readOnly) || (!config && !(unavailable && onRefresh))}
-        onClick={() => unavailable ? onRefresh?.() : setOpen((current) => !current)}
+        disabled={loading || (Boolean(config?.readOnly) && !onRefresh) || (!config && !(unavailable && onRefresh))}
+        onClick={() => unavailable || config?.readOnly ? onRefresh?.() : setOpen((current) => !current)}
         aria-expanded={open}
         aria-busy={pending}
         aria-label={pending ? t('正在读取模型和思考强度', 'Loading model and reasoning effort') : undefined}
-        title={config?.source === 'persisted' ? t('上次保存的模型设置；实时设置暂不可用，请在桌面修改', 'Last saved model settings; live settings are unavailable, edit on Desktop')
-          : config?.readOnly ? t('已读取当前模型；完整设置暂不可用，请在桌面修改', 'Current model is available; edit settings on Desktop while full settings are unavailable')
+        title={config?.source === 'persisted' ? t('上次保存的模型设置；点击重新读取实时设置', 'Last saved model settings; click to retry reading live settings')
+          : config?.readOnly ? t('完整设置暂不可用；点击重新读取', 'Full settings are unavailable; click to retry')
           : unavailable ? t('重新读取当前模型', 'Retry reading the current model')
           : disabled ? t('会话执行中，可预选并在结束后保存', 'Preselect now and save after the task finishes') : t('配置后续轮次', 'Configure subsequent turns')}
       >

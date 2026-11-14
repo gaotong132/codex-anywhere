@@ -64,6 +64,7 @@ test('large follower snapshots use an isolated receive budget and preserve subse
     const snapshot = { type: 'broadcast', method: 'thread-stream-state-changed', version: 13,
       sourceClientId: 'owner', params: { conversationId: 'fixture', hostId: 'local', change: {
         type: 'snapshot', revision: 1, conversationState: { id: 'fixture', latestModel: 'astra',
+          latestReasoningEffort: 'high', requests: [], threadRuntimeStatus: { type: 'idle' },
           historyText: 'x'.repeat(MAX_FRAME_BYTES + 1024), latestThreadSettings: { effort: 'high' } },
       } } };
     const payload = Buffer.from(JSON.stringify(snapshot));

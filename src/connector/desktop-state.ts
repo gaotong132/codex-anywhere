@@ -3,8 +3,35 @@ import { DesktopInputPipe } from './desktop-input-pipe.js';
 
 type ObjectValue = Record<string, any>;
 type Entry = { owner: string; revision: number; state: ObjectValue | null; touched: number;
-  pending?: Promise<ObjectValue>; retryAfter?: number };
+  version?: number; error?: string; pending?: Promise<ObjectValue>; retryAfter?: number };
 const FORBIDDEN = new Set(['__proto__', 'constructor', 'prototype']);
+
+function isRecord(value: unknown): value is ObjectValue {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+// Desktop's broadcast version also changes for unrelated conversation fields.
+// Check the control fields we consume, while allowing additional state fields.
+function compatibleControlState(state: unknown, threadId: string): state is ObjectValue {
+  if (!isRecord(state) || state.id !== threadId || !isRecord(state.threadRuntimeStatus)
+    || typeof state.threadRuntimeStatus.type !== 'string' || !Array.isArray(state.requests)
+    || !state.requests.every(request => isRecord(request) && typeof request.method === 'string'
+      && (request.params == null || isRecord(request.params)))
+    || typeof state.latestModel !== 'string'
+    || (state.latestReasoningEffort != null && typeof state.latestReasoningEffort !== 'string')
+    || (state.turns != null && !Array.isArray(state.turns))
+    || (state.turnHistory != null && !isRecord(state.turnHistory))) return false;
+  const settings = state.latestThreadSettings;
+  if (settings != null && (!isRecord(settings)
+    || !['model', 'effort', 'serviceTier'].every(key => settings[key] == null || typeof settings[key] === 'string')
+    || (settings.sandboxPolicy != null && (!isRecord(settings.sandboxPolicy)
+      || typeof settings.sandboxPolicy.type !== 'string')))) return false;
+  for (const mode of [state.latestCollaborationMode, settings?.collaborationMode]) {
+    if (mode != null && (!isRecord(mode) || !isRecord(mode.settings)
+      || !['model', 'reasoning_effort'].every(key => mode.settings[key] == null || typeof mode.settings[key] === 'string'))) return false;
+  }
+  return true;
+}
 
 // Immer's wire patches have array paths. Reject unsafe keys and broken sequences;
 // never merge Desktop state into Connector configuration or forward raw snapshots.
@@ -64,7 +91,7 @@ export class DesktopState extends EventEmitter {
     }
     entry.touched = Date.now();
     if (entry.pending) return entry.pending;
-    if ((entry.retryAfter || 0) > Date.now()) throw new Error('desktop_state_unavailable');
+    if ((entry.retryAfter || 0) > Date.now()) throw new Error(entry.error || 'desktop_state_unavailable');
     if (entry.state && !fresh) return entry.state;
     const selected = entry;
     const reading = new Promise<ObjectValue>((resolve, reject) => {
@@ -73,7 +100,7 @@ export class DesktopState extends EventEmitter {
         error ? reject(error) : resolve(state!);
       };
       const received = (id: string) => { if (id === threadId && this.entries.get(id) === selected && selected.state) done(undefined, selected.state); };
-      const invalidated = (id: string) => { if (id === threadId) done(new Error('desktop_state_unavailable')); };
+      const invalidated = (id: string, reason = 'desktop_state_unavailable') => { if (id === threadId) done(new Error(reason)); };
       const timer = setTimeout(() => done(new Error('desktop_state_timeout')), timeoutMs); timer.unref();
       this.on('snapshot', received); this.on('invalidated', invalidated);
       void this.pipe.follow(threadId, owner, true, timeoutMs).catch(error => done(error));
@@ -82,6 +109,8 @@ export class DesktopState extends EventEmitter {
       // Unreadable snapshots must not cause an immediate resubscribe loop from
       // model/approval polling. Small model settings remain independently usable.
       selected.retryAfter = Date.now() + 30_000;
+      selected.error = (error as Error).message === 'desktop_state_incompatible'
+        ? 'desktop_state_incompatible' : 'desktop_state_unavailable';
       throw error;
     }).finally(() => { selected.pending = undefined; });
     return selected.pending;
@@ -130,17 +159,28 @@ export class DesktopState extends EventEmitter {
     }
     if (message.method !== 'thread-stream-state-changed') return;
     const change = params.change;
-    if (message.version !== 13 || !Number.isSafeInteger(change?.revision)) { this.invalidate(id, entry); return; }
+    if (!Number.isSafeInteger(message.version) || message.version < 1
+      || !Number.isSafeInteger(change?.revision) || change.revision < 0) {
+      this.invalidate(id, entry, 'desktop_state_incompatible'); return;
+    }
     try {
       if (change.type === 'snapshot') {
-        if (!change.conversationState || change.conversationState.id !== id || change.revision < entry.revision) throw new Error('invalid snapshot');
+        if (!compatibleControlState(change.conversationState, id)) {
+          this.invalidate(id, entry, 'desktop_state_incompatible'); return;
+        }
+        if (change.revision < entry.revision) throw new Error('invalid snapshot');
         entry.state = change.conversationState; entry.revision = change.revision;
+        entry.version = message.version; entry.error = undefined; entry.retryAfter = undefined;
         this.emit('snapshot', id);
       } else if (change.type === 'patches') {
+        if (message.version !== entry.version) throw new Error('stream version changed');
         if (change.revision <= entry.revision) return;
         if (!entry.state || change.baseRevision !== entry.revision) throw new Error('revision gap');
-        entry.state = applyDesktopPatches(entry.state, change.patches); entry.revision = change.revision;
-        if (entry.state.id !== id) throw new Error('identity changed');
+        const next = applyDesktopPatches(entry.state, change.patches);
+        if (!compatibleControlState(next, id)) {
+          this.invalidate(id, entry, 'desktop_state_incompatible'); return;
+        }
+        entry.state = next; entry.revision = change.revision;
       } else throw new Error('invalid state change');
       // Item text/output patches cannot change controls. Keep the state current
       // without rescanning all historical turns for every streamed token.
@@ -149,8 +189,9 @@ export class DesktopState extends EventEmitter {
       }
     } catch { this.invalidate(id, entry); }
   }
-  private invalidate(id: string, entry: Entry) {
-    entry.state = null; entry.revision = -1; this.emit('invalidated', id);
+  private invalidate(id: string, entry: Entry, reason = 'desktop_state_unavailable') {
+    entry.state = null; entry.revision = -1; entry.version = undefined; entry.error = reason;
+    this.emit('invalidated', id, reason);
     // The next read requests a fresh snapshot. Never guess/apply a missing revision.
   }
   private expire() { for (const [id, entry] of this.entries) if (Date.now() - entry.touched > 60_000) this.release(id); }

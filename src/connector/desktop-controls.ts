@@ -158,6 +158,7 @@ export class DesktopControls {
     if (!tier) throw new Error('fast_mode_not_available');
     const before = await this.snapshot(threadId, true, false);
     if (before.summary.status === 'active') throw new Error('model_config_turn_active');
+    if (before.summary.status !== 'idle') throw new Error('desktop_model_unavailable');
     try {
       const result = await this.input.pipe.request('thread-follower-update-thread-settings', {
         conversationId: threadId, threadSettings: { model: model.model, effort: value.reasoningEffort, serviceTier: tier.id },
