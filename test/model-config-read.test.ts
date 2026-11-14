@@ -38,7 +38,10 @@ test('an existing session read failure is retryable and never presented as autom
     assert.equal(reads, 2);
     assert.match(document.body.textContent!, /gpt-6-astra/);
     assert.match(document.body.textContent!, /高|High/);
-    assert.equal(document.querySelector<HTMLButtonElement>('button')!.disabled, true);
+    assert.equal(document.querySelector<HTMLButtonElement>('button')!.disabled, false);
+    await act(async () => { document.querySelector<HTMLButtonElement>('button')!.click(); });
+    assert.equal(reads, 3, 'read-only settings can be explicitly refreshed');
+    assert.equal(document.querySelector('.model-config-popover'), null);
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of saved) {

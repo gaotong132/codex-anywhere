@@ -59,23 +59,67 @@ class FakePipe extends DesktopInputPipe {
 function fixture(t: any) { const pipe = new FakePipe(), input = new DesktopUserInput(async () => assert.fail('must not open'), 1000, pipe, pipe);
   t.after(() => input.close()); return { pipe, input, controls: new DesktopControls(input) }; }
 
-test('Desktop v13 snapshots enable model and permission controls; unsupported versions invalidate them', async t => {
-  const { pipe, input, controls } = fixture(t);
-  pipe.state.cwd = '/workspace';
-  Object.assign(pipe.state.latestThreadSettings, { approvalPolicy: 'on-request', approvalsReviewer: 'user',
-    sandboxPolicy: { type: 'workspaceWrite', networkAccess: false } });
-  const capabilities = { networkAccess: false, allowFullAccess: true };
-  assert.equal((await controls.permissions('fixture', capabilities)).editable, true);
-  assert.equal((await controls.modelConfig('fixture', models)).readOnly, false);
-  for (const version of [11, 12, 14]) {
+test('compatible Desktop snapshots enable controls across version changes and added fields', async t => {
+  for (const version of [11, 13, 14, 99]) {
+    const { pipe, input, controls } = fixture(t);
+    pipe.version = version;
+    pipe.state.cwd = '/workspace';
+    pipe.state.futureField = { unknown: true };
+    Object.assign(pipe.state.latestThreadSettings, { approvalPolicy: 'on-request', approvalsReviewer: 'user',
+      sandboxPolicy: { type: 'workspaceWrite', networkAccess: false } });
+    const capabilities = { networkAccess: false, allowFullAccess: true };
+    assert.equal((await controls.permissions('fixture', capabilities)).editable, true);
+    assert.equal((await controls.modelConfig('fixture', models)).readOnly, false);
+    const updated = await controls.updateModel('fixture', { model: 'astra', reasoningEffort: 'low', fastMode: true }, models);
+    assert.equal(updated.reasoningEffort, 'low');
+    assert.equal(updated.readOnly, false);
+    assert.equal(input.state.peek('fixture', 'owner')!.futureField.unknown, true);
+  }
+});
+
+test('malformed Desktop control fields and invalid version envelopes stay unavailable', async t => {
+  for (const corrupt of [
+    (pipe: FakePipe) => { pipe.version = 0; },
+    (pipe: FakePipe) => { pipe.version = 1.5; },
+    (pipe: FakePipe) => { pipe.state.requests = {}; },
+    (pipe: FakePipe) => { pipe.state.latestModel = {}; },
+    (pipe: FakePipe) => { pipe.state.latestThreadSettings.serviceTier = {}; },
+    (pipe: FakePipe) => { pipe.state.latestCollaborationMode = { settings: { model: {} } }; },
+    (pipe: FakePipe) => { pipe.state.threadRuntimeStatus = { type: {} }; },
+  ]) {
     const { pipe, input, controls } = fixture(t);
     await controls.snapshot('fixture', false, false);
-    pipe.version = version;
-    await assert.rejects(controls.snapshot('fixture', true, false), /desktop_state_unavailable/);
+    corrupt(pipe);
+    await assert.rejects(controls.snapshot('fixture', true, false), /desktop_state_incompatible/);
     assert.equal(input.state.peek('fixture', 'owner'), null);
-    assert.equal((await controls.modelConfig('fixture', models)).readOnly, true);
     assert.equal(pipe.writes.length, 0);
   }
+});
+
+test('patch versions cannot change mid-stream and malformed control patches invalidate cached settings', async t => {
+  const { pipe, input, controls } = fixture(t);
+  await controls.snapshot('fixture', false, false);
+  const patch = (version: number, value: unknown) => pipe.emit('broadcast', {
+    method: 'thread-stream-state-changed', version, sourceClientId: 'owner', params: {
+      conversationId: 'fixture', hostId: 'local', change: { type: 'patches', baseRevision: 1, revision: 2,
+        patches: [{ op: 'replace', path: ['latestModel'], value }] },
+    },
+  });
+  patch(14, 'changed');
+  assert.equal(input.state.peek('fixture', 'owner'), null);
+  pipe.version = 14;
+  pipe.revision = 1;
+  await controls.snapshot('fixture', false, false);
+  patch(14, {});
+  assert.equal(input.state.peek('fixture', 'owner'), null);
+  assert.equal((await controls.modelConfig('fixture', models)).readOnly, true);
+  assert.equal(pipe.writes.length, 0);
+});
+
+test('an unknown runtime status cannot authorize model changes', async t => {
+  const { pipe, controls } = fixture(t);
+  pipe.state.threadRuntimeStatus.type = 'future-state';
+  await assert.rejects(controls.updateModel('fixture', { model: 'astra', reasoningEffort: 'low' }, models), /desktop_model_unavailable/);
   assert.equal(pipe.writes.length, 0);
 });
 

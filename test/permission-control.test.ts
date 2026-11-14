@@ -69,6 +69,17 @@ test('desktop access shows a working navigation/refresh flow instead of three di
     assert.equal(document.querySelectorAll('.permission-mode-options button').length, 3);
     assert.match(document.body.textContent!, /仅修改当前会话/);
     assert.doesNotMatch(document.body.textContent!, /新会话的默认值/);
+    await act(async () => root.render(createElement(PermissionModeControl, {
+      config: null, loading: false, disabled: false, onChange: async () => assert.fail('unconfirmed settings cannot be saved'),
+      onRefresh: async () => { throw new Error('desktop_state_incompatible'); },
+    })));
+    assert.equal(document.querySelector<HTMLButtonElement>('.permission-mode-summary')!.disabled, false);
+    assert.match(document.querySelector('.permission-mode-summary')!.textContent!, /权限读取失败/);
+    await click('.permission-mode-summary');
+    assert.match(document.querySelector('[role=alert]')!.textContent!, /状态格式已变化/);
+    assert.equal(document.querySelectorAll('.permission-mode-options button').length, 0);
+    await click('.permission-mode-desktop button');
+    assert.match(document.querySelector('[role=alert]')!.textContent!, /状态格式已变化/);
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of saved) {

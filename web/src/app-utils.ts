@@ -64,6 +64,7 @@ export function friendlyError(error: unknown) {
   if (message === 'desktop_request_too_large') return t('消息超过桌面通道大小限制，尚未发送。请缩短内容后重试。', 'The message exceeds the desktop channel size limit and was not sent. Shorten it and try again.');
   if (message === 'desktop_input_unavailable') return t('桌面原生输入通道尚未就绪。请打开目标会话并确认 Codex 已更新后重试。', 'Desktop native input is not ready. Open the target chat and check your Codex version before retrying.');
   if (message === 'desktop_input_unsupported') return t('当前 Codex 版本不支持此原生操作，需要更新 Connector 的协议适配。', 'This Codex version does not support this native operation. Update the Connector protocol adapter.');
+  if (message === 'desktop_state_incompatible') return t('Codex 桌面状态格式已变化，当前无法确认设置。请更新 Anywhere 连接器后重试。', 'The Codex Desktop state format changed. Update the Anywhere Connector and retry to confirm settings.');
   if (message === 'desktop_input_not_ready' || message.startsWith('desktop_state_')) return t('暂时无法读取桌面会话状态，请在电脑上打开该会话后重试。', 'Desktop chat state is unavailable. Open the chat on your computer and retry.');
   if (message === 'desktop_settings_changed') return t('桌面设置已变化，未能确认本次修改。请刷新后检查设置。', 'Desktop settings changed. Refresh and check the current settings.');
   if (message === 'desktop_permissions_unavailable') return t('暂时无法确认桌面权限，请稍后刷新。', 'Desktop permissions could not be confirmed. Refresh and try again.');

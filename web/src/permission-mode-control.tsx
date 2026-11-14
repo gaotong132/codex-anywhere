@@ -97,7 +97,7 @@ export function PermissionModeControl({
       <button
         className={`permission-mode-summary ${config?.mode || 'ask'}`}
         type="button"
-        disabled={!config}
+        disabled={!config && (loading || !onRefresh)}
         onClick={() => {
           setOpen((current) => !current);
           setError('');
@@ -109,9 +109,16 @@ export function PermissionModeControl({
           : t('配置 Codex 的审批与文件访问权限', 'Configure Codex approvals and file access')}
       >
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.7-2.5 6.3-6 7.9-3.5-1.6-6-4.2-6-7.9V5l6-2.5Z" /><path d="M7.4 10.1 9.2 12l3.6-4" /></svg>
-        <span>{loading ? t('读取权限…', 'Loading access…') : permissionModeLabel(config?.mode || 'ask')}{config && !config.editable && <small> · {config.source === 'persisted' ? t('只读', 'Read only') : t('电脑端管理', 'Desktop managed')}</small>}</span>
+        <span>{loading ? t('读取权限…', 'Loading access…') : config ? permissionModeLabel(config.mode) : t('权限读取失败 · 重试', 'Access unavailable · Retry')}{config && !config.editable && <small> · {config.source === 'persisted' ? t('只读', 'Read only') : t('电脑端管理', 'Desktop managed')}</small>}</span>
         <i aria-hidden="true" />
       </button>
+      {open && !config && <div className="permission-mode-popover">
+        <header><strong>{t('暂时无法读取权限', 'Access settings are unavailable')}</strong></header>
+        <div className="permission-mode-desktop"><div>
+          <button type="button" disabled={saving || loading} onClick={() => onRefresh && void runAction(onRefresh)}>{t('重新读取权限', 'Retry reading access settings')}</button>
+        </div></div>
+        {error && <p role="alert">{error}</p>}
+      </div>}
       {open && config && (
         <div className="permission-mode-popover">
           <header>
