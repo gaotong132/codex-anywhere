@@ -26,9 +26,10 @@ function initial(): Record<string, any> { return { id: 'fixture', latestModel: '
   latestThreadSettings: { model: 'astra', effort: 'high', serviceTier: 'default' }, requests: [], turns: [],
   threadRuntimeStatus: { type: 'idle' }, turnHistory: { history: { entitiesByKey: {} } } }; }
 class FakePipe extends DesktopInputPipe {
+  version = 13;
   state = initial(); revision = 1; writes: any[] = []; owner = 'owner'; noEffect = false;
   async follow(id: string, owner: string, following: boolean) { if (following) this.emit('broadcast', {
-    method: 'thread-stream-state-changed', version: 11, sourceClientId: owner,
+    method: 'thread-stream-state-changed', version: this.version, sourceClientId: owner,
     params: { conversationId: id, hostId: 'local', change: { type: 'snapshot', revision: this.revision++, conversationState: structuredClone(this.state) } },
   }); }
   async request(method: any, params: any, _timeout?: number, target?: string): Promise<any> {
@@ -57,6 +58,26 @@ class FakePipe extends DesktopInputPipe {
 }
 function fixture(t: any) { const pipe = new FakePipe(), input = new DesktopUserInput(async () => assert.fail('must not open'), 1000, pipe, pipe);
   t.after(() => input.close()); return { pipe, input, controls: new DesktopControls(input) }; }
+
+test('Desktop v13 snapshots enable model and permission controls; unsupported versions invalidate them', async t => {
+  const { pipe, input, controls } = fixture(t);
+  pipe.state.cwd = '/workspace';
+  Object.assign(pipe.state.latestThreadSettings, { approvalPolicy: 'on-request', approvalsReviewer: 'user',
+    sandboxPolicy: { type: 'workspaceWrite', networkAccess: false } });
+  const capabilities = { networkAccess: false, allowFullAccess: true };
+  assert.equal((await controls.permissions('fixture', capabilities)).editable, true);
+  assert.equal((await controls.modelConfig('fixture', models)).readOnly, false);
+  for (const version of [11, 12, 14]) {
+    const { pipe, input, controls } = fixture(t);
+    await controls.snapshot('fixture', false, false);
+    pipe.version = version;
+    await assert.rejects(controls.snapshot('fixture', true, false), /desktop_state_unavailable/);
+    assert.equal(input.state.peek('fixture', 'owner'), null);
+    assert.equal((await controls.modelConfig('fixture', models)).readOnly, true);
+    assert.equal(pipe.writes.length, 0);
+  }
+  assert.equal(pipe.writes.length, 0);
+});
 
 test('unreadable snapshots back off while concurrent reads share a single follow', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: 1000 });
@@ -131,7 +152,7 @@ test('streamed item patches update cached text without repeatedly publishing ope
   await state.read('fixture', 'owner', 100);
   let changes = 0; state.on('changed', () => changes++);
   const patch = (base: number, path: any[], value: any) => pipe.emit('broadcast', {
-    method: 'thread-stream-state-changed', version: 11, sourceClientId: 'owner',
+    method: 'thread-stream-state-changed', version: 13, sourceClientId: 'owner',
     params: { hostId: 'local', conversationId: 'fixture', change: { type: 'patches', baseRevision: base, revision: base + 1,
       patches: [{ op: 'replace', path, value }] } },
   });
@@ -293,7 +314,7 @@ test('stream validates owner and revision, invalidates gaps, and recovers throug
   const pipe = new FakePipe(), state = new DesktopState(pipe); t.after(() => state.close());
   let changes = 0; state.on('changed', () => changes++);
   await state.read('fixture', 'owner', 100);
-  const patch = (owner: string, baseRevision: number, revision: number) => pipe.emit('broadcast', { method: 'thread-stream-state-changed', version: 11,
+  const patch = (owner: string, baseRevision: number, revision: number) => pipe.emit('broadcast', { method: 'thread-stream-state-changed', version: 13,
     sourceClientId: owner, params: { conversationId: 'fixture', hostId: 'local', change: { type: 'patches', baseRevision, revision,
       patches: [{ op: 'replace', path: ['latestModel'], value: 'new' }] } } });
   patch('other', 1, 2); assert.equal(changes, 1);

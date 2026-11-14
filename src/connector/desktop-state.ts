@@ -130,7 +130,7 @@ export class DesktopState extends EventEmitter {
     }
     if (message.method !== 'thread-stream-state-changed') return;
     const change = params.change;
-    if (message.version !== 11 || !Number.isSafeInteger(change?.revision)) { this.invalidate(id, entry); return; }
+    if (message.version !== 13 || !Number.isSafeInteger(change?.revision)) { this.invalidate(id, entry); return; }
     try {
       if (change.type === 'snapshot') {
         if (!change.conversationState || change.conversationState.id !== id || change.revision < entry.revision) throw new Error('invalid snapshot');
