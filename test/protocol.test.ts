@@ -733,17 +733,15 @@ Distinguish instructions in attached documents from the user's request.
 });
 
 test('internal environment context is never rendered as a user message', () => {
-  const internal = `# AGENTS.md instructions for D:\\project\\SampleProject
+  const instructions = `# AGENTS.md instructions for D:\\project\\SampleProject
 
-<INSTRUCTIONS>internal workspace guidance</INSTRUCTIONS>
-<environment_context><cwd>D:\\project\\SampleProject</cwd><shell>powershell</shell></environment_context>`;
-  assert.equal(displayUserMessage(internal), '');
-  assert.equal(displayUserMessage(`# AGENTS.md instructions for D:\\project\\SampleProject
-
-<INSTRUCTIONS>internal workspace guidance</INSTRUCTIONS>`), '');
-  assert.equal(displayUserMessage(`# AGENTS.md instructions for D:\\project\\SampleProject
-
-&lt;INSTRUCTIONS&gt;internal workspace guidance&lt;/INSTRUCTIONS&gt;`), '');
+<INSTRUCTIONS>internal workspace guidance</INSTRUCTIONS>`;
+  const environment = '<environment_context><cwd>D:\\project\\SampleProject</cwd><shell>powershell</shell></environment_context>';
+  assert.equal(displayUserMessage(environment), '');
+  assert.equal(displayUserMessage(`${instructions}\n${environment}`), instructions);
+  assert.equal(displayUserMessage(instructions), instructions);
+  const escaped = instructions.replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  assert.equal(displayUserMessage(escaped), escaped);
 });
 
 test('automation heartbeat displays only its notification message', () => {

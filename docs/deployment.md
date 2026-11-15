@@ -244,6 +244,7 @@ the persisted message timestamp; deliberately repeated inputs and different imag
 Desktop's automatically supplied in-app browser context is hidden from user message bubbles, including
 its `external_browser_tabs` wrapper. Text following a recognized context block remains visible;
 quoted examples, assistant text and incomplete or unknown context formats are preserved.
+Standalone Desktop `AGENTS.md` instructions appear as a compact, initially collapsed card with the document title and section count. Expand it to read Markdown in a bounded scroll area; Copy instructions copies the body without wrapper tags. Both global and project-scoped formats are retained in history. Quoted examples and accompanying user prose remain ordinary messages.
 For a long session, browse upward once and confirm that the older-history indicator appears, the current
 reading position does not jump, and a failed request offers retry. For a connector-owned test run, open
 the running-status strip and verify that Stop interrupts only that run. Repeat with an isolated Desktop turn: Web must use its confirmed turn ID. Active goals still require Desktop stop, since stopping one turn does not pause a goal.

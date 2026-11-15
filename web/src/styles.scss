@@ -950,6 +950,36 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   100% { opacity: 1; box-shadow: 0 7px 22px rgba(2, 7, 15, .16); }
 }
 .message-image { width: min(100%, 420px); margin: 10px 0 0; overflow: hidden; border: 1px solid rgba(255, 255, 255, .12); border-radius: 12px; background: rgba(7, 11, 18, .28); }
+.message.user.agent-instructions {
+  width: min(100%, 540px); padding: 0; border: 1px solid #2b3546; border-radius: 13px;
+  color: #bfcbdc; background: #121a27; box-shadow: none;
+  &::before { display: none; }
+}
+.agent-instructions-toggle {
+  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 64px;
+  padding: 11px 13px; border: 0; border-radius: 13px; color: inherit; background: transparent;
+  font: inherit; text-align: left; cursor: pointer;
+  @include interaction.hover { background: #182334; }
+}
+.agent-instructions-icon { width: 23px; height: 25px; flex: 0 0 23px; color: #89a8d9; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.agent-instructions-heading {
+  display: grid; gap: 3px; min-width: 0; flex: 1;
+  strong { @include truncate; color: #dce5f4; font-size: 13px; font-weight: 600; }
+  small { color: #8797b0; font-size: 10px; }
+}
+.agent-instructions-action {
+  display: inline-flex; align-items: center; gap: 3px; flex: 0 0 auto; color: #91a8cb; font-size: 11px;
+  svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+}
+.agent-instructions-body {
+  max-height: min(55dvh, 460px); padding: 14px; overflow: auto; overscroll-behavior: contain;
+  border-top: 1px solid #283448; font-size: 13px; line-height: 1.7;
+  > :first-child { margin-top: 0; }
+  > :last-child { margin-bottom: 0; }
+  h1 { font-size: 1.18em; }
+  h2 { font-size: 1.08em; }
+  .agent-instructions-scope { margin: 0 0 12px; color: #8e9db5; font-size: 11px; }
+}
 .message-image-preview { display: block; width: 100%; border: 0; padding: 0; background: transparent; cursor: zoom-in; }
 .message-image img { display: block; width: 100%; max-height: 440px; object-fit: contain; background: #080b11; }
 .message-image figcaption { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 9px; color: #aeb9c9; font-size: 10px; }
