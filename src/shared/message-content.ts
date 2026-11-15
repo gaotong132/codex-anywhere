@@ -1,6 +1,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import { stripBrowserContext } from './browser-context.js';
 import { stripDesktopBrowserContext } from './desktop-browser-context.js';
+import { parseAgentInstructions } from './agent-instructions.js';
 import { parseQuestionReplies, questionReplyText, type QuestionReply } from './async-questions.js';
 
 const USER_REQUEST_SECTION = /(?:^|\r?\n)##\s+My request:\s*(?:\r?\n|$)([\s\S]*)/i;
@@ -8,7 +9,6 @@ const IMAGE_ATTACHMENT = /<image\b[^>]*?(?:\/\s*>|>\s*<\/image\s*>)/gi;
 const ESCAPED_IMAGE_ATTACHMENT = /&lt;image\b[\s\S]*?(?:\/\s*&gt;|&gt;\s*&lt;\/image\s*&gt;)/gi;
 const INTERNAL_CONTEXT = /<environment_context\b[^>]*>[\s\S]*?<\/environment_context>/i;
 const ESCAPED_INTERNAL_CONTEXT = /(?:\\?<|&lt;)environment_context\b[\s\S]*?(?:\\?<|&lt;)\/environment_context(?:>|&gt;)/i;
-const INTERNAL_AGENT_INSTRUCTIONS = /^\s*#\s+AGENTS\.md instructions for\s+[^\r\n]+\s+(?:<INSTRUCTIONS>[\s\S]*<\/INSTRUCTIONS>|&lt;INSTRUCTIONS&gt;[\s\S]*&lt;\/INSTRUCTIONS&gt;)\s*$/i;
 const BARE_URL_BEFORE_CJK_PUNCTUATION = /(?<![<(])(https?:\/\/[^\s<>()]+?)(?=[，。；：！？、）》】])/gu;
 const CONTROL_ENVELOPE_START = /^\s*(?:\\?<(?:codex_delegation|heartbeat|environment_context)\b|&lt;(?:codex_delegation|heartbeat|environment_context)\b)/i;
 const HEARTBEAT_FIELDS = new Set(['automation_id', 'current_time_iso', 'decision', 'message', 'instructions']);
@@ -111,14 +111,25 @@ function parseMessageContent(value: unknown, role: 'user' | 'assistant'): Parsed
   if (role === 'user') {
     text = stripDesktopBrowserContext(stripBrowserContext(text));
     if (isOpenPageContext(text)) return { text: '', contexts };
+    // Preserve instruction documents verbatim for the collapsible Web card.
+    // Their examples may include request headings, attachments or XML tags.
+    if (parseAgentInstructions(text)) return { text, contexts };
+    // Older Desktop messages append an environment envelope to the document.
+    for (const marker of ['<environment_context', '\\<environment_context', '&lt;environment_context']) {
+      const start = text.lastIndexOf(marker);
+      if (start <= 0 || text[start - 1] !== '\n') continue;
+      const document = text.slice(0, start).trimEnd();
+      if (parseAgentInstructions(document) && parseEnvelope(text.slice(start))?.name === 'environment_context') {
+        return { text: document, contexts };
+      }
+    }
   }
   const questionReplies = role === 'user' ? parseQuestionReplies(text) : undefined;
   if (questionReplies) return { text: questionReplyText(questionReplies), contexts, questionReplies };
   const request = USER_REQUEST_SECTION.exec(text);
   if (request) text = request[1];
   else if (
-    INTERNAL_AGENT_INSTRUCTIONS.test(text)
-    || INTERNAL_CONTEXT.test(normalizeControlEnvelope(text))
+    INTERNAL_CONTEXT.test(normalizeControlEnvelope(text))
     || ESCAPED_INTERNAL_CONTEXT.test(text)
   ) {
     return { text: '', contexts };

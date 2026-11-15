@@ -17,6 +17,8 @@ import { isSvgFilePath, SvgPreview } from './svg-preview';
 import { isHtmlFilePath, HtmlPreview } from './html-preview';
 import { MessageMarkdown } from './message-markdown';
 import { QuestionReplyContent } from './question-reply-content';
+import { AgentInstructionsCard } from './agent-instructions-card';
+import { parseAgentInstructions } from '../../src/shared/agent-instructions';
 import { elapsedLabel } from './live-activity';
 import { t } from './i18n';
 import type { TimelineItem } from './history-utils';
@@ -88,11 +90,13 @@ function dateTimeValue(value: TimelineItem['completedAt']) {
 
 function MessageMetadata({
   item,
+  copyText,
   onOpenDiff,
   diffLoading = false,
   onEditMessage, editDisabled,
 }: {
   item: TimelineItem;
+  copyText?: string;
   onOpenDiff?: () => void;
   diffLoading?: boolean;
   onEditMessage?: (item: TimelineItem) => void;
@@ -106,12 +110,12 @@ function MessageMetadata({
     return () => {
       if (copyResetTimer.current) clearTimeout(copyResetTimer.current);
     };
-  }, [item.text]);
+  }, [item.text, copyText]);
 
   async function copyMessage() {
     try {
       if (!navigator.clipboard?.writeText) throw new Error('clipboard_unavailable');
-      await navigator.clipboard.writeText(item.text);
+      await navigator.clipboard.writeText(copyText ?? item.text);
       setCopyState('copied');
     } catch {
       setCopyState('failed');
@@ -124,7 +128,7 @@ function MessageMetadata({
     ? t('已复制', 'Copied')
     : copyState === 'failed'
       ? t('复制失败', 'Copy failed')
-      : t('复制消息', 'Copy message');
+      : copyText === undefined ? t('复制消息', 'Copy message') : t('复制指令', 'Copy instructions');
   const completedDateTime = dateTimeValue(item.completedAt);
   const changeSummaryTitle = item.fileChanges ? t(
     `${item.fileChanges.changed} 个文件已更改，新增 ${item.fileChanges.additions} 行，删除 ${item.fileChanges.deletions} 行`,
@@ -365,6 +369,7 @@ function MessageBubbleComponent({
   visualizationPathRef.current = item.visualization?.path;
   const copyable = item.kind === 'user' || item.kind === 'assistant';
   const finalReplyArriving = item.kind === 'assistant' && Boolean(item.transient && item.completedAt);
+  const instructions = item.kind === 'user' ? parseAgentInstructions(item.text) : null;
 
   useEffect(() => { setImageExpanded(false); }, [item.attachment?.path]);
   useEffect(() => {
@@ -546,13 +551,14 @@ function MessageBubbleComponent({
   }
   return (
     <div data-timeline-id={item.id} className={`message-block ${item.kind}${copyable ? ' copyable' : ''}`}>
-      <div className={`message ${item.kind}${copyable ? ' copyable' : ''}${active ? ' live' : ''}${finalReplyArriving ? ' final-arriving' : ''}`}>
+      <div className={`message ${item.kind}${instructions ? ' agent-instructions' : ''}${copyable ? ' copyable' : ''}${active ? ' live' : ''}${finalReplyArriving ? ' final-arriving' : ''}`}>
         <MessageContexts item={item} />
         {item.kind === 'user' && item.questionReplies?.length ? <QuestionReplyContent
           replies={item.questionReplies}
           onReadTextFile={onReadTextFile}
           onDownloadFile={openLocalFile}
-        /> : <MessageMarkdown
+        /> : instructions ? <AgentInstructionsCard instructions={instructions}
+          onDownloadFile={openLocalFile} onReadTextFile={onReadTextFile} /> : <MessageMarkdown
           text={item.text}
           attachmentPath={item.attachment?.path}
           onPreviewImage={onReadPreviewImage ? openLocalFile : undefined}
@@ -712,7 +718,8 @@ function MessageBubbleComponent({
       {copyable && (
         <MessageMetadata
           item={item}
-          onEditMessage={onEditMessage} editDisabled={editDisabled}
+          copyText={instructions?.body}
+          onEditMessage={instructions ? undefined : onEditMessage} editDisabled={editDisabled}
           onOpenDiff={item.historyTurnId && onReadTurnDiff ? () => void openTurnDiff() : undefined}
           diffLoading={turnDiffPreview?.status === 'loading'}
         />
