@@ -60,7 +60,7 @@ export const SessionSidebar = memo(function SessionSidebar({
   const visibleSessions = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     const matches = query
-      ? sessions.filter((session) => `${session.title} ${session.cwd || ''} ${session.preview || ''}`
+      ? sessions.filter((session) => `${session.title} ${sessionProjectName(session.cwd, session.project)} ${session.cwd || ''} ${session.preview || ''}`
         .toLocaleLowerCase().includes(query))
       : sessions;
     return [...matches]
@@ -107,7 +107,7 @@ export const SessionSidebar = memo(function SessionSidebar({
                 onSearchOpenChange(false);
               }
             }}
-            placeholder={t('搜索会话或目录', 'Search sessions or folders')}
+            placeholder={t('搜索会话、项目或目录', 'Search sessions, projects or folders')}
           />
         </label>
       )}
@@ -118,7 +118,9 @@ export const SessionSidebar = memo(function SessionSidebar({
             || (session.id === selectedThreadId
               && (executionState === 'running' || executionState === 'waiting'));
           const completedUnread = !sessionRunning && attention[session.id] === 'unread';
-          const projectName = sessionProjectName(session.cwd);
+          const projectName = sessionProjectName(session.cwd, session.project);
+          const projectPlaceholder = session.project?.status === 'unavailable'
+            ? t('项目待同步', 'Project pending') : t('未分配项目', 'No project');
           return (
             <button
               key={session.id}
@@ -131,9 +133,9 @@ export const SessionSidebar = memo(function SessionSidebar({
                 {completedUnread && <span className="session-unread-dot" aria-label={t('已完成，未读', 'Completed, unread')} title={t('已完成，未读', 'Completed, unread')} />}
                 <span
                   className={projectName ? 'session-project' : 'session-project placeholder'}
-                  title={projectName ? session.cwd : undefined}
+                  title={session.project ? projectName || projectPlaceholder : projectName ? session.cwd : undefined}
                 >
-                  {projectName || 'General session'}
+                  {projectName || projectPlaceholder}
                 </span>
                 <time>{formatDate(session.updatedAt)}</time>
               </span>

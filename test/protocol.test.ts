@@ -479,9 +479,16 @@ test('background Desktop status lookup respects the native limit with a bounded 
   const desktop = new CodexDesktopClient();
   let options;
   let limit;
+  let projectOptions;
   desktop.callTool = async (request, callOptions) => {
+    if (request.tool === 'list_projects') {
+      projectOptions = callOptions;
+      return { success: true, structuredContent: { projects: [] } };
+    }
     limit = request.arguments.limit;
     options = callOptions;
+    assert.equal(request.arguments.hostId, 'local');
+    assert.equal(request.arguments.source, 'codex');
     return {
       success: true,
       contentItems: [{ text: JSON.stringify({ pinnedThreads: [], threads: [] }) }],
@@ -490,6 +497,7 @@ test('background Desktop status lookup respects the native limit with a bounded 
   assert.deepEqual(await desktop.listThreads({ callerThreadId: 'controller-thread' }), []);
   assert.equal(limit, 50);
   assert.ok(options.timeoutMs > 1_000 && options.timeoutMs <= 15_000);
+  assert.ok(projectOptions.timeoutMs <= 1_000);
 });
 
 test('desktop thread state exposes waiting approval without loading conversation history', async () => {

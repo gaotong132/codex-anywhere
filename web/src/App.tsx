@@ -1929,6 +1929,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             id: data.threadId,
             title: visibleText.split(/\r?\n/, 1)[0]?.slice(0, 80) || t('新会话', 'New session'),
             cwd: projectCwd,
+            ...(connectorStatus?.mode === 'desktop' ? { project: { status: 'unavailable' as const } } : {}),
             updatedAt: Date.now(),
             status: 'inProgress',
           } satisfies Session;
