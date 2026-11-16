@@ -530,16 +530,22 @@ test('session listing returns immediately and merges asynchronously cached Deskt
     codex: { listSessions: async () => sessions },
     desktop: { listThreads: () => new Promise((resolve) => { resolveDesktopStatus = resolve; }) },
   }));
-  assert.equal((await available(request('sessions.list'))).data.sessions[0].status, 'notLoaded');
-  resolveDesktopStatus([{ id: 'thread-1', status: 'active' }]);
+  const first = await available(request('sessions.list'));
+  assert.equal(first.data.sessions[0].status, 'notLoaded');
+  assert.deepEqual(first.data.sessions[0].project, { status: 'unavailable' });
+  const project = { status: 'assigned', id: 'project-a', name: 'Workspace label' };
+  resolveDesktopStatus([{ id: 'thread-1', status: 'active', project }]);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal((await available(request('sessions.list'))).data.sessions[0].status, 'active');
+  const refreshed = await available(request('sessions.list'));
+  assert.equal(refreshed.data.sessions[0].status, 'active');
+  assert.deepEqual(refreshed.data.sessions[0].project, project);
 
   const unavailable = createRequestHandler(createDependencies({
     codex: { listSessions: async () => sessions },
     desktop: { listThreads: async () => { throw new Error('desktop_app_unavailable'); } },
   }));
-  assert.deepEqual((await unavailable(request('sessions.list'))).data.sessions, sessions);
+  assert.deepEqual((await unavailable(request('sessions.list'))).data.sessions,
+    sessions.map(session => ({ ...session, project: { status: 'unavailable' } })));
 
   const locallyActive = createRequestHandler(createDependencies({
     codex: {
@@ -583,19 +589,20 @@ test('Desktop status changes push immediately without another list request; unch
   const updates: any[] = [];
   let calls = 0;
   let status = 'active';
+  let project = { status: 'assigned', id: 'project-a', name: 'Initial name' };
   const handler = createRequestHandler(createDependencies({
     onSessionStatuses: snapshot => updates.push(snapshot),
     codex: { listSessions: async () => [{ id: 'thread-1', status: 'notLoaded' }] },
     desktop: { listThreads: async options => {
       assert.equal(options.limit, 50);
       calls++;
-      return [{ id: 'thread-1', status }];
+      return [{ id: 'thread-1', status, project }];
     } },
   }));
   const first = await handler(request('sessions.list'));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(first.data.desktopStatuses, null);
-  assert.deepEqual(updates, [{ revision: 1, threads: [{ id: 'thread-1', status: 'active' }] }]);
+  assert.deepEqual(updates, [{ revision: 1, threads: [{ id: 'thread-1', status: 'active', project }] }]);
   await Promise.all(Array.from({ length: 20 }, () => handler(request('sessions.list'))));
   assert.equal(calls, 1);
   context.mock.timers.tick(6_000);
@@ -608,6 +615,12 @@ test('Desktop status changes push immediately without another list request; unch
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(updates[1].threads[0].status, 'idle');
   assert.equal(updates[1].revision, 3);
+  project = { ...project, name: 'Renamed project' };
+  context.mock.timers.tick(6_000);
+  await handler(request('sessions.list'));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(updates[2].threads[0].project.name, 'Renamed project');
+  assert.equal(updates[2].threads[0].status, 'idle');
 });
 
 test('Desktop failures are throttled and expired status does not persist as running', async context => {

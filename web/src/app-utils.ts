@@ -279,7 +279,8 @@ export function projectLabel(path: string) {
   return name && name !== path ? `${name} — ${path}` : path;
 }
 
-export function sessionProjectName(path?: string) {
+export function sessionProjectName(path?: string, project?: Session['project']) {
+  if (project) return project.status === 'assigned' ? project.name : '';
   const value = String(path || '').trim();
   if (!value || isTemporaryProjectPath(value)) return '';
   const normalized = value.replace(/[\\/]+$/, '');

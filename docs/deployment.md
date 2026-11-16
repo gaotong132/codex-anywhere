@@ -255,6 +255,8 @@ the top-bar badge, session list, remembered workspace, and online state change t
 session on each node and confirm that returning to the other node never mixes their history or files. Also
 verify that the public URL uses the intended transport and that `ECS-IP:3300` is unreachable externally.
 
+Desktop session project labels follow the local Desktop project's ID and configured name, independently of the execution directory. Moving a chat, renaming a project or using a worktree updates the sidebar through the existing metadata refresh. Until Desktop metadata is available, the label shows Project pending; an explicitly unassigned chat shows No project. Headless connectors retain working-directory labels. These display labels never change the session's working directory or execution permissions.
+
 ## Operate and update
 
 Keep production source identical to a committed revision. Review and commit feature patches before deployment. Keep machine-only `AGENTS.md` in `.git/info/exclude`, secrets in ignored `.env` or external service configuration, and backups outside the repository. Before and after deployment, require an empty `git status --porcelain` and record the commit and image ID. Reconcile a dirty checkout instead of silently overlaying a release.

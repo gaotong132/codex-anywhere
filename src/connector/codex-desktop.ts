@@ -4,6 +4,7 @@ import { readdir } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { NativePipeClient, encodeNativeFrame } from './desktop-native-pipe.js';
 import { normalizeSessionName } from '../shared/session-name.js';
+import type { SessionProject } from '../shared/session-status.js';
 
 // Desktop split app tools from browser control in newer builds. Prefer the
 // dedicated host, but retain capability-checked discovery for older versions.
@@ -22,7 +23,7 @@ type DesktopMessage = {
   thinking?: unknown;
   imagePath?: string;
 };
-export type DesktopThreadStatus = { id: string; status: string };
+export type DesktopThreadStatus = { id: string; status: string; project?: SessionProject };
 type ToolCall = { tool: string; arguments: JsonObject; callerThreadId: string; callId: string };
 type DesktopHostError = Error & { code?: string };
 
@@ -131,22 +132,41 @@ export class CodexDesktopClient {
     if (!caller) return [];
     // Background enrichment must tolerate a cold Desktop list without delaying
     // the session response. Capability probes still use the shorter deadline.
-    const result = await this.callTool({
+    const [threadResult, projectResult] = await Promise.allSettled([this.callTool({
       tool: 'list_threads',
-      arguments: { limit: Math.min(50, Math.max(1, Number(limit) || 50)) },
+      arguments: { mode: 'history', source: 'codex', hostId: 'local',
+        limit: Math.min(50, Math.max(1, Number(limit) || 50)) },
       callerThreadId: caller,
       callId: `bridge-list-${randomUUID()}`,
-    }, { timeoutMs: DEFAULT_TIMEOUT_MS });
+    }, { timeoutMs: DEFAULT_TIMEOUT_MS }), this.callTool({
+      tool: 'list_projects', arguments: {}, callerThreadId: caller, callId: `bridge-projects-${randomUUID()}`,
+    }, { timeoutMs: STATUS_ENRICHMENT_TIMEOUT_MS })]);
+    if (threadResult.status === 'rejected') throw threadResult.reason;
+    const result = threadResult.value;
     if (result?.success !== true) throw new Error('desktop_thread_list_failed');
     const payload = parseToolPayload(result);
     const rows = [
       ...(Array.isArray(payload?.pinnedThreads) ? payload.pinnedThreads : []),
       ...(Array.isArray(payload?.threads) ? payload.threads : []),
     ];
-    return rows.filter((thread: JsonObject) => thread?.kind === 'codex' && thread?.id).map((thread: JsonObject) => ({
-      id: String(thread.id),
-      status: String(thread.status || 'unknown'),
-    }));
+    let projects: JsonObject[] = [];
+    if (projectResult.status === 'fulfilled' && projectResult.value?.success === true) {
+      try { projects = parseToolPayload(projectResult.value).projects || []; }
+      catch { /* Missing project metadata does not block the session list or statuses. */ }
+    }
+    const projectNames = new Map((Array.isArray(projects) ? projects : [])
+      .filter(project => project?.projectKind === 'local' && project.hostId === 'local'
+        && typeof project.projectId === 'string' && typeof project.label === 'string' && project.label.trim())
+      .map(project => [project.projectId, project.label.trim()]));
+    return rows.filter((thread: JsonObject) => thread?.kind === 'codex' && thread?.id
+      && (thread.hostId === 'local' || thread.hostId === undefined)).map((thread: JsonObject) => {
+      let project: SessionProject = { status: 'unavailable' };
+      if (thread.hostId === 'local' && thread.projectId === null) project = { status: 'unassigned' };
+      else if (thread.hostId === 'local' && typeof thread.projectId === 'string' && projectNames.has(thread.projectId)) {
+        project = { status: 'assigned', id: thread.projectId, name: projectNames.get(thread.projectId)! };
+      }
+      return { id: String(thread.id), status: String(thread.status || 'unknown'), project };
+    });
   }
 
   async readThreadState({ threadId }: { threadId?: unknown }) {
@@ -309,16 +329,16 @@ function parseToolPayload(result: JsonObject): JsonObject {
   throw new Error('desktop_thread_list_invalid');
 }
 
-export function mergeDesktopSessionStatuses<T extends { id: string; status?: string }>(
+export function mergeDesktopSessionStatuses<T extends { id: string; status?: string; project?: SessionProject }>(
   sessions: T[], desktopThreads: DesktopThreadStatus[], locallyActiveThreadIds: string | Iterable<string> = [],
 ) {
-  const statuses = new Map((desktopThreads || []).map((thread) => [thread.id, thread.status]));
+  const rows = new Map((desktopThreads || []).map((thread) => [thread.id, thread]));
   const active = new Set(typeof locallyActiveThreadIds === 'string' ? [locallyActiveThreadIds] : locallyActiveThreadIds);
   return (sessions || []).map((session) => {
-    if (active.has(session.id)) return { ...session, status: 'active' };
-    return statuses.has(session.id)
-      ? { ...session, status: statuses.get(session.id) }
-      : session;
+    const desktop = rows.get(session.id);
+    const status = active.has(session.id) ? 'active' : desktop?.status;
+    if (!status && !desktop?.project) return session;
+    return { ...session, ...(status ? { status } : {}), ...(desktop?.project ? { project: desktop.project } : {}) };
   });
 }
 

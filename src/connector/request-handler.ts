@@ -196,7 +196,11 @@ async function dispatchAction({
     };
   }
   if (action === 'sessions.list') {
-    const sessions = await codex.listSessions({ cwd: payload.cwd });
+    const listed = await codex.listSessions({ cwd: payload.cwd });
+    // Desktop project membership is independent of the execution directory.
+    // Until its metadata arrives, report unknown instead of guessing from cwd.
+    const sessions = mode === 'desktop'
+      ? listed.map(session => ({ ...session, project: { status: 'unavailable' as const } })) : listed;
     const desktopStatuses = getDesktopStatuses();
     refreshDesktopThreads(sessions[0]?.id);
     return {

@@ -1,6 +1,11 @@
+export type SessionProject =
+  | { status: 'assigned'; id: string; name: string }
+  | { status: 'unassigned' }
+  | { status: 'unavailable' };
+
 export type SessionStatusSnapshot = {
   revision: number;
-  threads: { id: string; status: string }[];
+  threads: { id: string; status: string; project?: SessionProject }[];
 };
 
 export const SESSION_STATUS_MAX_AGE_MS = 15_000;
@@ -19,15 +24,17 @@ export class SessionStatusOverlay {
     return true;
   }
 
-  apply<T extends { id: string; status?: string }>(sessions: T[], ownedThreadId = '', now = Date.now()): T[] {
-    const statuses = new Map(this.snapshot && now - this.receivedAt <= SESSION_STATUS_MAX_AGE_MS
-      ? this.snapshot.threads.map(row => [row.id, row.status]) : []);
+  apply<T extends { id: string; status?: string; project?: SessionProject }>(sessions: T[], ownedThreadId = '', now = Date.now()): T[] {
+    const rows = new Map(this.snapshot && now - this.receivedAt <= SESSION_STATUS_MAX_AGE_MS
+      ? this.snapshot.threads.map(row => [row.id, row]) : []);
     let changed = false;
     const next = sessions.map(session => {
-      const status = session.id === ownedThreadId ? 'active' : statuses.get(session.id);
-      if (!status || status === session.status) return session;
+      const desktop = rows.get(session.id);
+      const status = session.id === ownedThreadId ? 'active' : desktop?.status;
+      const project = desktop?.project ?? session.project;
+      if ((!status || status === session.status) && JSON.stringify(project) === JSON.stringify(session.project)) return session;
       changed = true;
-      return { ...session, status };
+      return { ...session, ...(status ? { status } : {}), ...(project ? { project } : {}) };
     });
     return changed ? next : sessions;
   }

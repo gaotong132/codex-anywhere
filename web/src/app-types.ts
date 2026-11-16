@@ -3,12 +3,14 @@ import type { CurrentProtocol, ProtocolOffer } from '../../src/shared/protocol-c
 import type { TurnProgress } from '../../src/shared/turn-progress';
 import type { ContextUsage } from '../../src/shared/context-compaction';
 import type { PermissionMode } from '../../src/shared/permission-mode';
+import type { SessionProject } from '../../src/shared/session-status';
 
 export type Session = {
   id: string;
   title: string;
   preview?: string;
   cwd?: string;
+  project?: SessionProject;
   updatedAt?: number | string | null;
   status?: string;
   canStartNewSession?: boolean;
