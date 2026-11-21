@@ -101,6 +101,34 @@ test('stopping one task interrupts only that turn; its completion cannot stop an
   assert.deepEqual(calls.filter(call => call.method === 'thread/unsubscribe').map(call => call.params.threadId), ['a']);
 });
 
+test('an early no-op stop retries only the same turn and never a later run', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const completed of [false, true]) {
+    const { codex, calls, start, notification } = fixture();
+    await start('a');
+    const turnId = codex.getActiveTurn('a')!.turnId;
+    const rpc = codex.rpcRaw.bind(codex);
+    let attempts = 0;
+    codex.rpcRaw = async (method, params, timeout) => {
+      if (method === 'turn/interrupt') {
+        assert.deepEqual(params, { threadId: 'a', turnId });
+        if (++attempts === 1) throw new Error('no active turn to interrupt');
+      }
+      return rpc(method, params, timeout);
+    };
+    const stopping = codex.stopTurn('a', turnId);
+    await Promise.resolve();
+    if (completed) {
+      notification('a', 'turn/completed', { turn: { id: turnId, status: 'completed' } });
+      await start('a');
+    }
+    t.mock.timers.tick(400);
+    assert.deepEqual(await stopping, { stopped: !completed });
+    assert.equal(attempts, completed ? 1 : 2);
+    assert.equal(calls.filter(call => call.method === 'turn/interrupt').length, completed ? 0 : 1);
+  }
+});
+
 test('approvals and reconnect ownership stay scoped while both tasks await decisions', async () => {
   const { codex, events, writes, start, notification, approve } = fixture();
   await Promise.all([start('a'), start('b')]);

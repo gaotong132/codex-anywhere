@@ -248,6 +248,8 @@ existing native input and controls.
 When the Connector still owns a first turn, it handles follow-ups even after a browser reconnect
 and stops only the requested turn. Approval decisions stay with the server that issued the request.
 Run details can open the selected chat in Desktop if the navigation tool is available.
+An edited Connector-owned turn can replace the rollout file. History follows the file returned
+by Codex so a refresh displays the replacement message and its reply.
 
 The Windows Desktop build 26.1117.4957.0 starts its own app-server over stdio. Its local app tools
 expose model and effort on message delivery, with no equivalent operations for changing permissions

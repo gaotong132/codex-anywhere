@@ -98,7 +98,7 @@ test('an idle headless task starts normally while Desktop keeps its existing wri
   assert.equal((await idle.request('turn.start', { threadId: 'task-a', text: reply })).ok, true);
   assert.deepEqual(idle.calls.map(call => call.method), ['start']);
   const desktop = fixture('desktop');
-  desktop.codex.getDesktopTurnOverrides = async () => ({});
+  desktop.codex.activeTurns.clear(); // Desktop, rather than the connector, owns this chat.
   assert.equal((await desktop.request('turn.start', { threadId: 'task-a', text: reply })).ok, true);
   assert.deepEqual(desktop.calls.map(call => call.method), ['desktop']);
   assert.equal(desktop.calls[0].params.threadId, 'task-a');

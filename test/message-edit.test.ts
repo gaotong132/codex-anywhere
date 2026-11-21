@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { CodexAppServer } from '../src/connector/codex-app-server.js';
 import { messageEditInput } from '../src/connector/message-edit.js';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -53,6 +56,32 @@ test('revert precedes one new turn and retains the stored image input', async ()
   assert.ok(revert > 0 && start > revert);
   assert.deepEqual(f.calls[revert].params, { threadId: 'thread', beforeTurnId: 'target' });
   assert.deepEqual(f.calls[start].params.input, [{ type: 'text', text: 'edited', text_elements: [] }, f.input[1]]);
+});
+test('editing follows the replacement rollout even when an older list response still points to the original', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'anywhere-edit-rollout-'));
+  t.after(() => rm(directory, { recursive: true }));
+  const oldPath = join(directory, 'old.jsonl');
+  const newPath = join(directory, 'new.jsonl');
+  const row = (text: string) => JSON.stringify({ type: 'response_item', payload: {
+    type: 'message', role: 'assistant', phase: 'final_answer', content: [{ type: 'output_text', text }],
+  } }) + '\n';
+  await Promise.all([writeFile(oldPath, row('superseded')), writeFile(newPath, row('replacement'))]);
+  const f = fixture();
+  f.codex.sessionMetadata.set('thread', { cwd: process.cwd(), path: oldPath, canAcceptDirectInput: true });
+  const originalRpc = f.codex.rpcRaw.bind(f.codex);
+  let finishList!: (result: unknown) => void;
+  f.codex.rpcRaw = async (method, params, timeout) => {
+    if (method === 'thread/list') return new Promise(resolve => { finishList = resolve; });
+    if (method === 'thread/revert') return { thread: { id: 'thread', path: newPath } };
+    return originalRpc(method, params, timeout);
+  };
+  const listing = f.codex.listSessions();
+  const plan = await f.codex.prepareMessageEdit('thread', 'target');
+  await f.codex.startTurn({ threadId: 'thread', text: 'edited', edit: { turnId: 'target', token: plan.token, confirm: true } });
+  finishList({ data: [{ id: 'thread', path: oldPath, cwd: process.cwd() }] });
+  await listing;
+  const history = await f.codex.listSessionTurns('thread');
+  assert.deepEqual(history.turns.flatMap(turn => turn.items).map(item => item.text), ['replacement']);
 });
 test('stale confirmation, unknown status, running tasks and invalid text never revert history', async () => {
   for (const kind of ['stale', 'unknown', 'active', 'blank', 'confirm'] as const) {
