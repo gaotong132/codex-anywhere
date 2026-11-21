@@ -83,7 +83,7 @@ export function ModelConfigControl({
       <button
         className="model-config-summary"
         type="button"
-        disabled={loading || (Boolean(config?.readOnly) && !onRefresh) || (!config && !(unavailable && onRefresh))}
+        disabled={loading || (Boolean(config?.readOnly) && !onRefresh && !config?.unavailableReason) || (!config && !(unavailable && onRefresh))}
         onClick={() => config?.unavailableReason ? setOpen((current) => !current)
           : unavailable || config?.readOnly ? onRefresh?.() : setOpen((current) => !current)}
         aria-expanded={open}

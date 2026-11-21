@@ -424,11 +424,14 @@ test('desktop native pipe frames use a little-endian length prefix', () => {
 
 test('desktop follow-up delivers native user input with the selected settings', async () => {
   const desktop = new CodexDesktopClient();
+  desktop.legacyInputAvailable = async () => true;
   let input;
   desktop.userInput.send = async value => { input = value; };
-  assert.deepEqual(await desktop.sendMessage({ threadId: 'target-thread', text: '普通用户消息', requestId: 'request-1',
-    model: 'gpt-6-astra', thinking: 'high' }), { threadId: 'target-thread', delivery: 'desktop' });
-  assert.deepEqual(input, { threadId: 'target-thread', text: '普通用户消息', requestId: 'request-1', model: 'gpt-6-astra', thinking: 'high' });
+  try {
+    assert.deepEqual(await desktop.sendMessage({ threadId: 'target-thread', text: '普通用户消息', requestId: 'request-1',
+      model: 'gpt-6-astra', thinking: 'high' }), { threadId: 'target-thread', delivery: 'desktop' });
+    assert.deepEqual(input, { threadId: 'target-thread', text: '普通用户消息', requestId: 'request-1', model: 'gpt-6-astra', thinking: 'high' });
+  } finally { desktop.close(); }
 });
 
 test('desktop session rename uses the native task title tool', async () => {

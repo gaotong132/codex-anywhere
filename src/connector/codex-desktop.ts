@@ -25,7 +25,7 @@ type DesktopMessage = {
   imagePath?: string;
 };
 export type DesktopThreadStatus = { id: string; status: string; project?: SessionProject };
-type ToolCall = { tool: string; arguments: JsonObject; callerThreadId: string; callId: string };
+type ToolCall = { tool: string; arguments: JsonObject; callerThreadId: string; callId: string; metadataOnly?: boolean };
 type DesktopHostError = Error & { code?: string };
 
 export class CodexDesktopClient {
@@ -217,16 +217,14 @@ export class CodexDesktopClient {
 
   async readThreadState({ threadId }: { threadId?: unknown }) {
     const targetThreadId = requireThreadId(threadId);
-    const client = await this.getClient();
-    const metadataOnly = client.toolDefinitions?.get('read_thread')?.inputSchema?.properties?.includeTurns?.type === 'boolean';
     const result = await this.callTool({
       tool: 'read_thread',
+      metadataOnly: true,
       arguments: {
         threadId: targetThreadId,
         turnLimit: 1,
         includeOutputs: false,
         maxOutputCharsPerItem: 1_000,
-        ...(metadataOnly ? { includeTurns: false } : {}),
       },
       callerThreadId: targetThreadId,
       callId: `bridge-read-state-${randomUUID()}`,
@@ -242,7 +240,7 @@ export class CodexDesktopClient {
   }
 
   async callTool(
-    { tool, arguments: toolArguments, callerThreadId, callId }: ToolCall,
+    { tool, arguments: toolArguments, callerThreadId, callId, metadataOnly = false }: ToolCall,
     options: { timeoutMs?: number } = {},
   ): Promise<JsonObject> {
     // Snapshot before the asynchronous pipe lookup, so the validated target
@@ -260,6 +258,10 @@ export class CodexDesktopClient {
       ? Math.max(250, Number(options.timeoutMs)) : this.timeoutMs;
     const client = await this.getClient(timeoutMs);
     if (!client.tools.has(tool)) throw new Error(`desktop_tool_unavailable:${tool}`);
+    if (metadataOnly && tool === 'read_thread'
+      && client.toolDefinitions?.get(tool)?.inputSchema?.properties?.includeTurns?.type === 'boolean') {
+      argumentsSnapshot.includeTurns = false;
+    }
     return client.request('tools/call', {
       arguments: argumentsSnapshot,
       // Newer Desktop hosts require the caller's backing kind. This bridge
