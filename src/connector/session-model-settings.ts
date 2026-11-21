@@ -42,6 +42,15 @@ export function loadSessionModelSettings(filePath?: string | null) {
   return settings;
 }
 
+export function connectorDesktopMessageModelSettingsPath(
+  deviceId: string,
+  environment: NodeJS.ProcessEnv = process.env,
+) {
+  const configured = String(environment.BRIDGE_DESKTOP_MESSAGE_MODEL_SETTINGS_FILE || '').trim();
+  if (configured) return resolve(configured);
+  return `${connectorSessionModelSettingsPath(deviceId, environment)}.desktop-messages.json`;
+}
+
 export function saveSessionModelSettings(
   filePath: string | null | undefined,
   settings: Map<string, RolloutModelSettings>,

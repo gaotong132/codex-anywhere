@@ -86,6 +86,8 @@ export function friendlyError(error: unknown) {
   if (message === 'model_not_available') return t('所选模型当前不可用，请重新选择。', 'The selected model is unavailable. Choose another model.');
   if (message === 'reasoning_effort_not_available') return t('当前模型不支持所选思考强度。', 'This model does not support the selected reasoning effort.');
   if (message === 'fast_mode_not_available') return t('当前模型不支持快速模式。', 'Fast mode is not available for this model.');
+  if (message === 'desktop_fast_mode_unsupported') return t('快速模式请在电脑端设置。', 'Set fast mode on your computer.');
+  if (message === 'desktop_model_settings_changed') return t('电脑端接口已变化，请刷新模型设置后重试。', 'The computer interface changed. Refresh model settings and retry.');
   if (message === 'permission_mode_turn_active') return t('当前任务仍在执行，完成后再修改权限。', 'Wait for the current run to finish before changing permissions.');
   if (message === 'permission_mode_invalid') return t('权限模式无效，请刷新页面后重试。', 'The permission mode is invalid. Refresh and try again.');
   if (message === 'full_access_not_allowed') return t('此执行节点未开放完全访问，请先由节点管理员显式启用。', 'Full access is not enabled on this connector. The connector operator must enable it first.');

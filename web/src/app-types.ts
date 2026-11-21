@@ -27,7 +27,10 @@ export type ModelOption = {
 };
 export type SessionModelConfig = {
   unavailableReason?: string;
-  source?: 'desktop' | 'persisted';
+  source?: 'desktop' | 'persisted' | 'message';
+  appliesOnSend?: boolean;
+  hasOverride?: boolean;
+  fastModeSupported?: boolean;
   readOnly?: boolean;
   model: string;
   reasoningEffort: string;

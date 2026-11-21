@@ -84,6 +84,70 @@ async function configurationHarness(t: any, request: BridgeRequest) {
 const readConfig = { model: 'astra', reasoningEffort: 'high', serviceTier: 'default', fastMode: false,
   models: [{ model: 'astra', serviceTiers: [] }] };
 
+test('message model preferences survive native pushes and resetting restores follow-computer mode', async t => {
+  const selected = { ...readConfig, source: 'message', appliesOnSend: true, hasOverride: true, fastModeSupported: false };
+  const request = (async (action: string) => {
+    if (action === 'session.model-config.read') return selected;
+    if (action === 'session.model-config.reset') return { ...selected, model: 'computer', hasOverride: false };
+    return { capabilities: {} };
+  }) as BridgeRequest;
+  const harness = await configurationHarness(t, request);
+  await harness.render({ desktopState: { threadId: 'one', status: 'idle', model: 'astra', reasoningEffort: 'high' } });
+  assert.equal(harness.state().modelConfig?.source, 'message');
+  await harness.render({ desktopState: { threadId: 'one', status: 'active', model: 'native-other', reasoningEffort: 'low' } });
+  assert.equal(harness.state().modelConfig?.model, 'astra');
+  await act(async () => harness.state().resetModelConfig());
+  assert.equal(harness.state().modelConfig?.model, 'computer'); assert.equal(harness.state().modelConfig?.hasOverride, false);
+});
+
+test('an older in-flight model read cannot overwrite a newly saved preference', async t => {
+  let finish!: (value: any) => void;
+  const request = (async (action: string) => {
+    if (action === 'session.model-config.read') return new Promise(resolve => { finish = resolve; });
+    if (action === 'session.model-config.update') return { ...readConfig, model: 'chosen', source: 'message', appliesOnSend: true };
+    return { capabilities: {} };
+  }) as BridgeRequest;
+  const harness = await configurationHarness(t, request);
+  await harness.render();
+  await act(async () => harness.state().saveModelConfig({ model: 'chosen', reasoningEffort: 'high', fastMode: false }));
+  await act(async () => finish(readConfig));
+  assert.equal(harness.state().modelConfig?.model, 'chosen');
+  assert.equal(harness.state().modelConfigLoading, false);
+});
+
+test('message model picker explains send timing, disables unsupported Fast and exposes follow-computer reset', async () => {
+  const keys = ['window', 'document', 'IS_REACT_ACT_ENVIRONMENT'] as const;
+  const saved = keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const);
+  const { window, document } = parseHTML('<html><body><div id="root"></div></body></html>');
+  for (const [key, value] of [['window', window], ['document', document], ['IS_REACT_ACT_ENVIRONMENT', true]] as const) {
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+  }
+  const root = createRoot(document.getElementById('root')!);
+  let resets = 0, saves = 0;
+  const props = { config: { ...readConfig, source: 'message', appliesOnSend: true, hasOverride: true,
+    fastModeSupported: false, models: [{ model: 'astra', displayName: 'Astra', serviceTiers: [{ id: 'fast', name: 'Fast' }],
+      supportedReasoningEfforts: [{ reasoningEffort: 'high' }], defaultReasoningEffort: 'high' }] },
+    loading: false, disabled: false, onSave: async () => { saves++; }, onReset: async () => { resets++; } } as any;
+  try {
+    await act(async () => root.render(createElement(ModelConfigControl, props)));
+    await act(async () => document.querySelector<HTMLButtonElement>('.model-config-summary')!.click());
+    assert.match(document.querySelector('.model-config-hint')!.textContent!, /下一条消息|next message/);
+    assert.equal(document.querySelector<HTMLButtonElement>('.model-fast-button')!.disabled, true);
+    await act(async () => root.render(createElement(ModelConfigControl, { ...props, config: structuredClone(props.config) })));
+    assert.ok(document.querySelector('.model-config-popover'), 'identical background refresh keeps the picker open');
+    await act(async () => document.querySelector<HTMLButtonElement>('.primary-action')!.click());
+    assert.equal(saves, 1);
+    await act(async () => document.querySelector<HTMLButtonElement>('.model-config-summary')!.click());
+    const reset = [...document.querySelectorAll<HTMLButtonElement>('footer button')].find(button => /跟随电脑端|Follow computer/.test(button.textContent!))!;
+    await act(async () => reset.click()); assert.equal(resets, 1);
+  } finally {
+    await act(async () => root.unmount());
+    for (const [key, descriptor] of saved) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key);
+    }
+  }
+});
+
 test('saved settings stay read-only until a live native update arrives', async t => {
   const request = (async (action: string) => action === 'session.model-config.read'
     ? { ...readConfig, source: 'persisted', serviceTier: null, readOnly: true } : { capabilities: {} }) as BridgeRequest;

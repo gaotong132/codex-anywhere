@@ -44,7 +44,8 @@ It does not provide multi-user hosting, a general remote shell or automatic sess
 - **Choose models and permissions** — select the model, reasoning effort, fast mode and approval mode, including
   GPT-6 Astra, Max and Ultra when offered by the selected node. Headless nodes support user approval, Codex auto-review
   and explicitly enabled full access; settings and new-task defaults stay scoped to each environment.
-  Desktop model, reasoning and Fast choices are read and updated through the native owner, and live changes sync back to Web.
+  Supported Desktop owners read and update model, reasoning and Fast choices live. On newer versions without that interface,
+  Web can save explicit model and reasoning choices for the next message when the public send tool supports them; “Follow computer” clears that choice. Fast remains computer-managed on this route.
   If a large conversation's full state is unavailable, native model and reasoning settings remain visible in read-only mode; unconfirmed Fast settings are not overwritten. Failed model reads offer a retry instead of showing automatic defaults.
   Existing Desktop tasks read and update permissions through the native owner while idle. Changes apply only to that chat; custom configurations are identified explicitly, and full access remains gated by the connector.
   Before Desktop takes ownership of a new chat, Web reads saved permissions and can update them while idle, without navigating the computer. Saving briefly loads and releases the task, verifies persistence, and rejects conflicting changes; ordinary reads add no polling.

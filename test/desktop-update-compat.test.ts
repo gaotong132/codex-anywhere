@@ -28,6 +28,44 @@ function fixture() {
   return { desktop, client, calls };
 }
 const message = { threadId: 'selected-thread', text: 'Actual user input', requestId: 'request-1' };
+const modelConfig = { model: 'native', reasoningEffort: 'high', models: [{ model: 'astra',
+  supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }] };
+
+test('web model choices apply only to later new-transport sends and never mutate a native owner', async () => {
+  const { desktop, calls } = fixture();
+  try {
+    await desktop.messageModels.update(message.threadId, { model: 'astra', reasoningEffort: 'low', fastMode: false }, modelConfig);
+    assert.equal(calls.length, 0, 'saving only records web intent, without thread/settings/update or resume');
+    const sending = desktop.sendMessage(message);
+    await desktop.messageModels.update(message.threadId, { model: 'astra', reasoningEffort: 'high', fastMode: false }, modelConfig);
+    await sending;
+    assert.equal(calls[0].arguments.model, 'astra'); assert.equal(calls[0].arguments.thinking, 'low');
+    await desktop.sendMessage({ ...message, threadId: 'unselected' });
+    assert.equal(calls[1].arguments.model, undefined);
+    await desktop.messageModels.reset(message.threadId, modelConfig);
+    await desktop.sendMessage(message);
+    assert.equal(calls[2].arguments.model, undefined);
+    await desktop.messageModels.update(message.threadId, { model: 'astra', reasoningEffort: 'low', fastMode: false }, modelConfig);
+    desktop.legacyInputAvailable = async () => true;
+    let legacy: any;
+    desktop.userInput.send = async input => { legacy = input; return {} as any; };
+    await desktop.sendMessage(message);
+    assert.equal(legacy.model, undefined); assert.equal(legacy.thinking, undefined);
+    assert.equal(calls.length, 3, 'returning legacy owners remain authoritative');
+  } finally { desktop.close(); }
+});
+
+test('changed thinking schemas reject saved preferences before a send is dispatched', async () => {
+  const { desktop, client, calls } = fixture();
+  try {
+    await desktop.messageModels.update(message.threadId, { model: 'astra', reasoningEffort: 'low', fastMode: false }, modelConfig);
+    (client.toolDefinitions.get('send_message_to_thread')!.inputSchema.properties.thinking as any).enum = ['high'];
+    await assert.rejects(desktop.sendMessage(message), /desktop_input_settings_failed/);
+    assert.equal(calls.length, 0);
+    delete (client.toolDefinitions.get('send_message_to_thread')!.inputSchema.properties as any).model;
+    await assert.rejects(desktop.messageModels.read(message.threadId, modelConfig), /desktop_controls_unsupported/);
+  } finally { desktop.close(); }
+});
 
 test('a Desktop without owner IPC advertises messaging separately from legacy controls and images', async () => {
   const { desktop } = fixture();

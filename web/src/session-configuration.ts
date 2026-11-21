@@ -35,6 +35,7 @@ export function useSessionConfiguration({
   const [modelState, setModelState] = useState<KeyedValue<SessionModelConfig | null> | null>(null);
   const [modelLoadingKey, setModelLoadingKey] = useState<string | null>(null);
   const [modelReadAttempt, setModelReadAttempt] = useState(0);
+  const modelRequestRef = useRef(0);
   const refreshModelConfig = useCallback(() => setModelReadAttempt(value => value + 1), []);
   const [connectorState, setConnectorState] = useState<KeyedValue<ConnectorStatus | null> | null>(null);
   const [permissionState, setPermissionState] = useState<KeyedValue<SessionPermissionConfig | null> | null>(null);
@@ -170,15 +171,17 @@ export function useSessionConfiguration({
     setModelLoadingKey(targetKey);
     const isCurrent = () => !disposed && selectionKeyRef.current === targetKey;
     const read = async (attempt: number) => {
+      const requestNumber = ++modelRequestRef.current;
+      const isLatest = () => isCurrent() && modelRequestRef.current === requestNumber;
       let retry = false;
       try {
         const config = await request<SessionModelConfig>('session.model-config.read', { threadId },
           { timeoutMs: 12_000, signal: abort.signal });
-        if (!isCurrent()) return;
+        if (!isLatest()) return;
         const native = desktopStateRef.current;
         // A native snapshot can arrive before the catalog response. Do not
         // downgrade an already recovered header until the next 15-second poll.
-        const recovered = config.readOnly && config.models.length && native?.threadId === threadId
+        const recovered = !config.appliesOnSend && config.readOnly && config.models.length && native?.threadId === threadId
           && native.status !== 'unknown' && native.model === config.model && native.reasoningEffort === config.reasoningEffort;
         const tier = native?.serviceTier || 'default';
         const option = config.models.find(model => model.model === config.model)?.serviceTiers.find(value => value.id === tier);
@@ -187,12 +190,12 @@ export function useSessionConfiguration({
         // A cold catalog can arrive after the lightweight current model.
         retry = !config.models.length && attempt === 0;
       } catch (error) {
-        if (!isCurrent()) return;
+        if (!isLatest()) return;
         const message = error instanceof Error ? error.message : '';
         retry = attempt === 0 && /^(?:desktop_input_not_ready|desktop_input_unavailable|desktop_model_unavailable|desktop_state_\w+|request_timeout)$|timeout/i.test(message);
         setModelState(previous => previous?.key === targetKey ? previous : { key: targetKey, value: null });
       } finally {
-        if (isCurrent()) {
+        if (isLatest()) {
           if (retry) retryTimer = setTimeout(() => { void read(1); }, 800);
           else setModelLoadingKey(null);
         }
@@ -205,18 +208,32 @@ export function useSessionConfiguration({
   const saveModelConfig = useCallback(async (draft: ModelConfigDraft) => {
     const targetKey = selectionKeyRef.current;
     if (!threadId) throw new Error('thread_id_required');
+    const requestNumber = ++modelRequestRef.current;
     const config = await request<SessionModelConfig>('session.model-config.update', {
       threadId,
       ...draft,
     });
-    if (selectionKeyRef.current === targetKey) {
+    if (selectionKeyRef.current === targetKey && modelRequestRef.current === requestNumber) {
       setModelState({ key: targetKey, value: config });
+      setModelLoadingKey(null);
+    }
+  }, [request, threadId]);
+
+  const resetModelConfig = useCallback(async () => {
+    const targetKey = selectionKeyRef.current;
+    if (!threadId) throw new Error('thread_id_required');
+    const requestNumber = ++modelRequestRef.current;
+    const config = await request<SessionModelConfig>('session.model-config.reset', { threadId });
+    if (selectionKeyRef.current === targetKey && modelRequestRef.current === requestNumber) {
+      setModelState({ key: targetKey, value: config });
+      setModelLoadingKey(null);
     }
   }, [request, threadId]);
 
   useEffect(() => {
     if (!desktopState?.model || desktopState.threadId !== threadId) return;
     setModelState(previous => {
+      if (previous?.key === selectionKey && previous.value?.appliesOnSend) return previous;
       if (previous?.key !== selectionKey || !previous.value) return { key: selectionKey, value: {
         model: desktopState.model!, reasoningEffort: desktopState.reasoningEffort || '',
         serviceTier: desktopState.serviceTier || null, fastMode: /fast|priority/i.test(desktopState.serviceTier || ''),
@@ -242,6 +259,7 @@ export function useSessionConfiguration({
     refreshPermissionConfig,
     openPermissionSettingsOnDesktop,
     saveModelConfig,
+    resetModelConfig,
     savePermissionMode,
   };
 }

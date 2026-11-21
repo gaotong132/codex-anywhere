@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createRequestHandler } from '../src/connector/request-handler.js';
 import { BrowserSessionBroker } from '../src/browser-control/session-broker.js';
+import { DesktopMessageModels } from '../src/connector/desktop-message-models.js';
 
 function createDependencies(overrides = {}) {
   return {
@@ -86,6 +87,36 @@ test('Desktop controls route native models, exact-turn stop and request-scoped a
   assert.deepEqual(calls[2], ['approval', 'selected', 'desktop:id', true]);
   const unsupported = createRequestHandler(createDependencies());
   assert.equal((await unsupported(request('session.model-config.update', { threadId: 'selected' }))).error, 'desktop_input_unsupported');
+});
+
+test('new Desktop model read, update and reset use explicit message preferences only after unsupported native controls', async () => {
+  const catalog = [{ model: 'astra', supportedReasoningEfforts: [{ reasoningEffort: 'low' }] }];
+  const saved = { model: 'native', reasoningEffort: 'high', readOnly: true, source: 'persisted', models: catalog };
+  let failure = 'desktop_controls_unsupported'; let reads = 0;
+  const unavailable = async () => { throw new Error(failure); };
+  const messageModels = new DesktopMessageModels(async () => ({ model: { type: 'string' }, thinking: { type: 'string' } }));
+  const handle = createRequestHandler(createDependencies({ codex: {
+    listModels: async () => catalog,
+    readStoredModelConfig: async id => { assert.equal(id, 'selected'); reads++; return saved; },
+    updateModelConfig: async () => assert.fail('must not take a second app-server writer'),
+  }, desktop: { messageModels, controls: { modelConfig: unavailable, updateModel: unavailable } } }));
+  const initial = (await handle(request('session.model-config.read', { threadId: 'selected' }))).data;
+  assert.equal(initial.readOnly, false); assert.equal(initial.source, 'message');
+  assert.equal(initial.hasOverride, false); assert.equal(initial.unavailableReason, undefined);
+  const updated = (await handle(request('session.model-config.update', {
+    threadId: 'selected', model: 'astra', reasoningEffort: 'low', fastMode: false,
+  }))).data;
+  assert.equal(updated.appliesOnSend, true); assert.equal(updated.model, 'astra'); assert.equal(updated.hasOverride, true);
+  assert.equal((await handle(request('session.model-config.read', { threadId: 'selected' }))).data.model, 'astra');
+  const reset = (await handle(request('session.model-config.reset', { threadId: 'selected' }))).data;
+  assert.equal(reset.hasOverride, false); assert.equal(reset.model, 'native');
+  const before = reads;
+  failure = 'desktop_operation_unknown';
+  assert.equal((await handle(request('session.model-config.update', {
+    threadId: 'selected', model: 'astra', reasoningEffort: 'low', fastMode: false,
+  }))).error, 'desktop_operation_unknown');
+  assert.equal(reads, before, 'uncertain mutations cannot fall back to message preferences');
+  assert.equal(messageModels.snapshot('selected'), undefined);
 });
 
 test('cold Desktop model reads share the catalog and fall back only to saved metadata', async () => {
