@@ -133,11 +133,11 @@ test('message model picker explains send timing, disables unsupported Fast and e
     Object.defineProperty(globalThis, key, { configurable: true, value });
   }
   const root = createRoot(document.getElementById('root')!);
-  let resets = 0, saves = 0;
+  let resets = 0, saves = 0, refreshes = 0;
   const props = { config: { ...readConfig, source: 'message', appliesOnSend: true, hasOverride: true,
     fastModeSupported: false, models: [{ model: 'astra', displayName: 'Astra', serviceTiers: [{ id: 'fast', name: 'Fast' }],
       supportedReasoningEfforts: [{ reasoningEffort: 'high' }], defaultReasoningEffort: 'high' }] },
-    loading: false, disabled: false, onSave: async () => { saves++; }, onReset: async () => { resets++; } } as any;
+    loading: false, disabled: false, onSave: async () => { saves++; }, onReset: async () => { resets++; }, onRefresh: () => { refreshes++; } } as any;
   try {
     await act(async () => root.render(createElement(ModelConfigControl, props)));
     await act(async () => document.querySelector<HTMLButtonElement>('.model-config-summary')!.click());
@@ -150,6 +150,12 @@ test('message model picker explains send timing, disables unsupported Fast and e
     await act(async () => document.querySelector<HTMLButtonElement>('.model-config-summary')!.click());
     const reset = [...document.querySelectorAll<HTMLButtonElement>('footer button')].find(button => /跟随电脑端|Follow computer/.test(button.textContent!))!;
     await act(async () => reset.click()); assert.equal(resets, 1);
+    await act(async () => root.render(createElement(ModelConfigControl, { ...props, config: { ...props.config, models: [], readOnly: true } })));
+    await act(async () => document.querySelector<HTMLButtonElement>('.model-config-summary')!.click());
+    assert.ok(document.querySelector('.model-config-popover'), 'a cold catalog remains reachable');
+    assert.equal(document.querySelector<HTMLButtonElement>('.primary-action')!.disabled, true);
+    const refresh = [...document.querySelectorAll<HTMLButtonElement>('footer button')].find(button => /重试读取|Retry loading/.test(button.textContent!))!;
+    await act(async () => refresh.click()); assert.equal(refreshes, 1);
   } finally {
     await act(async () => root.unmount());
     for (const [key, descriptor] of saved) {

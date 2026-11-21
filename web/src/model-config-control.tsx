@@ -152,7 +152,7 @@ export function ModelConfigControl({
             <CustomSelect
               className="model-config-model-select"
               value={draft.model}
-              disabled={saving}
+              disabled={saving || !config.models.length}
               ariaLabel={t('选择模型', 'Select model')}
               triggerContent={(
                 <>
@@ -202,6 +202,10 @@ export function ModelConfigControl({
               ))}
             </span>
           </label>
+          {!config.models.length && <p className="model-config-hint" role="status">{t(
+            '模型列表暂不可用，请重试读取。已保存的选择仍会保留。',
+            'The model list is unavailable. Retry loading; your saved choice is preserved.',
+          )}</p>}
           {config.appliesOnSend && <p className="model-config-hint" role="status">{t(
             '模型与思考强度将在发送下一条消息时生效。快速模式请在电脑端设置。',
             'Model and reasoning effort apply to your next message. Set fast mode on your computer.',
@@ -212,6 +216,9 @@ export function ModelConfigControl({
           )}</p>}
           {error && <p role="alert">{error}</p>}
           <footer>
+            {!config.models.length && onRefresh && <button type="button" disabled={saving} onClick={() => {
+              setOpen(false); onRefresh();
+            }}>{t('重试读取', 'Retry loading')}</button>}
             {config.appliesOnSend && config.hasOverride && onReset && <button type="button" disabled={disabled || saving} onClick={reset}>{t('跟随电脑端', 'Follow computer')}</button>}
             <button type="button" onClick={() => setOpen(false)}>{t('取消', 'Cancel')}</button>
             <button className="primary-action" type="button" disabled={disabled || saving || config.readOnly || !draftModel || !effortOptions.length} onClick={() => void save()}>
