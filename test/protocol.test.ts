@@ -572,8 +572,10 @@ test('run details expose a confirmed stop only for a connector-owned turn', () =
     stopping: false,
     onClose: () => {},
     onStop: () => {},
+    onOpenDesktop: async () => {},
   }));
   assert.match(owned, /停止本次执行/);
+  assert.doesNotMatch(owned, /在电脑端打开会话/);
   assert.match(owned, /ECS · 7×24/);
 
   const desktopOwned = renderToStaticMarkup(createElement(RunDetailsSheet, {
@@ -589,9 +591,11 @@ test('run details expose a confirmed stop only for a connector-owned turn', () =
     stopping: false,
     onClose: () => {},
     onStop: () => {},
+    onOpenDesktop: async () => {},
   }));
   assert.doesNotMatch(desktopOwned, />停止本次执行</);
-  assert.match(desktopOwned, /请在电脑端停止/);
+  assert.match(desktopOwned, /请在 Codex 电脑端停止/);
+  assert.match(desktopOwned, /在电脑端打开会话/);
 });
 
 test('steering is available only while the selected Web-owned turn is actively running', () => {

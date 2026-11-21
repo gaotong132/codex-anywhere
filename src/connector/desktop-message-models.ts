@@ -40,6 +40,7 @@ export class DesktopMessageModels {
     return { ...current, model: preference?.model || current.model,
       reasoningEffort: preference?.thinking || current.reasoningEffort,
       serviceTier: null, fastMode: false, fastModeSupported: false,
+      lastSavedFastMode: current.serviceTier == null ? undefined : current.fastMode === true,
       source: 'message', appliesOnSend: true, hasOverride: Boolean(preference),
       readOnly: !models.length, unavailableReason: undefined, models };
   }

@@ -40,7 +40,7 @@ type CodexGateway = {
   updatePermissionMode(threadId: string, mode: unknown): Promise<any>;
   startTurn(options: Payload): Promise<Record<string, any>>;
   steerTurn(options: Payload): Promise<Record<string, any>>;
-  stopTurn(threadId?: unknown): Promise<any>;
+  stopTurn(threadId?: unknown, expectedTurnId?: unknown): Promise<any>;
   listApprovals(threadId: unknown, clientId?: string): any;
   respondApproval(approvalId: unknown, approved: boolean, threadId?: unknown): Promise<any>;
   getDesktopTurnOverrides(threadId: string): Promise<Payload> | Payload;
@@ -299,6 +299,7 @@ async function dispatchAction({
       try { return await desktop.controls.updateModel(threadId, payload, catalog); }
       catch (error) {
         if ((error as Error).message !== 'desktop_controls_unsupported' || !desktop.messageModels || !codex.readStoredModelConfig) throw error;
+        if (codex.getActiveTurn(threadId)) throw new Error('model_config_turn_active');
         return desktop.messageModels.update(threadId, payload, await codex.readStoredModelConfig(threadId, catalog, { allowUnknownModel: true }));
       }
     }
@@ -429,7 +430,7 @@ async function dispatchAction({
       if (mode !== 'desktop' || !desktop?.controls) throw new Error('desktop_input_unsupported');
       return desktop.controls.stop(String(payload.threadId || ''), payload.expectedTurnId);
     }
-    return codex.stopTurn(payload.threadId);
+    return codex.stopTurn(payload.threadId, payload.expectedTurnId);
   }
   if (action === 'approval.pending') {
     const pending = await codex.listApprovals(payload.threadId, clientId);
@@ -482,16 +483,19 @@ async function startTurn({
   codex, desktop, mode, payload, clientId, requestId, browser, attachments,
 }: Pick<DispatchContext, 'codex' | 'desktop' | 'mode' | 'payload' | 'clientId' | 'requestId' | 'browser' | 'attachments'>) {
   const threadId = String(payload.threadId || '').trim();
-  if (!threadId || mode === 'headless') {
-    // A reloaded/reconnected browser may have missed turn.started. Resolve
-    // delivery from the connector's ownership, never from browser hints.
-    const active = threadId ? codex.getActiveTurn(threadId) : null;
-    const steer = threadId && active?.threadId === threadId
-      && active.state === 'running' && active.turnId;
+  // After reconnecting the browser may have missed turn.started. This also
+  // applies to the temporary runtime that runs first turns in Desktop mode.
+  const owned = threadId ? codex.getActiveTurn(threadId) : null;
+  if (owned && owned.threadId === threadId) {
+    const expectedTurnId = owned.turnId;
+    if (owned.state !== 'running' || !expectedTurnId) throw new Error('another_turn_is_active');
+    if (payload.image) throw new Error('desktop_image_unsupported');
     return { ...await sendWithBrowserContext(browser, threadId, payload.text,
-      (text) => steer
-        ? codex.steerTurn({ ...payload, text, clientId, requestId })
-        : codex.startTurn({ ...payload, text, clientId, requestId })), delivery: 'appServer' };
+      (text) => codex.steerTurn({ threadId, text, expectedTurnId, clientId, requestId })), delivery: 'appServer' };
+  }
+  if (!threadId || mode === 'headless') {
+    return { ...await sendWithBrowserContext(browser, threadId, payload.text,
+      (text) => codex.startTurn({ ...payload, text, clientId, requestId })), delivery: 'appServer' };
   }
   // Existing Desktop tasks must keep their original writer. Starting or
   // resuming them through the bridge's app-server creates a second writer and

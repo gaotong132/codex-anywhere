@@ -31,6 +31,7 @@ export type SessionModelConfig = {
   appliesOnSend?: boolean;
   hasOverride?: boolean;
   fastModeSupported?: boolean;
+  lastSavedFastMode?: boolean;
   readOnly?: boolean;
   model: string;
   reasoningEffort: string;
@@ -41,6 +42,7 @@ export type SessionModelConfig = {
 export type ModelConfigDraft = Pick<SessionModelConfig, 'model' | 'reasoningEffort' | 'fastMode'>;
 export type ConnectorStatus = {
   desktopInputTransport?: 'owner' | 'appTools' | 'unavailable';
+  desktopTools?: string[];
   deviceId: string;
   deviceLabel: string;
   mode: 'desktop' | 'headless';

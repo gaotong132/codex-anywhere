@@ -568,6 +568,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     openPermissionSettingsOnDesktop,
   } = useSessionConfiguration({ environmentId, online, threadId, request, desktopState,
     recoveryKey: `${connectionEpoch}:${resumeEpoch}` });
+  const canOpenSessionOnDesktop = Boolean(online && threadId && connectorStatus?.mode === 'desktop'
+    && connectorStatus.desktopTools?.includes('navigate_to_codex_page'));
 
   const replayPendingRequests = useCallback(() => {
     if (!secureChannelRef.current?.isReady()) return 0;
@@ -1906,6 +1908,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         text: turnText,
         ...(nativeImage ? { image: nativeImage } : {}),
         threadId: targetThreadId,
+        ...(steering && activeTurnIdRef.current ? { expectedTurnId: activeTurnIdRef.current } : {}),
         ...(steering ? {} : {
           cwd: isExistingSession ? '' : projectCwd,
           ...(selectedPermissionMode && selectedPermissionMode !== 'custom' ? { permissionMode: selectedPermissionMode } : {}),
@@ -2077,7 +2080,8 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       const native = !ownedTurnThreadIdRef.current && desktopState?.threadId === targetThreadId ? desktopState : null;
       if (!ownedTurnThreadIdRef.current && !native?.canStop) throw new Error('desktop_turn_changed');
       const result = await request<{ stopped: boolean }>('turn.stop', targetThreadId ? { threadId: targetThreadId,
-        ...(native ? { source: 'desktop', expectedTurnId: native.turnId } : {}) } : {});
+        ...(native ? { source: 'desktop', expectedTurnId: native.turnId }
+          : activeTurnIdRef.current ? { expectedTurnId: activeTurnIdRef.current } : {}) } : {});
       if (!result.stopped) throw new Error('desktop_turn_changed');
     } catch (error) {
       if (selectionVersion === selectedRequestRef.current) reportTimelineError(error);
@@ -2163,6 +2167,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           const webOwned = pending.actionable !== false && pending.source !== 'desktop';
           runningRef.current = webOwned;
           ownedTurnThreadIdRef.current = webOwned ? (pending.threadId || threadId) : null;
+          if (webOwned && result.activeTurn?.threadId === threadId) activeTurnIdRef.current = result.activeTurn.turnId || '';
           updateExecution((current) => ({
             running: webOwned,
             ownedTurnThreadId: ownedTurnThreadIdRef.current,
@@ -2441,6 +2446,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
       )}
 
       <RunDetailsSheet
+        key={`${environmentId}:${threadId || ''}:${activeTurnIdRef.current || desktopState?.turnId || ''}`}
         open={runDetailsOpen && executionActive}
         state={executionState}
         kind={compactionStartedAt ? 'compacting' : liveActivity}
@@ -2453,6 +2459,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
         stopping={stopping}
         onClose={() => setRunDetailsOpen(false)}
         onStop={() => void stopTurn()}
+        onOpenDesktop={canOpenSessionOnDesktop ? openPermissionSettingsOnDesktop : undefined}
       />
 
       <section className="conversation">
@@ -2506,7 +2513,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
                 hasSession={Boolean(threadId)}
                 onRefresh={refreshModelConfig}
                 loading={modelConfigLoading}
-                disabled={!online || (executionActive && !modelConfig?.appliesOnSend)}
+                disabled={!online || (executionActive && (!modelConfig?.appliesOnSend || ownedTurnThreadId === threadId))}
                 onSave={saveModelConfig}
                 onReset={resetModelConfig}
               />

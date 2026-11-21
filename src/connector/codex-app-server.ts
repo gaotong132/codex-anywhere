@@ -147,6 +147,7 @@ export class CodexAppServer extends EventEmitter {
   modelCatalogCache: { expiresAt: number; models: ModelOption[] } | null;
   private modelCatalogRead: Promise<ModelOption[]> | null = null;
   private sessionListReads = new Map<string, Promise<any[]>>();
+  private historyReplacement = 0;
   turnDiffs: Map<string, TurnDiffDocument>;
 
   constructor(options: CodexAppServerOptions = {}) {
@@ -240,6 +241,7 @@ export class CodexAppServer extends EventEmitter {
 
   private async readSessionList(cwd: string) {
     await this.ensureStarted();
+    const historyReplacement = this.historyReplacement;
     const result = await this.rpcRaw('thread/list', {
       limit: 100,
       sortKey: 'recency_at',
@@ -252,7 +254,7 @@ export class CodexAppServer extends EventEmitter {
     const rows: JsonObject[] = Array.isArray(result?.data) ? result.data : [];
     return rows.map((thread: JsonObject) => {
       const threadCwd = thread.cwd || cwd;
-      if (thread.id) this.sessionMetadata.set(thread.id, {
+      if (thread.id && historyReplacement === this.historyReplacement) this.sessionMetadata.set(thread.id, {
         cwd: threadCwd,
         path: thread.path || '',
         canAcceptDirectInput: thread.canAcceptDirectInput !== false,
@@ -305,11 +307,12 @@ export class CodexAppServer extends EventEmitter {
 
   async readSession(threadId: string) {
     await this.ensureStarted();
+    const historyReplacement = this.historyReplacement;
     const result = await this.rpcRaw('thread/read', { threadId, includeTurns: false });
     const recordedCwd = result?.thread?.cwd || this.sessionMetadata.get(threadId)?.cwd;
     if (!recordedCwd) throw new Error('session_project_directory_unavailable');
     const cwd = resolveAllowedWorkspace(this.allowedRoots, recordedCwd);
-    this.sessionMetadata.set(threadId, {
+    if (historyReplacement === this.historyReplacement) this.sessionMetadata.set(threadId, {
       cwd,
       path: result?.thread?.path || this.sessionMetadata.get(threadId)?.path || '',
       canAcceptDirectInput: result?.thread?.canAcceptDirectInput !== false,
@@ -580,8 +583,14 @@ export class CodexAppServer extends EventEmitter {
       || (!String(thread.model || '').trim() && !options.allowUnknownModel)) {
       throw new Error('desktop_model_unavailable');
     }
+    // thread/read omits the tier on some releases. A bounded rollout read
+    // can report the last saved value without loading the Desktop thread.
+    const settings = thread.model && typeof thread.path === 'string' && thread.path
+      ? await readRolloutModelSettings(thread.path, 1024 * 1024).catch(() => null) : null;
+    const serviceTier = settings?.model === thread.model ? settings?.serviceTier || null : null;
     return { model: thread.model || '', reasoningEffort: thread.reasoningEffort ?? '',
-      serviceTier: null, fastMode: false, readOnly: true, source: 'persisted' as const, models };
+      serviceTier, fastMode: isFastServiceTier(serviceTier, models, thread.model),
+      readOnly: true, source: 'persisted' as const, models };
   }
 
   async readModelConfig(threadId: unknown): Promise<SessionModelConfig> {
@@ -980,8 +989,23 @@ export class CodexAppServer extends EventEmitter {
         if (plan.token !== edit.token) throw new Error('message_edit_changed');
         input = messageEditInput(plan.input).replace(editText(text));
         if (turnContext.cancelRequested) throw new Error('turn_cancelled');
-        await this.rpcRaw('thread/revert', { threadId: resolvedThreadId, beforeTurnId: edit.turnId });
+        const reverted = await this.rpcRaw('thread/revert', { threadId: resolvedThreadId, beforeTurnId: edit.turnId });
         editReverted = true;
+        // Revert can allocate a replacement rollout and leave the old file on
+        // disk. Follow the new path and ignore earlier list/read responses.
+        this.historyReplacement++;
+        const replacement = reverted?.thread;
+        if (replacement?.id && replacement.id !== resolvedThreadId) {
+          this.sessionMetadata.delete(resolvedThreadId);
+          throw new Error('session_delivery_mismatch');
+        }
+        if (replacement?.id === resolvedThreadId && typeof replacement.path === 'string' && replacement.path) {
+          this.sessionMetadata.set(resolvedThreadId, {
+            cwd: turnCwd, path: replacement.path, canAcceptDirectInput: replacement.canAcceptDirectInput !== false,
+          });
+        } else {
+          this.sessionMetadata.delete(resolvedThreadId);
+        }
         if (turnContext.cancelRequested) throw new Error('turn_cancelled');
         for (const [cacheKey, document] of this.turnDiffs) {
           if (document.threadId === resolvedThreadId) this.turnDiffs.delete(cacheKey);
@@ -1076,7 +1100,7 @@ export class CodexAppServer extends EventEmitter {
 
   async prepareDesktopTurn() { await this.threadRelease; }
 
-  async steerTurn({ text, threadId, clientId, requestId }: StartTurnOptions) {
+  async steerTurn({ text, threadId, clientId, requestId, expectedTurnId }: StartTurnOptions & { expectedTurnId?: unknown }) {
     const targetThreadId = String(threadId || '').trim();
     const prompt = String(text || '').trim();
     if (!targetThreadId) throw new Error('thread_id_required');
@@ -1090,6 +1114,7 @@ export class CodexAppServer extends EventEmitter {
     ) {
       throw new Error('turn_not_active');
     }
+    if (expectedTurnId != null && expectedTurnId !== turnContext.turnId) throw new Error('turn_id_mismatch');
     turnContext.clientId = clientId;
     turnContext.requestId = requestId;
     const result = await this.rpcRaw('turn/steer', {
@@ -1161,7 +1186,7 @@ export class CodexAppServer extends EventEmitter {
     return { approvalId: String(approvalId), approved: approved === true };
   }
 
-  async stopTurn(expectedThreadId?: unknown) {
+  async stopTurn(expectedThreadId?: unknown, expectedTurnId?: unknown) {
     const expected = String(expectedThreadId || '').trim();
     if (!expected && this.activeTurns.size > 1) throw new Error('thread_id_required');
     const turn = this.getActiveTurn(expected) || (this.getActiveTurn()?.threadId === '' ? this.getActiveTurn() : null);
@@ -1169,7 +1194,8 @@ export class CodexAppServer extends EventEmitter {
       if (expected && this.activeTurns.size) throw new Error('turn_stop_mismatch');
       return { stopped: false };
     }
-    if (expected && turn.threadId && expected !== turn.threadId) {
+    if ((expected && turn.threadId && expected !== turn.threadId)
+      || (expectedTurnId != null && expectedTurnId !== turn.turnId)) {
       throw new Error('turn_stop_mismatch');
     }
     turn.cancelRequested = true;
@@ -1177,10 +1203,21 @@ export class CodexAppServer extends EventEmitter {
       return { stopped: true, pending: true };
     }
     turn.state = 'cancelling';
+    const { threadId, turnId } = turn;
+    const interrupt = () => this.rpcRaw('turn/interrupt', { threadId, turnId });
     try {
-      await this.rpcRaw('turn/interrupt', { threadId: turn.threadId, turnId: turn.turnId });
+      try {
+        await interrupt();
+      } catch (error) {
+        // A start response can arrive before Core registers the interruptible
+        // turn. Only this explicit no-op response permits a retry.
+        if ((error as Error).message !== 'no active turn to interrupt') throw error;
+        await new Promise(resolve => setTimeout(resolve, 400));
+        if (this.getActiveTurn(threadId) !== turn || turn.turnId !== turnId) return { stopped: false };
+        await interrupt();
+      }
     } catch (error) {
-      if (this.getActiveTurn(turn.threadId) !== turn) return { stopped: true };
+      if (this.getActiveTurn(threadId) !== turn) return { stopped: false };
       turn.cancelRequested = false;
       turn.state = 'running';
       throw error;

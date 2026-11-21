@@ -63,6 +63,9 @@ test('an empty native chat remains unknown until an explicit supported model is 
   await models.update('empty', draft, empty);
   assert.equal((await models.read('empty', empty)).model, 'astra');
   assert.equal((await models.reset('empty', empty)).model, '');
+  const fast = await models.read('one', { ...current, serviceTier: 'priority', fastMode: true });
+  assert.equal(fast.lastSavedFastMode, true);
+  assert.equal(fast.fastMode, false, 'saved speed is informational on a send tool without a service tier field');
 });
 
 test('failed persistence or changed tool contracts do not report a saved selection', async () => {
