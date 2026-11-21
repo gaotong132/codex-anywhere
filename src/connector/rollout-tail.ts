@@ -1321,7 +1321,10 @@ function finalFileChanges(phase: unknown, progress: RolloutProgress) {
 }
 
 function pushText(items: RolloutItem[], item: RolloutItem) {
-  const text = item.phase === 'final_answer' ? fullText(item.text) : capText(item.text);
+  // Public conversation messages must survive history and reconnect intact.
+  // Byte windows and pagination bound the read; diagnostic summaries are
+  // separately capped before reaching this function.
+  const text = fullText(item.text);
   if (!text && !item.attachment && !item.compaction && !item.notice && !item.questions) return;
   const previous = items.at(-1);
   if (previous?.type === item.type

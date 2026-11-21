@@ -205,6 +205,11 @@ journalctl -u codex-anywhere-connector -n 50 --no-pager
 
 ## 4. 验证
 
+本地会话记录可读时，历史按有界分页读取，包括单个长轮次内的过程消息。向上滚动或点击“加载更早记录”
+可以越过实时尾部的字节范围；刷新或重连后仍应保留继续读取更早记录的入口。输入、过程消息和最终回复
+保留完整正文，原始推理与工具输出不进入消息列表。本地文件不可读时回退到 app-server 摘要，摘要可能
+缺少过程细节。
+
 ```bash
 ./scripts/relay.sh status
 ./scripts/relay.sh devices
