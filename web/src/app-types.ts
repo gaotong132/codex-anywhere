@@ -48,6 +48,7 @@ export type ConnectorStatus = {
     sessionArchivePendingApproval?: boolean; sessionRestore?: boolean; desktopNativeImages?: boolean; desktopNativeState?: boolean };
 };
 export type SessionPermissionConfig = {
+  modeKnown?: boolean;
   unavailableReason?: string;
   mode: PermissionMode | 'custom';
   source?: 'desktop' | 'persisted';

@@ -694,7 +694,7 @@ export class CodexAppServer extends EventEmitter {
     return { ...settings, fastMode, models };
   }
 
-  async readStoredPermissionConfig(threadId: string) {
+  async readStoredPermissionConfig(threadId: string, options: { readOnly?: boolean } = {}) {
     const id = threadId.trim();
     if (!id) throw new Error('thread_id_required');
     // The owned turn has already acknowledged these settings; its rollout may
@@ -706,8 +706,10 @@ export class CodexAppServer extends EventEmitter {
         source: 'persisted' as const, editable: false };
     }
     const read = async (metadata: SessionMetadata) => {
-      resolveAllowedWorkspace(this.allowedRoots, metadata.cwd);
-      return { ...await readRolloutPermissionSnapshot(metadata.path), source: 'persisted' as const, editable: !this.activeTurns.size };
+      if (!options.readOnly) resolveAllowedWorkspace(this.allowedRoots, metadata.cwd);
+      const snapshot = await readRolloutPermissionSnapshot(metadata.path);
+      return { ...snapshot, ...(options.readOnly ? { settingsToken: undefined } : {}),
+        source: 'persisted' as const, editable: !options.readOnly && !this.activeTurns.size };
     };
     const cached = this.sessionMetadata.get(id);
     if (cached?.path) {

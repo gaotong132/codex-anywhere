@@ -31,7 +31,7 @@ type CodexGateway = {
   readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
   readStoredModelConfig?(threadId: string, catalog: any[] | Promise<any[]>): Promise<any>;
-  readStoredPermissionConfig?(threadId: string): Promise<any>;
+  readStoredPermissionConfig?(threadId: string, options?: { readOnly?: boolean }): Promise<any>;
   updateStoredPermissionConfig?(threadId: string, value: any): Promise<any>;
   listModels?(options?: { allowStale?: boolean }): Promise<any[]>;
   updateModelConfig(threadId: string, value: Payload): Promise<any>;
@@ -297,7 +297,14 @@ async function dispatchAction({
         return await desktop.controls.permissions(threadId, { networkAccess: Boolean(networkAccess), allowFullAccess: Boolean(allowFullAccess) });
       } catch (error) {
         if ((error as Error).message === 'desktop_controls_unsupported' && codex.readStoredPermissionConfig) {
-          return { ...await codex.readStoredPermissionConfig(threadId), editable: false, settingsToken: undefined,
+          let saved: Payload;
+          try { saved = await codex.readStoredPermissionConfig(threadId, { readOnly: true }); }
+          catch (readError) {
+            if ((readError as Error).message !== 'desktop_permissions_unavailable'
+              && !['ENOENT', 'EACCES', 'EPERM'].includes((readError as NodeJS.ErrnoException).code || '')) throw readError;
+            saved = { mode: 'custom', modeKnown: false, source: 'persisted', networkAccess: Boolean(networkAccess) };
+          }
+          return { ...saved, editable: false, settingsToken: undefined,
             canOpenOnDesktop: Boolean(desktop.openThread), unavailableReason: 'desktop_controls_unsupported',
             allowFullAccess: Boolean(allowFullAccess) };
         }
