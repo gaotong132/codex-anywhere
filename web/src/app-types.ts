@@ -26,6 +26,7 @@ export type ModelOption = {
   isDefault: boolean;
 };
 export type SessionModelConfig = {
+  unavailableReason?: string;
   source?: 'desktop' | 'persisted';
   readOnly?: boolean;
   model: string;
@@ -36,6 +37,7 @@ export type SessionModelConfig = {
 };
 export type ModelConfigDraft = Pick<SessionModelConfig, 'model' | 'reasoningEffort' | 'fastMode'>;
 export type ConnectorStatus = {
+  desktopInputTransport?: 'owner' | 'appTools' | 'unavailable';
   deviceId: string;
   deviceLabel: string;
   mode: 'desktop' | 'headless';
@@ -46,6 +48,7 @@ export type ConnectorStatus = {
     sessionArchivePendingApproval?: boolean; sessionRestore?: boolean; desktopNativeImages?: boolean; desktopNativeState?: boolean };
 };
 export type SessionPermissionConfig = {
+  unavailableReason?: string;
   mode: PermissionMode | 'custom';
   source?: 'desktop' | 'persisted';
   settingsToken?: string;

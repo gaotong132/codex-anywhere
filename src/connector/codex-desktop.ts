@@ -1,8 +1,9 @@
 import { DesktopControls } from './desktop-controls.js';
 import { DesktopUserInput } from './desktop-user-input.js';
 import { readdir } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
-import { NativePipeClient, encodeNativeFrame } from './desktop-native-pipe.js';
+import { createHash, randomUUID } from 'node:crypto';
+import { NativePipeClient, NativeRequestError, encodeNativeFrame } from './desktop-native-pipe.js';
+import { classifyDesktopError } from './desktop-user-input.js';
 import { normalizeSessionName } from '../shared/session-name.js';
 import type { SessionProject } from '../shared/session-status.js';
 
@@ -32,6 +33,7 @@ export class CodexDesktopClient {
   client: NativePipeClient | null;
   private discovery: Promise<NativePipeClient> | null = null;
   private generation = 0;
+  private messageQueues = new Map<string, Promise<unknown>>();
   readonly userInput: DesktopUserInput;
   readonly controls: DesktopControls;
 
@@ -40,18 +42,62 @@ export class CodexDesktopClient {
       ? Math.max(1_000, Number(options.timeoutMs)) : DEFAULT_TIMEOUT_MS;
     this.client = null;
     this.userInput = new DesktopUserInput((threadId, timeoutMs) => this.openThread({ threadId }, timeoutMs), this.timeoutMs);
-    this.controls = new DesktopControls(this.userInput);
+    this.controls = new DesktopControls(this.userInput, {
+      available: () => this.legacyInputAvailable(),
+      read: async threadId => ({ ...await this.readThreadState({ threadId }), threadId,
+        turnId: null, canStop: false, approvals: [], model: '', reasoningEffort: '', serviceTier: '' }),
+    });
   }
 
   async sendMessage({ threadId, text, requestId, model, thinking, imagePath }: DesktopMessage) {
     const targetThreadId = requireThreadId(threadId);
     const prompt = String(text || '').trim();
     if (!prompt) throw new Error('message_required');
-    await this.userInput.send({ threadId: targetThreadId, text: prompt, requestId, ...(imagePath ? { imagePath } : {}),
-      model: String(model || '').trim() || undefined,
-      thinking: String(thinking || '').trim() || undefined,
-    });
+    const input = { threadId: targetThreadId, text: prompt, requestId, ...(imagePath ? { imagePath } : {}),
+      model: String(model || '').trim() || undefined, thinking: String(thinking || '').trim() || undefined };
+    const previous = this.messageQueues.get(targetThreadId) ?? Promise.resolve();
+    const sending = previous.catch(() => {}).then(() => this.deliverMessage(input));
+    this.messageQueues.set(targetThreadId, sending);
+    try { await sending; }
+    finally { if (this.messageQueues.get(targetThreadId) === sending) this.messageQueues.delete(targetThreadId); }
     return { threadId: targetThreadId, delivery: 'desktop' };
+  }
+
+  async legacyInputAvailable() {
+    try { await this.userInput.pipe.connect(STATUS_ENRICHMENT_TIMEOUT_MS); return true; }
+    catch (error) {
+      // Only an absent endpoint selects another transport, before any input is
+      // dispatched. An existing owner's protocol/transport failures are final.
+      if (error instanceof NativeRequestError && !error.dispatched && /^connect (ENOENT|ECONNREFUSED)\b/.test(error.message)) return false;
+      throw error;
+    }
+  }
+
+  private async deliverMessage(input: Parameters<DesktopUserInput['send']>[0]) {
+    if (await this.legacyInputAvailable()) return this.userInput.send(input);
+    const client = await this.getClient();
+    if (!supportsAppToolsInput(client)) throw new Error('desktop_input_unsupported');
+    if (input.imagePath) throw new Error('desktop_image_unsupported');
+    const fields = client.toolDefinitions.get('send_message_to_thread')!.inputSchema.properties;
+    if ((input.model && !fields.model) || (input.thinking && !fields.thinking)) throw new Error('desktop_input_settings_failed');
+    const id = createHash('sha256').update(JSON.stringify([input.threadId, String(input.requestId || randomUUID())])).digest('hex');
+    try {
+      const result = await this.callTool({ tool: 'send_message_to_thread',
+        arguments: { threadId: input.threadId, prompt: input.text,
+          ...(fields.hostId ? { hostId: 'local' } : {}),
+          ...(input.model ? { model: input.model } : {}), ...(input.thinking ? { thinking: input.thinking } : {}) },
+        callerThreadId: input.threadId, callId: `bridge-input-${id}`,
+      });
+      let acknowledgedThread: unknown;
+      try { acknowledgedThread = parseToolPayload(result)?.threadId; } catch { /* malformed acknowledgements are uncertain */ }
+      if (result?.success !== true || acknowledgedThread !== input.threadId) {
+        throw new NativeRequestError('desktop input invalid acknowledgement', true);
+      }
+    } catch (error) {
+      if ((error as Error).message === 'desktop_thread_identity_mismatch'
+        || (error as Error).message.startsWith('desktop_tool_unavailable:')) throw error;
+      throw classifyDesktopError(error, true);
+    }
   }
 
   async renameThread({ threadId, name }: {
@@ -171,6 +217,8 @@ export class CodexDesktopClient {
 
   async readThreadState({ threadId }: { threadId?: unknown }) {
     const targetThreadId = requireThreadId(threadId);
+    const client = await this.getClient();
+    const metadataOnly = client.toolDefinitions?.get('read_thread')?.inputSchema?.properties?.includeTurns?.type === 'boolean';
     const result = await this.callTool({
       tool: 'read_thread',
       arguments: {
@@ -178,6 +226,7 @@ export class CodexDesktopClient {
         turnLimit: 1,
         includeOutputs: false,
         maxOutputCharsPerItem: 1_000,
+        ...(metadataOnly ? { includeTurns: false } : {}),
       },
       callerThreadId: targetThreadId,
       callId: `bridge-read-state-${randomUUID()}`,
@@ -257,12 +306,16 @@ export class CodexDesktopClient {
   async getCapabilities() {
     const [appTools, input] = await Promise.allSettled([
       this.getClient(STATUS_ENRICHMENT_TIMEOUT_MS),
-      this.userInput.pipe.connect(STATUS_ENRICHMENT_TIMEOUT_MS),
+      this.legacyInputAvailable(),
     ]);
     return {
       available: appTools.status === 'fulfilled',
       tools: appTools.status === 'fulfilled' ? [...appTools.value.tools] : [],
-      inputAvailable: input.status === 'fulfilled',
+      inputAvailable: input.status === 'fulfilled' && (input.value || (appTools.status === 'fulfilled' && supportsAppToolsInput(appTools.value))),
+      controlsAvailable: input.status === 'fulfilled' && input.value,
+      imagesAvailable: input.status === 'fulfilled' && input.value,
+      inputTransport: input.status === 'fulfilled' && input.value ? 'owner'
+        : input.status === 'fulfilled' && appTools.status === 'fulfilled' && supportsAppToolsInput(appTools.value) ? 'appTools' : 'unavailable',
     };
   }
 
@@ -303,6 +356,9 @@ async function probePipe(pipePath: string, timeoutMs: number): Promise<NativePip
     client.tools = new Set((Array.isArray(result?.tools) ? result.tools : [])
       .filter((tool: JsonObject) => tool.namespace === 'codex_app' && typeof tool.name === 'string')
       .map((tool: JsonObject) => tool.name));
+    client.toolDefinitions = new Map((Array.isArray(result?.tools) ? result.tools : [])
+      .filter((tool: JsonObject) => tool.namespace === 'codex_app' && typeof tool.name === 'string')
+      .map((tool: JsonObject) => [tool.name, tool]));
     if (!client.tools.has('send_message_to_thread')) {
       client.close();
       return null;
@@ -312,6 +368,16 @@ async function probePipe(pipePath: string, timeoutMs: number): Promise<NativePip
     client.close();
     return null;
   }
+}
+
+export function supportsAppToolsInput(client: Pick<NativePipeClient, 'tools' | 'toolDefinitions'>) {
+  if (!client.tools.has('send_message_to_thread')) return false;
+  const schema = client.toolDefinitions?.get('send_message_to_thread')?.inputSchema;
+  if (schema?.type !== 'object' || schema.properties?.threadId?.type !== 'string'
+    || schema.properties?.prompt?.type !== 'string' || !Array.isArray(schema.required)
+    || !schema.required.includes('threadId') || !schema.required.includes('prompt')) return false;
+  if (!['hostId', 'model', 'thinking'].every(key => !schema.properties[key] || schema.properties[key].type === 'string')) return false;
+  return schema.required.every((key: unknown) => ['threadId', 'prompt'].includes(String(key)));
 }
 
 function parseToolPayload(result: JsonObject): JsonObject {

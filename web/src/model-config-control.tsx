@@ -12,7 +12,7 @@ function fastTierAvailable(model: ModelOption | undefined) {
 }
 
 export function ModelConfigControl({
-  config, loading, disabled, onSave, hasSession = false, onRefresh,
+  config, loading, disabled, onSave, hasSession = false, onRefresh, onOpenDesktop,
 }: {
   config: SessionModelConfig | null;
   loading: boolean;
@@ -20,6 +20,7 @@ export function ModelConfigControl({
   onSave: (draft: ModelConfigDraft) => Promise<void>;
   hasSession?: boolean;
   onRefresh?: () => void;
+  onOpenDesktop?: () => Promise<unknown>;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -83,11 +84,13 @@ export function ModelConfigControl({
         className="model-config-summary"
         type="button"
         disabled={loading || (Boolean(config?.readOnly) && !onRefresh) || (!config && !(unavailable && onRefresh))}
-        onClick={() => unavailable || config?.readOnly ? onRefresh?.() : setOpen((current) => !current)}
+        onClick={() => config?.unavailableReason ? setOpen((current) => !current)
+          : unavailable || config?.readOnly ? onRefresh?.() : setOpen((current) => !current)}
         aria-expanded={open}
         aria-busy={pending}
         aria-label={pending ? t('正在读取模型和思考强度', 'Loading model and reasoning effort') : undefined}
-        title={config?.source === 'persisted' ? t('上次保存的模型设置；点击重新读取实时设置', 'Last saved model settings; click to retry reading live settings')
+        title={config?.unavailableReason ? friendlyError(new Error(config.unavailableReason))
+          : config?.source === 'persisted' ? t('上次保存的模型设置；点击重新读取实时设置', 'Last saved model settings; click to retry reading live settings')
           : config?.readOnly ? t('完整设置暂不可用；点击重新读取', 'Full settings are unavailable; click to retry')
           : unavailable ? t('重新读取当前模型', 'Retry reading the current model')
           : disabled ? t('会话执行中，可预选并在结束后保存', 'Preselect now and save after the task finishes') : t('配置后续轮次', 'Configure subsequent turns')}
@@ -105,7 +108,18 @@ export function ModelConfigControl({
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
           </>}
       </button>
-      {open && draft && config && (
+      {open && config?.unavailableReason && <div className="model-config-popover">
+        <p className="model-config-hint" role="status">{friendlyError(new Error(config.unavailableReason))}</p>
+        {onOpenDesktop && <footer><button type="button" disabled={saving} onClick={() => {
+          if (saving) return;
+          setSaving(true); setError('');
+          void onOpenDesktop().then(() => setOpen(false)).catch(error => setError(friendlyError(error))).finally(() => setSaving(false));
+        }}>
+          {t('在电脑端打开此会话', 'Open this task on the computer')}
+        </button></footer>}
+        {error && <p role="alert">{error}</p>}
+      </div>}
+      {open && draft && config && !config.unavailableReason && (
         <div className="model-config-popover">
           <div className="model-config-toolbar">
             <button

@@ -5,6 +5,7 @@ import { friendlyError } from '../web/src/app-utils.js';
 
 function captureDesktop() {
   const desktop = new CodexDesktopClient();
+  desktop.legacyInputAvailable = async () => true;
   const calls: Array<{ method: string; params: Record<string, any> }> = [];
   desktop.getClient = async () => ({
     tools: new Set(['send_message_to_thread', 'set_thread_title', 'read_thread', 'set_thread_archived', 'navigate_to_codex_page', 'list_threads']),

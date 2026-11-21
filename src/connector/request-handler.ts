@@ -51,7 +51,8 @@ type CodexGateway = {
 type DesktopGateway = {
   controls?: Pick<DesktopControls, 'read' | 'modelConfig' | 'updateModel' | 'stop' | 'respond'>
     & Partial<Pick<DesktopControls, 'permissions' | 'updatePermissions' | 'editMessage'>>;
-  getCapabilities?(): Promise<{ available: boolean; tools: string[]; inputAvailable?: boolean }>;
+  getCapabilities?(): Promise<{ available: boolean; tools: string[]; inputAvailable?: boolean;
+    controlsAvailable?: boolean; imagesAvailable?: boolean; inputTransport?: string }>;
   listThreads(options: Payload): Promise<DesktopThreadStatus[]>;
   readThreadState(options: Payload): Promise<any>;
   sendMessage(options: Payload): Promise<any>;
@@ -186,10 +187,14 @@ async function dispatchAction({
       mode,
       platform: process.platform,
       codexOnline: Boolean(codex.child),
-      ...(mode === 'desktop' ? { desktopOnline: desktopState?.available === true, desktopTools: desktopState?.tools || [], desktopInputOnline: desktopState?.inputAvailable === true } : {}),
+      ...(mode === 'desktop' ? { desktopOnline: desktopState?.available === true, desktopTools: desktopState?.tools || [], desktopInputOnline: desktopState?.inputAvailable === true,
+        ...(desktopState?.inputTransport ? { desktopInputTransport: desktopState.inputTransport } : {}) } : {}),
       activeTurn: codex.activeTurns.size > 0,
       capabilities: { sessionDelete: mode === 'headless', networkAccess, fullAccess: allowFullAccess,
-        ...(mode === 'desktop' && desktop?.controls && desktopState?.inputAvailable ? { desktopNativeState: true, desktopNativeImages: Boolean(attachments.nativeInput) } : {}),
+        ...(mode === 'desktop' && desktopState?.inputAvailable ? {
+          desktopNativeState: Boolean(desktop?.controls) && (desktopState.controlsAvailable ?? true),
+          desktopNativeImages: (desktopState.imagesAvailable ?? true) && Boolean(attachments.nativeInput),
+        } : {}),
         ...(mode === 'desktop' && desktop?.archiveThread && supports('read_thread', 'set_thread_archived') ? { sessionArchive: true, sessionArchivePendingApproval: true } : {}),
         ...(mode === 'desktop' && desktop?.restoreThread && supports('set_thread_archived') ? { sessionRestore: true } : {}),
         ...(fileUploads ? { fileUpload: true } : {}), ...(browser ? { browserControl: true, browserGrantReplacement: true } : {}) },
@@ -271,7 +276,9 @@ async function dispatchAction({
       try { return await desktop.controls.modelConfig(threadId, catalog); }
       catch (error) {
         if (!codex.readStoredModelConfig) throw error;
-        return measureOperation('model.persisted', () => codex.readStoredModelConfig!(threadId, catalog));
+        const config = await measureOperation('model.persisted', () => codex.readStoredModelConfig!(threadId, catalog));
+        return (error as Error).message === 'desktop_controls_unsupported'
+          ? { ...config, readOnly: true, unavailableReason: 'desktop_controls_unsupported' } : config;
       }
     }
     return codex.readModelConfig(String(payload.threadId || ''));
@@ -289,6 +296,11 @@ async function dispatchAction({
       try {
         return await desktop.controls.permissions(threadId, { networkAccess: Boolean(networkAccess), allowFullAccess: Boolean(allowFullAccess) });
       } catch (error) {
+        if ((error as Error).message === 'desktop_controls_unsupported' && codex.readStoredPermissionConfig) {
+          return { ...await codex.readStoredPermissionConfig(threadId), editable: false, settingsToken: undefined,
+            canOpenOnDesktop: Boolean(desktop.openThread), unavailableReason: 'desktop_controls_unsupported',
+            allowFullAccess: Boolean(allowFullAccess) };
+        }
         if ((error as Error).message !== 'desktop_input_not_ready' || !codex.readStoredPermissionConfig) throw error;
         return { ...await codex.readStoredPermissionConfig(threadId), allowFullAccess: Boolean(allowFullAccess) };
       }

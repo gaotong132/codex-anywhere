@@ -223,6 +223,19 @@ automatically. Refreshing before success discards the in-memory code; reopen or 
 
 ## 4. Verify
 
+Desktop versions that remove the owner/follower IPC can use their advertised `send_message_to_thread`
+app tool for text and file-link input. The connector checks its schema before use, binds caller and
+destination to the same selected local task, serializes input, and verifies the acknowledged task ID.
+This route is selected before input dispatch; a timeout or uncertain send is never retried through
+another transport. Desktop may retain its source-context wrapper for app-tool input.
+
+Messaging, native images and interactive controls are separate capabilities. When the owner/follower
+control interface is absent, model and permission badges show saved values with an explicit Desktop
+action. Remote stop, approvals and editing remain unavailable; do not infer control support from an
+online message route. Status reads request metadata only when the host advertises that option, so a
+very large turn cannot prevent reading its status. Older supported owner/follower hosts keep their
+existing native input and controls.
+
 Conversation history reads bounded pages from the local rollout whenever it is available, including
 process messages within a single long-running turn. Scroll up or use **Load older messages** to cross
 the live tail's byte window. Refreshing or reconnecting must preserve that older-history cursor.

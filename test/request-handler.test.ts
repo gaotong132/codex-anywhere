@@ -1016,3 +1016,44 @@ test('message edits require confirmation and only a missing Desktop owner can us
     else assert.equal(result.data.delivery, nativeError ? 'appServer' : 'desktop');
   }
 });
+
+test('app-tool messaging does not advertise legacy image or control capabilities', async () => {
+  const handle = createRequestHandler(createDependencies({
+    desktop: { getCapabilities: async () => ({ available: true, inputAvailable: true, inputTransport: 'appTools',
+      controlsAvailable: false, imagesAvailable: false, tools: ['send_message_to_thread', 'read_thread'] }) },
+    attachments: { nativeInput: async () => '/validated.png' },
+  }));
+  const status = (await handle(request('connector.status'))).data;
+  assert.equal(status.desktopInputOnline, true);
+  assert.equal(status.desktopInputTransport, 'appTools');
+  assert.equal(status.capabilities.desktopNativeState, false);
+  assert.equal(status.capabilities.desktopNativeImages, false);
+});
+
+test('removed native controls show saved settings with a Desktop action and cannot use the cold mutation fallback', async () => {
+  let storedWrites = 0;
+  const unavailable = async () => { throw new Error('desktop_controls_unsupported'); };
+  const handle = createRequestHandler(createDependencies({
+    codex: { listModels: async () => [],
+      readStoredModelConfig: async () => ({ model: 'saved-model', readOnly: false, models: [] }),
+      readStoredPermissionConfig: async () => ({ mode: 'full', editable: true, settingsToken: 'saved-token', source: 'persisted' }),
+      updateStoredPermissionConfig: async () => { storedWrites++; },
+    },
+    desktop: { openThread: async ({ threadId }) => ({ threadId, opened: true }),
+      controls: { modelConfig: unavailable, permissions: unavailable, updatePermissions: unavailable,
+        read: async () => ({ threadId: 'target', status: 'active', turnId: null, canStop: false, waitingOnApproval: true, approvals: [] }),
+      },
+    },
+  }));
+  const model = (await handle(request('session.model-config.read', { threadId: 'target' }))).data;
+  assert.equal(model.readOnly, true); assert.equal(model.unavailableReason, 'desktop_controls_unsupported');
+  const permissions = (await handle(request('session.permissions.read', { threadId: 'target' }))).data;
+  assert.equal(permissions.mode, 'full'); assert.equal(permissions.editable, false);
+  assert.equal(permissions.settingsToken, undefined); assert.equal(permissions.canOpenOnDesktop, true);
+  assert.equal(permissions.unavailableReason, 'desktop_controls_unsupported');
+  assert.equal((await handle(request('session.permissions.update', { threadId: 'target', mode: 'auto' }))).error, 'desktop_controls_unsupported');
+  assert.equal(storedWrites, 0);
+  const pending = (await handle(request('approval.pending', { threadId: 'target' }))).data;
+  assert.equal(pending.desktopState.canStop, false);
+  assert.equal(pending.externalApproval.actionable, false);
+});
