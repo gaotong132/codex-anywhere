@@ -143,7 +143,7 @@ test('conversation summaries receive only their own missing images without fetch
       timestamp: new Date(completedAt).toISOString(), type: 'event_msg',
       payload: { type: 'item_completed', turn_id: id, item: image },
     }) + '\n').join(''));
-    const result = await codex.listSessionTurns('thread-image');
+    const result = await codex.listSessionTurns('thread-image', { cursor: 'existing-api-page' });
     assert.equal(result.source, 'appServer');
     assert.equal(result.nextCursor, 'older-api-page');
     assert.deepEqual(result.turns.map((t) => t.items.filter((i: any) => i.attachment).length), [1, 1, 0]);

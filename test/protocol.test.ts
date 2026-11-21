@@ -960,16 +960,18 @@ test('latest token count exposes bounded current context usage', () => {
   assert.equal(JSON.stringify(usage).includes('must-not-leak'), false);
 });
 
-test('rollout history keeps complete final replies while bounding progress updates', () => {
+test('rollout history keeps complete inputs, process messages and final replies', () => {
   const longText = '完整回复。'.repeat(1_000);
   const items = rolloutInternals.mapRolloutRows([
+    { type: 'event_msg', payload: { type: 'user_message', message: longText } },
     { type: 'event_msg', payload: { type: 'agent_message', phase: 'commentary', message: longText } },
     { type: 'event_msg', payload: { type: 'agent_message', phase: 'final_answer', message: longText } },
   ]);
 
-  assert.equal(items[0].text, `${longText.slice(0, 4_000)}\n…（已截断）`);
+  assert.equal(items[0].text, longText);
   assert.equal(items[1].text, longText);
-  assert.equal(items[1].text.includes('已截断'), false);
+  assert.equal(items[2].text, longText);
+  assert.equal(items.some(item => item.text.includes('已截断')), false);
 });
 
 test('task completion payload restores a final reply missing from streamed rows', () => {
@@ -2538,6 +2540,7 @@ test('conversation history uses a lightweight bounded descending cursor page', a
 test('conversation history selectively hydrates injected task inputs omitted from summaries', async () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
+  codex.listSessions = async () => [];
   const calls = [];
   codex.rpcRaw = async (method, params) => {
     calls.push({ method, params });
@@ -2575,11 +2578,10 @@ test('conversation history selectively hydrates injected task inputs omitted fro
   ]);
 });
 
-test('large conversation history keeps rollout cursors on the bounded file reader', async () => {
+test('conversation history keeps rollout cursors on the bounded file reader at every size', async () => {
   const codex = new CodexAppServer({ runtimeCwd: process.cwd() });
   codex.ensureStarted = async () => {};
   codex.sessionMetadata.set('thread-large', { path: 'large-rollout.jsonl' });
-  codex.isLargeSession = async () => true;
   const calls: unknown[] = [];
   codex.readSessionTail = async (threadId, filePath, options) => {
     calls.push({ threadId, filePath, options });

@@ -223,6 +223,13 @@ automatically. Refreshing before success discards the in-memory code; reopen or 
 
 ## 4. Verify
 
+Conversation history reads bounded pages from the local rollout whenever it is available, including
+process messages within a single long-running turn. Scroll up or use **Load older messages** to cross
+the live tail's byte window. Refreshing or reconnecting must preserve that older-history cursor.
+Inputs, process messages and final replies retain their complete text; raw reasoning and tool output
+are excluded. If the local file is unavailable, the connector falls back to app-server summaries,
+which may omit process details.
+
 ```bash
 ./scripts/relay.sh status
 ```

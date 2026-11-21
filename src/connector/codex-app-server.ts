@@ -402,7 +402,7 @@ export class CodexAppServer extends EventEmitter {
       ? parsedLimit : defaultLimit));
     const cursor = String(options.cursor || '').trim();
     let metadata = this.sessionMetadata.get(resolvedThreadId);
-    if (mode === 'live' && !metadata?.path) {
+    if (!metadata?.path && (!cursor || cursor.startsWith('rollout:v1:'))) {
       await this.listSessions();
       metadata = this.sessionMetadata.get(resolvedThreadId);
     }
@@ -413,8 +413,16 @@ export class CodexAppServer extends EventEmitter {
       if (!metadata?.path) throw new Error('session_history_unavailable');
       return this.readSessionTail(resolvedThreadId, metadata.path, { paged: true, cursor });
     }
-    if (!cursor && await this.isLargeSession(resolvedThreadId)) {
-      return this.readSessionTail(resolvedThreadId, metadata?.path, { paged: true });
+    if (!cursor && mode === 'conversation' && metadata?.path) {
+      // Turn summaries omit commentary, even for a single hours-long turn.
+      // The bounded live tail cannot fill that gap or provide an older cursor.
+      // Page the persisted conversation at every size; retain API cursors for
+      // already-open pages and fall back when the local file is unavailable.
+      try {
+        return await this.readSessionTail(resolvedThreadId, metadata.path, { paged: true });
+      } catch (error) {
+        if (!['ENOENT', 'EACCES', 'EPERM'].includes((error as NodeJS.ErrnoException)?.code || '')) throw error;
+      }
     }
     const imageReferences = mode === 'conversation' && metadata?.path
       ? readRolloutGeneratedImages(metadata.path).catch(() => []) : Promise.resolve([]);

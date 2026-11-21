@@ -58,7 +58,7 @@ test('Desktop answers omitted from summaries and evicted from the live tail stil
     await writeFile(path, row({ type: 'task_started', turn_id: 'turn' }, 'event_msg')
       + answerRow() + row({ type: 'function_call_output', output: 'x'.repeat(5 * 1024 * 1024) })
       + row({ type: 'agent_message', message: 'Work continues', phase: 'commentary' }, 'event_msg'));
-    const summary = await codex.listSessionTurns('thread');
+    const summary = await codex.listSessionTurns('thread', { cursor: 'existing-api-page' });
     assert.equal(summary.turns[0].items.some((item: any) => item.questionReplies), false);
     assert.deepEqual(summary.questionReplies, [reply]);
     const live = await codex.listSessionTurns('thread', { mode: 'live', questionIds: [question.id] });
