@@ -488,7 +488,7 @@ input:not([type='range']):focus, textarea:focus { border-color: $focus !importan
   position: absolute; z-index: 40; top: calc(100% + 8px); left: 50%; width: min(330px, calc(100vw - 96px)); display: grid; gap: 8px; padding: 10px; border: 1px solid #343b47; border-radius: 14px; color: #aebbd0; background: #17191d; box-shadow: 0 16px 46px rgba(0, 0, 0, .44); transform: translateX(-50%);
   > p { margin: 0; color: #ff9ba4; font-size: 9px; line-height: 1.4; }
   > .model-config-hint { color: #a4adbc; font-size: 11px; line-height: 1.5; text-align: center; }
-  footer { display: flex; justify-content: flex-end; gap: 6px; }
+  footer { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
   footer button { height: 27px; padding: 0 9px; border: 1px solid #363c47; border-radius: 7px; color: #b8bec8; background: #22252a; font-size: 9px; font-weight: 700; }
   footer .primary-action { border-color: #4b83e9; color: #fff; background: #3f7ee9; }
   footer button:disabled { opacity: .5; }
