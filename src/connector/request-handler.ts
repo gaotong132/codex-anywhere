@@ -2,6 +2,7 @@ import { editIdentifier, editText } from './message-edit.js';
 import { publicError } from '../shared/protocol.js';
 import { measureOperation, operationMetrics } from './operation-metrics.js';
 import type { DesktopControls } from './desktop-controls.js';
+import type { DesktopMessageModels } from './desktop-message-models.js';
 import type { FileUploadManager } from './file-uploads.js';
 import type { BrowserSessionBroker } from '../browser-control/session-broker.js';
 import { SESSION_STATUS_MAX_AGE_MS, type SessionStatusSnapshot } from '../shared/session-status.js';
@@ -30,7 +31,7 @@ type CodexGateway = {
   listSessionTurns(threadId: string, options: Payload): Promise<any>;
   readTurnDiff(threadId: string, turnId: string): Promise<any>;
   readModelConfig(threadId: string): Promise<any>;
-  readStoredModelConfig?(threadId: string, catalog: any[] | Promise<any[]>): Promise<any>;
+  readStoredModelConfig?(threadId: string, catalog: any[] | Promise<any[]>, options?: { allowUnknownModel?: boolean }): Promise<any>;
   readStoredPermissionConfig?(threadId: string, options?: { readOnly?: boolean }): Promise<any>;
   updateStoredPermissionConfig?(threadId: string, value: any): Promise<any>;
   listModels?(options?: { allowStale?: boolean }): Promise<any[]>;
@@ -49,6 +50,7 @@ type CodexGateway = {
   needsDesktopPermissionRecovery(threadId: string): Promise<boolean>;
 };
 type DesktopGateway = {
+  messageModels?: Pick<DesktopMessageModels, 'read' | 'update' | 'reset'>;
   controls?: Pick<DesktopControls, 'read' | 'modelConfig' | 'updateModel' | 'stop' | 'respond'>
     & Partial<Pick<DesktopControls, 'permissions' | 'updatePermissions' | 'editMessage'>>;
   getCapabilities?(): Promise<{ available: boolean; tools: string[]; inputAvailable?: boolean;
@@ -276,7 +278,13 @@ async function dispatchAction({
       try { return await desktop.controls.modelConfig(threadId, catalog); }
       catch (error) {
         if (!codex.readStoredModelConfig) throw error;
-        const config = await measureOperation('model.persisted', () => codex.readStoredModelConfig!(threadId, catalog));
+        const config = await measureOperation('model.persisted', () => codex.readStoredModelConfig!(threadId, catalog, {
+          allowUnknownModel: (error as Error).message === 'desktop_controls_unsupported' && Boolean(desktop.messageModels),
+        }));
+        if ((error as Error).message === 'desktop_controls_unsupported' && desktop.messageModels) {
+          try { return await desktop.messageModels.read(threadId, config); }
+          catch (modelError) { if ((modelError as Error).message !== 'desktop_controls_unsupported') throw modelError; }
+        }
         return (error as Error).message === 'desktop_controls_unsupported'
           ? { ...config, readOnly: true, unavailableReason: 'desktop_controls_unsupported' } : config;
       }
@@ -286,9 +294,21 @@ async function dispatchAction({
   if (action === 'session.model-config.update') {
     if (mode === 'desktop') {
       if (!desktop?.controls || !codex.listModels) throw new Error('desktop_input_unsupported');
-      return desktop.controls.updateModel(String(payload.threadId || ''), payload, await codex.listModels());
+      const threadId = String(payload.threadId || '');
+      const catalog = await codex.listModels();
+      try { return await desktop.controls.updateModel(threadId, payload, catalog); }
+      catch (error) {
+        if ((error as Error).message !== 'desktop_controls_unsupported' || !desktop.messageModels || !codex.readStoredModelConfig) throw error;
+        return desktop.messageModels.update(threadId, payload, await codex.readStoredModelConfig(threadId, catalog, { allowUnknownModel: true }));
+      }
     }
     return codex.updateModelConfig(String(payload.threadId || ''), payload);
+  }
+  if (action === 'session.model-config.reset') {
+    if (mode !== 'desktop' || !desktop?.messageModels || !codex.readStoredModelConfig) throw new Error('desktop_input_unsupported');
+    const threadId = String(payload.threadId || '');
+    const current = await codex.readStoredModelConfig(threadId, headerModelCatalog(codex), { allowUnknownModel: true });
+    return desktop.messageModels.reset(threadId, current);
   }
   if (action === 'session.permissions.read') {
     if (mode === 'desktop' && desktop?.controls?.permissions) {

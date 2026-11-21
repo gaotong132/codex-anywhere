@@ -15,7 +15,7 @@ import { loadOrCreateConnectorDeviceIdentity } from './device-identity.js';
 import { createRequestHandler } from './request-handler.js';
 import { monitorConnectorSocket, scheduleReferencedRetry } from './reconnect.js';
 import { ConnectorSecureChannels } from './secure-channels.js';
-import { connectorSessionModelSettingsPath } from './session-model-settings.js';
+import { connectorSessionModelSettingsPath, connectorDesktopMessageModelSettingsPath } from './session-model-settings.js';
 import { createConnectorAuthProof } from '../shared/auth.js';
 import { createDeviceAuthProof } from '../shared/device-auth.js';
 import {
@@ -52,7 +52,9 @@ const codex = new CodexAppServer({
   allowFullAccess,
   modelSettingsPath: connectorSessionModelSettingsPath(deviceId),
 });
-const desktop = mode === 'desktop' ? new CodexDesktopClient() : null;
+const desktop = mode === 'desktop' ? new CodexDesktopClient({
+  messageModelSettingsPath: connectorDesktopMessageModelSettingsPath(deviceId),
+}) : null;
 const downloads = new DownloadManager({
   allowedRoots: [...allowedRoots, generatedImagesDirectory(), visualizationsDirectory(), UPLOAD_DIRECTORY],
   allowAnyFileDownload,

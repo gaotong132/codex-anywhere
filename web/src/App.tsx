@@ -562,6 +562,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
     permissionConfig,
     permissionConfigLoading,
     saveModelConfig,
+    resetModelConfig,
     savePermissionMode,
     refreshPermissionConfig,
     openPermissionSettingsOnDesktop,
@@ -2499,13 +2500,15 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             </div>
             <div className="conversation-controls">
               <ModelConfigControl
+                key={`model:${environmentId}:${threadId}`}
                 onOpenDesktop={openPermissionSettingsOnDesktop}
                 config={modelConfig}
                 hasSession={Boolean(threadId)}
                 onRefresh={refreshModelConfig}
                 loading={modelConfigLoading}
-                disabled={!online || executionActive}
+                disabled={!online || (executionActive && !modelConfig?.appliesOnSend)}
                 onSave={saveModelConfig}
+                onReset={resetModelConfig}
               />
               <PermissionModeControl
                 key={`permission:${environmentId}:${threadId}`}

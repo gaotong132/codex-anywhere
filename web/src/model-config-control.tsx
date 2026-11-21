@@ -12,7 +12,7 @@ function fastTierAvailable(model: ModelOption | undefined) {
 }
 
 export function ModelConfigControl({
-  config, loading, disabled, onSave, hasSession = false, onRefresh, onOpenDesktop,
+  config, loading, disabled, onSave, hasSession = false, onRefresh, onOpenDesktop, onReset,
 }: {
   config: SessionModelConfig | null;
   loading: boolean;
@@ -21,6 +21,7 @@ export function ModelConfigControl({
   hasSession?: boolean;
   onRefresh?: () => void;
   onOpenDesktop?: () => Promise<unknown>;
+  onReset?: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -33,6 +34,7 @@ export function ModelConfigControl({
   const effortIndex = Math.max(0, effortOptions
     .findIndex((option) => option.reasoningEffort === draft?.reasoningEffort));
   const effortProgress = effortOptions.length > 1 ? (effortIndex / (effortOptions.length - 1)) * 100 : 100;
+  const configKey = JSON.stringify(config);
 
   useEffect(() => {
     setOpen(false);
@@ -47,7 +49,7 @@ export function ModelConfigControl({
       reasoningEffort: reasoningSliderValue(model, config.reasoningEffort),
       fastMode: config.fastMode,
     });
-  }, [config]);
+  }, [configKey]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -72,24 +74,32 @@ export function ModelConfigControl({
     }
   };
 
+  const reset = () => {
+    if (!onReset || saving || disabled) return;
+    setSaving(true); setError('');
+    void onReset().then(() => setOpen(false)).catch(error => setError(friendlyError(error))).finally(() => setSaving(false));
+  };
+
   const pending = loading && !config;
   const effortPending = pending || Boolean(config?.source === 'desktop'
     && config.serviceTier === null && !config.reasoningEffort);
   const unavailable = hasSession && !config && !loading;
+  const unknownModel = Boolean(config?.appliesOnSend && !config.model);
   const displayModel = selectedModel?.displayName || config?.model
-    || (unavailable ? t('模型读取失败', 'Model unavailable') : t('自动选择', 'Automatic'));
+    || (unknownModel ? t('选择模型', 'Select model') : unavailable ? t('模型读取失败', 'Model unavailable') : t('自动选择', 'Automatic'));
   return (
     <div className={`model-config${open ? ' open' : ''}`} ref={rootRef}>
       <button
         className="model-config-summary"
         type="button"
-        disabled={loading || (Boolean(config?.readOnly) && !onRefresh && !config?.unavailableReason) || (!config && !(unavailable && onRefresh))}
+        disabled={loading || (Boolean(config?.readOnly) && !config?.appliesOnSend && !onRefresh && !config?.unavailableReason) || (!config && !(unavailable && onRefresh))}
         onClick={() => config?.unavailableReason ? setOpen((current) => !current)
-          : unavailable || config?.readOnly ? onRefresh?.() : setOpen((current) => !current)}
+          : unavailable || (config?.readOnly && !config?.appliesOnSend) ? onRefresh?.() : setOpen((current) => !current)}
         aria-expanded={open}
         aria-busy={pending}
         aria-label={pending ? t('正在读取模型和思考强度', 'Loading model and reasoning effort') : undefined}
         title={config?.unavailableReason ? friendlyError(new Error(config.unavailableReason))
+          : config?.appliesOnSend ? t('模型与思考强度将在发送下一条消息时生效', 'Model and reasoning effort apply when you send the next message')
           : config?.source === 'persisted' ? t('上次保存的模型设置；点击重新读取实时设置', 'Last saved model settings; click to retry reading live settings')
           : config?.readOnly ? t('完整设置暂不可用；点击重新读取', 'Full settings are unavailable; click to retry')
           : unavailable ? t('重新读取当前模型', 'Retry reading the current model')
@@ -98,7 +108,8 @@ export function ModelConfigControl({
         {pending ? <i className="model-config-placeholder" aria-hidden="true" /> : <>
           <span className="model-config-model">{displayModel}</span>
           {!effortPending && <span className="model-config-effort">
-            {unavailable ? t('点击重试', 'Retry') : config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort) : t('默认思考', 'Default reasoning')}
+            {unavailable ? t('点击重试', 'Retry') : config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort)
+              : config?.appliesOnSend ? t('思考未知', 'Unknown reasoning') : t('默认思考', 'Default reasoning')}
           </span>}
           {config?.fastMode && (
             <span className="fast active" title={t('快速模式', 'Fast mode')}>
@@ -110,6 +121,9 @@ export function ModelConfigControl({
       </button>
       {open && config?.unavailableReason && <div className="model-config-popover">
         <p className="model-config-hint" role="status">{friendlyError(new Error(config.unavailableReason))}</p>
+        {config.hasOverride && onReset && <button type="button" disabled={disabled || saving} onClick={reset}>
+          {t('跟随电脑端', 'Follow computer')}
+        </button>}
         {onOpenDesktop && <footer><button type="button" disabled={saving} onClick={() => {
           if (saving) return;
           setSaving(true); setError('');
@@ -127,10 +141,10 @@ export function ModelConfigControl({
               type="button"
               aria-pressed={draft.fastMode}
               aria-label={draft.fastMode ? t('关闭快速模式', 'Turn off fast mode') : t('开启快速模式', 'Turn on fast mode')}
-              title={fastTierAvailable(draftModel)
+              title={config.fastModeSupported === false ? t('快速模式请在电脑端设置', 'Set fast mode on your computer') : fastTierAvailable(draftModel)
                 ? draft.fastMode ? t('关闭快速模式', 'Turn off fast mode') : t('开启快速模式', 'Turn on fast mode')
                 : t('当前模型不支持快速模式', 'Fast mode is not available for this model')}
-              disabled={saving || !fastTierAvailable(draftModel)}
+              disabled={saving || config.fastModeSupported === false || !fastTierAvailable(draftModel)}
               onClick={() => setDraft({ ...draft, fastMode: !draft.fastMode })}
             >
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m13.3 2.5-8 10h5.9l-1 9 8.5-12h-6.1l.7-7Z" /></svg>
@@ -138,11 +152,11 @@ export function ModelConfigControl({
             <CustomSelect
               className="model-config-model-select"
               value={draft.model}
-              disabled={saving}
+              disabled={saving || !config.models.length}
               ariaLabel={t('选择模型', 'Select model')}
               triggerContent={(
                 <>
-                  <strong>{draftModel?.displayName || draft.model}</strong>
+                  <strong>{draftModel?.displayName || draft.model || t('选择模型', 'Select model')}</strong>
                   <em>{reasoningEffortLabel(draft.reasoningEffort)}</em>
                 </>
               )}
@@ -157,7 +171,7 @@ export function ModelConfigControl({
                 setDraft({
                   model: nextModel.model,
                   reasoningEffort: reasoningSliderValue(nextModel, draft.reasoningEffort),
-                  fastMode: draft.fastMode && fastTierAvailable(nextModel),
+                  fastMode: config.fastModeSupported !== false && draft.fastMode && fastTierAvailable(nextModel),
                 });
               }}
             />
@@ -188,14 +202,26 @@ export function ModelConfigControl({
               ))}
             </span>
           </label>
+          {!config.models.length && <p className="model-config-hint" role="status">{t(
+            '模型列表暂不可用，请重试读取。已保存的选择仍会保留。',
+            'The model list is unavailable. Retry loading; your saved choice is preserved.',
+          )}</p>}
+          {config.appliesOnSend && <p className="model-config-hint" role="status">{t(
+            '模型与思考强度将在发送下一条消息时生效。快速模式请在电脑端设置。',
+            'Model and reasoning effort apply to your next message. Set fast mode on your computer.',
+          )}</p>}
           {disabled && <p className="model-config-hint">{t(
             '当前正在执行，可预选并在结束后保存',
             'Preselect now and save after the task finishes',
           )}</p>}
           {error && <p role="alert">{error}</p>}
           <footer>
+            {!config.models.length && onRefresh && <button type="button" disabled={saving} onClick={() => {
+              setOpen(false); onRefresh();
+            }}>{t('重试读取', 'Retry loading')}</button>}
+            {config.appliesOnSend && config.hasOverride && onReset && <button type="button" disabled={disabled || saving} onClick={reset}>{t('跟随电脑端', 'Follow computer')}</button>}
             <button type="button" onClick={() => setOpen(false)}>{t('取消', 'Cancel')}</button>
-            <button className="primary-action" type="button" disabled={disabled || saving} onClick={() => void save()}>
+            <button className="primary-action" type="button" disabled={disabled || saving || config.readOnly || !draftModel || !effortOptions.length} onClick={() => void save()}>
               {saving ? t('保存中…', 'Saving…') : t('保存', 'Save')}
             </button>
           </footer>

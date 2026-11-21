@@ -230,8 +230,16 @@ This route is selected before input dispatch; a timeout or uncertain send is nev
 another transport. Desktop may retain its source-context wrapper for app-tool input.
 
 Messaging, native images and interactive controls are separate capabilities. When the owner/follower
-control interface is absent, model and permission badges show saved values with an explicit Desktop
-action. Remote stop, approvals and editing remain unavailable; do not infer control support from an
+control interface is absent, the model picker negotiates the public send tool's model/thinking fields
+and advertised effort enum. Explicit per-chat choices apply to subsequent Web messages, can be saved
+while a task runs, and survive connector restarts. “Follow computer” clears the override; simply reading
+a chat never creates one. These preferences are stored separately from historical app-server settings
+in `<connector-model-settings-path>.desktop-messages.json` (or `BRIDGE_DESKTOP_MESSAGE_MODEL_SETTINGS_FILE`).
+Saving does not update or resume a native thread. Fast remains computer-managed on this route.
+An existing chat with no saved model (for example, before its first turn) still offers explicit
+selection; unknown values are never replaced by an invented default.
+If those model fields are absent, saved values remain read-only with a Desktop action.
+Permissions, remote stop, approvals and editing remain unavailable; do not infer control support from an
 online message route. Status reads request metadata only when the host advertises that option, so a
 very large turn cannot prevent reading its status. Older supported owner/follower hosts keep their
 existing native input and controls.

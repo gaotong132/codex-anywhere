@@ -1,5 +1,6 @@
 import { DesktopControls } from './desktop-controls.js';
 import { DesktopUserInput } from './desktop-user-input.js';
+import { DesktopMessageModels, accepts } from './desktop-message-models.js';
 import { readdir } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { NativePipeClient, NativeRequestError, encodeNativeFrame } from './desktop-native-pipe.js';
@@ -15,7 +16,7 @@ const STATUS_ENRICHMENT_TIMEOUT_MS = 1_000;
 const TASK_SCOPED_TOOLS = new Set(['send_message_to_thread', 'set_thread_title', 'read_thread', 'set_thread_archived']);
 
 type JsonObject = Record<string, any>;
-type DesktopClientOptions = { timeoutMs?: number };
+type DesktopClientOptions = { timeoutMs?: number; messageModelSettingsPath?: string };
 type DesktopMessage = {
   threadId: unknown;
   text: unknown;
@@ -36,6 +37,7 @@ export class CodexDesktopClient {
   private messageQueues = new Map<string, Promise<unknown>>();
   readonly userInput: DesktopUserInput;
   readonly controls: DesktopControls;
+  readonly messageModels: DesktopMessageModels;
 
   constructor(options: DesktopClientOptions = {}) {
     this.timeoutMs = Number.isFinite(options.timeoutMs)
@@ -47,16 +49,26 @@ export class CodexDesktopClient {
       read: async threadId => ({ ...await this.readThreadState({ threadId }), threadId,
         turnId: null, canStop: false, approvals: [], model: '', reasoningEffort: '', serviceTier: '' }),
     });
+    this.messageModels = new DesktopMessageModels(async () => {
+      if (await this.legacyInputAvailable()) throw new Error('desktop_model_settings_changed');
+      const client = await this.getClient();
+      const fields = client.toolDefinitions.get('send_message_to_thread')?.inputSchema?.properties;
+      if (!supportsAppToolsInput(client) || fields?.model?.type !== 'string' || fields?.thinking?.type !== 'string') {
+        throw new Error('desktop_controls_unsupported');
+      }
+      return { model: fields.model, thinking: fields.thinking };
+    }, options.messageModelSettingsPath);
   }
 
   async sendMessage({ threadId, text, requestId, model, thinking, imagePath }: DesktopMessage) {
     const targetThreadId = requireThreadId(threadId);
     const prompt = String(text || '').trim();
     if (!prompt) throw new Error('message_required');
+    const preference = this.messageModels.snapshot(targetThreadId);
     const input = { threadId: targetThreadId, text: prompt, requestId, ...(imagePath ? { imagePath } : {}),
       model: String(model || '').trim() || undefined, thinking: String(thinking || '').trim() || undefined };
     const previous = this.messageQueues.get(targetThreadId) ?? Promise.resolve();
-    const sending = previous.catch(() => {}).then(() => this.deliverMessage(input));
+    const sending = previous.catch(() => {}).then(() => this.deliverMessage(input, preference));
     this.messageQueues.set(targetThreadId, sending);
     try { await sending; }
     finally { if (this.messageQueues.get(targetThreadId) === sending) this.messageQueues.delete(targetThreadId); }
@@ -73,13 +85,18 @@ export class CodexDesktopClient {
     }
   }
 
-  private async deliverMessage(input: Parameters<DesktopUserInput['send']>[0]) {
+  private async deliverMessage(input: Parameters<DesktopUserInput['send']>[0], preference?: { model: string; thinking: string }) {
     if (await this.legacyInputAvailable()) return this.userInput.send(input);
+    // Capture the web choice at enqueue time; later picker changes must not
+    // alter an already submitted message. Legacy owners keep their own state.
+    input = { ...input, model: input.model || preference?.model,
+      thinking: input.thinking || (!input.model ? preference?.thinking : undefined) };
     const client = await this.getClient();
     if (!supportsAppToolsInput(client)) throw new Error('desktop_input_unsupported');
     if (input.imagePath) throw new Error('desktop_image_unsupported');
     const fields = client.toolDefinitions.get('send_message_to_thread')!.inputSchema.properties;
-    if ((input.model && !fields.model) || (input.thinking && !fields.thinking)) throw new Error('desktop_input_settings_failed');
+    if ((input.model && (!fields.model || !accepts(fields.model, input.model)))
+      || (input.thinking && (!fields.thinking || !accepts(fields.thinking, input.thinking)))) throw new Error('desktop_input_settings_failed');
     const id = createHash('sha256').update(JSON.stringify([input.threadId, String(input.requestId || randomUUID())])).digest('hex');
     try {
       const result = await this.callTool({ tool: 'send_message_to_thread',

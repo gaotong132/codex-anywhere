@@ -566,7 +566,7 @@ export class CodexAppServer extends EventEmitter {
     }
   }
 
-  async readStoredModelConfig(threadId: string, catalog: ModelOption[] | Promise<ModelOption[]>) {
+  async readStoredModelConfig(threadId: string, catalog: ModelOption[] | Promise<ModelOption[]>, options: { allowUnknownModel?: boolean } = {}) {
     const id = threadId.trim();
     if (!id) throw new Error('thread_id_required');
     await this.ensureStarted();
@@ -576,10 +576,11 @@ export class CodexAppServer extends EventEmitter {
       this.rpcRaw('thread/read', { threadId: id, includeTurns: false }, 5000), catalog,
     ]);
     const thread = result?.thread;
-    if (thread?.id !== id || typeof thread.model !== 'string' || !thread.model.trim()) {
+    if (thread?.id !== id || (typeof thread.model !== 'string' && thread.model != null)
+      || (!String(thread.model || '').trim() && !options.allowUnknownModel)) {
       throw new Error('desktop_model_unavailable');
     }
-    return { model: thread.model, reasoningEffort: thread.reasoningEffort ?? '',
+    return { model: thread.model || '', reasoningEffort: thread.reasoningEffort ?? '',
       serviceTier: null, fastMode: false, readOnly: true, source: 'persisted' as const, models };
   }
 
