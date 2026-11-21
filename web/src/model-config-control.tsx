@@ -84,8 +84,9 @@ export function ModelConfigControl({
   const effortPending = pending || Boolean(config?.source === 'desktop'
     && config.serviceTier === null && !config.reasoningEffort);
   const unavailable = hasSession && !config && !loading;
+  const unknownModel = Boolean(config?.appliesOnSend && !config.model);
   const displayModel = selectedModel?.displayName || config?.model
-    || (unavailable ? t('模型读取失败', 'Model unavailable') : t('自动选择', 'Automatic'));
+    || (unknownModel ? t('选择模型', 'Select model') : unavailable ? t('模型读取失败', 'Model unavailable') : t('自动选择', 'Automatic'));
   return (
     <div className={`model-config${open ? ' open' : ''}`} ref={rootRef}>
       <button
@@ -107,7 +108,8 @@ export function ModelConfigControl({
         {pending ? <i className="model-config-placeholder" aria-hidden="true" /> : <>
           <span className="model-config-model">{displayModel}</span>
           {!effortPending && <span className="model-config-effort">
-            {unavailable ? t('点击重试', 'Retry') : config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort) : t('默认思考', 'Default reasoning')}
+            {unavailable ? t('点击重试', 'Retry') : config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort)
+              : config?.appliesOnSend ? t('思考未知', 'Unknown reasoning') : t('默认思考', 'Default reasoning')}
           </span>}
           {config?.fastMode && (
             <span className="fast active" title={t('快速模式', 'Fast mode')}>
@@ -154,7 +156,7 @@ export function ModelConfigControl({
               ariaLabel={t('选择模型', 'Select model')}
               triggerContent={(
                 <>
-                  <strong>{draftModel?.displayName || draft.model}</strong>
+                  <strong>{draftModel?.displayName || draft.model || t('选择模型', 'Select model')}</strong>
                   <em>{reasoningEffortLabel(draft.reasoningEffort)}</em>
                 </>
               )}

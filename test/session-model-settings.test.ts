@@ -31,6 +31,10 @@ test('Desktop fallback reads exact saved metadata without defaults, history or r
   await assert.rejects(app.readStoredModelConfig('cold', []), /desktop_model_unavailable/);
   thread = { id: 'cold', model: null };
   await assert.rejects(app.readStoredModelConfig('cold', []), /desktop_model_unavailable/);
+  assert.equal((await app.readStoredModelConfig('cold', [], { allowUnknownModel: true })).model, '',
+    'public message selection can represent an existing empty chat without guessing a model');
+  thread = { id: 'another-chat', model: null };
+  await assert.rejects(app.readStoredModelConfig('cold', [], { allowUnknownModel: true }), /desktop_model_unavailable/);
   await assert.rejects(app.readStoredModelConfig('', []), /thread_id_required/);
 });
 

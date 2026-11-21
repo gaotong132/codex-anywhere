@@ -54,6 +54,17 @@ test('unsupported model, effort, fast mode and invalid chat IDs cannot replace a
   assert.equal(missingCatalog.readOnly, true); assert.equal(missingCatalog.model, 'astra');
 });
 
+test('an empty native chat remains unknown until an explicit supported model is saved', async () => {
+  const models = new DesktopMessageModels(fields);
+  const empty = { ...current, model: '', reasoningEffort: '' };
+  const reading = await models.read('empty', empty);
+  assert.equal(reading.model, ''); assert.equal(reading.readOnly, false); assert.equal(reading.hasOverride, false);
+  assert.equal(models.snapshot('empty'), undefined);
+  await models.update('empty', draft, empty);
+  assert.equal((await models.read('empty', empty)).model, 'astra');
+  assert.equal((await models.reset('empty', empty)).model, '');
+});
+
 test('failed persistence or changed tool contracts do not report a saved selection', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'anywhere-message-model-error-'));
   try {

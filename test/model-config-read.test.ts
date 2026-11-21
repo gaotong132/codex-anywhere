@@ -59,6 +59,16 @@ test('a new session still shows defaults before any model is selected', () => {
   assert.doesNotMatch(html, /模型读取失败|Model unavailable/);
 });
 
+test('a persisted empty Desktop chat offers model selection without inventing automatic settings', () => {
+  const html = renderToStaticMarkup(createElement(ModelConfigControl, {
+    config: { model: '', reasoningEffort: '', serviceTier: null, fastMode: false, source: 'message',
+      appliesOnSend: true, hasOverride: false, readOnly: false, fastModeSupported: false, models: [] },
+    loading: false, disabled: false, hasSession: true, onSave: async () => {},
+  }));
+  assert.match(html, /选择模型|Select model/);
+  assert.doesNotMatch(html, /自动选择|Automatic|默认思考|Default reasoning|模型读取失败|Model unavailable/);
+});
+
 async function configurationHarness(t: any, request: BridgeRequest) {
   const keys = ['window', 'document', 'IS_REACT_ACT_ENVIRONMENT'] as const;
   const saved = keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const);

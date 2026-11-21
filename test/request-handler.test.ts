@@ -97,7 +97,9 @@ test('new Desktop model read, update and reset use explicit message preferences 
   const messageModels = new DesktopMessageModels(async () => ({ model: { type: 'string' }, thinking: { type: 'string' } }));
   const handle = createRequestHandler(createDependencies({ codex: {
     listModels: async () => catalog,
-    readStoredModelConfig: async id => { assert.equal(id, 'selected'); reads++; return saved; },
+    readStoredModelConfig: async (id, _catalog, options) => {
+      assert.equal(id, 'selected'); assert.equal(options.allowUnknownModel, true); reads++; return saved;
+    },
     updateModelConfig: async () => assert.fail('must not take a second app-server writer'),
   }, desktop: { messageModels, controls: { modelConfig: unavailable, updateModel: unavailable } } }));
   const initial = (await handle(request('session.model-config.read', { threadId: 'selected' }))).data;
