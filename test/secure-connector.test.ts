@@ -162,7 +162,9 @@ test('connector secure channel authenticates, decrypts requests, and encrypts re
   manager.clear();
 });
 
-for (const action of ['turn.edit', 'turn.start', 'session.archive', 'session.restore', 'file.upload.begin', 'file.upload.chunk', 'file.upload.complete', 'file.upload.cancel']) test(`connector deduplicates replayed ${action} for the same browser identity`, async () => {
+for (const action of ['turn.edit', 'turn.start', 'session.archive', 'session.restore', 'session.delete',
+  'session.model-config.update', 'session.model-config.reset', 'session.permissions.update',
+  'file.upload.begin', 'file.upload.chunk', 'file.upload.complete', 'file.upload.cancel']) test(`connector deduplicates replayed ${action} for the same browser identity`, async () => {
   const browserIdentity = createDeviceIdentity();
   const connectorIdentity = createDeviceIdentity();
   const sent: Record<string, any>[] = [];

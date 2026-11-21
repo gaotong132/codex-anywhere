@@ -26,8 +26,8 @@ const DEDUPLICATED_ACTIONS = new Set([
   'attachment.upload',
   'file.upload.begin', 'file.upload.chunk', 'file.upload.complete', 'file.upload.cancel',
   'file.download.open', 'file.download.chunk', 'file.download.close',
-  'session.model-config.update',
-  'session.rename', 'session.archive', 'session.restore',
+  'session.model-config.update', 'session.model-config.reset', 'session.permissions.update',
+  'session.rename', 'session.archive', 'session.restore', 'session.delete',
   'turn.edit', 'turn.start', 'turn.steer', 'turn.stop', 'approval.respond',
 ]);
 
