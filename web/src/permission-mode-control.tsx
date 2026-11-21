@@ -129,6 +129,7 @@ export function PermissionModeControl({
                 : config.source
                 ? t('与电脑端同步，仅修改当前会话，后续轮次生效', 'Synced with Desktop for this chat; applies to subsequent turns')
                 : t('设置同时作为此执行环境中新会话的默认值', 'Also becomes the default for new tasks in this environment')
+              : config.unavailableReason ? t('当前 Codex 版本请在电脑端修改权限；消息发送不受影响。', 'Change permissions on your computer for this Codex version. Messaging remains available.')
               : config.source === 'persisted' ? t('当前显示会话已保存的权限，任务空闲后可修改。', 'Showing saved permissions; editing is available when the task is idle.')
               : t('请在运行此会话的电脑上修改权限，再刷新这里的状态。', 'Change permissions on the computer running this task, then refresh the status here.')}</span>
           </header>

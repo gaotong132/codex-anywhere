@@ -2499,6 +2499,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
             </div>
             <div className="conversation-controls">
               <ModelConfigControl
+                onOpenDesktop={openPermissionSettingsOnDesktop}
                 config={modelConfig}
                 hasSession={Boolean(threadId)}
                 onRefresh={refreshModelConfig}
@@ -2530,7 +2531,7 @@ export default function App({ initialPairingInput = null }: { initialPairingInpu
           && editTarget.selection === selectedRequestRef.current && <MessageEditDialog
           originalText={editTarget.item.text} onPrepare={prepareMessageEdit} onSubmit={submitMessageEdit} onClose={closeMessageEditor} />}
         <ConversationTimeline
-          onEditMessage={openMessageEditor}
+          onEditMessage={connectorStatus?.mode === 'desktop' && connectorStatus.capabilities.desktopNativeState === false ? undefined : openMessageEditor}
           editDisabled={!online || executionActive || uploading || editingMessage}
           messageListRef={messageListRef}
           messageContentRef={messageContentRef}

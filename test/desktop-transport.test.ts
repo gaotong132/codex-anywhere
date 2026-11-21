@@ -137,8 +137,10 @@ test('closing a connecting pipe rejects immediately and cannot resurrect it', as
 
 test('failure before dispatch is unavailable, not unknown delivery', async () => {
   const desktop = new CodexDesktopClient();
+  desktop.legacyInputAvailable = async () => true;
   desktop.userInput.pipe.request = async () => { throw new NativeRequestError('connect timeout', false); };
-  await assert.rejects(desktop.sendMessage({ threadId: 'fixture', text: 'one', requestId: 'one' }), /^Error: desktop_input_unavailable$/);
+  try { await assert.rejects(desktop.sendMessage({ threadId: 'fixture', text: 'one', requestId: 'one' }), /^Error: desktop_input_unavailable$/); }
+  finally { desktop.close(); }
 });
 
 test('probe requires the correct namespace and operation dispatch checks cached capabilities', async () => {
@@ -155,7 +157,8 @@ test('probe requires the correct namespace and operation dispatch checks cached 
     try {
       const desktop = desktopFor(client);
       desktop.userInput.pipe.connect = async () => {};
-      assert.deepEqual(await desktop.getCapabilities(), { available: true, tools: ['send_message_to_thread'], inputAvailable: true });
+      assert.deepEqual(await desktop.getCapabilities(), { available: true, tools: ['send_message_to_thread'], inputAvailable: true,
+        controlsAvailable: true, imagesAvailable: true, inputTransport: 'owner' });
       await assert.rejects(desktop.readThreadState({ threadId: 'fixture' }), /desktop_tool_unavailable:read_thread/);
       assert.equal(calls, 2, 'unsupported operation never reaches the host');
     } finally { client.close(); }

@@ -30,6 +30,7 @@ export class NativePipeClient {
   connected = false;
   connecting: Promise<void> | null = null;
   tools = new Set<string>();
+  toolDefinitions = new Map<string, JsonObject>();
   private closed = false;
   private cancelConnect: (() => void) | null = null;
   private nextId = 0;

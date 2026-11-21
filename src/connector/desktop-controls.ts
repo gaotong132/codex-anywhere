@@ -53,18 +53,28 @@ function* conversationTurns(state: Value): Generator<Value> {
 }
 
 export class DesktopControls {
-  constructor(readonly input: DesktopUserInput) {}
+  constructor(readonly input: DesktopUserInput, private compatibility?: {
+    available(): Promise<boolean>;
+    read(threadId: string): Promise<ReturnType<typeof desktopSummary>>;
+  }) {}
+  private async requireControls() {
+    if (this.compatibility && !await this.compatibility.available()) throw new Error('desktop_controls_unsupported');
+  }
   async snapshot(threadId: string, fresh = false, open = true) {
     try {
+      await this.requireControls();
       const owner = await this.input.owner(threadId, open);
       const state = await this.input.state.read(threadId, owner.id, 5000, fresh);
       return { state, owner: owner.id, summary: desktopSummary(state, owner.id) };
     } catch (error) {
-      if ((error as Error).message.startsWith('desktop_state_')) throw error;
+      if ((error as Error).message.startsWith('desktop_state_') || (error as Error).message === 'desktop_controls_unsupported') throw error;
       throw classifyDesktopError(error, false);
     }
   }
-  async read(threadId: string, open = false) { return (await this.snapshot(threadId, false, open)).summary; }
+  async read(threadId: string, open = false) {
+    if (this.compatibility && !await this.compatibility.available()) return this.compatibility.read(threadId);
+    return (await this.snapshot(threadId, false, open)).summary;
+  }
 
   async permissions(threadId: string, capabilities: PermissionCapabilities) {
     return desktopPermissionConfig((await this.snapshot(threadId, false, false)).state, capabilities);
@@ -128,6 +138,7 @@ export class DesktopControls {
   }
 
   async modelConfig(threadId: string, catalog: Value[] | Promise<Value[]>) {
+    await this.requireControls();
     // Model settings are a small native response. A long thread's full state
     // can exceed the stream frame limit without making these settings invalid.
     // Reading a Web header must never navigate Desktop to a cold conversation.
