@@ -74,6 +74,12 @@ export function ModelConfigControl({
     }
   };
 
+  const reset = () => {
+    if (!onReset || saving || disabled) return;
+    setSaving(true); setError('');
+    void onReset().then(() => setOpen(false)).catch(error => setError(friendlyError(error))).finally(() => setSaving(false));
+  };
+
   const pending = loading && !config;
   const effortPending = pending || Boolean(config?.source === 'desktop'
     && config.serviceTier === null && !config.reasoningEffort);
@@ -85,9 +91,9 @@ export function ModelConfigControl({
       <button
         className="model-config-summary"
         type="button"
-        disabled={loading || (Boolean(config?.readOnly) && !onRefresh && !config?.unavailableReason) || (!config && !(unavailable && onRefresh))}
+        disabled={loading || (Boolean(config?.readOnly) && !config?.appliesOnSend && !onRefresh && !config?.unavailableReason) || (!config && !(unavailable && onRefresh))}
         onClick={() => config?.unavailableReason ? setOpen((current) => !current)
-          : unavailable || config?.readOnly ? onRefresh?.() : setOpen((current) => !current)}
+          : unavailable || (config?.readOnly && !config?.appliesOnSend) ? onRefresh?.() : setOpen((current) => !current)}
         aria-expanded={open}
         aria-busy={pending}
         aria-label={pending ? t('正在读取模型和思考强度', 'Loading model and reasoning effort') : undefined}
@@ -113,6 +119,9 @@ export function ModelConfigControl({
       </button>
       {open && config?.unavailableReason && <div className="model-config-popover">
         <p className="model-config-hint" role="status">{friendlyError(new Error(config.unavailableReason))}</p>
+        {config.hasOverride && onReset && <button type="button" disabled={disabled || saving} onClick={reset}>
+          {t('跟随电脑端', 'Follow computer')}
+        </button>}
         {onOpenDesktop && <footer><button type="button" disabled={saving} onClick={() => {
           if (saving) return;
           setSaving(true); setError('');
@@ -201,12 +210,9 @@ export function ModelConfigControl({
           )}</p>}
           {error && <p role="alert">{error}</p>}
           <footer>
-            {config.appliesOnSend && config.hasOverride && onReset && <button type="button" disabled={disabled || saving} onClick={() => {
-              setSaving(true); setError('');
-              void onReset().then(() => setOpen(false)).catch(error => setError(friendlyError(error))).finally(() => setSaving(false));
-            }}>{t('跟随电脑端', 'Follow computer')}</button>}
+            {config.appliesOnSend && config.hasOverride && onReset && <button type="button" disabled={disabled || saving} onClick={reset}>{t('跟随电脑端', 'Follow computer')}</button>}
             <button type="button" onClick={() => setOpen(false)}>{t('取消', 'Cancel')}</button>
-            <button className="primary-action" type="button" disabled={disabled || saving || !draftModel || !effortOptions.length} onClick={() => void save()}>
+            <button className="primary-action" type="button" disabled={disabled || saving || config.readOnly || !draftModel || !effortOptions.length} onClick={() => void save()}>
               {saving ? t('保存中…', 'Saving…') : t('保存', 'Save')}
             </button>
           </footer>

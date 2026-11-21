@@ -63,7 +63,12 @@ test('changed thinking schemas reject saved preferences before a send is dispatc
     await assert.rejects(desktop.sendMessage(message), /desktop_input_settings_failed/);
     assert.equal(calls.length, 0);
     delete (client.toolDefinitions.get('send_message_to_thread')!.inputSchema.properties as any).model;
-    await assert.rejects(desktop.messageModels.read(message.threadId, modelConfig), /desktop_controls_unsupported/);
+    const unavailable = await desktop.messageModels.read(message.threadId, modelConfig);
+    assert.equal(unavailable.readOnly, true); assert.equal(unavailable.hasOverride, true);
+    await desktop.messageModels.reset(message.threadId, modelConfig);
+    await desktop.sendMessage(message);
+    assert.equal(calls.length, 1, 'clearing an obsolete preference restores ordinary messaging');
+    assert.equal(calls[0].arguments.model, undefined);
   } finally { desktop.close(); }
 });
 
