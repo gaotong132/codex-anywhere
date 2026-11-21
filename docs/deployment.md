@@ -231,11 +231,12 @@ another transport. Desktop may retain its source-context wrapper for app-tool in
 
 Messaging, native images and interactive controls are separate capabilities. When the owner/follower
 control interface is absent, the model picker negotiates the public send tool's model/thinking fields
-and advertised effort enum. Explicit per-chat choices apply to subsequent Web messages, can be saved
-while a task runs, and survive connector restarts. “Follow computer” clears the override; simply reading
+and advertised effort enum. Explicit per-chat choices apply to subsequent Web messages delivered by
+Desktop and survive connector restarts. “Follow computer” clears the override; simply reading
 a chat never creates one. These preferences are stored separately from historical app-server settings
 in `<connector-model-settings-path>.desktop-messages.json` (or `BRIDGE_DESKTOP_MESSAGE_MODEL_SETTINGS_FILE`).
-Saving does not update or resume a native thread. Fast remains computer-managed on this route.
+Saving does not update or resume a native thread. Fast remains computer-managed on this route. The
+picker labels a Fast tier found in recent saved settings as historical.
 An existing chat with no saved model (for example, before its first turn) still offers explicit
 selection; unknown values are never replaced by an invented default.
 If those model fields are absent, saved values remain read-only with a Desktop action.
@@ -243,6 +244,20 @@ Permissions, remote stop, approvals and editing remain unavailable; do not infer
 online message route. Status reads request metadata only when the host advertises that option, so a
 very large turn cannot prevent reading its status. Older supported owner/follower hosts keep their
 existing native input and controls.
+
+When the Connector still owns a first turn, it handles follow-ups even after a browser reconnect
+and stops only the requested turn. Approval decisions stay with the server that issued the request.
+Run details can open the selected chat in Desktop if the navigation tool is available.
+
+The Windows Desktop build 26.1117.4957.0 starts its own app-server over stdio. Its local app tools
+expose model and effort on message delivery, with no equivalent operations for changing permissions
+or Fast, stopping a turn, answering an execution approval, or editing history. A second app-server
+refuses to resume an idle chat while Desktop still owns its writer. In a disposable cold chat the
+second server could write a Fast tier, but resuming changed the sandbox. Even with an explicit
+matching resume configuration, the Desktop takeover applied a different sandbox. The managed
+daemon is a separate endpoint and does not attach to this Desktop process. For full controls on a
+separate Connector-owned workload, use the headless mode. For reviewing actions on the existing
+Desktop-controlled chat from a phone, use the official paired mobile client. [App Server](https://developers.openai.com/codex/app-server/) · [Remote connections](https://learn.chatgpt.com/docs/remote-connections)
 
 Desktop permission snapshots are read-only even when the chat uses a worktree or folder outside the
 connector's execution roots. Missing current metadata is labelled unknown and offers the Desktop

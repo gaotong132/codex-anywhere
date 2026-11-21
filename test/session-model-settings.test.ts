@@ -60,6 +60,29 @@ test('session model settings persist in a private connector state file', async (
   }
 });
 
+test('saved Desktop Fast status uses bounded rollout metadata alongside the exact model', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'anywhere-saved-speed-'));
+  t.after(() => rm(directory, { recursive: true }));
+  const path = join(directory, 'rollout.jsonl');
+  const row = JSON.stringify({ type: 'event_msg', payload: { type: 'thread_settings_applied',
+    thread_settings: { model: 'sol', service_tier: 'priority' } } });
+  await writeFile(path, row + '\n');
+  const app = new CodexAppServer();
+  app.ensureStarted = async () => {};
+  let model = 'sol';
+  app.rpcRaw = async method => {
+    assert.equal(method, 'thread/read');
+    return { thread: { id: 'target', model, path } };
+  };
+  const saved = await app.readStoredModelConfig('target', []);
+  assert.equal(saved.serviceTier, 'priority'); assert.equal(saved.fastMode, true); assert.equal(saved.readOnly, true);
+  model = 'different';
+  assert.equal((await app.readStoredModelConfig('target', [])).serviceTier, null);
+  model = 'sol';
+  await writeFile(path, row + '\n' + JSON.stringify({ output: 'x'.repeat(1024 * 1024) }) + '\n');
+  assert.equal((await app.readStoredModelConfig('target', [])).serviceTier, null, 'old tiers beyond the header read budget remain unknown');
+});
+
 test('malformed persisted session settings fall back safely', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'codex-anywhere-bad-model-settings-'));
   const filePath = join(directory, 'settings.json');

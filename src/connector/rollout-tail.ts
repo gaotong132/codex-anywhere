@@ -280,10 +280,11 @@ async function scanRolloutGeneratedImages(filePath: string): Promise<RolloutItem
   } finally { await handle.close(); }
 }
 
-export async function readRolloutModelSettings(filePath: string): Promise<RolloutModelSettings> {
+export async function readRolloutModelSettings(filePath: string, maxBytes?: number): Promise<RolloutModelSettings> {
   const handle = await open(filePath, 'r');
   try {
-    return await findLatestModelSettingsBefore(handle, (await handle.stat()).size);
+    const end = (await handle.stat()).size;
+    return await findLatestModelSettingsBefore(handle, end, maxBytes == null ? 0 : Math.max(0, end - maxBytes));
   } finally {
     await handle.close();
   }
@@ -724,12 +725,12 @@ async function findLatestPurposeBefore(handle: FileHandle, endOffset: number): P
 }
 
 async function findLatestModelSettingsBefore(
-  handle: FileHandle, endOffset: number,
+  handle: FileHandle, endOffset: number, earliestOffset = 0,
 ): Promise<RolloutModelSettings> {
   const settings: RolloutModelSettings = {};
   let cursor = endOffset;
-  while (cursor > 0) {
-    const start = Math.max(0, cursor - ACTIVITY_SCAN_CHUNK_BYTES);
+  while (cursor > earliestOffset) {
+    const start = Math.max(earliestOffset, cursor - ACTIVITY_SCAN_CHUNK_BYTES);
     const readEnd = Math.min(endOffset, cursor + PLAN_SCAN_OVERLAP_BYTES);
     const window = await readCompleteRows(handle, start, readEnd, start > 0);
     for (let index = window.rows.length - 1; index >= 0; index -= 1) {

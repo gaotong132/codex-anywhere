@@ -111,8 +111,10 @@ export function ModelConfigControl({
             {unavailable ? t('点击重试', 'Retry') : config?.reasoningEffort ? reasoningEffortLabel(config.reasoningEffort)
               : config?.appliesOnSend ? t('思考未知', 'Unknown reasoning') : t('默认思考', 'Default reasoning')}
           </span>}
-          {config?.fastMode && (
-            <span className="fast active" title={t('快速模式', 'Fast mode')}>
+          {(config?.fastMode || config?.lastSavedFastMode) && (
+            <span className={`fast${config.lastSavedFastMode ? '' : ' active'}`}
+              aria-label={config.lastSavedFastMode ? t('上次记录为快速模式', 'Last saved speed was Fast') : t('快速模式', 'Fast mode')}
+              title={config.lastSavedFastMode ? t('上次记录为快速模式', 'Last saved speed was Fast') : t('快速模式', 'Fast mode')}>
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.2 1.8 4.7 10h4.8l-.8 8.2 6.6-9.6h-4.8l.7-6.8Z" /></svg>
             </span>
           )}
@@ -207,8 +209,12 @@ export function ModelConfigControl({
             'The model list is unavailable. Retry loading; your saved choice is preserved.',
           )}</p>}
           {config.appliesOnSend && <p className="model-config-hint" role="status">{t(
-            '模型与思考强度将在发送下一条消息时生效。快速模式请在电脑端设置。',
-            'Model and reasoning effort apply to your next message. Set fast mode on your computer.',
+            config.lastSavedFastMode
+              ? '模型与思考强度将在发送下一条消息时生效。上次记录为快速模式，可在电脑端调整。'
+              : '模型与思考强度将在发送下一条消息时生效。快速模式请在电脑端设置。',
+            config.lastSavedFastMode
+              ? 'Model and reasoning effort apply to your next message. The last saved speed was Fast. Adjust it on your computer.'
+              : 'Model and reasoning effort apply to your next message. Set fast mode on your computer.',
           )}</p>}
           {disabled && <p className="model-config-hint">{t(
             '当前正在执行，可预选并在结束后保存',

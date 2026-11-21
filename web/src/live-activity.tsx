@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { friendlyError } from './app-utils';
 import { t } from './i18n';
 import { TypewriterText } from './ui-components';
 import type { ExecutionState, LiveActivityKind } from './app-types';
@@ -150,6 +151,7 @@ export function RunDetailsSheet({
   stopping,
   onClose,
   onStop,
+  onOpenDesktop,
 }: {
   open: boolean;
   state: ExecutionState;
@@ -163,9 +165,12 @@ export function RunDetailsSheet({
   stopping: boolean;
   onClose: () => void;
   onStop: () => void;
+  onOpenDesktop?: () => Promise<void>;
 }) {
   const [clock, setClock] = useState(Date.now());
   const [confirming, setConfirming] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState('');
   useEffect(() => {
     if (!open || !startedAt) return;
     setClock(Date.now());
@@ -175,6 +180,9 @@ export function RunDetailsSheet({
   useEffect(() => {
     if (!open || !canStop) setConfirming(false);
   }, [canStop, open]);
+  useEffect(() => {
+    if (!open) setOpenError('');
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const closeOnEscape = (event: globalThis.KeyboardEvent) => {
@@ -232,11 +240,12 @@ export function RunDetailsSheet({
           {!canStop && (
             <p className="run-stop-unavailable">
               {t(
-                '这次执行由 Codex Desktop 持有，请在电脑端停止。会话和历史记录不会受到影响。',
-                'Codex Desktop owns this run. Stop it on the computer; the task and history will remain intact.',
+                '请在 Codex 电脑端停止本次执行。',
+                'Stop this run in Codex Desktop.',
               )}
             </p>
           )}
+          {openError && <p className="run-stop-warning" role="alert">{openError}</p>}
           {confirming && canStop && (
             <p className="run-stop-warning">
               {t(
@@ -246,6 +255,17 @@ export function RunDetailsSheet({
             </p>
           )}
         </div>
+        {!canStop && onOpenDesktop && (
+          <footer>
+            <button type="button" disabled={opening} onClick={async () => {
+              setOpening(true);
+              setOpenError('');
+              try { await onOpenDesktop(); }
+              catch (error) { setOpenError(friendlyError(error)); }
+              finally { setOpening(false); }
+            }}>{opening ? t('正在打开…', 'Opening…') : t('在电脑端打开会话', 'Open chat on computer')}</button>
+          </footer>
+        )}
         {canStop && (
           <footer>
             {confirming ? <>

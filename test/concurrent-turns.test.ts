@@ -84,7 +84,11 @@ test('stopping one task interrupts only that turn; its completion cannot stop an
   await assert.rejects(codex.stopTurn(), /thread_id_required/);
   await assert.rejects(codex.stopTurn('other'), /turn_stop_mismatch/);
   const turnA = codex.getActiveTurn('a')!.turnId;
-  await codex.stopTurn('a');
+  const before = calls.length;
+  await assert.rejects(codex.stopTurn('a', 'stale-turn'), /turn_stop_mismatch/);
+  await assert.rejects(codex.steerTurn({ threadId: 'a', text: 'stale input', expectedTurnId: 'stale-turn' }), /turn_id_mismatch/);
+  assert.equal(calls.length, before, 'the next turn cannot receive controls meant for an older turn');
+  await codex.stopTurn('a', turnA);
   assert.deepEqual(calls.at(-1), { method: 'turn/interrupt', params: { threadId: 'a', turnId: turnA } });
   assert.equal(codex.getActiveTurn('a')?.state, 'cancelling');
   assert.equal(codex.getActiveTurn('b')?.state, 'running');

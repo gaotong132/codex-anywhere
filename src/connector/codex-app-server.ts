@@ -580,8 +580,14 @@ export class CodexAppServer extends EventEmitter {
       || (!String(thread.model || '').trim() && !options.allowUnknownModel)) {
       throw new Error('desktop_model_unavailable');
     }
+    // thread/read omits the tier on some releases. A bounded rollout read
+    // can report the last saved value without loading the Desktop thread.
+    const settings = thread.model && typeof thread.path === 'string' && thread.path
+      ? await readRolloutModelSettings(thread.path, 1024 * 1024).catch(() => null) : null;
+    const serviceTier = settings?.model === thread.model ? settings?.serviceTier || null : null;
     return { model: thread.model || '', reasoningEffort: thread.reasoningEffort ?? '',
-      serviceTier: null, fastMode: false, readOnly: true, source: 'persisted' as const, models };
+      serviceTier, fastMode: isFastServiceTier(serviceTier, models, thread.model),
+      readOnly: true, source: 'persisted' as const, models };
   }
 
   async readModelConfig(threadId: unknown): Promise<SessionModelConfig> {
@@ -1076,7 +1082,7 @@ export class CodexAppServer extends EventEmitter {
 
   async prepareDesktopTurn() { await this.threadRelease; }
 
-  async steerTurn({ text, threadId, clientId, requestId }: StartTurnOptions) {
+  async steerTurn({ text, threadId, clientId, requestId, expectedTurnId }: StartTurnOptions & { expectedTurnId?: unknown }) {
     const targetThreadId = String(threadId || '').trim();
     const prompt = String(text || '').trim();
     if (!targetThreadId) throw new Error('thread_id_required');
@@ -1090,6 +1096,7 @@ export class CodexAppServer extends EventEmitter {
     ) {
       throw new Error('turn_not_active');
     }
+    if (expectedTurnId != null && expectedTurnId !== turnContext.turnId) throw new Error('turn_id_mismatch');
     turnContext.clientId = clientId;
     turnContext.requestId = requestId;
     const result = await this.rpcRaw('turn/steer', {
@@ -1161,7 +1168,7 @@ export class CodexAppServer extends EventEmitter {
     return { approvalId: String(approvalId), approved: approved === true };
   }
 
-  async stopTurn(expectedThreadId?: unknown) {
+  async stopTurn(expectedThreadId?: unknown, expectedTurnId?: unknown) {
     const expected = String(expectedThreadId || '').trim();
     if (!expected && this.activeTurns.size > 1) throw new Error('thread_id_required');
     const turn = this.getActiveTurn(expected) || (this.getActiveTurn()?.threadId === '' ? this.getActiveTurn() : null);
@@ -1169,7 +1176,8 @@ export class CodexAppServer extends EventEmitter {
       if (expected && this.activeTurns.size) throw new Error('turn_stop_mismatch');
       return { stopped: false };
     }
-    if (expected && turn.threadId && expected !== turn.threadId) {
+    if ((expected && turn.threadId && expected !== turn.threadId)
+      || (expectedTurnId != null && expectedTurnId !== turn.turnId)) {
       throw new Error('turn_stop_mismatch');
     }
     turn.cancelRequested = true;

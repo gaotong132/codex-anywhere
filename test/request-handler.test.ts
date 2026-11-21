@@ -810,6 +810,26 @@ test('active Web-owned sessions steer the in-flight app-server turn', async () =
   });
 });
 
+test('a reconnected browser steers the PC connector-owned first turn without calling Desktop', async () => {
+  const turn = { threadId: 'web-task', turnId: 'run-1', state: 'running' };
+  const calls: any[] = [];
+  const handle = createRequestHandler(createDependencies({
+    codex: {
+      activeTurns: new Map([[turn.threadId, turn]]),
+      steerTurn: async input => { calls.push(input); return { threadId: input.threadId, turnId: input.expectedTurnId }; },
+      startTurn: async () => assert.fail('must not start another turn'),
+    },
+    desktop: { sendMessage: async () => assert.fail('Desktop cannot load a connector-owned task') },
+  }));
+  const response = await handle(request('turn.start', { threadId: 'web-task', text: 'Continue', preferDesktop: true }));
+  assert.equal(response.data.delivery, 'appServer');
+  assert.deepEqual(calls, [{ threadId: 'web-task', text: 'Continue', expectedTurnId: 'run-1',
+    clientId: 'client-1', requestId: 'request-1' }]);
+  turn.state = 'cancelling';
+  assert.equal((await handle(request('turn.start', { threadId: 'web-task', text: 'Continue' }))).error, 'another_turn_is_active');
+  assert.equal(calls.length, 1);
+});
+
 test('existing sessions do not replay stored Desktop turn overrides', async () => {
   let sent;
   let appServerCalls = 0;

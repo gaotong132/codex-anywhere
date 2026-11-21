@@ -40,6 +40,7 @@ export function friendlyError(error: unknown) {
   if (message === 'another_turn_is_active') return t('当前会话正在启动或执行任务，请稍后追加消息或先停止。', 'This session already has an active turn. Steer it when ready or stop it first.');
   if (message === 'desktop_first_turn_busy') return t('电脑端另一个新会话的首轮仍在执行，请等它完成后再新建。', 'Another Desktop task is completing its first turn. Wait before creating another task.');
   if (message === 'turn_stop_mismatch') return t('运行状态已经变化，请刷新后重试。', 'The run state changed. Refresh and try again.');
+  if (message === 'turn_not_active' || message === 'turn_id_mismatch') return t('当前轮次已变化，消息已保留，请确认会话后重新发送。', 'The active turn changed. Your message is kept so you can review the chat and send it again.');
   if (message === 'project_directory_required') return t('新会话必须选择或填写项目目录。', 'Choose or enter a project directory for the new session.');
   if (message === 'session_project_directory_unavailable') return t('该会话没有可用的项目目录，无法通过连接器继续。', 'This session has no project directory available to the connector.');
   if (message === 'workspace_outside_allowed_root') return t('该目录不在连接器允许访问的范围内。', 'This directory is outside the connector allowed roots.');
