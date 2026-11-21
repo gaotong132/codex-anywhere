@@ -236,6 +236,10 @@ online message route. Status reads request metadata only when the host advertise
 very large turn cannot prevent reading its status. Older supported owner/follower hosts keep their
 existing native input and controls.
 
+Desktop permission snapshots are read-only even when the chat uses a worktree or folder outside the
+connector's execution roots. Missing current metadata is labelled unknown and offers the Desktop
+action. Neither this display path nor its snapshot token authorizes a cold writer outside those roots.
+
 Conversation history reads bounded pages from the local rollout whenever it is available, including
 process messages within a single long-running turn. Scroll up or use **Load older messages** to cross
 the live tail's byte window. Refreshing or reconnecting must preserve that older-history cursor.

@@ -105,11 +105,12 @@ export function PermissionModeControl({
           if (!open && !config?.editable && onRefresh) void runAction(onRefresh);
         }}
         aria-expanded={open}
-        title={config?.source === 'persisted' ? t('会话已保存的权限', 'Saved session permissions') : config && !config.editable ? t('权限由 Codex 电脑端管理', 'Permissions are managed by Codex Desktop')
+        title={config?.modeKnown === false ? t('尚未获取最新权限，请在电脑端查看', 'Latest permissions are unavailable; view them on your computer')
+          : config?.source === 'persisted' ? t('会话已保存的权限', 'Saved session permissions') : config && !config.editable ? t('权限由 Codex 电脑端管理', 'Permissions are managed by Codex Desktop')
           : t('配置 Codex 的审批与文件访问权限', 'Configure Codex approvals and file access')}
       >
         <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.7-2.5 6.3-6 7.9-3.5-1.6-6-4.2-6-7.9V5l6-2.5Z" /><path d="M7.4 10.1 9.2 12l3.6-4" /></svg>
-        <span>{loading ? t('读取权限…', 'Loading access…') : config ? permissionModeLabel(config.mode) : t('权限读取失败 · 重试', 'Access unavailable · Retry')}{config && !config.editable && <small> · {config.source === 'persisted' ? t('只读', 'Read only') : t('电脑端管理', 'Desktop managed')}</small>}</span>
+        <span>{loading ? t('读取权限…', 'Loading access…') : config ? config.modeKnown === false ? t('权限未知', 'Access unknown') : permissionModeLabel(config.mode) : t('权限读取失败 · 重试', 'Access unavailable · Retry')}{config && !config.editable && <small> · {config.source === 'persisted' ? t('只读', 'Read only') : t('电脑端管理', 'Desktop managed')}</small>}</span>
         <i aria-hidden="true" />
       </button>
       {open && !config && <div className="permission-mode-popover">
@@ -122,7 +123,7 @@ export function PermissionModeControl({
       {open && config && (
         <div className="permission-mode-popover">
           <header>
-            <strong>{config.source === 'persisted' ? t('已保存的访问权限', 'Saved access permissions') : config.editable ? t('应如何批准 Codex 操作？', 'How should Codex approve actions?') : t('权限由 Codex 电脑端管理', 'Permissions are managed by Codex Desktop')}</strong>
+            <strong>{config.modeKnown === false ? t('请在电脑端查看权限', 'View permissions on your computer') : config.source === 'persisted' ? t('已保存的访问权限', 'Saved access permissions') : config.editable ? t('应如何批准 Codex 操作？', 'How should Codex approve actions?') : t('权限由 Codex 电脑端管理', 'Permissions are managed by Codex Desktop')}</strong>
             <span>{config.editable
               ? newSession
                 ? t('从第一条消息生效；创建后记住此设备的选择', 'Applies from the first message; remembered for this device after creation')
@@ -135,7 +136,7 @@ export function PermissionModeControl({
           </header>
           {!config.editable ? (
             <div className="permission-mode-desktop">
-              <p>{t('当前权限：', 'Current access: ')}<strong>{permissionModeLabel(config.mode)}</strong></p>
+              <p>{t('当前权限：', 'Current access: ')}<strong>{config.modeKnown === false ? t('未获取最新设置', 'Latest settings unavailable') : permissionModeLabel(config.mode)}</strong></p>
               <div>
                 {config.canOpenOnDesktop && onOpenDesktop && <button type="button" disabled={saving || loading} onClick={() => void runAction(onOpenDesktop, true)}>{t('在电脑端打开此会话', 'Open this task on the computer')}</button>}
                 {onRefresh && <button type="button" disabled={saving || loading} onClick={() => void runAction(onRefresh)}>{loading ? t('读取权限…', 'Loading access…') : t('刷新权限', 'Refresh permissions')}</button>}

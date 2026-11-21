@@ -1057,3 +1057,19 @@ test('removed native controls show saved settings with a Desktop action and cann
   assert.equal(pending.desktopState.canStop, false);
   assert.equal(pending.externalApproval.actionable, false);
 });
+
+test('removed controls with missing permission metadata report unknown and keep the Desktop action', async () => {
+  const handle = createRequestHandler(createDependencies({
+    codex: { readStoredPermissionConfig: async (_id, options) => {
+      assert.deepEqual(options, { readOnly: true }); throw new Error('desktop_permissions_unavailable');
+    } },
+    desktop: { openThread: async ({ threadId }) => ({ threadId, opened: true }), controls: {
+      permissions: async () => { throw new Error('desktop_controls_unsupported'); },
+    } },
+  }));
+  const result = await handle(request('session.permissions.read', { threadId: 'outside-workspace' }));
+  assert.equal(result.ok, true);
+  assert.equal(result.data.modeKnown, false); assert.equal(result.data.editable, false);
+  assert.equal(result.data.settingsToken, undefined); assert.equal(result.data.canOpenOnDesktop, true);
+  assert.equal(result.data.unavailableReason, 'desktop_controls_unsupported');
+});
